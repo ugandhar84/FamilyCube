@@ -1,37 +1,45 @@
 /**
- * JustDescribeItScreen — Figma "Tasks · Capture" full-page natural-language
- * composer. Three states from the Figma spec:
- *   1. Resting   — empty composer + two info cards + greyed action bar
- *   2. Detection — active composer (2px blue border) + E9EFFF detection card
- *                  + FFE8E3 conflict card + member choice row
- *   3. Voice     — active composer + waveform card + Stop/Cancel + transcript field
+ * JustDescribeItScreen — full-page natural-language task composer.
+ * Single scrollable pageSheet — detection chips appear inline, then
+ * the quest/event form expands inline below (pre-filled). No handoff
+ * to a separate modal. Figma visual treatment applied throughout.
+ *
+ * States:
+ *   1. Resting  — two info cards + Speak CTA
+ *   2. Typing   — detection chips (category / time / assignee)
+ *   3. Voice    — waveform + Stop/Cancel
+ *   4. Expanded — inline quest form below chips (pre-filled)
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   Modal, Animated, Easing, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import { detectLocalTask } from '../lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { previewAssignment } from '@/lib/responsibilityCategories';
 import { todayLocal, nextHourRoundedStr } from '@/lib/dates';
 import { familyAi } from '@/lib/familyAiService';
 import { Mic, Square } from 'lucide-react-native';
+import AppDateTimePicker from '@/components/AppDateTimePicker';
 
 const MIN_CHARS = 3;
 
-function fmtQuestDate(iso: string): string {
+// Format YYYY-MM-DD → "Oct 12, 2026"
+function fmtDate(iso: string): string {
   if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${months[m - 1]} ${d}, ${y}`;
 }
 
-function fmtQuest12h(hhmm: string): string {
+// Format HH:MM (24h) → "5:00 PM"
+function fmt12h(hhmm: string): string {
   if (!hhmm) return '';
   const [hStr, mStr] = hhmm.split(':');
   let h = parseInt(hStr, 10);
@@ -39,6 +47,28 @@ function fmtQuest12h(hhmm: string): string {
   const ampm = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
   return `${h}:${m} ${ampm}`;
+}
+
+// Shift YYYY-MM-DD by delta days
+function shiftDate(iso: string, delta: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+// Shift HH:MM by delta hours
+function shiftTime(hhmm: string, delta: number): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const newH = ((h + delta) % 24 + 24) % 24;
+  return `${String(newH).padStart(2, '0')}:${String(m ?? 0).padStart(2, '0')}`;
+}
+
+function snapToDay(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  const day = d.getDay();
+  if (day === 0) return shiftDate(iso, 1);
+  if (day === 6) return shiftDate(iso, 2);
+  return iso;
 }
 
 function WaveformBar({ delay, color }: { delay: number; color: string }) {
@@ -85,40 +115,69 @@ export default function JustDescribeItScreen({
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
+  const { familyName = 'Family' } = useFamilyStore() as any;
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const familyName = useFamilyStore(s => s.familyName) ?? 'Family';
+  const { addQuest } = useQuestStore();
 
+  // ── Composer state ──
   const [aiAutoFilling, setAiAutoFilling] = useState(false);
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [detection, setDetection] = useState<ReturnType<typeof detectLocalTask>>(null);
-  const [acceptedAssignee, setAcceptedAssignee] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<{ name: string; reason: string } | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
+
+  // ── Inline quest form state ──
+  const [questFormOpen, setQuestFormOpen] = useState(false);
+  const [questTitle, setQuestTitle] = useState('');
+  const [questDescription, setQuestDescription] = useState('');
+  const [questCoins, setQuestCoins] = useState(30);
+  const [questAssigneeIds, setQuestAssigneeIds] = useState<string[]>([]);
+  const [questDueDate, setQuestDueDate] = useState(snapToDay(shiftDate(todayLocal(), 1)));
+  const [questDueTime, setQuestDueTime] = useState('17:00');
+  const [questShowDatePick, setQuestShowDatePick] = useState(false);
+  const [questShowTimePick, setQuestShowTimePick] = useState(false);
+  const [questRecurrence, setQuestRecurrence] = useState<'once'|'daily'|'weekly'|'monthly'>('once');
+  const [questEndDate, setQuestEndDate] = useState('');
+  const [questShowEndDatePick, setQuestShowEndDatePick] = useState(false);
+  const [savingQuest, setSavingQuest] = useState(false);
 
   const dictation = useVoiceDictation();
   const inputRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const reset = () => {
     setInput('');
+    setInputFocused(false);
     setDetection(null);
-    setAcceptedAssignee(null);
     setSuggestion(null);
     setLoadingSuggestion(false);
     setAiAutoFilling(false);
-    setInputFocused(false);
+    setQuestFormOpen(false);
+    setQuestTitle('');
+    setQuestDescription('');
+    setQuestCoins(30);
+    setQuestAssigneeIds([]);
+    setQuestDueDate(snapToDay(shiftDate(todayLocal(), 1)));
+    setQuestDueTime('17:00');
+    setQuestShowDatePick(false);
+    setQuestShowTimePick(false);
+    setQuestRecurrence('once');
+    setQuestEndDate('');
+    setSavingQuest(false);
     dictation.reset();
   };
 
   const handleClose = () => { reset(); onClose(); };
 
+  // Live detection
   useEffect(() => {
-    if (input.trim().length < MIN_CHARS) { setDetection(null); setAcceptedAssignee(null); return; }
+    if (input.trim().length < MIN_CHARS) { setDetection(null); setQuestFormOpen(false); return; }
     const d = detectLocalTask(input, members.map(m => ({ id: m.id, name: m.name, role: m.role })));
     setDetection(d);
-    setAcceptedAssignee(null);
   }, [input, members]);
 
+  // Assignee suggestion
   useEffect(() => {
     if (!detection || !activeMember?.familyId) return;
     const cat = detection.category.kind === 'event' ? detection.category.eventCategory : detection.category.questCategory;
@@ -144,50 +203,6 @@ export default function JustDescribeItScreen({
     if (t) setInput(t);
   };
 
-  const handleConfirmWithAssignee = (resolvedMemberId: string | null) => {
-    if (!detected) return;
-    const kind = detected.category.kind;
-    const cat = kind === 'event' ? detected.category.eventCategory : detected.category.questCategory;
-    let startAt: string | undefined;
-    if (detected.when.date && detected.when.time) {
-      startAt = `${detected.when.date}T${detected.when.time}:00`;
-    } else if (detected.when.date) {
-      startAt = `${detected.when.date}T${nextHourRoundedStr()}:00`;
-    }
-    onOpenFullForm(kind, {
-      title: input.trim(),
-      category: cat ?? undefined,
-      memberId: resolvedMemberId ?? undefined,
-      startAt,
-      pickupLocation: detected.locations.pickup ?? undefined,
-      dropLocation: detected.locations.dropoff ?? undefined,
-    });
-    reset();
-  };
-
-  const openQuestForm = () => {
-    let cleanTitle = input.trim();
-    cleanTitle = cleanTitle
-      .replace(/\s+(at|by|@)\s+\d{1,2}(:\d{2})?\s*(am|pm|AM|PM)?/gi, '')
-      .replace(/\s+\d{1,2}:\d{2}\s*(am|pm|AM|PM)?/gi, '')
-      .replace(/\s+every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|day|week|month)/gi, '')
-      .replace(/\s{2,}/g, ' ').trim();
-    let startAt: string | undefined;
-    if (detected?.when.date && detected?.when.time) {
-      startAt = `${detected.when.date}T${detected.when.time}:00`;
-    } else if (detected?.when.date) {
-      startAt = `${detected.when.date}T09:00:00`;
-    }
-    onOpenFullForm('quest', {
-      title: cleanTitle,
-      category: detected?.category.questCategory ?? undefined,
-      memberId: assigneeMember?.id ?? undefined,
-      startAt,
-      coins: 30,
-    });
-    reset();
-  };
-
   const handleAiAutoFill = async () => {
     if (!input.trim() || aiAutoFilling) return;
     setAiAutoFilling(true);
@@ -201,6 +216,49 @@ export default function JustDescribeItScreen({
     finally { setAiAutoFilling(false); }
   };
 
+  // Open the inline quest form pre-filled from detection
+  const openInlineQuestForm = () => {
+    let cleanTitle = input.trim();
+    cleanTitle = cleanTitle
+      .replace(/\s+(at|by|@)\s+\d{1,2}(:\d{2})?\s*(am|pm|AM|PM)?/gi, '')
+      .replace(/\s+\d{1,2}:\d{2}\s*(am|pm|AM|PM)?/gi, '')
+      .replace(/\s+every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|day|week|month)/gi, '')
+      .replace(/\s{2,}/g, ' ').trim();
+    setQuestTitle(cleanTitle);
+    if (detected?.when.date) setQuestDueDate(detected.when.date);
+    if (detected?.when.time) setQuestDueTime(detected.when.time.slice(0, 5));
+    if (detected?.recurrence && detected.recurrence !== 'once') {
+      setQuestRecurrence(detected.recurrence);
+    }
+    // Pre-select suggested assignee
+    if (assigneeMember) setQuestAssigneeIds([assigneeMember.id]);
+    setQuestFormOpen(true);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
+  };
+
+  const handleSaveQuest = async () => {
+    if (!questTitle.trim() || savingQuest) return;
+    setSavingQuest(true);
+    try {
+      await addQuest({
+        title: questTitle.trim(),
+        description: questDescription.trim() || undefined,
+        coins: questCoins,
+        assignedToIds: questAssigneeIds.length > 0 ? questAssigneeIds : undefined,
+        dueDate: questDueDate || undefined,
+        dueTime: questDueTime || undefined,
+        recurrence: questRecurrence !== 'once' ? questRecurrence : undefined,
+        recurrenceEndDate: questEndDate || undefined,
+        familyId: activeMember?.familyId ?? '',
+        createdBy: activeMemberId ?? '',
+        category: detected?.category.questCategory as any,
+      });
+      handleClose();
+    } catch {
+      setSavingQuest(false);
+    }
+  };
+
   const isListening = dictation.state === 'listening';
   const hasInput = input.trim().length >= MIN_CHARS;
   const detected = detection;
@@ -208,35 +266,32 @@ export default function JustDescribeItScreen({
     ? (detected.category.kind === 'event' ? detected.category.eventCategory : detected.category.questCategory)
     : null;
   const catEmoji = detected?.category.emoji ?? '';
-
   const detectedTime = detected?.when.time ? detected.when.time.slice(0, 5) : null;
   const detectedDate = detected?.when.date;
   const timeLabel = detectedDate && detectedTime
-    ? `${detectedDate === todayLocal() ? 'Today' : fmtQuestDate(detectedDate)} · ${fmtQuest12h(detectedTime)}`
-    : detectedDate ? (detectedDate === todayLocal() ? 'Today' : fmtQuestDate(detectedDate))
-    : detectedTime ? fmtQuest12h(detectedTime)
-    : null;
-
+    ? `${detectedDate === todayLocal() ? 'Today' : fmtDate(detectedDate)} · ${fmt12h(detectedTime)}`
+    : detectedDate ? (detectedDate === todayLocal() ? 'Today' : fmtDate(detectedDate))
+    : detectedTime ? fmt12h(detectedTime) : null;
   const detectedMemberName = detected?.memberNames[0] ?? null;
   const suggestedMemberName = suggestion?.name ?? null;
   const displayAssignee = detectedMemberName ?? suggestedMemberName;
   const assigneeMember = displayAssignee
-    ? members.find(m =>
-        m.name.split(' ')[0].toLowerCase() === displayAssignee.toLowerCase() ||
-        m.name.toLowerCase() === displayAssignee.toLowerCase()
-      )
+    ? members.find(m => m.name.split(' ')[0].toLowerCase() === displayAssignee.toLowerCase() || m.name.toLowerCase() === displayAssignee.toLowerCase())
     : null;
 
   // Figma tokens
   const canvasBg    = isDark ? '#0E0C13' : '#F5F7FB';
   const fieldBg     = isDark ? colors.surface : '#FFFFFF';
   const fieldBorder = isDark ? colors.border : '#DFE5EF';
-  const activeBlue  = colors.primary;            // #345DE3 → colors.primary
-  const linkBlue    = colors.primary;            // #294FC7 → same brand primary
-  const detectionCardBg  = isDark ? colors.surface : colors.pinkLight;   // #E9EFFF
-  const conflictCardBg   = isDark ? colors.surface : colors.primaryLight; // #FFE8E3
-
-  const primaryReady = hasInput && !isListening;
+  const activeBlue  = colors.primary;
+  const detCardBg   = isDark ? colors.surface : colors.pinkLight;
+  const COIN_OPTIONS = [10, 20, 30, 50, 100];
+  const RECUR_OPTIONS: Array<{ label: string; value: typeof questRecurrence }> = [
+    { label: 'Once', value: 'once' },
+    { label: 'Daily', value: 'daily' },
+    { label: 'Weekly', value: 'weekly' },
+    { label: 'Monthly', value: 'monthly' },
+  ];
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
@@ -244,30 +299,27 @@ export default function JustDescribeItScreen({
         <KeyboardAvoidingView style={{ flex: 1, backgroundColor: canvasBg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
           <ScrollView
+            ref={scrollRef}
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 12 }}
+            contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 80 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* ── Page body: 24px horizontal padding ── */}
             <View style={{ paddingHorizontal: 24, paddingTop: 24, gap: 16 }}>
 
-              {/* Household chrome row */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 44 }}>
+              {/* Household chrome */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
-                  {familyName.toUpperCase()} / {activeMember?.name?.split(' ')[0]?.toUpperCase()}
+                  {familyName.toUpperCase()} / {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
                 </Text>
-                {/* Quick capture + button */}
                 <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Text style={{ fontSize: 28, lineHeight: 34, color: activeBlue, fontWeight: '400' }}>+</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Back destination */}
+              {/* Back link */}
               <TouchableOpacity onPress={handleClose} style={{ marginTop: -8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue }}>
-                  ‹ Close · return to Today
-                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: activeBlue }}>‹ Close · return to Today</Text>
               </TouchableOpacity>
 
               {/* Page title */}
@@ -275,30 +327,21 @@ export default function JustDescribeItScreen({
                 Just describe it
               </Text>
 
-              {/* ── Feature content ── */}
               <View style={{ gap: 12 }}>
-
-                {/* Supporting line */}
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                   Type or speak — we'll figure out the rest
                 </Text>
 
                 {/* ── Natural-language composer ── */}
                 <View style={{
-                  backgroundColor: fieldBg,
-                  borderRadius: 22,
+                  backgroundColor: fieldBg, borderRadius: 22,
                   borderWidth: inputFocused || isListening ? 2 : 1,
                   borderColor: inputFocused || isListening ? activeBlue : fieldBorder,
-                  padding: 20,
-                  gap: 16,
-                  minHeight: 170,
+                  padding: 20, gap: 16, minHeight: 170,
                 }}>
-                  {/* Persistent label */}
                   <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                     {isListening ? 'Editable transcript · listening' : 'What needs doing?'}
                   </Text>
-
-                  {/* Natural description input */}
                   <TextInput
                     ref={inputRef}
                     value={isListening ? dictation.liveTranscript : input}
@@ -309,14 +352,9 @@ export default function JustDescribeItScreen({
                     placeholder="Something on your mind?"
                     placeholderTextColor={colors.textSecondary}
                     multiline
-                    style={{
-                      fontSize: 24, fontWeight: '500', lineHeight: 34,
-                      color: hasInput || isListening ? colors.textPrimary : colors.textSecondary,
-                      minHeight: 34,
-                    }}
+                    style={{ fontSize: 24, fontWeight: '500', lineHeight: 34, color: colors.textPrimary, minHeight: 34 }}
                   />
-
-                  {/* Composer tools row */}
+                  {/* Tools row */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 48 }}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
@@ -326,21 +364,18 @@ export default function JustDescribeItScreen({
                         <TouchableOpacity
                           onPress={handleAiAutoFill}
                           disabled={aiAutoFilling}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: detectionCardBg }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: detCardBg }}
                         >
-                          {aiAutoFilling
-                            ? <ActivityIndicator size="small" color={colors.pink} />
-                            : <Text style={{ fontSize: 12 }}>✨</Text>}
+                          {aiAutoFilling ? <ActivityIndicator size="small" color={colors.pink} /> : <Text style={{ fontSize: 12 }}>✨</Text>}
                           <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink }}>
                             {aiAutoFilling ? 'Filling…' : 'AI fill'}
                           </Text>
                         </TouchableOpacity>
                       )}
                     </View>
-                    {/* Mic / Stop button — Figma: 48px circle, #E9EFFF bg */}
                     <TouchableOpacity
                       onPress={isListening ? handleStopVoice : () => dictation.start()}
-                      style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: detectionCardBg, alignItems: 'center', justifyContent: 'center' }}
+                      style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: detCardBg, alignItems: 'center', justifyContent: 'center' }}
                     >
                       {isListening
                         ? <Square size={20} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
@@ -349,192 +384,313 @@ export default function JustDescribeItScreen({
                   </View>
                 </View>
 
-                {/* ── Voice dictation state ── */}
+                {/* ── Voice dictation card ── */}
                 {isListening && (
-                  <View style={{ backgroundColor: detectionCardBg, borderRadius: 22, padding: 16, gap: 12 }}>
-                    {/* Status pill */}
-                    <View style={{ alignSelf: 'flex-start', backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(52,93,227,0.1)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <View style={{ backgroundColor: detCardBg, borderRadius: 22, padding: 16, gap: 12 }}>
+                    <View style={{ alignSelf: 'flex-start', backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(52,93,227,0.08)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
                       <Text style={{ fontSize: 12, fontWeight: '600', color: activeBlue }}>● Listening · speak now</Text>
                     </View>
-                    {/* Waveform */}
                     <Waveform color={activeBlue} />
-                    {/* Stop / Cancel */}
                     <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={handleStopVoice}
-                        style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
-                      >
+                      <TouchableOpacity onPress={handleStopVoice} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Stop</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => dictation.reset()}
-                        style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}
-                      >
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: linkBlue }}>Cancel audio</Text>
+                      <TouchableOpacity onPress={() => dictation.reset()} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Cancel audio</Text>
                       </TouchableOpacity>
                     </View>
-                    {/* Privacy note */}
                     <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
-                      Audio and transcript stay private until you explicitly save. No task is auto-created.
+                      Audio stays private until you explicitly save. No task is auto-created.
                     </Text>
                   </View>
                 )}
 
-                {/* ── Live detection state ── */}
+                {/* ── Detection chips ── */}
                 {!isListening && hasInput && detected && (
-                  <>
-                    {/* Detection card — Figma: #E9EFFF, 22px radius */}
-                    <View style={{ backgroundColor: detectionCardBg, borderRadius: 22, padding: 16, gap: 12 }}>
-                      {/* Category + keyword */}
-                      {catLabel && (
-                        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                          {catEmoji ? `${catEmoji}  ` : ''}{catLabel}
-                          {detected.category.kw.length > 0 ? `  ·  from "${detected.category.kw[0]}"` : ''}
-                        </Text>
-                      )}
-                      {/* Time */}
-                      {timeLabel && (
-                        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                          🕐  {timeLabel}
-                        </Text>
-                      )}
-                      {/* Member suggestion loading */}
-                      {loadingSuggestion && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <ActivityIndicator size="small" color={activeBlue} />
-                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Checking schedule…</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Conflict / category card — Figma: #FFE8E3 terracotta-light */}
-                    {detected.category.kind === 'quest' && (
-                      <View style={{ backgroundColor: conflictCardBg, borderRadius: 22, padding: 16, gap: 12 }}>
-                        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                          Quest detected — set it up below
-                        </Text>
-                        <TouchableOpacity
-                          onPress={openQuestForm}
-                          style={{ height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}
-                        >
-                          <Text style={{ fontSize: 15, fontWeight: '600', color: linkBlue }}>Set up quest →</Text>
-                        </TouchableOpacity>
+                  <View style={{ backgroundColor: detCardBg, borderRadius: 22, padding: 16, gap: 10 }}>
+                    {catLabel && (
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
+                        {catEmoji ? `${catEmoji}  ` : ''}{catLabel}
+                        {detected.category.kw.length > 0 ? `  ·  from "${detected.category.kw[0]}"` : ''}
+                      </Text>
+                    )}
+                    {timeLabel && (
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
+                        🕐  {timeLabel}
+                      </Text>
+                    )}
+                    {loadingSuggestion && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <ActivityIndicator size="small" color={activeBlue} />
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Checking schedule…</Text>
                       </View>
                     )}
-
-                    {/* Who's this for? */}
-                    {detected.category.kind === 'event' && !loadingSuggestion && (
-                      <>
-                        <Text style={{ fontSize: 16, fontWeight: '400', color: colors.textPrimary, lineHeight: 22 }}>
-                          Who should be involved in this event?
-                        </Text>
-                        {members.map(m => {
-                          const isSuggested = m.id === assigneeMember?.id;
-                          return (
-                            <TouchableOpacity
-                              key={m.id}
-                              onPress={() => handleConfirmWithAssignee(m.id)}
-                              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: fieldBg, borderRadius: 14, padding: 8, minHeight: 56 }}
-                            >
-                              <View style={{ width: 40, height: 40, borderRadius: 100, backgroundColor: detectionCardBg, alignItems: 'center', justifyContent: 'center' }}>
-                                <Text style={{ fontSize: 15, fontWeight: '700', color: activeBlue }}>
-                                  {m.name[0].toUpperCase()}
-                                </Text>
-                              </View>
-                              <Text style={{ flex: 1, fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                                {m.name.split(' ')[0]}{isSuggested ? '\nSuggested · ' + (suggestion?.reason ?? 'based on schedule') : '\n' + (m.role === 'parent' ? 'Parent' : 'Kid')}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
-                          You can also set this in the event form. Selection is just a shortcut.
-                        </Text>
-                      </>
+                    {displayAssignee && !loadingSuggestion && (
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
+                        👤  {displayAssignee}{suggestion && !detectedMemberName ? ' · Suggested' : ''}
+                      </Text>
                     )}
-                  </>
-                )}
-
-                {/* ── Labeled field (transcript / description) shown after voice stops ── */}
-                {!isListening && hasInput && (
-                  <View style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, minHeight: 88 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '400', lineHeight: 24, color: colors.textPrimary }}>
-                      {input}
-                    </Text>
                   </View>
                 )}
 
-                {/* ── Resting state info cards ── */}
+                {/* ── Resting empty state ── */}
                 {!isListening && !hasInput && (
                   <>
-                    {/* "One sentence" card — Figma: white, shadow, 22px radius */}
                     <View style={{ backgroundColor: fieldBg, borderRadius: 22, padding: 16, gap: 12, shadowColor: '#172337', shadowOpacity: 0.07, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
-                      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
-                        One sentence is enough
-                      </Text>
+                      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>One sentence is enough</Text>
                       <Text style={{ fontSize: 16, fontWeight: '400', color: colors.textPrimary, lineHeight: 22 }}>
                         "Pick up trash every Monday at 5 PM" or "Jaswi finish homework by 7 PM"
                       </Text>
                     </View>
-
-                    {/* "Your privacy" card — Figma: white, shadow, 22px radius */}
+                    <TouchableOpacity
+                      onPress={() => dictation.start()}
+                      style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1.5, borderColor: activeBlue, backgroundColor: fieldBg }}
+                    >
+                      <Mic size={18} color={activeBlue} strokeWidth={1.8} />
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: activeBlue }}>Speak your task</Text>
+                    </TouchableOpacity>
                     <View style={{ backgroundColor: fieldBg, borderRadius: 22, padding: 16, gap: 12, shadowColor: '#172337', shadowOpacity: 0.07, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
-                      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
-                        Your privacy
-                      </Text>
+                      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>Your privacy</Text>
                       <Text style={{ fontSize: 16, fontWeight: '400', color: colors.textPrimary, lineHeight: 22 }}>
-                        Detection runs entirely on your device. Nothing is sent anywhere until you explicitly save. No task is auto-created.
+                        Detection runs entirely on your device. Nothing is sent until you explicitly save.
                       </Text>
                     </View>
                   </>
+                )}
+
+                {/* ── CTA: open inline form or event form ── */}
+                {!isListening && hasInput && detected && !questFormOpen && (
+                  detected.category.kind === 'quest' ? (
+                    <TouchableOpacity
+                      onPress={openInlineQuestForm}
+                      style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Set up quest →</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const cat = detected.category.eventCategory;
+                        let startAt: string | undefined;
+                        if (detected.when.date && detected.when.time) startAt = `${detected.when.date}T${detected.when.time}:00`;
+                        else if (detected.when.date) startAt = `${detected.when.date}T${nextHourRoundedStr()}:00`;
+                        onOpenFullForm('event', {
+                          title: input.trim(), category: cat ?? undefined,
+                          memberId: assigneeMember?.id, startAt,
+                          pickupLocation: detected.locations.pickup ?? undefined,
+                          dropLocation: detected.locations.dropoff ?? undefined,
+                        });
+                        reset();
+                      }}
+                      style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
+                    </TouchableOpacity>
+                  )
+                )}
+
+                {/* No detection fallback */}
+                {!isListening && hasInput && !detected && (
+                  <TouchableOpacity
+                    onPress={() => { onOpenFullForm('quest', { title: input.trim() }); reset(); }}
+                    style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Open full form →</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* ══════════════════════════════════════════════════════
+                    ── Inline quest form (expands below detection chips) ──
+                    ══════════════════════════════════════════════════════ */}
+                {questFormOpen && (
+                  <View style={{ gap: 20 }}>
+
+                    {/* WHAT'S THE QUEST? */}
+                    <View style={{ gap: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                        What's the quest?
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginBottom: 2 }}>Quest title</Text>
+                      <TextInput
+                        value={questTitle}
+                        onChangeText={setQuestTitle}
+                        placeholder="Quest title"
+                        placeholderTextColor={colors.textTertiary}
+                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
+                      />
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginTop: 4 }}>What does done look like?</Text>
+                      <TextInput
+                        value={questDescription}
+                        onChangeText={setQuestDescription}
+                        placeholder="Describe what counts as complete..."
+                        placeholderTextColor={colors.textTertiary}
+                        multiline
+                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 14, color: colors.textPrimary, minHeight: 88, textAlignVertical: 'top' }}
+                      />
+                    </View>
+
+                    {/* MAKE ROOM FOR IT */}
+                    <View style={{ gap: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                        Make room for it
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Deadline & time</Text>
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity
+                          onPress={() => setQuestShowDatePick(true)}
+                          style={{ flex: 1, backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                        >
+                          <Text style={{ fontSize: 16 }}>📅</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmtDate(questDueDate)}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => setQuestShowTimePick(true)}
+                          style={{ flex: 1, backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                        >
+                          <Text style={{ fontSize: 16 }}>🕐</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmt12h(questDueTime)}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary, marginTop: 4 }}>Repeat</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        {RECUR_OPTIONS.map(opt => (
+                          <TouchableOpacity
+                            key={opt.value}
+                            onPress={() => setQuestRecurrence(opt.value)}
+                            style={{
+                              paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14,
+                              backgroundColor: questRecurrence === opt.value ? colors.teal : fieldBg,
+                              borderWidth: 1, borderColor: questRecurrence === opt.value ? colors.teal : fieldBorder,
+                            }}
+                          >
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: questRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      {questRecurrence !== 'once' && (
+                        <>
+                          <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Ends on (optional)</Text>
+                          <TouchableOpacity
+                            onPress={() => setQuestShowEndDatePick(true)}
+                            style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                          >
+                            <Text style={{ fontSize: 16 }}>🏁</Text>
+                            <Text style={{ fontSize: 14, color: questEndDate ? colors.textPrimary : colors.textTertiary }}>
+                              {questEndDate ? fmtDate(questEndDate) : 'No end date'}
+                            </Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+
+                    {/* WHO'S ON IT? */}
+                    <View style={{ gap: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                        Who's on it?
+                      </Text>
+                      {members.map(m => {
+                        const sel = questAssigneeIds.includes(m.id);
+                        const isAdult = m.role === 'parent';
+                        return (
+                          <TouchableOpacity
+                            key={m.id}
+                            onPress={() => setQuestAssigneeIds(prev => sel ? prev.filter(id => id !== m.id) : [...prev, m.id])}
+                            style={{
+                              flexDirection: 'row', alignItems: 'center', gap: 12,
+                              backgroundColor: sel ? (isAdult ? colors.tealLight : colors.amberLight) : fieldBg,
+                              borderRadius: 14, padding: 12,
+                              borderWidth: 1, borderColor: sel ? (isAdult ? colors.teal : colors.amber) : fieldBorder,
+                            }}
+                          >
+                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isAdult ? colors.tealLight : colors.amberLight, alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 15, fontWeight: '700', color: isAdult ? colors.teal : colors.amber }}>{m.name[0].toUpperCase()}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
+                              <Text style={{ fontSize: 11, color: colors.textSecondary }}>{isAdult ? 'Parent' : 'Kid'}{m.id === assigneeMember?.id ? ' · Suggested' : ''}</Text>
+                            </View>
+                            {sel && <Text style={{ fontSize: 14, color: isAdult ? colors.teal : colors.amber }}>✓</Text>}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    {/* REWARD */}
+                    <View style={{ gap: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                        Reward
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Coins earned on completion</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        {COIN_OPTIONS.map(c => (
+                          <TouchableOpacity
+                            key={c}
+                            onPress={() => setQuestCoins(c)}
+                            style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: questCoins === c ? colors.amber : fieldBg, borderWidth: 1, borderColor: questCoins === c ? colors.amber : fieldBorder }}
+                          >
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: questCoins === c ? '#FFFFFF' : colors.textPrimary }}>🪙 {c}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Save button */}
+                    <TouchableOpacity
+                      onPress={handleSaveQuest}
+                      disabled={!questTitle.trim() || savingQuest}
+                      style={{ height: 52, borderRadius: 14, backgroundColor: questTitle.trim() ? activeBlue : (isDark ? colors.surface : '#E6EAF1'), alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
+                    >
+                      {savingQuest
+                        ? <ActivityIndicator color="#FFFFFF" />
+                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>Save quest</Text>}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => setQuestFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>‹ Back · edit description</Text>
+                    </TouchableOpacity>
+
+                  </View>
                 )}
 
               </View>
             </View>
           </ScrollView>
 
-          {/* ── Bottom action bar — Figma: white bg, 24px padding, gap 12 ── */}
-          <View style={{
-            backgroundColor: fieldBg,
-            paddingHorizontal: 24,
-            paddingTop: 24,
-            paddingBottom: Math.max(insets.bottom, 16) + 8,
-            gap: 12,
-          }}>
-            {/* Primary action — greyed when no input, active blue when ready */}
-            <TouchableOpacity
-              onPress={primaryReady
-                ? (detected?.category.kind === 'quest' ? openQuestForm : detected?.category.kind === 'event' ? () => handleConfirmWithAssignee(assigneeMember?.id ?? null) : () => handleConfirmWithAssignee(null))
-                : undefined
-              }
-              activeOpacity={primaryReady ? 0.85 : 1}
-              style={{
-                height: 48, borderRadius: 14,
-                backgroundColor: primaryReady ? activeBlue : (isDark ? colors.surface : '#E6EAF1'),
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: primaryReady ? '#FFFFFF' : (isDark ? colors.textTertiary : '#778396') }}>
-                {detected?.category.kind === 'quest'
-                  ? 'Set up quest →'
-                  : detected?.category.kind === 'event'
-                  ? 'Set up event →'
-                  : hasInput
-                  ? 'Open full form →'
-                  : 'Next · When'}
-              </Text>
-            </TouchableOpacity>
+          {/* ── Bottom bar — only shown when no inline form open ── */}
+          {!questFormOpen && (
+            <View style={{ backgroundColor: fieldBg, paddingHorizontal: 24, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16) + 4, gap: 10, borderTopWidth: 1, borderTopColor: fieldBorder }}>
+              <TouchableOpacity onPress={handleClose} style={{ height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Close · return unchanged</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-            {/* Secondary action */}
-            <TouchableOpacity
-              onPress={handleClose}
-              style={{ height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: linkBlue }}>
-                Close · return unchanged
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Date pickers */}
+          <AppDateTimePicker
+            visible={questShowDatePick}
+            mode="date"
+            value={new Date(questDueDate + 'T00:00:00')}
+            onConfirm={d => { setQuestDueDate(d.toISOString().slice(0, 10)); setQuestShowDatePick(false); }}
+            onCancel={() => setQuestShowDatePick(false)}
+          />
+          <AppDateTimePicker
+            visible={questShowTimePick}
+            mode="time"
+            value={(() => { const [h, m] = questDueTime.split(':'); const d = new Date(); d.setHours(+h, +m, 0, 0); return d; })()}
+            onConfirm={d => { setQuestDueTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setQuestShowTimePick(false); }}
+            onCancel={() => setQuestShowTimePick(false)}
+          />
+          <AppDateTimePicker
+            visible={questShowEndDatePick}
+            mode="date"
+            value={new Date((questEndDate || questDueDate) + 'T00:00:00')}
+            onConfirm={d => { setQuestEndDate(d.toISOString().slice(0, 10)); setQuestShowEndDatePick(false); }}
+            onCancel={() => setQuestShowEndDatePick(false)}
+          />
 
         </KeyboardAvoidingView>
       </SafeAreaView>

@@ -1,64 +1,52 @@
-import { useEffect } from 'react';
-import { View, StyleSheet, BackHandler, Platform } from 'react-native';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
-
-// Full-page overlay that slides up over the current screen.
-// Supports back-swipe (left-edge pan) and Android back button to dismiss.
+/**
+ * FullPageOverlay — wraps a screen that isn't a real RN <Modal> so it gets
+ * the same full-page treatment as one: slide-up/fade-in entrance, edge-
+ * swipe-to-dismiss (SwipeBackWrapper), and absolute-positioned stacking
+ * above whatever's mounted underneath it.
+ *
+ * Extracted from the pattern JustDescribeItScreen/JustDescribeItEventScreen
+ * each hand-rolled (slideAnim/fadeAnim + SwipeBackWrapper + Animated.View)
+ * so a growing stack of full-page screens (Review inbox → chore detail →
+ * …) doesn't re-duplicate that boilerplate per screen. Each layer gets its
+ * own zIndex (pass a higher one for screens stacked on top of another
+ * full-page screen) so React Native's paint order stacks them correctly —
+ * siblings in a plain View have no other stacking guarantee.
+ */
+import React, { useEffect, useRef } from 'react';
+import { View, Animated, Easing } from 'react-native';
+import SwipeBackWrapper from './SwipeBackWrapper';
 
 export default function FullPageOverlay({
-  visible, onDismiss, zIndex = 40, children,
+  visible, onDismiss, zIndex = 50, children,
 }: {
   visible: boolean;
   onDismiss: () => void;
   zIndex?: number;
   children: React.ReactNode;
 }) {
-  const translateX = useSharedValue(visible ? 0 : 400);
+  const slideAnim = useRef(new Animated.Value(visible ? 0 : 60)).current;
+  const fadeAnim  = useRef(new Animated.Value(visible ? 1 : 0)).current;
 
   useEffect(() => {
-    translateX.value = withSpring(visible ? 0 : 400, { damping: 26, stiffness: 220 });
+    if (visible) {
+      slideAnim.setValue(60);
+      fadeAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 220, easing: Easing.out(Easing.quad),  useNativeDriver: true }),
+      ]).start();
+    }
   }, [visible]);
 
-  // Android hardware back button
-  useEffect(() => {
-    if (!visible || Platform.OS !== 'android') return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      onDismiss();
-      return true;
-    });
-    return () => sub.remove();
-  }, [visible, onDismiss]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  // Left-edge swipe-back gesture
-  const swipe = Gesture.Pan()
-    .activeOffsetX(10)
-    .failOffsetY([-10, 10])
-    .onUpdate(e => {
-      if (e.translationX > 0) translateX.value = e.translationX;
-    })
-    .onEnd(e => {
-      if (e.translationX > 100 || e.velocityX > 600) {
-        translateX.value = withTiming(400, { duration: 220 });
-        runOnJS(onDismiss)();
-      } else {
-        translateX.value = withSpring(0, { damping: 26, stiffness: 220 });
-      }
-    });
-
-  if (!visible && translateX.value >= 400) return null;
+  if (!visible) return null;
 
   return (
-    <GestureDetector gesture={swipe}>
-      <Animated.View style={[StyleSheet.absoluteFillObject, { zIndex }, animStyle]}>
-        <View style={StyleSheet.absoluteFillObject}>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex }}>
+      <SwipeBackWrapper onDismiss={onDismiss}>
+        <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           {children}
-        </View>
-      </Animated.View>
-    </GestureDetector>
+        </Animated.View>
+      </SwipeBackWrapper>
+    </View>
   );
 }

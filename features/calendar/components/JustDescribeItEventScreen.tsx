@@ -32,6 +32,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { Mic, Square } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 import { supabase } from '@/lib/supabase';
+import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
 
 const MIN_CHARS = 3;
 
@@ -695,12 +696,13 @@ export default function JustDescribeItEventScreen({
                     {/* ── Location ── */}
                     <View style={{ gap: 8 }}>
                       <FieldLabel text="Location" />
-                      <TextInput value={evLocation} onChangeText={setEvLocation}
+                      <LocationAutocompleteInput
+                        value={evLocation}
+                        onChangeText={setEvLocation}
                         placeholder="Add a place"
-                        placeholderTextColor={colors.textTertiary}
-                        style={{ fontSize: 15, color: colors.textPrimary, paddingVertical: 4 }}
+                        accent={activeBlue}
+                        colors={colors}
                       />
-                      <View style={{ height: 1, backgroundColor: colors.border }} />
                     </View>
 
                     {/* ── Who's coming ── */}
@@ -767,13 +769,21 @@ export default function JustDescribeItEventScreen({
                         </View>
                         {evRideNeeded && (
                           <View style={{ gap: 10 }}>
-                            <View style={{ flexDirection: 'row', gap: 8 }}>
-                              <TextInput value={evPickupFrom} onChangeText={setEvPickupFrom} placeholder="From"
-                                placeholderTextColor={colors.textTertiary}
-                                style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }} />
-                              <TextInput value={evDropTo} onChangeText={setEvDropTo} placeholder="To"
-                                placeholderTextColor={colors.textTertiary}
-                                style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: colors.textPrimary }} />
+                            <View style={{ gap: 8 }}>
+                              <LocationAutocompleteInput
+                                value={evPickupFrom}
+                                onChangeText={setEvPickupFrom}
+                                placeholder="From (pickup)"
+                                accent={colors.amber}
+                                colors={colors}
+                              />
+                              <LocationAutocompleteInput
+                                value={evDropTo}
+                                onChangeText={setEvDropTo}
+                                placeholder="To (drop-off)"
+                                accent={colors.amber}
+                                colors={colors}
+                              />
                             </View>
                             <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.6, color: colors.textTertiary, textTransform: 'uppercase' }}>Driver</Text>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>

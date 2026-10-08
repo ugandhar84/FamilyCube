@@ -510,9 +510,9 @@ export default function JustDescribeItEventScreen({
               {/* ── Resting empty state ── */}
               {!isListening && !hasInput && (
                 <>
-                  <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
+                  <View style={{ backgroundColor: colors.amberLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
                     <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, lineHeight: 24 }}>One sentence is enough</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.teal, lineHeight: 20 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.amber, lineHeight: 20 }}>
                       "Soccer practice Saturday 4pm" or "Dentist for Mia next Thursday"
                     </Text>
                     <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 2 }}>

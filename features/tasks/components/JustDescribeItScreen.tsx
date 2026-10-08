@@ -223,7 +223,12 @@ export default function JustDescribeItScreen({
         input.trim(),
         members.map(m => ({ id: m.id, name: m.name, role: m.role }))
       );
-      if (result?.task?.title) setInput(result.task.title);
+      if (result?.task?.title) {
+        // If the inline form is already open, update the chore title field directly;
+        // otherwise refine the input so openInlineQuestForm picks it up.
+        if (questFormOpen) setQuestTitle(result.task.title);
+        else setInput(result.task.title);
+      }
     } catch { /* silently fail */ }
     finally { setAiAutoFilling(false); }
   };

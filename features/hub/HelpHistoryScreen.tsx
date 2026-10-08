@@ -47,9 +47,9 @@ const STATUS_META: Record<HelpStatus, { label: string; color: string }> = {
   pending:             { label: 'Pending',   color: BRAND.amber },
   awaiting_acceptance: { label: 'Offered',   color: BRAND.purple },
   assigned:            { label: 'Assigned',  color: BRAND.teal },
-  completed:           { label: 'Done ✓',    color: '#10B981' },
-  rejected:            { label: 'Rejected',  color: '#EF4444' },
-  withdrawn:           { label: 'Withdrawn', color: '#94A3B8' },
+  completed:           { label: 'Done ✓',    color: '#3D7A5A' },
+  rejected:            { label: 'Rejected',  color: '#C54A27' },
+  withdrawn:           { label: 'Withdrawn', color: '#A69A8A' },
 };
 
 function StatusBadge({ status }: { status: HelpStatus }) {
@@ -85,7 +85,7 @@ function HistoryRow({ req, colors, isDark }: { req: HelpRequest; colors: any; is
       style={{
         borderRadius: 14, borderWidth: 1,
         borderColor: colors.border,
-        backgroundColor: isDark ? colors.surface : '#FAFBFF',
+        backgroundColor: colors.surface,
         overflow: 'hidden',
       }}
     >
@@ -128,7 +128,7 @@ function HistoryRow({ req, colors, isDark }: { req: HelpRequest; colors: any; is
 
           {req.status === 'rejected' && req.rejectionReason && (
             <View style={{ backgroundColor: '#EF444412', borderRadius: 10, padding: 10 }}>
-              <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#EF4444' }}>Rejected by {req.rejectedByName}</Text>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.danger }}>Rejected by {req.rejectedByName}</Text>
               <Text style={{ fontSize: TYPO.body, color: colors.textSecondary, fontStyle: 'italic' }}>"{req.rejectionReason}"</Text>
             </View>
           )}

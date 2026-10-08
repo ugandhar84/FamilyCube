@@ -199,6 +199,12 @@ type NotifType =
   // views already use (SeniorView's isOpenToGrandparents filter,
   // TeenView's hasCar-gated pool).
   | 'ride_pool_opened'
+  // Live-reported gap: a driver decline that leaves a ride with NO
+  // replacement only ever told prevEvent.updatedBy (one prior actor) —
+  // broadcast to every parent in the family the moment a ride goes
+  // driverless, plus a recurring escalation nudge from the sweeper as the
+  // event time approaches (see ride-driver-needed-sweeper).
+  | 'ride_driver_needed'
   // Full choreStore/eventStore notification-coverage audit (2026-08-28/29)
   // — a batch of previously-silent state changes across store/choreStore.ts
   // and store/eventStore.ts, added together. See each call site's own
@@ -350,6 +356,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   ride_assignment_offered: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
   ride_assignment_overridden: 'family',
   ride_confirmed_for_kid: 'family', ride_pool_opened: 'family',
+  ride_driver_needed: 'family',
   chore_deleted: 'chores', bounty_claim_approved: 'chores', bounty_claim_declined: 'chores',
   chore_redo_disputed: 'chores', chore_redo_dispute_resolved: 'chores',
   chore_later_date_proposed: 'chores', chore_later_date_approved: 'chores', chore_later_date_declined: 'chores',
@@ -918,6 +925,25 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    case 'ride_driver_needed':
+      // p.escalation is set by the sweeper's recurring re-notify pass
+      // (ride-driver-needed-sweeper) — same event, same recipients, but the
+      // copy needs to read as "still waiting," not a fresh first-time ask,
+      // or a parent who already saw this once reasonably ignores a
+      // duplicate-looking ping.
+      return p.escalation
+        ? {
+            title: '🚨 Still no driver!',
+            body: `"${p.eventTitle}" still has nobody driving — it's coming up soon.`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          }
+        : {
+            title: '🚗 No driver assigned',
+            body: `${p.byName ?? 'Someone'} can't make "${p.eventTitle}" and nobody's covering it yet.`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          };
     case 'ride_confirmed_for_kid': {
       const t = to12Hour(p.eventTime as string);
       return {

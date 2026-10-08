@@ -409,7 +409,7 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
     // already pending the other parent's response. No further action here.
     return (
       <View style={{ borderRadius: 14, padding: 12, gap: 4,
-        backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+        backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{c.title}</Text>
         <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
           {c.disputeStatus === 'reversal_requested' ? 'Waiting on' : 'Flagged for'} {approver?.name.split(' ')[0] ?? 'the other parent'} to respond.
@@ -425,7 +425,7 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
     if (!acknowledgeRecentApproval) return null;
     return (
       <View style={{ borderRadius: 14, padding: 12, gap: 8,
-        backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+        backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Coins size={14} color={colors.textTertiary} />
           <View style={{ flex: 1 }}>
@@ -437,7 +437,7 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
           <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)}
             hitSlop={8}
             style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-              backgroundColor: isDark ? colors.card : '#EEF2F7' }}>
+              backgroundColor: colors.card }}>
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
           </Pressable>
         </View>
@@ -447,7 +447,7 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
 
   return (
     <View style={{ borderRadius: 14, padding: 12, gap: 8,
-      backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Coins size={14} color={colors.textTertiary} />
         <View style={{ flex: 1 }}>
@@ -460,7 +460,7 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
           <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)}
             hitSlop={8}
             style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-              backgroundColor: isDark ? colors.card : '#EEF2F7' }}>
+              backgroundColor: colors.card }}>
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
           </Pressable>
         )}

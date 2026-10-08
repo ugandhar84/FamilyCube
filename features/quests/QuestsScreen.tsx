@@ -30,6 +30,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
+import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -47,6 +48,7 @@ import { DeclineModal } from './components/DeclineModal';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { AddQuestModal } from './components/AddQuestModal';
 import { EditQuestModal } from './components/EditQuestModal';
+import { QuestDetailModal } from './components/QuestDetailModal';
 import { CreateQuestModal } from '../hub/senior/CreateQuestModal';
 import { AutoBalanceCard, FomoCard, AdviceCard } from './components/AiFeatureCards';
 import {
@@ -93,7 +95,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
 } = {}) {
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
-  const { members, activeMemberId, setActiveMember } = useFamilyStore();
+  const { members, activeMemberId, setActiveMember, familyName } = useFamilyStore();
   const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant, reassignQuest, cheerQuest } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
@@ -191,6 +193,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   // comment for why this is separate from declineTarget/DeclineModal.
   const [cantMakeItTarget, setCantMakeItTarget] = useState<ChoreTask | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
+  const [detailTarget,   setDetailTarget]   = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
     title: string; category?: string; memberId?: string; startAt?: string;
@@ -825,48 +828,81 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   const cardBord = colors.border;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
-      {!hideHeader && (
-        <AppHeader
-          memberName={activeMember?.name}
-          memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={undefined}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
-      )}
-      {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={hideHeader ? [] : ['top']}>
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {/* The shared Ask Cube FAB (app/(tabs)/_layout.tsx) is visible on
           this tab too (morphs to a "+" for Tasks) and floats at
           bottom: insets.bottom + 74, ~52px tall — same overlap risk Hub's
           own scroll padding had before that fix. 40px wasn't enough
           clearance; 140 matches Hub's fix. */}
-      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
         {headerContent}
 
-        {/* ── Title ── */}
-        {!hideHeader && (
-          <View style={[s.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.title, { color: colors.textPrimary }]}>
-                {isKid ? 'My Chores' : 'Household Chores'}
-              </Text>
-              {isParent && (
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
-                  Add chores, approve completions & distribute coins
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
+        {/* ── Figma page chrome: eyebrow + h1 + quick-capture + 3-tile summary ── */}
+        {!hideHeader && (() => {
+          const today = todayLocal();
+          const doneToday = quests.filter(q =>
+            (q.status === 'done' || q.status === 'approved') &&
+            (q.completedAt?.startsWith(today) || q.approvedAt?.startsWith(today))
+          ).length;
+          const stillOpen = quests.filter(q =>
+            !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) && !q.isAdultTask
+          ).length;
+          const helpers = new Set(
+            quests.filter(q => q.assignedToId && !['archived','cancelled'].includes(q.status)).map(q => q.assignedToId!)
+          ).size;
 
-        {/* ── AI toggle + search/filter + add-chore, one shared row (wraps
-            to a second line if things are expanded at once) ── */}
+          return (
+            <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
+              {/* h1 — compact AppHeader above already shows avatar+greeting+name */}
+              <View style={{ marginBottom: 6 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
+                  {isKid ? 'My chores' : 'Tasks, shared'}
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                  {stillOpen > 0
+                    ? `${stillOpen} thing${stillOpen === 1 ? '' : 's'} left. Everyone can see what they own.`
+                    : 'All done for now — great work!'}
+                </Text>
+              </View>
+
+              {/* Quick-capture bar */}
+              {(isParent || isTeen) && !hideCreateButton && (
+                <TouchableOpacity
+                  onPress={() => setShowAddModal(true)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14,
+                    backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+                    paddingHorizontal: 14, paddingVertical: 13 }}>
+                  <Text style={{ flex: 1, fontSize: 15, color: colors.textTertiary }}>What needs doing?</Text>
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.pink, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 20, color: '#fff', lineHeight: 24 }}>+</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* 3-tile summary strip */}
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                <View style={{ flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: colors.pinkLight, padding: 12, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 19, fontWeight: '700', color: colors.textPrimary }}>{doneToday}</Text>
+                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>done today</Text>
+                </View>
+                <View style={{ flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: colors.primaryLight, padding: 12, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 19, fontWeight: '700', color: colors.textPrimary }}>{stillOpen}</Text>
+                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>still open</Text>
+                </View>
+                <View style={{ flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: colors.tealLight, padding: 12, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 19, fontWeight: '700', color: colors.textPrimary }}>{helpers}</Text>
+                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>people helping</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })()}
+
+        {/* ── AI toggle + search/filter — row below the new chrome ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 14, marginBottom: 10, gap: 8 }}>
           {isParent && !hideAiTrigger && (
             <AiEngineBanner
@@ -884,27 +920,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               colors={colors} isDark={isDark}
             />
           )}
-          {/* Scenario 1.5 — a Teen has the same self-creation rights as a
-              parent (broad autonomy; only 1.13's reward co-sign threshold
-              gates a high-value payout, not creation itself). */}
-          {(isParent || isTeen) && !hideCreateButton && (
-            <TouchableOpacity onPress={() => setShowAddModal(true)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-              <I.PlusCircle c={colors.success} />
-              <Text style={{ color: colors.success, fontSize: TYPO.label, fontWeight: '900' }}>+ Chore</Text>
-            </TouchableOpacity>
-          )}
-          {isSenior && (
-            <TouchableOpacity onPress={() => setShowSponsorModal(true)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-              <I.PlusCircle c={colors.teal} />
-              <Text style={{ color: colors.teal, fontSize: TYPO.label, fontWeight: '900' }}>Sponsor Chore</Text>
-            </TouchableOpacity>
-          )}
+          {/* + Chore / Sponsor Chore buttons moved to the Figma chrome header above */}
         </View>
 
         {/* ── Family Kudos — today's completed quests, tap to cheer ── */}
@@ -970,7 +986,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
           <>
 
             {/* ── Quest Cards — keyed by activeMemberId so expanded state resets on persona switch ── */}
-            <View key={activeMemberId ?? 'default'} style={{ paddingHorizontal: 14, gap: 10, marginTop: 12 }}>
+            <View key={activeMemberId ?? 'default'} style={{ paddingHorizontal: 14, gap: 10, marginTop: 4 }}>
               {filteredQuests.length === 0 && (
                 <View style={[s.emptyBox, { backgroundColor: cardBg, borderColor: cardBord }]}>
                   <Text style={[s.emptyText, { color: colors.textTertiary }]}>
@@ -1129,9 +1145,35 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                   setEditTarget={setEditTarget}
                   setDelegateTarget={setDelegateTarget}
                   setProofPhotoViewerUri={setProofPhotoViewerUri}
+                  onCardPress={q => setDetailTarget(q)}
                 />
               ))}
             </View>
+
+            {/* ── Figma "celebrate" card: most recent small win ── */}
+            {(() => {
+              const recentWin = quests
+                .filter(q => q.status === 'approved' && q.assignedToId)
+                .sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''))
+                [0];
+              const winner = recentWin ? members.find(m => m.id === recentWin.assignedToId) : null;
+              if (!recentWin || !winner) return null;
+              return (
+                <View style={{ marginHorizontal: 14, marginTop: 14, padding: 18, borderRadius: 22, backgroundColor: colors.amberLight }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.amber }}>SMALL WIN</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginTop: 5, marginBottom: 4 }}>
+                    {winner.name.split(' ')[0]} completed "{recentWin.title}"
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>A quick thank-you goes a long way.</Text>
+                  <TouchableOpacity
+                    onPress={() => handleKudosTap(recentWin)}
+                    style={{ alignSelf: 'flex-start', marginTop: 12, paddingVertical: 9, paddingHorizontal: 14,
+                      borderRadius: 12, backgroundColor: colors.card }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.amber }}>Send appreciation ✨</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </>
         )}
       </ScrollView>
@@ -1227,6 +1269,27 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         />
       )}
 
+      {/* Readonly detail view — single tap on any quest card */}
+      {detailTarget && (
+        <QuestDetailModal
+          quest={detailTarget}
+          onClose={() => setDetailTarget(null)}
+          canEdit={isParent}
+          isParent={isParent}
+          onDelete={isParent ? () => {
+            const q = detailTarget;
+            Alert.alert(
+              'Delete Chore',
+              `Remove "${q.title}"? This cannot be undone.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => { deleteQuest(q.id); setDetailTarget(null); } },
+              ],
+            );
+          } : undefined}
+        />
+      )}
+
       {/* Decline modal — appears when parent/senior taps Decline */}
       <DeclineModal
         visible={!!declineTarget}
@@ -1245,14 +1308,14 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
       />
 
       <PushbackSheet
-        target={pushbackSheet} colors={colors} isDark={isDark}
+        target={pushbackSheet}
         onClose={() => setPushbackSheet(null)}
         respondToParentQuest={respondToParentQuest}
       />
 
       {activeMember && (
         <DelegateSheet
-          target={delegateFromLocked} colors={colors} isDark={isDark}
+          target={delegateFromLocked}
           questPool={chores}
           members={members} active={activeMember}
           onClose={() => setDelegateFromLocked(null)}

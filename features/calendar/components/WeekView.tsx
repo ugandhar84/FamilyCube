@@ -8,11 +8,21 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { TYPO } from '@/constants/theme';
 import { fmtDateShort } from '@/lib/dates';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { EventCardRow } from './EventCard';
 import { toDateStr, addDays, DAY_SHORT } from './calendarDateHelpers';
+
+// Figma .week-events span color palette — matches .mint/.lavender/.peach/.sky/.butter
+const WEEK_EVENT_BG: Record<string, { light: string; dark: string }> = {
+  Sports:  { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)'   }, // mint
+  Medical: { light: '#f9ebe7', dark: 'rgba(223,97,60,0.25)'   }, // peach
+  Ride:    { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)'   }, // mint
+  Work:    { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)'  }, // lavender
+  Study:   { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)'  }, // sky
+  School:  { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)'  }, // sky
+  Event:   { light: '#fff2cf', dark: 'rgba(217,119,6,0.25)'   }, // butter
+  default: { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)'  }, // lavender
+};
 
 import Svg, { Path } from 'react-native-svg';
 const ChevronLeft = ({ c, size = 16 }: { c: string; size?: number }) => (
@@ -47,15 +57,20 @@ export default function WeekView({
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 4, gap: 10 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={() => onNavigateWeek(-1)} style={{ padding: 8 }}>
+    <View style={{ paddingHorizontal: 20, paddingTop: 8, gap: 9 }}>
+      {/* Figma week nav: ← 5–11 October → */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <TouchableOpacity onPress={() => onNavigateWeek(-1)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: colors.border }}>
           <ChevronLeft c={colors.textSecondary} size={16} />
         </TouchableOpacity>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>
+        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: colors.textPrimary }}>
           {fmtDateShort(toDateStr(weekStart))} – {fmtDateShort(toDateStr(weekEnd))}
         </Text>
-        <TouchableOpacity onPress={() => onNavigateWeek(1)} style={{ padding: 8 }}>
+        <TouchableOpacity onPress={() => onNavigateWeek(1)}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1, borderColor: colors.border }}>
           <ChevronRight c={colors.textSecondary} size={16} />
         </TouchableOpacity>
       </View>
@@ -68,26 +83,23 @@ export default function WeekView({
 
         return (
           <View key={dateKey} style={{
-            borderRadius: 18, padding: 12, gap: 8,
-            backgroundColor: isToday ? (isDark ? BRAND.purple + '18' : BRAND.purple + '0C') : (isDark ? colors.card : '#fff'),
-            borderWidth: 1, borderColor: isToday ? BRAND.purple + '50' : (isDark ? colors.border : '#F1F5F9'),
+            borderRadius: 19, padding: 12, gap: 8,
+            backgroundColor: isToday ? (isDark ? '#253862' : '#e9efff') : colors.card,
+            borderWidth: 1, borderColor: isToday ? (isDark ? '#344a7a' : '#c5d0f5') : (isDark ? colors.border : 'rgba(223,97,60,0.08)'),
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              {/* Figma week-day: "MON" + circle date */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isToday ? BRAND.purple : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  {DAY_SHORT[(day.getDay() + 6) % 7]}
-                </Text>
-                {isToday ? (
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>{day.getDate()}</Text>
-                  </View>
-                ) : (
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{day.getDate()}</Text>
-                )}
+                <View style={{ minWidth: 48, minHeight: 48, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#F4F3F7', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                    {DAY_SHORT[(day.getDay() + 6) % 7]}
+                  </Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textPrimary, marginTop: 2 }}>{day.getDate()}</Text>
+                </View>
               </View>
               {onAddDay ? (
                 <TouchableOpacity onPress={() => onAddDay(dateKey)}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>+ Add</Text>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#99b3ff' : '#294fc7' }}>+ Add</Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>
@@ -96,24 +108,30 @@ export default function WeekView({
               )}
             </View>
 
-            {/* Reference's per-event row: border + light tint together
-                (not just a tinted background), same role-color pairing —
-                now the shared EventCardRow('inline') component. */}
+            {/* Figma .week-events span — minHeight 34, borderRadius 10, colored bg pill */}
             {dayEvs.length === 0 ? (
               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontStyle: 'italic' }}>No events</Text>
             ) : (
-              <View style={{ gap: 6 }}>
-                {dayEvs.map(ev => (
-                  <EventCardRow
-                    key={ev.id}
-                    ev={ev}
-                    members={members}
-                    colors={colors} isDark={isDark}
-                    onPress={() => onSelectEvent(ev)}
-                    onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
-                    timeStyle="inline"
-                  />
-                ))}
+              <View style={{ gap: 5 }}>
+                {dayEvs.map(ev => {
+                  const cat = ev.category ?? 'default';
+                  const palette = WEEK_EVENT_BG[cat] ?? WEEK_EVENT_BG.default;
+                  const bg = isDark ? palette.dark : palette.light;
+                  const timeStr = ev.time ? ev.time.slice(0, 5) : '';
+                  return (
+                    <TouchableOpacity
+                      key={ev.id}
+                      onPress={() => onSelectEvent(ev)}
+                      onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
+                      activeOpacity={0.78}
+                      style={{ minHeight: 34, borderRadius: 10, backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center' }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#FDFCF9' : '#2C2722' }} numberOfLines={1}>
+                        {timeStr ? `${timeStr} · ${ev.title}` : ev.title}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
           </View>

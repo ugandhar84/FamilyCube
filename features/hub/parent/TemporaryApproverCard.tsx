@@ -104,7 +104,7 @@ export function TemporaryApproverCard({
             <Pressable onPress={() => setPickingFor(m.id)}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10,
-                backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+                backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
                 {m.name.split(' ')[0]} ({m.role === 'senior' ? 'Grandparent' : 'Teen'})
               </Text>

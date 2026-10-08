@@ -1330,10 +1330,28 @@ function ensureRealtime(
             setState({ chores: state.chores.filter(c => c.id !== chore.id) });
             return;
           }
+          // Live-confirmed race: this used to unconditionally replace the
+          // local chore with whatever this event carried, with no ordering
+          // guard. Postgres realtime delivers UPDATE events in commit order,
+          // but the client can still process them out of order relative to
+          // its OWN just-finished writes — e.g. QuestDetailModal's reassign-
+          // then-coin-patch sequence fires two updateChore calls back to
+          // back; the realtime echo for the FIRST write can arrive and
+          // apply here in between the two, and since it carries that
+          // earlier updated_at, it silently regressed local state's
+          // updatedAt backward. The second updateChore call then built
+          // update_chore_task_checked's p_expected_updated_at from this
+          // rolled-back timestamp and the server correctly rejected it as
+          // stale_write — even though nothing else had touched the row.
+          // Only apply an incoming row when it's not older than what's
+          // already local, so a local write's own realtime echo can never
+          // clobber a newer local write that landed right after it.
           setState({
-            chores: state.chores.map(c =>
-              c.id === String(newRow.id) ? chore : c
-            ),
+            chores: state.chores.map(c => {
+              if (c.id !== String(newRow.id)) return c;
+              if (c.updatedAt && chore.updatedAt && chore.updatedAt < c.updatedAt) return c;
+              return chore;
+            }),
           });
         } else if (eventType === 'DELETE') {
           setState({ chores: state.chores.filter(c => c.id !== String(oldRow.id)) });
@@ -1958,7 +1976,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const CHECKED_FIELDS = ['title', 'description', 'parentNote', 'dueDate', 'dueTime', 'coinsReward', 'basePoints'] as const;
     const updateKeys = Object.keys(updates);
     if (prevChore && updateKeys.length > 0 && updateKeys.every(k => (CHECKED_FIELDS as readonly string[]).includes(k))) {
-      const { error } = await supabase.rpc('update_chore_task_checked', {
+      const callChecked = (expectedUpdatedAt: string | null) => supabase.rpc('update_chore_task_checked', {
         p_chore_id: id,
         p_title: 'title' in updates ? (updates as any).title ?? null : null,
         p_has_title: 'title' in updates,
@@ -1974,8 +1992,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         p_has_coins_reward: 'coinsReward' in updates,
         p_base_points: 'basePoints' in updates ? (updates as any).basePoints ?? null : null,
         p_has_base_points: 'basePoints' in updates,
-        p_expected_updated_at: prevChore.updatedAt ?? null,
+        p_expected_updated_at: expectedUpdatedAt,
       });
+      let { error } = await callChecked(prevChore.updatedAt ?? null);
+      // A stale_write here is very often spurious, not a real conflict — the
+      // realtime-echo race fixed above in ensureRealtime's UPDATE handler is
+      // one source, and a caller firing two checked writes back to back
+      // (e.g. QuestDetailModal reassign-then-coin-patch) in the same tick
+      // before this function's own local updatedAt stamp (below) has
+      // propagated is another. Rather than fail the whole write and leave
+      // the user's edit silently undone (confirmed live: a coin-add during
+      // reassign got rejected this way and the chore was stuck at 0 coins
+      // with nothing to retry it), re-read the row's REAL current
+      // updated_at and retry once against that — a genuine third-party
+      // conflict will still fail the second time and surface the toast, but
+      // the common spurious case now just succeeds silently instead of
+      // requiring the user to redo the edit from scratch.
+      if (error?.message?.includes('stale_write')) {
+        const { data: freshRow } = await supabase.from('chore_tasks').select('updated_at').eq('id', id).maybeSingle();
+        if (freshRow?.updated_at) {
+          ({ error } = await callChecked(freshRow.updated_at));
+        }
+      }
       if (error) {
         console.warn('[choreStore] update_chore_task_checked FAILED', error.message);
         const isStale = error.message?.includes('stale_write');
@@ -2083,7 +2121,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         showToast("Couldn't save — check your connection and try again", 'error');
         return;
       }
-      set(s => ({ chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c) }));
+      // Live-confirmed bug: this write never refreshed local updatedAt after
+      // a successful write, even though the DB row's own updated_at moves
+      // on every UPDATE (trigger-stamped). A caller firing two sequential
+      // updateChore calls in a row (e.g. QuestDetailModal's reassign-with-
+      // coins-and-note flow: reassignQuest's own write, then a follow-up
+      // coin/note patch) had its SECOND call build update_chore_task_
+      // checked's p_expected_updated_at from this now-stale local value —
+      // the server correctly rejected it as 'stale_write' even though
+      // nothing else had actually touched the row in between; the local
+      // snapshot was just never told the first write had happened.
+      // Stamping a fresh local updatedAt here keeps every subsequent
+      // checked-write call in this same tick correctly in sync.
+      const nowIso = new Date().toISOString();
+      set(s => ({ chores: s.chores.map(c => c.id === id ? { ...c, ...updates, updatedAt: nowIso } : c) }));
       AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     }
     // Keep a chore's linked calendar_events row (addChore's materialization,
@@ -2586,16 +2637,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !['todo', 'in_progress'].includes(chore.status)) return false;
 
-    // A recurring chore can't be submitted for a cycle that hasn't started
-    // yet (e.g. tapping today on next month's instance) — on-time and late
-    // (overdue/catch-up) submission are both fine, matching how "overdue"
-    // is already defined elsewhere (dueDate <= today). One-time chores
-    // (frequency 'once', or no recurrenceRule) are never gated by this.
-    // Purely a UX pre-check (no exploit in submitting "early" — the RPC
-    // below doesn't re-derive this), left client-side.
+    // Recurring chores block submitting a cycle whose dueDate is still in
+    // the future — but the ORIGINAL version blocked ANY early completion,
+    // even "finish this week's chore a day or two before its due date,"
+    // which is a completely normal thing to do. Live direction: "we
+    // should click the same day as soon as we complete this week — give a
+    // grace time for each recurring [type]." Fixed by giving each
+    // frequency a grace window scoped to its own interval instead of a
+    // flat "due date or later" requirement — a weekly chore can be
+    // completed any day within the week leading up to its due date, a
+    // monthly one any day that month, daily chores were never affected
+    // (their due date IS today, by construction). Submitting for a cycle
+    // further out than that (e.g. tapping today on a due-date three weeks
+    // from now) still correctly blocks — this only widens "early" to mean
+    // "within the current cycle," not "anytime."
     const freq = chore.recurrenceRule?.frequency;
-    if (freq && freq !== 'once' && chore.dueDate && chore.dueDate > localDateStr(new Date())) {
-      return false;
+    if (freq && freq !== 'once' && chore.dueDate) {
+      const graceDays = freq === 'weekly' ? 7 : freq === 'monthly' ? 31 : 0;
+      const dueMs = new Date(chore.dueDate + 'T00:00:00').getTime();
+      const graceStartMs = dueMs - graceDays * 24 * 60 * 60 * 1000;
+      const todayMs = new Date(localDateStr(new Date()) + 'T00:00:00').getTime();
+      if (todayMs < graceStartMs) return false;
     }
     if (chore.requiresPhotoProof && !opts?.photoUrl && !chore.submissionPhotoUrl) return false;
 
@@ -2724,9 +2786,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         // needed" push alongside everyone else, which isn't a clean
         // escalation to someone new and could read as the app asking
         // that same parent to reconsider their own decision.
-        const approverIds = (useFamilyStore.getState().members as any[])
+        //
+        // Live direction: "if no other parent then it will just go to
+        // same parent" — the RPC-side guard (resolve_redo_dispute) now
+        // has the matching fallback (migration
+        // 20260989000000_redo_dispute_single_parent_fallback.sql). This
+        // was the client-side half of the same gap: a single-parent
+        // family (no senior either) had approverIds.length === 0, so the
+        // whole notify call was skipped — nobody, including the reviewing
+        // parent themself, was ever told the dispute existed. Fall back to
+        // the reviewing parent when there's genuinely no one else.
+        const otherApprovers = (useFamilyStore.getState().members as any[])
           .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId && m.id !== chore.reviewedById)
           .map(m => m.id);
+        const approverIds = otherApprovers.length > 0
+          ? otherApprovers
+          : (chore.reviewedById && chore.reviewedById !== memberId ? [chore.reviewedById] : []);
         if (approverIds.length) {
           supabase.functions.invoke('family-notifier', {
             body: {

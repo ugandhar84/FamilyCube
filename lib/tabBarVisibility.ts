@@ -7,7 +7,7 @@ let _visible = true;
 export function hideTabBar() {
   if (!_visible) return;
   _visible = false;
-  Animated.timing(tabBarAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+  Animated.timing(tabBarAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start();
 }
 
 export function showTabBar() {

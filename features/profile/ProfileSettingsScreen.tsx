@@ -1796,7 +1796,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           "APPEARANCE" labels overlapping the page title]. Mobile
           (columns=1) keeps the original 16 — its own hero card already
           sits between the title and first section there. */}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns > 1 ? 28 : 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns > 1 ? 28 : 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,

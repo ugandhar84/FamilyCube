@@ -19,8 +19,6 @@ import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
-import { ChoreHistorySheet } from '@/features/tasks/components/ChoreHistorySheet';
-import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   q: Quest;
@@ -59,6 +57,7 @@ interface Props {
   setEditTarget: (q: Quest | null) => void;
   setDelegateTarget: (t: { id: string; title: string } | null) => void;
   setProofPhotoViewerUri: (uri: string | null) => void;
+  onCardPress?: (q: Quest) => void;
 }
 
 // The full per-quest card — header row (avatar stack/title/status),
@@ -69,7 +68,7 @@ export function QuestCard({
   isParent, isSenior, isKid, isKidOrTeen, isParentOrSenior, myId, activeMember,
   isAssignedTo, isClaiming, handleClaim, openSubmitSheet, setDeclineTarget, onCantMakeIt,
   approveQuest, reassignQuest, approveParticipant, reopenParticipant,
-  updateQuest, deleteQuest, setEditTarget, setDelegateTarget, setProofPhotoViewerUri,
+  updateQuest, deleteQuest, setEditTarget, setDelegateTarget, setProofPhotoViewerUri, onCardPress,
 }: Props) {
   const assignee = members.find(m => m.id === q.assignedToId);
   // Persisted (chore_tasks.gp_withdrawn_ids), per-GP "no guilt" pass on a
@@ -107,7 +106,7 @@ export function QuestCard({
   // matching the original inline consts' behavior of evaluating false in
   // that same edge case.
   const {
-    canClaim, canSubmit, canResubmit, canKidDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
+    canClaim, canSubmit, canResubmit, canKidDecline, canAdultDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
     canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
   } = deriveQuestActions(
     q,
@@ -128,7 +127,6 @@ export function QuestCard({
     q.priority === 'urgent' ? colors.danger : BRAND.purple;
 
   const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt).getTime() > now);
-  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Whether the action strip has ANYTHING to render — with the
   // redundant Edit button gone (long-press covers it now), an
@@ -138,7 +136,7 @@ export function QuestCard({
     !!q.pendingTerms ||
     canClaim || canAcceptGp || canGpClaimPool || canGpDone ||
     (canSubmit && !canAcceptGp && q.participants.length <= 1) ||
-    canResubmit || canKidDecline || canGiveBack ||
+    canResubmit || canKidDecline || canAdultDecline || canGiveBack ||
     (canApprove && q.participants.length <= 1) ||
     (isPoolCard && isParentOrSenior) ||
     (isParent && q.isAdultTask && isTodoCard && !q.assignedToId) ||
@@ -149,12 +147,15 @@ export function QuestCard({
   const claimantIds    = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
   const claimants      = claimantIds.map(id => members.find(m => m.id === id)).filter((m): m is typeof members[0] => !!m);
   const avatarSiblings = members.map(m => m.name);
-  const AVSIZE    = 30;
-  const AVOVERLAP = 16;
+  const AVSIZE    = 24;
+  const AVOVERLAP = 14;
   const stackW    = claimants.length > 0 ? AVSIZE + (claimants.length - 1) * AVOVERLAP : 0;
 
+  // Normalise dueDate — may be full ISO ("2026-10-06T22:30:00Z") or plain "YYYY-MM-DD"
+  const dueDateStr = q.dueDate ? (q.dueDate.includes('T') ? q.dueDate.split('T')[0] : q.dueDate) : undefined;
+
   // Due date chip — urgency coloring
-  const dueMsRaw    = q.dueDate ? parseLocalDate(q.dueDate).getTime() : null;
+  const dueMsRaw    = dueDateStr ? parseLocalDate(dueDateStr).getTime() : null;
   const todayStart  = new Date(); todayStart.setHours(0, 0, 0, 0);
   const todayEnd    = new Date(); todayEnd.setHours(23, 59, 59, 999);
   const tomorrowEnd = new Date(todayEnd); tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
@@ -173,16 +174,26 @@ export function QuestCard({
   // actually late). Softer wording here so it reads as chore-level status,
   // not a personal judgment on whoever's looking at it.
   const isMultiSlot = (q.maxClaimants ?? 1) > 1;
-  const dueLabel = isOverdue    ? (isMultiSlot ? '⚠ Chore overdue' : `⚠ ${q.dueDate ? fmtDateShort(q.dueDate) : 'Overdue'}`)
-                 : isDueToday  ? '⚡ Today'
-                 : isDueTomorrow ? 'Tomorrow'
-                 : q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight';
+  // Due label — "Today · 8:00 AM" / "Oct 6" / "⚠ Oct 6"
+  const dueTimeStr = (() => {
+    if (!q.dueTime) return '';
+    const d = new Date(`2000-01-01T${q.dueTime}`);
+    if (isNaN(d.getTime())) return '';
+    return ` · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+  })();
+  const dueLabel = isOverdue
+    ? `⚠ ${dueDateStr ? fmtDateShort(dueDateStr) : 'Overdue'}${dueTimeStr}`
+    : isDueToday
+      ? `Today${dueTimeStr}`
+      : isDueTomorrow
+        ? `Tomorrow${dueTimeStr}`
+        : dueDateStr
+          ? `${fmtDateShort(dueDateStr)}${dueTimeStr}`
+          : '';
 
   // Status line — concise, no "due" repetition (due is in chip on right)
   const bonusMs = hasBonus && q.bonusExpiresAt ? new Date(q.bonusExpiresAt).getTime() - Date.now() : 0;
-  const bonusStatusSuffix = hasBonus && bonusMs > 0
-    ? ` · ⚡ Grab it before bonus ends!`
-    : '';
+  const bonusStatusSuffix = '';
 
   // How early/late the submission landed vs. the deadline
   // (dueDate + dueTime, or end-of-day if no time was set) —
@@ -191,8 +202,8 @@ export function QuestCard({
   // in late, in days/hours down to the actual date+hour, not
   // just a vague "on time"/"late" label.
   const submitTimingLabel = (() => {
-    if (!q.submittedAt || !q.dueDate) return '';
-    const deadline = parseLocalDate(q.dueDate);
+    if (!q.submittedAt || !dueDateStr) return '';
+    const deadline = parseLocalDate(dueDateStr);
     if (q.dueTime) {
       const parsed = parseTimeInput(q.dueTime);
       if (parsed) {
@@ -237,138 +248,94 @@ export function QuestCard({
       ? ' · reward pending parent review'
       : q.participants.length > 1 ? ` · ${q.participants.length} paid` : q.coins > 0 ? ` · +${q.coins} paid` : '';
   const statusLine = isReview
-    ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
+    ? `Submitted for review`
     : isDoneCard
-      ? `Approved${submitTimingLabel}${paidSuffix}`
+      ? `Approved · ${dueDateStr ? fmtDateShort(dueDateStr) : (q as any).approvedAt ? new Date((q as any).approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Done'}`
       : isDeclined
-        ? 'Declined ❌'
+        ? 'Declined'
         : isPoolCard && claimants.length > 1
-          ? `${claimants.length} kids racing for it${bonusStatusSuffix}`
+          ? `${claimants.length} kids racing for it`
           : isPoolCard && claimants.length === 1
-            ? `${claimants[0].name} claimed it`
+            ? `${claimants[0].name.split(' ')[0]} claimed it`
             : isPoolCard
-              ? `Open — claim it now${bonusStatusSuffix}`
+              ? 'Open — claim it'
               : q.claimedAt
                 ? `In progress · ${timeAgo(q.claimedAt)}`
-                : hasBonus
-                  ? `Not started${bonusStatusSuffix}`
-                  : (q as any).createdAt
-                    ? `Added ${timeAgo((q as any).createdAt)}`
-                    : 'Not started';
+                : 'Not started';
+
+  // Coin display — skip for adult/GP tasks
+  const showCoin = q.coins > 0 && !q.isAdultTask && q.questType !== 'grandparent_quest'
+    && (() => { const r = members.find(m => m.id === q.assignedToId)?.role; return r !== 'parent' && r !== 'senior'; })();
+  const coinLocked = isReview || q.rewardPendingReview;
+  const coinColor  = coinLocked ? BRAND.purple : BRAND.amber;
 
   const cardHeader = (
-    <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54 }}>
-        {/* Overlapping avatar stack */}
-        {claimants.length > 0 && (
-          <View style={{ width: stackW, height: AVSIZE, flexShrink: 0 }}>
-            {claimants.slice(0, 4).map((m, i) => (
-              <View key={m.id} style={{ position: 'absolute', left: i * AVOVERLAP, zIndex: claimants.length - i }}>
-                <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={avatarSiblings} size={AVSIZE} ringColor={accentColor} ringWidth={1.5} />
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Title + status */}
-        <View style={{ flex: 1 }}>
-          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
-            {q.recurrence !== 'once' && (
-              <Text style={{ fontSize: 12 }} accessibilityLabel={`Repeats ${q.recurrence}`}>🔄</Text>
-            )}
-            <Text style={{ fontSize: TYPO.label, color: isDoneCard ? colors.success : colors.textSecondary, fontWeight: isDoneCard ? '700' : '400', flexShrink: 1 }} numberOfLines={1}>
-              {statusLine}
-            </Text>
-          </View>
-          {/* Full claimed → submitted → approved timeline — previously only
-              shown once the card was expanded (the collapsed body below),
-              so a parent scanning a long Completed list never saw it
-              without tapping into every card individually. Kid's own view
-              renders through this exact same component, so this was never
-              actually a role difference in the code — but making it
-              visible in the always-shown header, not just the collapsed
-              body, is the fix that actually matches what "show the detail
-              like kid's chores" is asking for. */}
-          {isDoneCard && (q.claimedAt || q.submittedAt) && (
-            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }} numberOfLines={1}>
-              {/* Was raw new Date(ts) — Postgres timestamps ("2026-08-24
-                  19:53:09+00") return Invalid Date from RN's JS engine,
-                  which toLocaleDateString/toLocaleTimeString then render
-                  as the literal text "Invalid Date" (same root cause as
-                  the celebration-replay bug found live this session).
-                  parseDbTime normalizes the shape before parsing. */}
-              {q.claimedAt && `Claimed ${parseDbTime(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${parseDbTime(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
-              {q.claimedAt && q.submittedAt ? ' → ' : ''}
-              {q.submittedAt && `Submitted ${parseDbTime(q.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${parseDbTime(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
-              {q.submittedAt && (q as any).approvedAt ? ' → ' : ''}
-              {(q as any).approvedAt && `Done ${parseDbTime((q as any).approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${parseDbTime((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
-            </Text>
-          )}
-          {/* Cheer indicator — previously nothing anywhere showed whether a
-              chore had been cheered, so a correctly-recorded cheer (write
-              confirmed in the DB) looked identical to an uncheered chore on
-              every card, reading as "the cheer didn't work" even when it did. */}
-          {(q.cheers ?? []).length > 0 && (
-            <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
-              🎉 Cheered by {(q.cheers ?? [])
-                .map(c => members.find(m => m.id === c.memberId)?.name?.split(' ')[0])
-                .filter(Boolean)
-                .join(', ')}
-            </Text>
-          )}
-        </View>
-
-        {/* Right: due chip + coins (done cards show their pill
-            pinned to the card's bottom-right instead — see
-            below — so this column only carries the due chip
-            and in-progress coin pill here). */}
-        <View style={{ alignItems: 'flex-end', gap: 4 }}>
-          <TouchableOpacity onPress={() => setHistoryOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="time-outline" size={16} color={colors.textTertiary} />
-          </TouchableOpacity>
-          {(isTodoCard || isPoolCard || isReview) && (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
-              backgroundColor: dueColor + '14', borderWidth: 1, borderColor: dueColor + '30' }}>
-              <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: dueColor, letterSpacing: 0.2 }}>{dueLabel}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56 }}>
+      {/* Assignee avatar(s) — overlapping stack to the left of title */}
+      {claimants.length > 0 && (
+        <View style={{ position: 'relative', height: AVSIZE, width: stackW, marginRight: 8, flexShrink: 0 }}>
+          {claimants.slice(0, 3).map((m, i) => (
+            <View key={m.id} style={{ position: 'absolute', left: i * AVOVERLAP,
+              borderWidth: 1.5, borderColor: isDark ? '#1D1A24' : '#fff', borderRadius: AVSIZE / 2 }}>
+              <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={AVSIZE} />
             </View>
-          )}
-          {!isDoneCard && q.coins > 0 && (() => {
-            const role = members.find(m => m.id === q.assignedToId)?.role;
-            const isAdult = role === 'parent' || role === 'senior';
-            const isGPQuest = q.questType === 'grandparent_quest';
-            if (isAdult || isGPQuest || q.isAdultTask) return null;
-            const coinAmt = hasBonus ? q.coins + q.bonusCoins : q.coins;
-            // rewardPendingReview (1.13's teen co-sign threshold) reuses
-            // the same "locked" purple/🔒 treatment isReview already uses —
-            // both mean the same thing to the teen looking at this pill:
-            // the coins aren't really theirs yet. Without this, a flagged
-            // quest showed the normal amber/🪙 pill from the moment it was
-            // created, identical to any other quest, with no hint the
-            // reward needs a parent's sign-off before it'll actually pay.
-            const locked = isReview || q.rewardPendingReview;
-            const coinColor = locked ? BRAND.purple : BRAND.amber;
-            return (
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 3,
-                paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
-                backgroundColor: coinColor + '14', borderWidth: 1, borderColor: coinColor + '30',
-              }}>
-                <Text style={{ fontSize: 11 }}>{locked ? '🔒' : '🪙'}</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: coinColor }}>{coinAmt}</Text>
-              </View>
-            );
-          })()}
-        </View>
-      </View>
-
-
-      {/* Flash bonus badge — full width, below header row so it never overlaps title */}
-      {hasBonus && q.bonusExpiresAt && (
-        <View style={{ marginTop: 6 }}>
-          <FlashBonusBadge bonusCoins={q.bonusCoins} expiresAt={q.bonusExpiresAt} />
+          ))}
         </View>
       )}
+
+      {/* Left: title + one-line status */}
+      <View style={{ flex: 1, paddingRight: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: isDoneCard ? colors.textSecondary : colors.textPrimary }} numberOfLines={1}>{q.title}</Text>
+          {q.recurrence && q.recurrence !== 'once' && (
+            <Text style={{ fontSize: 11 }}>🔄</Text>
+          )}
+        </View>
+        <Text style={{ fontSize: 13, color: isDoneCard ? colors.textTertiary : colors.textSecondary, marginTop: 3 }} numberOfLines={1}>
+          {statusLine}
+        </Text>
+        {(q.cheers ?? []).length > 0 && (
+          <Text style={{ fontSize: 11, color: BRAND.amber, fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
+            🎉 {(q.cheers ?? []).map(c => members.find(m => m.id === c.memberId)?.name?.split(' ')[0]).filter(Boolean).join(', ')}
+          </Text>
+        )}
+      </View>
+
+      {/* Right: due date chip / coin chip / bonus line — stacked */}
+      <View style={{ alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+        {/* Due chip — shown on live cards; done cards show just the date in statusLine */}
+        {(isTodoCard || isPoolCard || isReview) && !!dueLabel && (
+          <View style={{
+            paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20,
+            backgroundColor: isDark ? '#2A2A2A' : '#EEECF2',
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: '500', color: isOverdue ? colors.danger : colors.textPrimary }}>
+              {dueLabel}
+            </Text>
+          </View>
+        )}
+        {/* Coin chip */}
+        {showCoin && (
+          <View style={{
+            paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+            backgroundColor: isDark ? '#2A2209' : '#FDF3CE',
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: coinLocked ? BRAND.purple : '#92660A' }}>
+              {coinLocked ? '🔒 ' : ''}{q.coins} coins
+            </Text>
+          </View>
+        )}
+        {/* Bonus line — small amber text, matches Figma "+5 before 8:30 AM" */}
+        {hasBonus && q.bonusExpiresAt && !isDoneCard && (() => {
+          const expiresDate = new Date(q.bonusExpiresAt);
+          const timeStr = expiresDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+          return (
+            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.danger, textAlign: 'right' }}>
+              +{q.bonusCoins} before {timeStr}
+            </Text>
+          );
+        })()}
+      </View>
     </View>
   );
 
@@ -424,11 +391,12 @@ export function QuestCard({
       friction={2}
     >
     <CollapsibleQuestCard accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
-      onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
+      onSingleTap={onCardPress ? () => onCardPress(q) : undefined}
       onLongPress={canEdit ? () => setEditTarget(q) : undefined}
       initiallyExpanded={q.id === questId}
       header={cardHeader}
       dimmed={isDoneCard}
+      isOverdue={isOverdue}
     >
       {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
 
@@ -573,7 +541,7 @@ export function QuestCard({
           {q.dueDate && (
             <View style={[s.badge, { backgroundColor: dueColor + '14', borderColor: dueColor + '40' }]}>
               <Text style={[s.badgeText, { color: dueColor }]}>
-                📅 {fmtDateShort(q.dueDate)}{q.dueTime ? ` · ${fmt12h(q.dueTime)}` : ''}
+                📅 {fmtDateShort(dueDateStr!)}{q.dueTime ? ` · ${fmt12h(q.dueTime)}` : ''}
               </Text>
             </View>
           )}
@@ -950,8 +918,11 @@ export function QuestCard({
         )}
 
         {/* Kid: Decline / refuse an assigned quest — same label as the Hub's
-            GP-quest card ("Decline") when this is that same choice */}
-        {!q.pendingTerms && canKidDecline && (
+            GP-quest card ("Decline") when this is that same choice.
+            Previously kid/teen-only (canKidDecline) — an adult assigned a
+            parent_only_quest/isAdultTask by someone ELSE had no decline
+            path at all; canAdultDecline covers that same shape. */}
+        {!q.pendingTerms && (canKidDecline || canAdultDecline) && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger }]}
             onPress={() => {
@@ -968,7 +939,7 @@ export function QuestCard({
             — kids/teens had to go through the heavier Can't-Make-It flow
             (pick a reason, optionally hand it to someone) even for a
             plain change of mind on their own pool claim. */}
-        {!q.pendingTerms && canGiveBack && !canKidDecline && (
+        {!q.pendingTerms && canGiveBack && !canKidDecline && !canAdultDecline && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.textTertiary }]}
             onPress={() => useChoreStore.getState().giveBackChore(q.id, myId ?? '')}
@@ -1233,9 +1204,6 @@ export function QuestCard({
       )}{/* action strip */}
     </CollapsibleQuestCard>
     </Swipeable>
-    {historyOpen && (
-      <ChoreHistorySheet choreId={q.id} title={q.title} members={members} onClose={() => setHistoryOpen(false)} />
-    )}
     </View>
   );
 }

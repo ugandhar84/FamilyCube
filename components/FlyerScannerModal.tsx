@@ -1018,7 +1018,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
               return (
                 <Pressable key={k.id} onPress={() => setTTKid(k.id)}
                   style={[f.kidChip, { backgroundColor: sel ? BRAND.purple + '20' : colors.surface, borderColor: sel ? BRAND.purple : colors.border }]}>
-                  <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.purple : colors.textTertiary} />
+                  <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.amber : colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.purple : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
                 </Pressable>
               );

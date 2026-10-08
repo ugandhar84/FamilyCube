@@ -611,7 +611,7 @@ function otherParentIds(excludeIds: (string | null | undefined)[]): string[] {
 }
 
 function notifyRideAssignment(
-  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened',
+  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened' | 'ride_driver_needed',
   memberIds: string[],
   excludeMemberId: string | null,
   payload: Record<string, unknown>,
@@ -1102,6 +1102,19 @@ function updateEventNotifications(
         imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
       });
     }
+    // Same driverless-escalation fix as declineEventAssignment's own RPC
+    // path above — this is the general updateEvent path's equivalent
+    // decline transition, and had the identical gap: only
+    // prevEvent.updatedBy (one prior actor) ever heard about it, never
+    // every parent, when the decline left nobody driving at all.
+    if (justDeclinedDriver && !updated.driverId) {
+      const allParents = otherParentIds([actorId]);
+      if (allParents.length) {
+        notifyRideAssignment('ride_driver_needed', allParents, actorId, {
+          eventTitle: updated.title, eventId: updated.id, byName: declinerName,
+        });
+      }
+    }
   }
 
   // 4. Final confirmation to the kid — exactly once, only on the actual
@@ -1222,6 +1235,15 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
 // undefined through the partial-update path.
 const NOT_NULL_EMPTY_DEFAULT: Partial<Record<keyof FamilyEvent, unknown>> = {
   memberIds: [], grandparentPassedIds: [], rsvps: {},
+  // Same class of bug as memberIds above, newly confirmed live: all_day is
+  // NOT NULL on calendar_events with no DB-side default. A partial update
+  // sending allDay: undefined (e.g. JustDescribeItEventScreen's edit save
+  // using `evAllDay || undefined`) previously fell through to toRowPartial's
+  // bare `null` fallback and hard-failed the whole update —
+  // 'null value in column "all_day" ... violates not-null constraint' —
+  // silently discarding every other field in the same patch (title, notes,
+  // pickupLocation/dropLocation included), not just allDay itself.
+  allDay: false,
 };
 
 function toRowPartial(ev: FamilyEvent, keys: Iterable<keyof FamilyEvent>): Record<string, unknown> {
@@ -2456,6 +2478,22 @@ export const useEventStore = create<EventState>((set, get) => ({
           eventTitle: fresh.title, eventId: fresh.id, byName: declinerName,
           imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
         });
+      }
+      // Live-reported gap: when a DRIVER decline leaves the ride with no
+      // replacement at all, only prevEvent.updatedBy (whoever last touched
+      // it — often just one parent) heard anything. A co-parent who never
+      // touched the event had no way to find out the ride was now
+      // unassigned until they happened to open it. Driverless rides are a
+      // household-wide problem, not a one-person problem — escalate to
+      // EVERY parent, not just the single prior actor, the moment decline
+      // leaves nobody driving.
+      if (role === 'driver' && !fresh.driverId) {
+        const allParents = otherParentIds([memberId]);
+        if (allParents.length) {
+          notifyRideAssignment('ride_driver_needed', allParents, memberId, {
+            eventTitle: fresh.title, eventId: fresh.id, byName: declinerName,
+          });
+        }
       }
     }
     return true;

@@ -1,235 +1,202 @@
-// ── Family Cube — Design Tokens (Kinfolk palette) ────────────────────────────
+// ── Family Cube — Design Tokens ───────────────────────────────────────────────
 //
-// Adapted from the "Kinfolk" reference: warm editorial terracotta/sage/
-// lavender/amber on cashmere neutrals, replacing the earlier cool purple/
-// teal/pink cube palette. Token NAMES are unchanged (primary/parent/kid/
-// accent/etc.) so no component code needs to change — only the hex values
-// moved. See components/FamilyCubeLogo.tsx's BRAND constant, which mirrors
-// these same values for call sites that reach for BRAND.* directly instead
-// of useTheme().
+// "Kinfolk" palette — warm terracotta / sage / amber / lavender on cashmere.
+// Token names map to brand roles; hex values are the Kinfolk set.
+// FamilyCubeLogo.tsx's BRAND constant mirrors these same light-mode values
+// for call sites that can't use hooks — keep both in sync if this table changes.
 //
 // Role mapping:
-//   primary (terracotta) — main brand, primary actions
-//   sage    (parent/teal slot) — calm/positive, parent role accent
-//   amber   (kid slot)         — warmth, kid role accent
-//   lavender (accent/pink slot) — third accent, highlights
-//
-// CONNECT. ORGANIZE. CARE. GROW.
+//   primary  — terracotta (#DF613C) — main brand, primary actions
+//   teal     — sage (#3D7A5A)       — CONNECT, parent role accent
+//   amber    — amber (#D97706)      — ORGANIZE, kid role accent
+//   pink     — lavender (#7B5EA7)   — CARE, third accent
+//   navy     — warm near-black (#2C2722) — wordmark / text primary
 
 export const lightColors = {
-  // ── Brand primaries — Dusty Terracotta ──────────────────────────────────
-  // "Bold tiles" palette (approved after live mock comparison — see
-  // palette_mock artifact, session 2026-08-28): *Light tint tokens are the
-  // tile/pill/badge BACKGROUNDS most of the screen's colored area actually
-  // consists of — punching up only the small icon-circle colors and leaving
-  // these washed-out tints barely moved was why an earlier saturation pass
-  // read as "no different from current" (direct user feedback on the first
-  // mock). These are meaningfully darker/more saturated than a typical
-  // "light" tint, by design.
-  primary:      '#BF4E12',        // Bold saturated terracotta (was dusty #CD7B57)
-  primaryLight: '#EACAAC',
-  primaryDark:  '#8A3A0D',
-  primaryMid:   '#DA9977',
-  primaryText:  '#8A3A0D',
+  // ── Brand primary — terracotta ─────────────────────────────────────────
+  primary:      '#DF613C',
+  primaryLight: '#FBEADF',
+  primaryDark:  '#B84D2C',
+  primaryMid:   '#E07356',
+  primaryText:  '#DF613C',
 
-  // ── Teal slot — Muted Sage (Connect / calm / parent) ────────────────────
-  teal:         '#3C805B',        // Bold saturated sage (was dusty #69927C)
-  tealLight:    '#C7E3D5',
-  tealDark:     '#245A3D',
+  // ── Teal slot — sage (parent role accent) ──────────────────────────────
+  teal:         '#3D7A5A',
+  tealLight:    '#E1EFE7',
+  tealDark:     '#2C5B41',
 
-  // ── Amber — Organize (kids earn coins), dustier gold not lightened orange
-  amber:        '#BF7600',        // Bold saturated amber (was dusty #C9964F)
-  amberLight:   '#EADA98',
-  amberDark:    '#8A5500',
+  // ── Amber slot — amber (kid role accent) ───────────────────────────────
+  amber:        '#D97706',
+  amberLight:   '#FDF1D6',
+  amberDark:    '#A85A04',
 
-  // ── Pink slot — Muted Lavender (Care / third accent) ────────────────────
-  pink:         '#6C519F',        // Bold saturated lavender (was dusty #9686B5)
-  pinkLight:    '#D4C3EA',
-  pinkDark:     '#4A3670',
+  // ── Pink slot — lavender (third accent) ────────────────────────────────
+  pink:         '#7B5EA7',
+  pinkLight:    '#EFE8F8',
+  pinkDark:     '#5D3F86',
 
-  // ── Navy slot — warm near-black (wordmark / text) ──────────────────────
+  // ── Navy — warm near-black (wordmark / text primary) ───────────────────
   navy:         '#2C2722',
-  navyLight:    '#F2ECE1',
+  navyLight:    '#EDE7DE',
 
-  // ── Role accents (mapped to brand) ────────────────────────────────────
-  parent:       '#3C805B',        // Sage = Connect = parents
-  parentLight:  '#C7E3D5',
-  parentDark:   '#245A3D',
+  // ── Role accents ────────────────────────────────────────────────────────
+  parent:       '#3D7A5A',
+  parentLight:  '#E1EFE7',
+  parentDark:   '#2C5B41',
 
-  // NOTE: kid was historically an exact alias of amber (both #C9964F) —
-  // Grocery and Meals action tiles (both tinted from this pair) were
-  // therefore guaranteed-identical colors sitting side by side, flagged as
-  // "hardly visible/same color" in review. Fixed at the CALL SITE
-  // (ParentQuickActions.tsx: Grocery now tints from colors.primary instead
-  // of colors.kid) rather than by un-aliasing kid from amber here — every
-  // other kid-role UI surface (avatars, badges, roster) still correctly
-  // wants kid===amber as one coherent "Organize" identity; only that one
-  // tile row actually needed two more distinct hues than the brand has role
-  // slots for.
-  kid:          '#BF7600',        // Amber = Organize = kids earn coins
-  kidLight:     '#EADA98',
-  kidDark:      '#8A5500',
+  kid:          '#D97706',
+  kidLight:     '#FDF1D6',
+  kidDark:      '#A85A04',
 
-  // ── Semantics ─────────────────────────────────────────────────────────
-  danger:       '#B85F45',
-  dangerLight:  '#EACAAC',
-  dangerDark:   '#8E4632',
-  warning:      '#BF7600',
-  warningLight: '#EADA98',
-  warningDark:  '#8A5500',
-  success:      '#3C805B',
-  successLight: '#C7E3D5',
-  successDark:  '#245A3D',
-  info:         '#5F8CB8',
-  infoLight:    '#DEE9F2',
-  infoDark:     '#456A8E',
+  // ── Semantics ───────────────────────────────────────────────────────────
+  danger:       '#C54A27',
+  dangerLight:  '#FBEADF',
+  dangerDark:   '#9C3A1F',
+  warning:      '#D97706',
+  warningLight: '#FDF1D6',
+  warningDark:  '#A85A04',
+  success:      '#3D7A5A',
+  successLight: '#E1EFE7',
+  successDark:  '#2C5B41',
+  info:         '#7B5EA7',
+  infoLight:    '#EFE8F8',
+  infoDark:     '#5D3F86',
 
-  // ── Accent (lavender / care) ────────────────────────────────────────────
-  accent:       '#6C519F',
-  accentLight:  '#D4C3EA',
-  accentDark:   '#4A3670',
+  // ── Accent (lavender) ───────────────────────────────────────────────────
+  accent:       '#7B5EA7',
+  accentLight:  '#EFE8F8',
+  accentDark:   '#5D3F86',
 
-  // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
-  background:   '#FDFBF7',
-  surface:      '#F8F3EA',
+  // ── Surfaces ────────────────────────────────────────────────────────────
+  background:   '#FAF8F4',
+  surface:      '#F2ECE1',
   card:         '#FFFFFF',
   overlay:      'rgba(44,39,34,0.45)',
 
-  // ── Borders ───────────────────────────────────────────────────────────
-  border:       'rgba(205,123,87,0.18)',
-  borderMed:    'rgba(205,123,87,0.32)',
-  borderStrong: 'rgba(205,123,87,0.55)',
+  // ── Borders ─────────────────────────────────────────────────────────────
+  border:       'rgba(223,97,60,0.15)',
+  borderMed:    'rgba(223,97,60,0.25)',
+  borderStrong: 'rgba(223,97,60,0.45)',
 
-  // ── Text ──────────────────────────────────────────────────────────────
+  // ── Text ────────────────────────────────────────────────────────────────
   textPrimary:   '#2C2722',
   textSecondary: '#6B5F52',
-  // Darkened from #8A7D6C — that value read as 3.79-4.01:1 against
-  // card/background, under WCAG AA's 4.5:1 minimum for normal text
-  // (flagged in UI review: subtitles/dates/timestamps using this token
-  // read as near-illegible faint gray). #756A5B clears 4.5:1 on both.
-  textTertiary:  '#756A5B',
+  textTertiary:  '#A69A8A',
   textInverse:   '#FFFFFF',
-  textDisabled:  '#D5CCBE',
+  textDisabled:  '#D4C9BC',
 
-  // ── Tab bar ───────────────────────────────────────────────────────────
-  // Matches background exactly — nav reads as part of the same canvas,
-  // not a separate white bar sitting on top of it.
-  tabBar:       '#FDFBF7',
-  tabBarBorder: 'rgba(205,123,87,0.14)',
-  tabActive:    '#CD7B57',
+  // ── Tab bar ─────────────────────────────────────────────────────────────
+  tabBar:       '#FDFCF9',
+  tabBarBorder: 'rgba(223,97,60,0.12)',
+  tabActive:    '#DF613C',
   tabInactive:  '#A69A8A',
 
-  // ── Status bar ────────────────────────────────────────────────────────
+  // ── Status bar ──────────────────────────────────────────────────────────
   statusBar:    'dark' as 'light' | 'dark',
 
-  // ── Inputs ────────────────────────────────────────────────────────────
+  // ── Inputs ──────────────────────────────────────────────────────────────
   inputBg:      '#F2ECE1',
-  inputBorder:  'rgba(205,123,87,0.28)',
+  inputBorder:  'rgba(223,97,60,0.20)',
   placeholder:  '#A69A8A',
 
-  // ── Skeleton ──────────────────────────────────────────────────────────
-  skeleton:          '#E5DFC8',
-  skeletonHighlight: '#F2ECE1',
+  // ── Skeleton ────────────────────────────────────────────────────────────
+  skeleton:          '#EDE7DE',
+  skeletonHighlight: '#FAF8F4',
 
-  // ── Legacy compat (aliases old "purple" name to the new primary hue) ───
-  purple:      '#CD7B57',
-  purpleLight: '#F3E1D6',
-  purpleDark:  '#A05939',
+  // ── Sky blue — Figma "Arrange a ride" / informational ───────────────────
+  sky:         '#4A7FA5',
+  skyLight:    '#E8F1F8',
+  skyDark:     '#2E5F80',
+
+  // ── Legacy compat ───────────────────────────────────────────────────────
+  purple:      '#7B5EA7',
+  purpleLight: '#EFE8F8',
+  purpleDark:  '#5D3F86',
 };
 
 export const darkColors: typeof lightColors = {
-  primary:      '#DB9270',
-  primaryLight: 'rgba(219,146,112,0.20)',
-  primaryDark:  '#E9B199',
-  primaryMid:   '#E1A183',
-  primaryText:  '#E9B199',
+  primary:      '#EE8058',
+  primaryLight: 'rgba(238,128,88,0.18)',
+  primaryDark:  '#C85D38',
+  primaryMid:   '#E8704A',
+  primaryText:  '#EE8058',
 
-  teal:         '#86AC97',
-  tealLight:    'rgba(134,172,151,0.20)',
-  tealDark:     '#A9C7B5',
+  teal:         '#5FA37D',
+  tealLight:    'rgba(95,163,125,0.18)',
+  tealDark:     '#7BBFA0',
 
-  amber:        '#D9AF74',
-  amberLight:   'rgba(217,175,116,0.20)',
-  amberDark:    '#E7C695',
+  amber:        '#F5A85A',
+  amberLight:   'rgba(245,168,90,0.18)',
+  amberDark:    '#F9C488',
 
-  pink:         '#AC9BC7',
-  pinkLight:    'rgba(172,155,199,0.20)',
-  pinkDark:     '#C8BADB',
+  pink:         '#A78BC9',
+  pinkLight:    'rgba(167,139,201,0.18)',
+  pinkDark:     '#C3AAE0',
 
   navy:         '#EDE7DE',
   navyLight:    'rgba(237,231,222,0.12)',
 
-  parent:       '#86AC97',
-  parentLight:  'rgba(134,172,151,0.20)',
-  parentDark:   '#A9C7B5',
+  parent:       '#5FA37D',
+  parentLight:  'rgba(95,163,125,0.18)',
+  parentDark:   '#7BBFA0',
 
-  kid:          '#D9AF74',
-  kidLight:     'rgba(217,175,116,0.20)',
-  kidDark:      '#E7C695',
+  kid:          '#F5A85A',
+  kidLight:     'rgba(245,168,90,0.18)',
+  kidDark:      '#F9C488',
 
-  danger:       '#CC8064',
-  dangerLight:  'rgba(204,128,100,0.20)',
-  dangerDark:   '#DEA48D',
-  warning:      '#D9AF74',
-  warningLight: 'rgba(217,175,116,0.20)',
-  warningDark:  '#E7C695',
-  success:      '#86AC97',
-  successLight: 'rgba(134,172,151,0.20)',
-  successDark:  '#A9C7B5',
-  info:         '#82A6CC',
-  infoLight:    'rgba(130,166,204,0.20)',
-  infoDark:     '#AAC3DE',
+  danger:       '#EE8058',
+  dangerLight:  'rgba(238,128,88,0.18)',
+  dangerDark:   '#F2A07A',
+  warning:      '#F5A85A',
+  warningLight: 'rgba(245,168,90,0.18)',
+  warningDark:  '#F9C488',
+  success:      '#5FA37D',
+  successLight: 'rgba(95,163,125,0.18)',
+  successDark:  '#7BBFA0',
+  info:         '#A78BC9',
+  infoLight:    'rgba(167,139,201,0.18)',
+  infoDark:     '#C3AAE0',
 
-  accent:       '#AC9BC7',
-  accentLight:  'rgba(172,155,199,0.20)',
-  accentDark:   '#C8BADB',
+  accent:       '#A78BC9',
+  accentLight:  'rgba(167,139,201,0.18)',
+  accentDark:   '#C3AAE0',
 
-  // "Deep navy-charcoal" — a faint cool undertone instead of a neutral
-  // near-black, the classic premium-dark-mode move (Linear/Things 3):
-  // reads as pure black at a glance but feels deliberate, and makes the
-  // warm accent colors pop harder by contrast than a neutral base does.
-  background:   '#12141C',
-  surface:      '#181B24',   // faint solid lift for section rows — was flush with background
-  card:         '#1B1E28',
+  background:   '#0E0C13',
+  surface:      '#17151D',
+  card:         '#1D1A24',
   overlay:      'rgba(0,0,0,0.65)',
 
-  border:       'rgba(219,146,112,0.18)',
-  borderMed:    'rgba(219,146,112,0.32)',
-  borderStrong: 'rgba(219,146,112,0.50)',
+  border:       'rgba(238,128,88,0.15)',
+  borderMed:    'rgba(238,128,88,0.28)',
+  borderStrong: 'rgba(238,128,88,0.50)',
 
-  // Dimmed a step off pure white — max-contrast white-on-near-black is
-  // the classic eye-strain combo; a slightly dimmer, warm-tinted white
-  // is easier to read for long sessions while staying plenty legible.
-  textPrimary:   '#EDE8E0',
+  textPrimary:   '#FDFCF9',
   textSecondary: '#B8AC9C',
-  // Lightened from #7A6E60 — same WCAG AA contrast fix as the light-mode
-  // textTertiary above (that value was 3.35-3.7:1 against card/background,
-  // under the 4.5:1 minimum). #988978 clears 4.5:1 on both.
-  textTertiary:  '#988978',
-  textInverse:   '#1A1714',
-  textDisabled:  '#4A4038',
+  textTertiary:  '#7A6E60',
+  textInverse:   '#0E0C13',
+  textDisabled:  '#3A3530',
 
-  // Matches background exactly — nav reads as part of the same canvas,
-  // not a separate bar sitting on top of it (explicit direction: nav
-  // should match canvas in both themes, overriding the earlier "distinctly
-  // darker" treatment).
-  tabBar:       '#12141C',
-  tabBarBorder: 'rgba(219,146,112,0.14)',
-  tabActive:    '#DB9270',
+  tabBar:       '#0E0C13',
+  tabBarBorder: 'rgba(238,128,88,0.12)',
+  tabActive:    '#EE8058',
   tabInactive:  '#7A6E60',
 
   statusBar:    'light' as const,
 
-  inputBg:      '#1D1A24',
-  inputBorder:  'rgba(219,146,112,0.28)',
+  inputBg:      '#17151D',
+  inputBorder:  'rgba(238,128,88,0.22)',
   placeholder:  '#7A6E60',
 
   skeleton:          '#1D1A24',
-  skeletonHighlight: '#2A2632',
+  skeletonHighlight: '#252030',
 
-  purple:      '#DB9270',
-  purpleLight: 'rgba(219,146,112,0.20)',
-  purpleDark:  '#E9B199',
+  sky:         '#6FA8CC',
+  skyLight:    'rgba(111,168,204,0.18)',
+  skyDark:     '#4A85AA',
+
+  purple:      '#A78BC9',
+  purpleLight: 'rgba(167,139,201,0.18)',
+  purpleDark:  '#C3AAE0',
 };
 
 export type ThemeColors = typeof lightColors;

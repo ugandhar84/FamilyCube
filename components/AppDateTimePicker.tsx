@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
-import { format } from 'date-fns';
+
 
 // ── Wheel picker item height ────────────────────────────────────────────────
 const ITEM_H = 44;
@@ -287,9 +287,10 @@ export interface AppDateTimePickerProps {
  */
 export default function AppDateTimePicker({
   visible, value, mode, onConfirm, onCancel,
-  accent = '#7C5CBF', minimumDate, maximumDate, themeVariant,
+  accent: accentProp, minimumDate, maximumDate, themeVariant,
 }: AppDateTimePickerProps) {
   const { colors, isDark } = useTheme();
+  const accent = accentProp ?? colors.primary;
   const [iosTimeTemp, setIosTimeTemp] = useState(value);
 
   useEffect(() => { setIosTimeTemp(value); }, [value, visible]);
@@ -319,9 +320,9 @@ export default function AppDateTimePicker({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={onCancel} />
-      <View style={[ios.sheet, { backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7' }]}>
+      <View style={[ios.sheet, { backgroundColor: colors.card }]}>
         {/* Header */}
-        <View style={[ios.header, { borderBottomColor: isDark ? '#38383A' : '#C6C6C8' }]}>
+        <View style={[ios.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={onCancel} style={ios.headerBtn}>
             <Text style={{ color: colors.textSecondary, fontSize: 15 }}>Cancel</Text>
           </TouchableOpacity>

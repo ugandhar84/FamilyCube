@@ -23,11 +23,23 @@ export const FONTS = {
   bold: Platform.select({ ios: 'System', android: 'Roboto' }),
 };
 
-// Sizes below are deliberately larger than the Kinfolk mock's raw pixel
-// values. The mock is a desktop web preview; those same px sizes read as
-// too small to comfortably read on an actual phone screen (confirmed on
+// Sizes below are deliberately larger than the source mock's raw pixel
+// values. A mock (whether the old Kinfolk reference or the current Figma
+// Make "Scrollable Content Design" reskin, design/Scrollable Content
+// Design/src/index.css) is a desktop web preview; those same px sizes read
+// as too small to comfortably read on an actual phone screen (confirmed on
 // device — 9-11px text was reported illegible). Every size here is the
 // mock's intent (hierarchy, uppercase tracking, etc.) at a legible floor.
+//
+// Current reskin's own scale, for reference (index.css) — the parent Hub's
+// own card files (features/hub/parent/*.tsx) use these exact px values
+// directly rather than this shared scale, since the reskin's hierarchy sits
+// 1px below this app-wide floor in a couple of spots (body 14 vs this
+// scale's 15) and changing TYPO.body itself would ripple into ~1,250 other
+// call sites across the whole app, far beyond the Home page this pass
+// covers: h1 greeting clamp(27,7vw,38)≈34 · .calm-copy/.section-title h2
+// 20-21 · .attention-card/.evening h2 17 · quick-action/timeline strong 14
+// · overline 10 · detail/caption lines 11-13.
 export const TYPO = {
   hero:       32,   // big hero numbers, pet names on detail
   title:      24,   // screen titles

@@ -58,7 +58,7 @@ export function DelegateQuestSheet({ delegateTarget, setDelegateTarget, members,
             borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
             backgroundColor: isDark ? colors.surface : '#F8FAFC' }}>
             <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
-              siblings={members.map(x => x.name)} size={44} ringColor={BRAND.purple} />
+              siblings={members.map(x => x.name)} size={44} ringColor={BRAND.amber} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Parent</Text>

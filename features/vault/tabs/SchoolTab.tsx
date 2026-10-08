@@ -74,7 +74,7 @@ export default function SchoolTab({ colors, isDark, isKid, isTeen, onEditModalVi
   // The shared Ask Cube FAB is visible on this tab (morphs to a "+" for
   // School's composer) — same overlap risk fixed on Hub/Quests.
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
       {/* Kid picker — parents only, or single kid just shows header */}
       {!isOwnScheduleOnly && kids.length > 1 && (
@@ -88,7 +88,7 @@ export default function SchoolTab({ colors, isDark, isKid, isTeen, onEditModalVi
                 <FamilyAvatar
                   name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl}
                   siblings={allNames} size={48}
-                  ringColor={BRAND.purple} ringWidth={sel ? 3 : 0}
+                  ringColor={BRAND.teal} ringWidth={sel ? 3 : 0}
                 />
                 <Text style={{ fontSize: TYPO.micro, fontWeight: sel ? '800' : '600',
                   color: sel ? BRAND.purple : colors.textSecondary }}>
@@ -105,7 +105,7 @@ export default function SchoolTab({ colors, isDark, isKid, isTeen, onEditModalVi
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <FamilyAvatar name={activeKid.name} emoji={activeKid.emoji}
             avatarUrl={activeKid.avatarUrl} siblings={allNames} size={36}
-            ringColor={BRAND.purple} ringWidth={1.5} />
+            ringColor={BRAND.teal} ringWidth={1.5} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: colors.textPrimary }}>
               {activeKid.name.split(' ')[0]}'s Schedule

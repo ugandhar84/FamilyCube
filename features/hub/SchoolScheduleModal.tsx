@@ -171,7 +171,7 @@ export function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
           return (
             <TouchableOpacity key={d} onPress={() => toggleDay(d)}
               style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: on ? col : (isDark ? '#1E293B' : '#F1F5F9'),
+                backgroundColor: on ? col : colors.surface,
                 borderWidth: 1.5, borderColor: on ? col : colors.border }}>
               <Text style={{ fontSize: 10, fontWeight: '800', color: on ? '#fff' : colors.textSecondary }}>
                 {DAY_LABEL[d]}
@@ -182,8 +182,8 @@ export function PeriodEditor({ period, colors, isDark, onChange, onDelete }: {
         {/* Lunch toggle */}
         <TouchableOpacity onPress={() => onChange({ ...period, isLunch: !period.isLunch })}
           style={{ paddingHorizontal: 10, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: period.isLunch ? '#F59E0B' : (isDark ? '#1E293B' : '#F1F5F9'),
-            borderWidth: 1.5, borderColor: period.isLunch ? '#F59E0B' : colors.border }}>
+            backgroundColor: period.isLunch ? '#F59E0B' : (colors.surface),
+            borderWidth: 1.5, borderColor: period.isLunch ? colors.amber : colors.border }}>
           <Text style={{ fontSize: 10, fontWeight: '800', color: period.isLunch ? '#fff' : colors.textSecondary }}>
             🍱 Lunch
           </Text>
@@ -334,7 +334,7 @@ export function HolidaySection({ memberId, holidays, colors, isDark }: {
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={confirmAdd} disabled={saving}
-              style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: '#F59E0B', opacity: saving ? 0.6 : 1 }}>
+              style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: colors.amber, opacity: saving ? 0.6 : 1 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>{saving ? 'Saving…' : 'Add'}</Text>
             </TouchableOpacity>
           </View>
@@ -345,7 +345,7 @@ export function HolidaySection({ memberId, holidays, colors, isDark }: {
             borderRadius: 14, paddingVertical: 13, borderWidth: 1.5, borderStyle: 'dashed',
             borderColor: '#F59E0B60', backgroundColor: '#F59E0B08' }}>
           <Plus size={16} color="#F59E0B" />
-          <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#F59E0B' }}>Add Holiday</Text>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.amber }}>Add Holiday</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -505,7 +505,7 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
                   onPress={() => setShowDeleteConfirm(true)}
                   hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                   style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginRight: 8 }}>
+                    backgroundColor: colors.surface, marginRight: 8 }}>
                   <Trash2 size={16} color="#EF4444" />
                 </TouchableOpacity>
               )}
@@ -513,7 +513,7 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
                 onPress={dismiss}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                  backgroundColor: colors.surface }}>
                 <X size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -527,7 +527,7 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
           padding: 14, borderRadius: RADIUS.md, backgroundColor: colors.card,
           borderWidth: 1.5, borderColor: '#EF444450',
         }}>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#EF4444', marginBottom: 6 }}>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.danger, marginBottom: 6 }}>
             Delete entire schedule?
           </Text>
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 12, lineHeight: 18 }}>
@@ -566,7 +566,7 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
               onPress={() => { removeSchedule(memberId); onClose(); }}
               style={{
                 flex: 1, paddingVertical: 11, borderRadius: RADIUS.sm, alignItems: 'center',
-                backgroundColor: '#EF4444',
+                backgroundColor: colors.danger,
                 opacity: deleteConfirmText.trim().toUpperCase() !== expectedDeleteWord ? 0.4 : 1,
               }}
             >
@@ -821,8 +821,8 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
   const chip = useMemo(() => {
     if (!schedule)              return { label: 'No schedule set',      color: colors.textTertiary, bg: colors.border + '30' };
     if (status === 'no_school') return { label: 'No school today',      color: colors.textSecondary, bg: colors.border + '30' };
-    if (status === 'done')      return { label: '✓ School done',        color: '#10B981', bg: '#10B98118' };
-    if (status === 'in_class' && period?.isLunch) return { label: '🍱 Lunch', color: '#F59E0B', bg: '#F59E0B18' };
+    if (status === 'done')      return { label: '✓ School done',        color: colors.teal, bg: '#10B98118' };
+    if (status === 'in_class' && period?.isLunch) return { label: '🍱 Lunch', color: colors.amber, bg: '#F59E0B18' };
     if (status === 'in_class')  return { label: `📖 ${period!.subject}`, color: BRAND.purple, bg: BRAND.purple + '18' };
     if (status === 'break')     return { label: '☕ Break',             color: BRAND.teal, bg: BRAND.teal + '18' };
     if (status === 'before_school') return { label: '⏰ School starts soon', color: BRAND.amber, bg: BRAND.amber + '18' };
@@ -892,7 +892,7 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
                   return (
                     <Pressable key={t ?? 'all'} onPress={() => setSelectedTerm(t)}
                       style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16,
-                        backgroundColor: sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9'),
+                        backgroundColor: sel ? BRAND.purple + '20' : (colors.surface),
                         borderWidth: 1.5, borderColor: sel ? BRAND.purple : colors.border }}>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: sel ? BRAND.purple : colors.textSecondary }}>
                         {t ?? 'All'}
@@ -914,7 +914,7 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
                   return (
                     <Pressable key={d} onPress={() => setSelectedDay(d)}
                       style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                        backgroundColor: sel ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
+                        backgroundColor: sel ? BRAND.purple : (colors.surface),
                         borderWidth: isToday ? 2 : 1.5,
                         borderColor: sel ? BRAND.purple : (isToday ? BRAND.purple + '60' : colors.border) }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? '#fff' : (isToday ? BRAND.purple : colors.textSecondary) }}>
@@ -927,7 +927,7 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
             )}
 
             {/* Timeline for selected day */}
-            <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#F1F5F9', marginHorizontal: 0 }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginHorizontal: 0 }}>
               {dayPeriods.length === 0 ? (
                 <Text style={{ paddingHorizontal: 14, paddingVertical: 14, fontSize: TYPO.caption, color: colors.textSecondary }}>
                   No classes on {DAY_FULL[activeDay] ?? activeDay}.
@@ -939,7 +939,7 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
                 const past   = isActiveDay && nowM >= timeToMins(p.endTime);
                 return (
                   <View key={p.id} style={{ flexDirection: 'row', gap: 0,
-                    borderTopWidth: i > 0 ? 1 : 0, borderTopColor: isDark ? colors.border + '60' : '#F3F4F6',
+                    borderTopWidth: i > 0 ? 1 : 0, borderTopColor: colors.border,
                     backgroundColor: active ? col + '0E' : 'transparent', opacity: past ? 0.5 : 1 }}>
                     {/* Colored left rail */}
                     <View style={{ width: 4, backgroundColor: p.isLunch ? '#F59E0B' : col, borderRadius: 0 }} />
@@ -955,10 +955,10 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
                     {/* Subject + meta */}
                     <View style={{ flex: 1, paddingVertical: 10, paddingRight: 14, justifyContent: 'center' }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        {past && <Text style={{ fontSize: TYPO.micro, color: '#10B981' }}>✓</Text>}
+                        {past && <Text style={{ fontSize: TYPO.micro, color: colors.teal }}>✓</Text>}
                         {active && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: col }} />}
                         <Text style={{ fontSize: TYPO.body, fontWeight: '800',
-                          color: p.isLunch ? '#D97706' : (active ? col : colors.textPrimary) }} numberOfLines={1}>
+                          color: p.isLunch ? colors.amber : (active ? col : colors.textPrimary) }} numberOfLines={1}>
                           {p.subject}
                         </Text>
                         {(p as any).term && availableTerms.length > 1 && !activeTerm && (
@@ -979,7 +979,7 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
             {/* Footer: edit */}
             <Pressable onPress={() => setEditModalOpen(true)}
               style={{ paddingVertical: 10, paddingHorizontal: 14, borderTopWidth: 1,
-                borderTopColor: isDark ? colors.border : '#F1F5F9', alignItems: 'center' }}>
+                borderTopColor: colors.border, alignItems: 'center' }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>
                 {isParent ? 'Edit Schedule →' : 'View / Edit Schedule →'}
               </Text>

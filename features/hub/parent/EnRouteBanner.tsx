@@ -200,7 +200,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
             onPress={() => onDispatchRide(DEFAULT_ETA)}
             style={withAndroidShadowFix({
               flexDirection: 'row', alignItems: 'center', gap: 10,
-              backgroundColor: isDark ? colors.card : '#FFFFFF',
+              backgroundColor: colors.card,
               borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
               padding: 12, opacity: rideLocked ? 0.75 : 1,
               shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',

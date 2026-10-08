@@ -2,12 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, Modal, ActivityIndicator, Alert, Platform,
-  Keyboard, StyleSheet,
+  Keyboard, StyleSheet, KeyboardAvoidingView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
@@ -27,6 +27,7 @@ import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, previewKidChoreAssignment,
   type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
+import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 // ─── Edit Quest Modal (parent, unclaimed quests only) ────────────────────────
 export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, editMode = 'full' }: {
@@ -37,17 +38,31 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   onDelete?: (id: string) => void;
   editMode?: 'full' | 'restricted';
 }) {
+  const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const members = useFamilyStore(s => s.members);
 
   const parseDue = () => {
     if (quest.dueDate) {
-      const d = parseLocalDate(quest.dueDate);
+      // dueDate may be a full ISO timestamp — normalise to YYYY-MM-DD before parsing
+      const datePart = quest.dueDate.includes('T') ? quest.dueDate.split('T')[0] : quest.dueDate;
+      const d = parseLocalDate(datePart);
+      if (isNaN(d.getTime())) {
+        // fallback: parse ISO directly
+        const iso = new Date(quest.dueDate);
+        if (!isNaN(iso.getTime())) { d.setTime(iso.getTime()); }
+      }
       if (quest.dueTime) {
-        const parsed = parseTimeInput(quest.dueTime);
-        if (parsed) {
-          const [h, m] = parsed.split(':').map(Number);
-          d.setHours(h, m || 0, 0, 0);
+        // dueTime may also be an ISO string or HH:MM
+        if (quest.dueTime.includes('T') || quest.dueTime.length > 5) {
+          const iso = new Date(quest.dueTime);
+          if (!isNaN(iso.getTime())) d.setHours(iso.getHours(), iso.getMinutes(), 0, 0);
+        } else {
+          const parsed = parseTimeInput(quest.dueTime);
+          if (parsed) {
+            const [h, m] = parsed.split(':').map(Number);
+            d.setHours(h, m || 0, 0, 0);
+          }
         }
       }
       return d;
@@ -82,11 +97,21 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   // at CREATE time; this edit form had no equivalent, so toggling Invite
   // Grandparents on for an EXISTING chore left whatever coin amount was
   // already there in place, and approveChore has no assignee-role check —
-  // a real, live path for a grandparent to be paid coins. Mirrors
-  // AddQuestModal's isAdultTask||inviteGrandparent||assignedToAdultsOnly
-  // shape (no assignedToAdultsOnly concept in this edit form, so just the
-  // two that apply here).
-  const coinsDisabled = isAdultTask || inviteGrandparent;
+  // a real, live path for a grandparent to be paid coins.
+  //
+  // Live-reported gap, now closed: assignedToAdultsOnly was missing here —
+  // the assignee picker below lets you pick a parent/senior on an ordinary
+  // kid-eligible (isAdultTask: false) chore, independent of the isAdultTask
+  // toggle. Reassigning an existing coin-bearing chore to a parent left the
+  // coins live with zero warning, since only isAdultTask/inviteGrandparent
+  // were checked. Mirrors AddQuestModal's own
+  // isAdultTask||inviteGrandparent||assignedToAdultsOnly shape exactly now.
+  const assignedToAdultsOnly = assignIds.length > 0 &&
+    assignIds.every(id => {
+      const role = members.find(m => m.id === id)?.role;
+      return role === 'parent' || role === 'senior';
+    });
+  const coinsDisabled = isAdultTask || inviteGrandparent || assignedToAdultsOnly;
   const [dueDate,           setDueDate]           = useState<Date>(parseDue);
   // Spec 8.2 — optional tie to a calendar event this quest logistically
   // supports. Display-only, no cascading behavior.
@@ -95,6 +120,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   // Always shown regardless of whether recurrence was ever set — a chore
   // can silently carry a recurrence_rule (e.g. from a prior form default
   // bug) with no way to see or clear it otherwise.
+  const [weekDays, setWeekDays] = useState<number[]>((quest as any).weekDays ?? []);
   const [routineFreq,       setRoutineFreq]        = useState<'once' | 'daily' | 'weekly' | 'monthly'>(
     (['once', 'daily', 'weekly', 'monthly'] as const).includes(quest.recurrence as any) ? (quest.recurrence as any) : 'once'
   );
@@ -107,6 +133,41 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const pillBg  = isDark ? colors.surface : '#F1F5F9';
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
   const siblings = members.map(m => m.name);
+  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+
+  // Figma section card — floating white card with shadow
+  const sectionCard = {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#2C3244',
+    shadowOffset: { width: 0, height: 5 } as const,
+    shadowOpacity: isDark ? 0 : 0.045,
+    shadowRadius: 18,
+  };
+
+  // Overline heading style (10px 700 letter-spaced)
+  const overline = (color: string) => ({
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.09 * 10,
+    color,
+    textTransform: 'uppercase' as const,
+    marginBottom: 10,
+  });
+
+  // Figma input style — 48px, borderRadius 14, white bg
+  const figmaInput = {
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    color: colors.textPrimary,
+  };
   const locked = editMode === 'restricted';
   const familyId = members.find(m => m.id === activeMemberId)?.familyId ?? '';
 
@@ -203,6 +264,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         inviteGrandparents: inviteGrandparent,
         isOpenToTeens: teensOnly,
         recurrence: routineFreq,
+        ...(routineFreq === 'weekly' && weekDays.length > 0 ? { weekDays } : {}),
         alertCall, alertCallLeadMinutes,
         linkedEventId,
       };
@@ -234,6 +296,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         dueDate: localDateStr(dueDate),
         dueTime: fmtTimeLabel(dueDate),
         recurrence: routineFreq,
+        ...(routineFreq === 'weekly' && weekDays.length > 0 ? { weekDays } : {}),
         alertCall, alertCallLeadMinutes,
         linkedEventId,
       };
@@ -246,80 +309,76 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   };
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
-    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={dismiss}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={dismiss}>
+      <SwipeBackWrapper onDismiss={dismiss}>
+      <View style={{ flex: 1, backgroundColor: canvas }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-            {/* Drag handle */}
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
-
-            {/* Fixed header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>
-                  {locked ? 'Adjust Chore' : 'Edit Chore'}
-                </Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: colors.primary ?? BRAND.purple }}>
-                  {locked ? 'Edit everything except due date & description' : 'Edit title, assignment & more'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={dismiss}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
+          {/* ── Top bar: ‹ back + title ── */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 8 }}>
+            <TouchableOpacity onPress={dismiss} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 22, color: colors.pink, fontWeight: '400', lineHeight: 26, marginTop: -1 }}>‹</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.pink }}>Back</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>
+                {locked ? 'Adjust Chore' : 'Edit Chore'}
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
+                {locked ? 'Date & description locked (in progress)' : 'Edit title, assignment & more'}
+              </Text>
             </View>
+          </View>
 
-            {/* Scrollable body — no `flex: 1` here: the sheet container above
-                isn't itself flex-laid-out (just a maxHeight cap, matching
-                EventFormModal's proven pattern), so flex:1 on this ScrollView
-                has nothing to grow into and collapses to zero height instead. */}
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+
             <ScrollView
               keyboardShouldPersistTaps="always"
               onScrollBeginDrag={Keyboard.dismiss}
-              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-              showsVerticalScrollIndicator={false}>
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 60 }}
+              showsVerticalScrollIndicator={false}
+              style={{ backgroundColor: canvas }}
+            >
 
-              {/* Title — editable in both modes; only due date/time and
-                  description stay locked once a chore is claimed/in-progress. */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Chore Title *</Text>
+              {/* ── WHAT section ── */}
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.pink, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16 }}>
+                What's the chore?
+              </Text>
+
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '700', marginBottom: 8 }}>Chore title *</Text>
               <TextInput
-                style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+                style={{
+                  borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
+                  fontSize: 17, fontWeight: '600',
+                  backgroundColor: colors.card, color: colors.textPrimary,
+                  borderWidth: 1.5, borderColor: title.trim() ? colors.pink : '#EF444480',
+                  marginBottom: 10,
+                }}
                 value={title} onChangeText={setTitle} returnKeyType="next"
-                placeholder="e.g. Wash the dishes, Take out trash…" placeholderTextColor={colors.textTertiary}
+                placeholder="e.g. Water the plants, Do homework…" placeholderTextColor={colors.textTertiary}
               />
+
               {editSuggestions.length > 0 && (
-                <View style={{ marginTop: -6, marginBottom: 12 }}>
-                  <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
+                <View style={{ marginBottom: 10 }}>
+                  <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
                     {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
                   </Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {editSuggestions.map((s, i) => (
                         <TouchableOpacity key={i}
-                          style={[aq.suggPill, {
-                            backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
-                            borderColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
-                          }]}
+                          style={{
+                            flexDirection: 'row', alignItems: 'center', gap: 4,
+                            paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
+                            backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? colors.pinkLight : colors.card,
+                            borderColor: title.toLowerCase() === s.title.toLowerCase() ? colors.pink : colors.border,
+                          }}
                           onPress={() => applyEditSuggestion(s)}>
-                          <Text style={{ fontSize: TYPO.micro, color: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{s.title}</Text>
-                          <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>+{s.coins}🪙</Text>
+                          <Text style={{ fontSize: 12, color: title.toLowerCase() === s.title.toLowerCase() ? colors.pink : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{s.title}</Text>
+                          <Text style={{ fontSize: 12, color: colors.amber, fontWeight: '700' }}>+{s.coins}🪙</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -327,113 +386,241 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </View>
               )}
 
-              {/* Description — stays read-only once claimed/in-progress
-                  (never sent from the locked patch), per explicit product
-                  decision. */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>
-                Description {!locked && '*'}{'  '}<Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '700', marginBottom: 8, marginTop: 16 }}>
+                What does done look like?{locked ? '' : ' *'}
               </Text>
               {locked ? (
-                <View style={{ padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
-                  borderColor: isDark ? '#1E293B' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }}>
-                  <Text style={{ fontSize: TYPO.label, color: quest.description ? colors.textPrimary : colors.textTertiary }}>
-                    {quest.description || 'No description'}
+                <View style={{ borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginBottom: 24 }}>
+                  <Text style={{ fontSize: 14, color: quest.description ? colors.textPrimary : colors.textTertiary, lineHeight: 20 }}>
+                    {quest.description || 'No description — locked while in progress'}
                   </Text>
                 </View>
               ) : (
                 <>
                   <TextInput
-                    style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+                    style={{
+                      borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+                      fontSize: 15, fontWeight: '400', lineHeight: 22,
+                      backgroundColor: colors.card, color: colors.textPrimary,
+                      borderWidth: 1, borderColor: colors.border,
+                      minHeight: 80, textAlignVertical: 'top', marginBottom: 4,
+                    }}
                     value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
-                    multiline numberOfLines={3} textAlignVertical="top"
+                    multiline numberOfLines={3}
                     placeholder="Describe exactly what's expected…" placeholderTextColor={colors.textTertiary}
                   />
-                  <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+                  <Text style={{ fontSize: 11, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginBottom: 20 }}>
                     {desc.length}/150
                   </Text>
                 </>
               )}
 
-              {/* Coins + Bonus — editable in both modes, unless a grandparent
-                  is (or becomes) eligible to do this work — see
-                  coinsDisabled above. */}
-              {!isAdultTask && (
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
-                <View style={{ flex: 1, opacity: coinsDisabled ? 0.4 : 1 }}>
-                  <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
-                  <TextInput
-                    editable={!coinsDisabled}
-                    style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: coinsDisabled ? (isDark ? '#1F2937' : '#F3F4F6') : colors.surface, marginBottom: 0 }]}
-                    keyboardType="number-pad" value={coinsDisabled ? '0' : coins} onChangeText={coinsDisabled ? undefined : setCoins}
+              {/* ── WHEN section ── */}
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 28 }} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.teal, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16 }}>
+                When &amp; how often?
+              </Text>
+
+              {!locked && (
+                <>
+                  <DueDateTimePicker
+                    value={dueDate} setValue={setDueDate}
+                    showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+                    showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+                    fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+                    accentColor={colors.teal} colors={colors} isDark={isDark}
+                    pillStyle={aq.datePill} overlayStyle={aq.pickerOverlay} cardStyle={aq.pickerCard}
                   />
-                </View>
-                <View style={{ width: 90, opacity: coinsDisabled ? 0.4 : 1 }}>
-                  <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
-                  <TextInput
-                    editable={!coinsDisabled}
-                    style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: coinsDisabled ? (isDark ? '#1F2937' : '#F3F4F6') : colors.surface, marginBottom: 0 }]}
-                    keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
-                    value={coinsDisabled ? '' : bonusCoins} onChangeText={coinsDisabled ? undefined : (t => setBonusCoins(t.replace(/[^0-9]/g, '')))}
-                  />
-                </View>
-              </View>
+                </>
               )}
-              {coinsDisabled && inviteGrandparent && !isAdultTask && (
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: -10, marginBottom: 14 }}>
-                  Grandparents aren't paid coins — this is logged and thanked instead.
+
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '700', marginBottom: 10, marginTop: locked ? 0 : 16 }}>Repeat</Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {([
+                  { key: 'once', label: 'Once' },
+                  { key: 'daily', label: '📅 Daily' },
+                  { key: 'weekly', label: '🗓 Weekly' },
+                  { key: 'monthly', label: '📆 Monthly' },
+                ] as const).map(({ key, label }) => (
+                  <TouchableOpacity key={key} onPress={() => setRoutineFreq(key)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
+                      backgroundColor: routineFreq === key ? colors.teal : colors.card,
+                      borderWidth: 1.5, borderColor: routineFreq === key ? colors.teal : colors.border,
+                    }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: routineFreq === key ? '#fff' : colors.teal }}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Weekly day picker */}
+              {routineFreq === 'weekly' && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 8 }}>Repeats on</Text>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    {(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map((day, idx) => {
+                      const dayNum = idx === 6 ? 0 : idx + 1; // 0=Sun, 1=Mon … 6=Sat
+                      const active = (weekDays ?? []).includes(dayNum);
+                      return (
+                        <TouchableOpacity key={day}
+                          onPress={() => {
+                            const cur = weekDays ?? [];
+                            setWeekDays(active ? cur.filter(d => d !== dayNum) : [...cur, dayNum]);
+                          }}
+                          style={{
+                            flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center',
+                            backgroundColor: active ? colors.teal : colors.card,
+                            borderWidth: 1.5, borderColor: active ? colors.teal : colors.border,
+                          }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: active ? '#fff' : colors.textSecondary }}>{day}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {(weekDays ?? []).length === 0 && (
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 6 }}>Pick at least one day</Text>
+                  )}
+                </View>
+              )}
+
+              {routineFreq !== (quest.recurrence ?? 'once') && (
+                <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: -4, marginBottom: 12 }}>
+                  {routineFreq === 'once' ? "Turns off repeating — future occurrences won't be generated."
+                    : `Will repeat ${routineFreq} going forward. Today's task stays as-is.`}
                 </Text>
               )}
 
-              {/* Category — editable in both modes */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {[...ALL_CATEGORIES, ...customCategories.filter(cc => !ALL_CATEGORIES.includes(cc.key as QuestCategory)).map(cc => cc.key as QuestCategory)].map(c => (
-                    <TouchableOpacity key={c}
-                      style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
-                        category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
-                      onPress={() => setCategory(c)}>
-                      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
-              {/* ── Optional subcategory refinement (Responsibility Engine taxonomy) ── */}
-              {subcategoryOptions.length > 0 && (
-                <View style={{ marginBottom: 14, marginTop: -6 }}>
-                  <Text style={[aq.label, { color: colors.textSecondary, marginBottom: 6 }]}>
-                    Specifically… <Text style={{ color: colors.textTertiary, fontWeight: '600' }}>(optional)</Text>
-                  </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      {subcategoryOptions.map(sc => {
-                        const active = subcategoryId === sc.id;
-                        return (
-                          <TouchableOpacity
-                            key={sc.id}
-                            onPress={() => setSubcategoryId(active ? null : sc.id)}
-                            style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
-                              active && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
-                          >
-                            <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: active ? '#fff' : colors.textSecondary }}>
-                              {sc.subcategoryLabel}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </ScrollView>
+              {!locked && (
+                <View style={{ marginBottom: 20 }}>
+                  <CallReminderToggle
+                    alertCall={alertCall} setAlertCall={setAlertCall}
+                    alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+                    accentColor={colors.teal} colors={colors} isDark={isDark}
+                    variant="icon" pillStyle={aq.datePill}
+                  />
                 </View>
               )}
 
-              {/* ── Assignment suggestion — real preview since this quest
-                   already exists. Adult tasks call process-task-assignment
-                   directly from the category; kid tasks call
-                   process-kid-chore-assignment against the real chore row
-                   (only possible in edit mode, not in AddQuestModal). ── */}
+              {/* ── REWARD section — was gated on the static isAdultTask flag
+                  (hidden whenever that toggle was on), while the coin
+                  VALUES below already reacted dynamically to assignee role
+                  via coinsDisabled. Inconsistent: toggling isAdultTask on
+                  hid the section outright, but picking a parent/senior
+                  assignee on an ordinary (isAdultTask: false) chore left it
+                  visible and simply dimmed. Always show it now — coinsDisabled
+                  (which folds in isAdultTask, inviteGrandparent, AND
+                  assignedToAdultsOnly) is the one dynamic source of truth
+                  for whether coins apply, consistent in both places. ── */}
+              {(
+                <>
+                  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 28 }} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: colors.pink, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16, marginTop: 0 }}>
+                    Reward
+                  </Text>
+                  {coinsDisabled && (
+                    <Text style={{ fontSize: 12, color: colors.textTertiary, marginBottom: 12, marginTop: -8 }}>
+                      {inviteGrandparent
+                        ? 'No coins — grandparent-done work is never paid in coins.'
+                        : isAdultTask
+                          ? 'No coins — this is an adult-only task.'
+                          : 'No coins — only kids/teens earn coins. Assigned to a parent/senior, this task pays nothing.'}
+                    </Text>
+                  )}
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12, opacity: coinsDisabled ? 0.4 : 1 }}>
+                    {[10, 20, 30, 50, 75, 100].map(c => {
+                      const coinNum = parseInt(coins) || 0;
+                      const isActive = coinNum === c;
+                      return (
+                        <TouchableOpacity key={c} onPress={() => !coinsDisabled && setCoins(String(c))}
+                          style={{
+                            width: '30%', flexGrow: 1,
+                            paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+                            backgroundColor: isActive && !coinsDisabled ? colors.pink : colors.pinkLight,
+                            borderWidth: 1.5, borderColor: isActive && !coinsDisabled ? colors.pink : colors.border,
+                          }}>
+                          <Text style={{ fontSize: 17, fontWeight: '800', color: isActive && !coinsDisabled ? '#fff' : colors.pink }}>
+                            {c}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: isActive && !coinsDisabled ? 'rgba(255,255,255,0.8)' : colors.textTertiary, marginTop: 2 }}>
+                            coins
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14, opacity: coinsDisabled ? 0.4 : 1 }}>
+                    <TextInput
+                      editable={!coinsDisabled}
+                      value={coinsDisabled ? '' : coins}
+                      onChangeText={v => { const n = v.replace(/[^0-9]/g, ''); setCoins(n); }}
+                      placeholder="Custom coins…"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="number-pad"
+                      style={{
+                        flex: 1, height: 44, borderRadius: 10, paddingHorizontal: 14,
+                        fontSize: 15, fontWeight: '600', color: colors.textPrimary,
+                        backgroundColor: colors.card,
+                        borderWidth: 1.5, borderColor: coins && !coinsDisabled ? colors.pink : colors.border,
+                      }}
+                    />
+                    {coins && !coinsDisabled ? (
+                      <View style={{ backgroundColor: colors.pinkLight, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.pink }}>{coins} 🪙</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {/* Bonus coins */}
+                  <View style={{
+                    borderRadius: 14, padding: 16, marginBottom: 24,
+                    backgroundColor: bonusCoins && !coinsDisabled ? colors.amberLight : (isDark ? colors.surface : '#FAFAFA'),
+                    borderWidth: 1.5, borderColor: bonusCoins && !coinsDisabled ? colors.amber : colors.border,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <Text style={{ fontSize: 14 }}>⚡</Text>
+                      <Text style={{ fontSize: 12, color: bonusCoins && !coinsDisabled ? colors.amber : colors.textSecondary, fontWeight: '700' }}>Bonus coins (optional)</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <TextInput
+                        editable={!coinsDisabled}
+                        value={coinsDisabled ? '' : bonusCoins}
+                        onChangeText={t => !coinsDisabled && setBonusCoins(t.replace(/[^0-9]/g, ''))}
+                        placeholder="+coins"
+                        placeholderTextColor={colors.textTertiary}
+                        keyboardType="number-pad"
+                        style={{
+                          flex: 1, height: 40, borderRadius: 10, paddingHorizontal: 12,
+                          fontSize: 15, fontWeight: '600', color: colors.textPrimary,
+                          backgroundColor: colors.card,
+                          borderWidth: 1, borderColor: bonusCoins && !coinsDisabled ? colors.amber : colors.border,
+                        }}
+                      />
+                      {bonusCoins && !coinsDisabled ? (
+                        <View style={{ backgroundColor: colors.amberLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber }}>+{bonusCoins} 🎉</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 6 }}>Extra reward · expires in 24h after posting</Text>
+                  </View>
+                  {coinsDisabled && inviteGrandparent && (
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: -16, marginBottom: 14 }}>
+                      Grandparents aren't paid coins — this is logged and thanked instead.
+                    </Text>
+                  )}
+                </>
+              )}
+
+              {/* ── WHO section ── */}
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 28 }} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.amber, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16 }}>
+                Who's doing it?
+              </Text>
+
+              {/* Assignment AI suggestion */}
               {familyId && (
-                <View style={{ marginBottom: 14 }}>
+                <View style={{ marginBottom: 12 }}>
                   <TouchableOpacity
                     onPress={async () => {
                       setLoadingSuggestion(true);
@@ -450,46 +637,32 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                     disabled={loadingSuggestion}
                     style={{
                       flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                      borderRadius: 14, paddingVertical: 11, borderWidth: 1.5, borderStyle: 'dashed',
-                      borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : '#F8F5FF',
-                      opacity: loadingSuggestion ? 0.6 : 1, marginBottom: 8,
+                      borderRadius: 12, paddingVertical: 12, borderWidth: 1.5, borderStyle: 'dashed',
+                      borderColor: colors.pink + '60', backgroundColor: colors.pinkLight,
+                      opacity: loadingSuggestion ? 0.6 : 1,
                     }}
                   >
                     {loadingSuggestion
-                      ? <ActivityIndicator size="small" color={BRAND.purple} />
-                      : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
-                          ✨ Who would this go to?
-                        </Text>
+                      ? <ActivityIndicator size="small" color={colors.pink} />
+                      : <Text style={{ fontSize: 14, fontWeight: '700', color: colors.pink }}>✨ Who should do this?</Text>
                     }
                   </TouchableOpacity>
-
                   {assignmentSuggestion && (
-                    <View style={{
-                      borderRadius: 14, padding: 12,
-                      backgroundColor: isDark ? colors.surface : '#F8FAFC',
-                      borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
-                    }}>
+                    <View style={{ borderRadius: 12, padding: 12, marginTop: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
                       {assignmentSuggestion.error ? (
-                        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-                          {assignmentSuggestion.error}
-                        </Text>
+                        <Text style={{ fontSize: 13, color: colors.textTertiary }}>{assignmentSuggestion.error}</Text>
                       ) : assignmentSuggestion.decisionType === 'blocked' ? (
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                          {assignmentSuggestion.reason ?? 'No eligible family member found for this.'}
-                        </Text>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary }}>{assignmentSuggestion.reason ?? 'No eligible member found.'}</Text>
                       ) : (
                         <>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
-                            {assignmentSuggestion.decisionType === 'auto' ? '✅ Would auto-assign to ' :
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
+                            {assignmentSuggestion.decisionType === 'auto' ? '✅ Auto-assign to ' :
                              assignmentSuggestion.decisionType === 'suggest' ? '💡 Suggested: ' : '🤔 Close call — '}
                             {assignmentSuggestion.explanation.selected ?? '—'}
                           </Text>
                           {assignmentSuggestion.candidates.filter(c => !c.excluded).length > 1 && (
-                            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 3 }}>
-                              {assignmentSuggestion.candidates
-                                .filter(c => !c.excluded)
-                                .map(c => `${c.memberName} (${Math.round(c.score)})`)
-                                .join(' · ')}
+                            <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 3 }}>
+                              {assignmentSuggestion.candidates.filter(c => !c.excluded).map(c => `${c.memberName} (${Math.round(c.score)})`).join(' · ')}
                             </Text>
                           )}
                         </>
@@ -499,37 +672,197 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </View>
               )}
 
-              {/* Difficulty */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Difficulty <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
-              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+              {/* Avatar chips */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+                {!isAdultTask && (
+                  <TouchableOpacity onPress={() => { setIsPool(true); setAssignIds([]); }} activeOpacity={0.75} style={{ alignItems: 'center', gap: 4 }}>
+                    <View style={{
+                      width: 52, height: 52, borderRadius: 26,
+                      backgroundColor: isPool ? colors.amber : colors.amberLight,
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 2.5, borderColor: isPool ? colors.amber : colors.border,
+                    }}>
+                      <Text style={{ fontSize: 20 }}>⚡</Text>
+                    </View>
+                    <Text style={{ fontSize: 10, fontWeight: isPool ? '700' : '500', color: isPool ? colors.amber : colors.textSecondary }}>Pool</Text>
+                  </TouchableOpacity>
+                )}
+                {members.filter(m => {
+                  if (isAdultTask) {
+                    if (m.role === 'parent') return true;
+                    if (m.role === 'senior') return inviteGrandparent;
+                    return false;
+                  }
+                  if (teensOnly && m.role === 'kid') return false;
+                  return m.role === 'kid' || m.role === 'teen' || m.role === 'parent' || m.role === 'senior';
+                }).map(m => {
+                  const sel = assignIds.includes(m.id) && !isPool;
+                  const chipColor = m.role === 'parent' ? colors.teal : colors.amber;
+                  const chipLight = m.role === 'parent' ? colors.tealLight : colors.amberLight;
+                  return (
+                    <TouchableOpacity key={m.id}
+                      onPress={() => { setIsPool(false); const next = assignIds.includes(m.id) ? assignIds.filter(id => id !== m.id) : [...assignIds, m.id]; setAssignIds(next); }}
+                      activeOpacity={0.75} style={{ alignItems: 'center', gap: 4 }}>
+                      <View style={{
+                        width: 52, height: 52, borderRadius: 26,
+                        backgroundColor: sel ? chipColor : chipLight,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 2.5, borderColor: sel ? chipColor : colors.border,
+                      }}>
+                        <Text style={{ fontSize: 18, fontWeight: '700', color: sel ? '#fff' : chipColor }}>
+                          {m.name[0].toUpperCase()}
+                        </Text>
+                        {sel && (
+                          <View style={{ position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.success, borderWidth: 2, borderColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 9, color: '#fff', fontWeight: '800' }}>✓</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={{ fontSize: 10, fontWeight: sel ? '700' : '500', color: sel ? chipColor : colors.textSecondary }} numberOfLines={1}>
+                        {m.id === activeMemberId ? 'Me' : m.name.split(' ')[0]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Role toggles */}
+              <View style={{ gap: 8, marginTop: 8, marginBottom: 24 }}>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
+                    backgroundColor: isAdultTask ? colors.pinkLight : colors.card,
+                    borderWidth: 1.5, borderColor: isAdultTask ? colors.pink : colors.border }}
+                  onPress={() => { setIsAdultTask(p => !p); if (!isAdultTask) { setIsPool(false); setAssignIds([]); setInviteGrandparent(false); } }}
+                  activeOpacity={0.8}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: isAdultTask ? colors.pink : colors.textPrimary }}>👨‍👩 Adult-Only Task</Text>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Hidden from kids — parents & GP only</Text>
+                  </View>
+                  <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: isAdultTask ? colors.pink : (isDark ? '#334155' : '#CBD5E1'), justifyContent: 'center', padding: 2 }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: isAdultTask ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </TouchableOpacity>
+
+                {isAdultTask && members.some(m => m.role === 'senior') && (
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
+                      backgroundColor: inviteGrandparent ? colors.amberLight : colors.card,
+                      borderWidth: 1.5, borderColor: inviteGrandparent ? colors.amber : colors.border }}
+                    onPress={() => setInviteGrandparent(p => !p)} activeOpacity={0.8}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: inviteGrandparent ? colors.amber : colors.textPrimary }}>
+                        {inviteGrandparent ? '👴 Grandparents included' : '👴 Invite Grandparents?'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Grandparents can see & claim this task</Text>
+                    </View>
+                    <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: inviteGrandparent ? colors.amber : (isDark ? '#334155' : '#CBD5E1'), justifyContent: 'center', padding: 2 }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: inviteGrandparent ? 'flex-end' : 'flex-start' }} />
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                {!isAdultTask && (
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
+                      backgroundColor: teensOnly ? colors.pinkLight : colors.card,
+                      borderWidth: 1.5, borderColor: teensOnly ? colors.pink : colors.border }}
+                    onPress={() => { const v = !teensOnly; setTeensOnly(v); if (v) setAssignIds(prev => prev.filter(id => members.find((m: any) => m.id === id)?.role !== 'kid')); }}
+                    activeOpacity={0.8}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: teensOnly ? colors.pink : colors.textPrimary }}>🚗 {teensOnly ? 'Teens only' : 'Teens Only?'}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>{teensOnly ? 'Hidden from kids' : 'Any kid can claim'}</Text>
+                    </View>
+                    <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: teensOnly ? colors.pink : (isDark ? '#334155' : '#CBD5E1'), justifyContent: 'center', padding: 2 }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: teensOnly ? 'flex-end' : 'flex-start' }} />
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
+                    backgroundColor: photoReq ? colors.tealLight : colors.card,
+                    borderWidth: 1.5, borderColor: photoReq ? colors.teal : colors.border }}
+                  onPress={() => setPhotoReq(p => !p)} activeOpacity={0.8}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: photoReq ? colors.teal : colors.textPrimary }}>📸 Photo Required</Text>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Kid must attach proof when submitting</Text>
+                  </View>
+                  <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: photoReq ? colors.teal : (isDark ? '#334155' : '#CBD5E1'), justifyContent: 'center', padding: 2 }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: photoReq ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {/* ── Category + Difficulty ── */}
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 28 }} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.pink, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16 }}>
+                Category &amp; difficulty
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '700', marginBottom: 8 }}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[...ALL_CATEGORIES, ...customCategories.filter(cc => !ALL_CATEGORIES.includes(cc.key as QuestCategory)).map(cc => cc.key as QuestCategory)].map(c => (
+                    <TouchableOpacity key={c}
+                      style={{
+                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                        backgroundColor: category === c ? colors.pink : colors.card,
+                        borderWidth: 1.5, borderColor: category === c ? colors.pink : colors.border,
+                      }}
+                      onPress={() => setCategory(c)}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              {subcategoryOptions.length > 0 && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 6 }}>More specifically… (optional)</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {subcategoryOptions.map(sc => {
+                        const active = subcategoryId === sc.id;
+                        return (
+                          <TouchableOpacity key={sc.id} onPress={() => setSubcategoryId(active ? null : sc.id)}
+                            style={{
+                              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                              backgroundColor: active ? colors.pink : colors.card,
+                              borderWidth: 1.5, borderColor: active ? colors.pink : colors.border,
+                            }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: active ? '#fff' : colors.textSecondary }}>{sc.subcategoryLabel}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '700', marginBottom: 10, marginTop: 16 }}>Difficulty (optional)</Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
                 {([
                   { key: 'easy',   label: '😊 Easy',   color: '#10B981' },
-                  { key: 'medium', label: '💪 Medium',  color: BRAND.amber },
+                  { key: 'medium', label: '💪 Medium',  color: colors.amber },
                   { key: 'hard',   label: '🔥 Hard',   color: '#EF4444' },
-                  { key: 'hero',   label: '⚡ Hero',   color: BRAND.purple },
+                  { key: 'hero',   label: '⚡ Hero',   color: colors.pink },
                 ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
                   <TouchableOpacity key={d.key}
-                    style={[aq.diffChip, { borderColor: difficulty === d.key ? d.color : pillBdr, backgroundColor: difficulty === d.key ? d.color + '22' : pillBg }]}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
+                      backgroundColor: difficulty === d.key ? d.color : colors.card,
+                      borderWidth: 1.5, borderColor: difficulty === d.key ? d.color : colors.border,
+                    }}
                     onPress={() => setDifficulty(p => p === d.key ? '' : d.key)}>
-                    <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: difficulty === d.key ? d.color : colors.textTertiary }}>{d.label}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: difficulty === d.key ? '#fff' : colors.textSecondary }}>{d.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {/* Due Date & Time — same shared picker AddQuestModal uses
-                  (see DueDateTimePicker); was a near-byte-identical inline
-                  duplicate of that form's block. */}
-              <DueDateTimePicker
-                value={dueDate} setValue={setDueDate}
-                showDatePick={showDatePick} setShowDatePick={setShowDatePick}
-                showTimePick={showTimePick} setShowTimePick={setShowTimePick}
-                fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
-                accentColor={BRAND.purple} colors={colors} isDark={isDark}
-                pillStyle={aq.datePill} overlayStyle={aq.pickerOverlay} cardStyle={aq.pickerCard}
-              />
-
-              {/* Linked event (spec 8.2) — optional tie to an upcoming
-                  calendar event this quest logistically supports. */}
+              {/* ── Linked Event (optional) ── */}
               {(() => {
                 const upcomingEvents = useEventStore.getState().events
                   .filter(e => e.date >= localDateStr(new Date()))
@@ -537,25 +870,25 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                   .slice(0, 30);
                 const linkedEvent = linkedEventId ? upcomingEvents.find(e => e.id === linkedEventId) : undefined;
                 return (
-                  <View style={{ marginBottom: 14 }}>
-                    <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
+                  <View style={{ marginBottom: 24 }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 6 }}>Link to event (optional)</Text>
                     <TouchableOpacity
-                      style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
+                      style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? colors.tealLight : colors.card, borderColor: showEventPicker ? colors.teal : colors.border }]}
                       onPress={() => setShowEventPicker(p => !p)}
                     >
                       <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? colors.teal : colors.textPrimary }} numberOfLines={1}>
                         {linkedEvent ? linkedEvent.title : 'None'}
                       </Text>
                     </TouchableOpacity>
                     {showEventPicker && (
-                      <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: pillBdr, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
+                      <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
                         <ScrollView keyboardShouldPersistTaps="always">
                           <TouchableOpacity
                             style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
                             onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
                           >
-                            <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? colors.teal : colors.textSecondary }}>None</Text>
                           </TouchableOpacity>
                           {upcomingEvents.length === 0 ? (
                             <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
@@ -565,7 +898,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                               style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
                               onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
                             >
-                              <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? colors.teal : colors.textPrimary }} numberOfLines={1}>
                                 {ev.title}
                               </Text>
                               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
@@ -578,218 +911,20 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 );
               })()}
 
-              {/* Call-style reminder — allowed even in restricted edit mode,
-                  since it's not a sensitive field like title/coins. Shared
-                  with AddQuestModal and the Schedule form (see
-                  CallReminderToggle); this file previously kept its own
-                  byte-identical copy of the block. */}
-              <CallReminderToggle
-                alertCall={alertCall} setAlertCall={setAlertCall}
-                alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-                accentColor={BRAND.purple} colors={colors} isDark={isDark}
-                variant="icon" pillStyle={aq.datePill}
-              />
-
-              {/* Repeats — always shown, even if recurrence was never
-                  explicitly set (or was set by accident, e.g. a past form
-                  default bug) so it's never invisible from this sheet. */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Repeats</Text>
-              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
-                {([
-                  { key: 'once',    label: 'One-time' },
-                  { key: 'daily',   label: '📅 Daily' },
-                  { key: 'weekly',  label: '🗓 Weekly' },
-                  { key: 'monthly', label: '📆 Monthly' },
-                ] as const).map(({ key, label }) => (
-                  <TouchableOpacity key={key}
-                    onPress={() => setRoutineFreq(key)}
-                    style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                      borderColor: routineFreq === key ? BRAND.purple : colors.border,
-                      backgroundColor: routineFreq === key ? BRAND.purple + '18' : 'transparent' }}>
-                    <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800',
-                      color: routineFreq === key ? BRAND.purple : colors.textSecondary }}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {routineFreq !== (quest.recurrence ?? 'once') && (
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: -8, marginBottom: 14 }}>
-                  {routineFreq === 'once'
-                    ? "This turns off repeating — future occurrences won't be generated."
-                    : `This chore will repeat ${routineFreq} going forward. Only future occurrences are affected — today's task stays as-is.`}
-                </Text>
-              )}
-
-              {/* Adult Task toggle — always visible so locked (Adjust) mode still shows the flags */}
-              {(
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 10,
-                    backgroundColor: isAdultTask ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F8FAFC'),
-                    borderWidth: 1.5, borderColor: isAdultTask ? BRAND.purple : colors.border }}
-                  onPress={() => { setIsAdultTask(p => !p); if (!isAdultTask) { setIsPool(false); setAssignIds([]); setInviteGrandparent(false); } }}
-                  activeOpacity={0.8}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: isAdultTask ? BRAND.purple : colors.textPrimary }}>
-                      👨‍👩 Adult-Only Task
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                      Hidden from kids — assignable to parents & GP
-                    </Text>
-                  </View>
-                  <View style={{ width: 40, height: 24, borderRadius: 12,
-                    backgroundColor: isAdultTask ? BRAND.purple : (isDark ? '#334155' : '#CBD5E1'),
-                    justifyContent: 'center', padding: 2 }}>
-                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
-                      alignSelf: isAdultTask ? 'flex-end' : 'flex-start' }} />
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {/* Invite Grandparents toggle — visible when adult task is on,
-                  AND only for a family that actually has a registered
-                  grandparent/senior member. Live-reported: "GP Welcome is
-                  there but there are no GPs registered in that family at
-                  all" — same fix as DelegateSheet.tsx/
-                  AddQuestRecurrenceSection.tsx's own hasGrandparents. */}
-              {isAdultTask && members.some(m => m.role === 'senior') && (
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 10,
-                    backgroundColor: inviteGrandparent ? (isDark ? '#1a0f00' : '#FFFBEB') : (isDark ? colors.surface : '#F8FAFC'),
-                    borderWidth: 1.5, borderColor: inviteGrandparent ? BRAND.amber : colors.border }}
-                  onPress={() => setInviteGrandparent(p => !p)}
-                  activeOpacity={0.8}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: inviteGrandparent ? BRAND.amber : colors.textPrimary }}>
-                      {inviteGrandparent ? '👴 Grandparents included' : '👴 Invite Grandparents?'}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                      Grandparents can see & claim this task
-                    </Text>
-                  </View>
-                  <View style={{ width: 40, height: 24, borderRadius: 12,
-                    backgroundColor: inviteGrandparent ? BRAND.amber : (isDark ? '#334155' : '#CBD5E1'),
-                    justifyContent: 'center', padding: 2 }}>
-                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
-                      alignSelf: inviteGrandparent ? 'flex-end' : 'flex-start' }} />
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {/* Teens Only toggle — independent of Adult-Only Task, matching
-                  AddQuestModal's own "Teens Only" chip (AddQuestRecurrenceSection.tsx):
-                  restricts an ordinary KID-facing pool chore to teens
-                  specifically, not an adult-delegation concept. Was entirely
-                  absent from this edit form — a chore's isOpenToTeens flag
-                  was permanently create-only, with no way to add or remove
-                  the restriction after the fact (live QA finding, High). */}
-              {!isAdultTask && (
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 10,
-                    backgroundColor: teensOnly ? colors.pinkLight : (isDark ? colors.surface : '#F8FAFC'),
-                    borderWidth: 1.5, borderColor: teensOnly ? colors.pink : colors.border }}
-                  onPress={() => {
-                    const v = !teensOnly;
-                    setTeensOnly(v);
-                    // Same cleanup the create form's toggle needs — a kid
-                    // already picked as assignee directly contradicts
-                    // "teens only" the moment this turns on.
-                    if (v) setAssignIds(prev => prev.filter(id => members.find((m: any) => m.id === id)?.role !== 'kid'));
-                  }}
-                  activeOpacity={0.8}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: teensOnly ? colors.pink : colors.textPrimary }}>
-                      🚗 {teensOnly ? 'Teens only' : 'Teens Only?'}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                      {teensOnly ? 'Hidden from kids' : 'Any kid can claim'}
-                    </Text>
-                  </View>
-                  <View style={{ width: 40, height: 24, borderRadius: 12,
-                    backgroundColor: teensOnly ? colors.pink : (isDark ? '#334155' : '#CBD5E1'),
-                    justifyContent: 'center', padding: 2 }}>
-                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
-                      alignSelf: teensOnly ? 'flex-end' : 'flex-start' }} />
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {/* Assign To */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>
-                Assign To{'  '}
-                <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
-                  {isPool ? 'open bounty' : assignIds.length === 0 ? 'tap to select' : `${assignIds.length} selected`}
-                </Text>
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }} contentContainerStyle={{ flexDirection: 'row', gap: 12, paddingRight: 4 }}>
-                {/* Bounty only available for non-adult tasks */}
-                {!isAdultTask && (
-                  <TouchableOpacity style={{ alignItems: 'center', gap: 4 }} onPress={() => { setIsPool(true); setAssignIds([]); }}>
-                    <View style={{ position: 'relative' }}>
-                      <FamilyAvatar name="Bounty" emoji="⚡" size={40} ringColor={BRAND.amber} ringWidth={isPool ? 2.5 : 1} bgColor={isPool ? BRAND.amber + '30' : pillBg} />
-                      {isPool && <View style={[aq.avatarCheck, { backgroundColor: BRAND.amber }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
-                    </View>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isPool ? BRAND.amber : colors.textTertiary }}>Bounty</Text>
-                  </TouchableOpacity>
-                )}
-                {members.filter(m => {
-                  if (isAdultTask) {
-                    if (m.role === 'parent') return true;
-                    if (m.role === 'senior') return inviteGrandparent; // only when GP invited
-                    return false;
-                  }
-                  // Was missing the teensOnly gate entirely — a kid could be
-                  // picked as assignee on a chore flagged isOpenToTeens,
-                  // directly contradicting the flag (live QA finding, High).
-                  if (teensOnly && m.role === 'kid') return false;
-                  return m.role === 'kid' || m.role === 'teen' || m.role === 'parent' || m.role === 'senior';
-                }).map(m => {
-                  const sel = assignIds.includes(m.id) && !isPool;
-                  const roleColor = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? '#0EA5E9' : '#10B981';
-                  return (
-                    <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 4 }}
-                      onPress={() => { setIsPool(false); const next = assignIds.includes(m.id) ? assignIds.filter(id => id !== m.id) : [...assignIds, m.id]; setAssignIds(next); }}>
-                      <View style={{ position: 'relative' }}>
-                        <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={siblings} size={40} ringColor={roleColor} ringWidth={sel ? 2.5 : 1} bgColor={sel ? roleColor + '25' : pillBg} />
-                        {sel && <View style={[aq.avatarCheck, { backgroundColor: roleColor }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
-                      </View>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>{m.id === activeMemberId ? 'Me' : m.name.split(' ')[0]}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Photo required toggle */}
-              <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                  paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 14,
-                  backgroundColor: photoReq ? (isDark ? '#0B2218' : '#F0FDF4') : (isDark ? colors.surface : '#F8FAFC'),
-                  borderWidth: 1.5, borderColor: photoReq ? '#10B981' : colors.border }}
-                onPress={() => setPhotoReq(p => !p)} activeOpacity={0.8}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: photoReq ? '#10B981' : colors.textPrimary }}>📸 Photo Required</Text>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>Kid must attach proof when submitting</Text>
-                </View>
-                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: photoReq ? '#10B981' : (isDark ? '#334155' : '#CBD5E1'), justifyContent: 'center', paddingHorizontal: 3 }}>
-                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: photoReq ? 'flex-end' : 'flex-start' }} />
-                </View>
-              </TouchableOpacity>
-
             </ScrollView>
 
             {/* Sticky footer — Save + Delete was inside the ScrollView,
                 could scroll out of view on this form's many sections
                 (title/description/coins/bonus/category/difficulty/due-date/
                 repeats/assignment) or end up below the keyboard. */}
-            <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 14,
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+              backgroundColor: canvas }}>
               {onDelete && (
                 <TouchableOpacity
-                  style={{ paddingHorizontal: 16, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
+                  style={{ width: 52, height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
                   onPress={() => {
                     if (locked) {
-                      // Active quest — prompt for reason before deleting
                       Alert.prompt(
                         'Delete Active Chore',
                         `"${quest.title}" is in progress. Add a note for the assignee (required):`,
@@ -811,26 +946,23 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                     }
                   }}>
                   <I.X c="#EF4444" />
-                  <Text style={{ color: '#EF4444', fontSize: TYPO.micro, fontWeight: '700', marginTop: 2 }}>Delete</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[aq.submitBtn, { flex: 1, backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+                style={{ flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: title.trim() ? colors.teal : colors.border, opacity: saving ? 0.6 : 1 }}
                 onPress={save} disabled={saving || !title.trim()}>
                 {saving
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <>
-                      <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Save Changes</Text>
-                      <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}</Text>
+                      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Save Changes</Text>
+                      {!locked && <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 1 }}>Due {fmtDateLabel(dueDate)} · {fmtTimeLabel(dueDate)}</Text>}
                     </>}
               </TouchableOpacity>
             </View>
-          </View>
-          {keyboardHeight > 0 && (
-            <View pointerEvents="none"
-              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
-          )}
-        </View>
+        </KeyboardAvoidingView>
+      </View>
+      </SwipeBackWrapper>
     </Modal>
   );
 }

@@ -79,6 +79,7 @@ export interface QuestActions {
   canSubmit: boolean;
   canResubmit: boolean;
   canKidDecline: boolean;
+  canAdultDecline: boolean;
   canGiveBack: boolean;
   canAcceptGp: boolean;
   canGpClaimPool: boolean;
@@ -126,9 +127,32 @@ export function deriveQuestActions(
   // Bounty board, i.e. it fell through to the general pool instead of
   // staying GP-pool-only per the master flow spec.
   const canClaim = isKidOrTeen && pool && !q.inviteGrandparents;
-  const canSubmit = isKidOrTeen && todo && !!myId && isAssignedTo(q, myId);
+  // A parent who assigned a chore to THEMSELVES (createdById === assignedToId,
+  // both this parent) has nobody meaningful to review it — submit_chore RPC
+  // already recognizes this exact shape server-side and auto-approves + pays
+  // out instantly, skipping pending_approval entirely (see migration
+  // 20260908130000_submit_chore_rpc.sql's v_is_self_assigned_parent branch).
+  // Submit must be offered here too, or that server-side shortcut is simply
+  // unreachable — a parent's own self-assigned chore had no way to ever be
+  // marked done.
+  const isSelfAssignedParent = isParent && !!myId && isAssignedTo(q, myId) && q.createdById === myId;
+  const canSubmit = (isKidOrTeen || isSelfAssignedParent) && todo && !!myId && isAssignedTo(q, myId);
   const canResubmit = isKidOrTeen && declined && !!myId && isAssignedTo(q, myId);
   const canKidDecline = isKidOrTeen && todo && !q.isPool && !!myId && isAssignedTo(q, myId);
+  // Live-reported gap, twice now: a parent/senior assignee — whether or not
+  // the task is flagged isAdultTask (an ORDINARY kid-eligible chore just
+  // reassigned to a parent has the identical problem, confirmed live on
+  // "Water plants": 53 coins, not adult-only, reassigned to a parent, no
+  // decline button) — had NO decline path at all when someone ELSE
+  // assigned it to them. canKidDecline is hardcoded kid/teen-only, and
+  // canSubmit's isSelfAssignedParent branch only covers a parent's own
+  // self-assigned task. Not gated on isAdultTask at all — the actual
+  // condition that matters is "is the viewer the assignee, and did they
+  // NOT assign it to themselves," same as canKidDecline asks for a
+  // kid/teen, just without that role's isPool exclusion (a parent
+  // reassigned into a pool-origin chore can still legitimately decline it).
+  const canAdultDecline = isParentOrSenior && todo &&
+    !!myId && isAssignedTo(q, myId) && !isSelfAssignedParent;
   // Live QA finding: only grandparents had a quick "give it back before
   // starting" undo (backoutGpWelcomeChore) — a kid/teen who claimed an
   // ordinary pool chore had no equivalent, only the heavier Can't-Make-It
@@ -173,10 +197,18 @@ export function deriveQuestActions(
   const canEditRestricted = isParent && !done && !declined &&
     (q.status === 'in_progress' || q.status === 'pending_approval' || (q.status === 'todo' && !!q.assignedToId));
   const canEdit = isParent && !done && !declined;
-  const canDelete = (isParent || (isSenior && q.questType === 'grandparent_quest' && q.sponsorUserId === myId)) && !done;
+  // Deletable only while nothing real has happened yet — unclaimed/
+  // unworked. Once someone has claimed it, started it, submitted proof, or
+  // it's awaiting/received a decision, deleting would silently destroy real
+  // in-flight work and payout state instead of going through a proper
+  // cancel/decline path — use Decline (which keeps history) or let an
+  // approved chore stand instead.
+  const hasStarted = !!q.claimedAt || q.status === 'in_progress' || review || done || declined ||
+    q.kidDisputedRedo || !!q.awaitingParentApproval;
+  const canDelete = (isParent || (isSenior && q.questType === 'grandparent_quest' && q.sponsorUserId === myId)) && !hasStarted;
 
   return {
-    canClaim, canSubmit, canResubmit, canKidDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
+    canClaim, canSubmit, canResubmit, canKidDecline, canAdultDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
     canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
   };
 }

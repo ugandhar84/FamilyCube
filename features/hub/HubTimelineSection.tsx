@@ -128,12 +128,12 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
 
           {upcoming.length === 0 ? (
             <View style={{
-              backgroundColor: isDark ? colors.card : '#f0fdf4',
+              backgroundColor: colors.tealLight,
               borderRadius: 14, padding: 14, marginBottom: 8,
               flexDirection: 'row', alignItems: 'center', gap: 10,
             }}>
               <Text style={{ fontSize: 18 }}>✅</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#10B981' }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.teal }}>
                 All done for today!
               </Text>
             </View>

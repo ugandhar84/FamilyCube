@@ -192,7 +192,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
         </View>
       }>
       {ev.notes && (
-        <View style={{ backgroundColor: isDark ? '#1e293b' : '#fefce8', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning, marginBottom: 8 }}>
+        <View style={{ backgroundColor: colors.amberLight, borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning, marginBottom: 8 }}>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
         </View>
       )}

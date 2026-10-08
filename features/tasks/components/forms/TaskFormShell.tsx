@@ -36,22 +36,26 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 export function TaskFormShell({
   visible, onClose, stepIds, stepTitles, step, setStep,
   accentColor, headerTitle, headerSubtitle, reviewStepId = 'review',
+  hideProgress = false, stepLabels,
+  hasDraft = false,
   children,
 }: {
   visible: boolean;
   onClose: () => void;
-  // The step list is the caller's — AddQuestModal's is conditional (the
-  // grocery step only exists for Errand/Shopping), AddEventModal's is fixed.
   stepIds: readonly string[];
   stepTitles: Record<string, string>;
   step: number;
   setStep: React.Dispatch<React.SetStateAction<number>>;
-  // Event category color, or quest purple — the one theming knob.
   accentColor: string;
   headerTitle: string;
   headerSubtitle: string;
-  // Which step id renders its own submit button instead of the footer Next.
   reviewStepId?: string;
+  hideProgress?: boolean;
+  // Short labels rendered below each segment bar (Figma wizard style).
+  // When provided, the X/N counter and separate step-title line are hidden.
+  stepLabels?: string[];
+  // When true, "· draft kept" appears in the step counter and "Back · preserve draft" replaces the plain back chevron.
+  hasDraft?: boolean;
   children: React.ReactNode;
 }) {
   const { colors, isDark } = useTheme();
@@ -139,26 +143,46 @@ export function TaskFormShell({
               </TouchableOpacity>
             </View>
 
-            {/* ── Step progress — one segment per ACTUAL step for this flow
-                (4 or 5 for chores depending on the grocery step), plus a
-                Back chevron once past step 0. ── */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              {step > 0 && (
-                <TouchableOpacity onPress={() => setStep(p => p - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              <StepProgressBar stepCount={stepIds.length} activeIndex={step} accentColor={accentColor}
-                trackColor={isDark ? colors.border : '#E2E8F0'} />
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
-                {step + 1}/{stepIds.length}
-              </Text>
-            </View>
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accentColor, marginBottom: 10, marginTop: -6 }}>
-                {stepTitles[currentStepId]}
-              </Text>
-            </TouchableWithoutFeedback>
+            {/* ── Step progress — hidden when hideProgress=true (e.g. single-
+                step handoff from JustDescribeItScreen). ── */}
+            {!hideProgress && (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: stepLabels ? 'flex-start' : 'center', gap: 10, marginBottom: stepLabels ? 4 : 14 }}>
+                  {step > 0 && !stepLabels && (
+                    <TouchableOpacity onPress={() => setStep(p => p - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  )}
+                  <StepProgressBar
+                    stepCount={stepIds.length} activeIndex={step}
+                    accentColor={accentColor}
+                    trackColor={isDark ? colors.border : '#DFE5EF'}
+                    height={5} gap={6}
+                    labels={stepLabels}
+                  />
+                  {/* X/N counter + optional "draft kept" badge — only shown when no step labels */}
+                  {!stepLabels && (
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
+                      {step + 1}/{stepIds.length}{hasDraft ? ' · draft kept' : ''}
+                    </Text>
+                  )}
+                </View>
+                {/* "Step N of N · draft kept" caption below the labelled bar */}
+                {stepLabels && (
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, marginBottom: 14, marginTop: 2 }}>
+                    Step {step + 1} of {stepIds.length}{hasDraft ? ' · draft kept' : ''}
+                  </Text>
+                )}
+                {/* Step title only shown when no step labels */}
+                {!stepLabels && (
+                  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accentColor, marginBottom: 10, marginTop: -6 }}>
+                      {stepTitles[currentStepId]}
+                    </Text>
+                  </TouchableWithoutFeedback>
+                )}
+              </>
+            )}
 
             {/* ── Scrollable step body. flexShrink:1 here + on the sheet is
                 the footer-clipping fix, applied once for both modals. ── */}
@@ -190,16 +214,35 @@ export function TaskFormShell({
                   clipped or mispositioned independently of the fields above
                   it. review's own submit button still renders as part of
                   `children` (unchanged). */}
-              {!isReview && (
-                <View style={{ paddingTop: 10 }}>
-                  <TouchableOpacity
-                    style={[s.footerBtn, { backgroundColor: accentColor }]}
-                    onPress={() => setStep(p => Math.min(p + 1, stepIds.length - 1))}
-                  >
-                    <Text style={{ color: colors.textInverse, fontWeight: '900', fontSize: TYPO.body }}>Next</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+              {!isReview && (() => {
+                const nextStepId = stepIds[step + 1];
+                const nextLabel = nextStepId
+                  ? (stepLabels?.[step + 1] ?? stepTitles[nextStepId] ?? 'Next')
+                  : 'Next';
+                return (
+                  <View style={{ paddingTop: 10, gap: 12 }}>
+                    <TouchableOpacity
+                      style={[s.footerBtn, { backgroundColor: accentColor }]}
+                      onPress={() => setStep(p => Math.min(p + 1, stepIds.length - 1))}
+                    >
+                      <Text style={{ color: colors.textInverse, fontWeight: '900', fontSize: TYPO.body }}>
+                        Next · {nextLabel}
+                      </Text>
+                    </TouchableOpacity>
+                    {step > 0 && (
+                      <TouchableOpacity
+                        onPress={() => setStep(p => p - 1)}
+                        style={{ alignItems: 'center', paddingVertical: 4 }}
+                        hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
+                      >
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accentColor }}>
+                          Back · {hasDraft ? 'preserve draft' : 'go back'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })()}
             </ScrollView>
           </View>
           {/* Filler pinned to the very bottom of the backdrop, UNDER the

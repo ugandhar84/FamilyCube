@@ -265,7 +265,14 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     requiresPhotoProof: q.photoRequired ?? false,
     dueDate:           q.dueDate,
     dueTime:           q.dueTime,
-    createdById:       q.createdById,
+    // Some creation paths (e.g. JustDescribeItScreen.tsx's quick-capture
+    // form) pass `createdBy` instead of `createdById` — without this
+    // fallback, createdById silently lands undefined for every chore made
+    // that way, which breaks anything keyed on "who created this" (the
+    // self-assigned-parent auto-approve shortcut in particular — see
+    // deriveQuestActions' isSelfAssignedParent and the submit_chore RPC's
+    // own v_is_self_assigned_parent check, both compare createdById).
+    createdById:       q.createdById ?? (q as any).createdBy,
     // A grandparent_quest created through the normal Add Quest form (as
     // opposed to the separate createGrandparentQuest flow) never set
     // sponsorUserId — the field both SeniorView's own review queue and the
@@ -373,6 +380,9 @@ export function useQuestStore() {
       if (updates.title         !== undefined) choreUpdates.title             = updates.title;
       if (updates.description   !== undefined) choreUpdates.description       = updates.description;
       if (updates.coins         !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
+      if (updates.bonusCoins    !== undefined) choreUpdates.bonusCoins        = updates.bonusCoins;
+      if (updates.maxClaimants  !== undefined) choreUpdates.maxClaimants      = updates.maxClaimants;
+      if (updates.category      !== undefined) choreUpdates.category          = updates.category as any;
       if (updates.dueDate       !== undefined) choreUpdates.dueDate           = updates.dueDate;
       if (updates.dueTime       !== undefined) choreUpdates.dueTime           = updates.dueTime;
       if (updates.alertCall            !== undefined) choreUpdates.alertCall            = updates.alertCall;
@@ -425,7 +435,16 @@ export function useQuestStore() {
       store.deleteChore(id);
     },
 
-    reassignQuest: (id: string, memberId: string, _by: string) => {
+    // Made awaitable — previously void-returning while internally firing an
+    // un-awaited store.updateChore() promise. A caller chaining a second
+    // write right after (e.g. QuestDetailModal's reassign-with-a-note/coins
+    // flow) had no way to know the reassignment itself had actually landed
+    // before its own follow-up patch fired — a genuine race between two
+    // UPDATE statements, each diffing against a snapshot that could predate
+    // the other's write, which is how a reassignment could land without
+    // showing up in the activity log (logChoreUpdateActivity's diff runs
+    // per-call against whatever prevChore the race left in local state).
+    reassignQuest: async (id: string, memberId: string, _by: string) => {
       // '' means "send back to pool / unassign" (e.g. QuestCard's "Can't do
       // this" flows) -- updateChore's DB patch only nulls a field on `??`,
       // and '' is not nullish, so passing it through as-is used to write
@@ -439,7 +458,7 @@ export function useQuestStore() {
           // shortlist framing (mirrors declineGrandparentQuest's own
           // targetChildIds branch). Decline this clone only; sibling
           // clones are separate rows, untouched either way.
-          store.updateChore(id, { status: 'declined', assignedToId: undefined });
+          await store.updateChore(id, { status: 'declined', assignedToId: undefined });
           return;
         }
       }
@@ -467,7 +486,7 @@ export function useQuestStore() {
       // genuine pool-release (!memberId) always needs status:'todo',
       // regardless of what status it's releasing FROM.
       const isPoolRelease = !memberId;
-      store.updateChore(id, {
+      await store.updateChore(id, {
         assignedToId: memberId || undefined,
         isPool: memberId ? undefined : true,
         ...(isPoolRelease ? { status: 'todo' as const } : {}),
@@ -554,25 +573,24 @@ useQuestStore.getState = () => {
     quests: store.chores.map(choreToQuest),
     updateQuest: (id: string, updates: Partial<Quest>, _by?: string) => {
       const choreUpdates: Partial<ChoreTask> = {};
+      if (updates.title          !== undefined) choreUpdates.title             = updates.title;
+      if (updates.description    !== undefined) choreUpdates.description       = updates.description;
       if (updates.coins          !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
-      // Was a no-op — "up to N kids" already had a full built UI
-      // (AddQuestAssignSection's picker, QuestCard's "Full — X/Y claimed"
-      // copy) but the value was never actually persisted anywhere, so
-      // every multi-slot bounty setting silently did nothing and every
-      // pool chore behaved as first-come-single-claimant regardless of
-      // what the parent picked. Now wired through to chore_tasks.max_claimants.
-      if (updates.maxClaimants   !== undefined) choreUpdates.maxClaimants  = updates.maxClaimants;
-      if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins    = updates.bonusCoins;
-      if (updates.difficulty     !== undefined) choreUpdates.difficulty    = updates.difficulty;
-      if (updates.dueDate        !== undefined) choreUpdates.dueDate       = updates.dueDate;
-      if (updates.dueTime        !== undefined) choreUpdates.dueTime       = updates.dueTime;
+      if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins        = updates.bonusCoins;
+      if (updates.maxClaimants   !== undefined) choreUpdates.maxClaimants      = updates.maxClaimants;
+      if (updates.category       !== undefined) choreUpdates.category          = updates.category as any;
+      if (updates.difficulty     !== undefined) choreUpdates.difficulty        = updates.difficulty;
+      if (updates.photoRequired  !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
+      if (updates.assignedToId   !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
+      if (updates.linkedEventId  !== undefined) choreUpdates.linkedEventId     = updates.linkedEventId;
+      if (updates.dueDate        !== undefined) choreUpdates.dueDate           = updates.dueDate;
+      if (updates.dueTime        !== undefined) choreUpdates.dueTime           = updates.dueTime;
       if (updates.alertCall            !== undefined) choreUpdates.alertCall            = updates.alertCall;
       if (updates.alertCallLeadMinutes !== undefined) choreUpdates.alertCallLeadMinutes = updates.alertCallLeadMinutes;
       if (updates.recurrence && ['once', 'daily', 'weekly', 'monthly'].includes(updates.recurrence)) {
         choreUpdates.recurrenceRule = { frequency: updates.recurrence as 'once' | 'daily' | 'weekly' | 'monthly' };
       }
-      if (updates.assignedToId   !== undefined) choreUpdates.assignedToId  = updates.assignedToId;
-      if ((updates as any).isPool !== undefined) choreUpdates.isPool       = (updates as any).isPool;
+      if ((updates as any).isPool !== undefined) choreUpdates.isPool           = (updates as any).isPool;
       if ((updates as any).isAdultTask !== undefined) {
         const adult = (updates as any).isAdultTask as boolean;
         choreUpdates.isPrivateParent = adult;
@@ -601,7 +619,9 @@ useQuestStore.getState = () => {
       store.updateChore(id, choreUpdates);
     },
     addQuest:      (q: any) => store.addChore(questInputToChoreInput(q) as any),
-    reassignQuest: (id: string, memberId: string, _by?: string) => {
+    // Made awaitable — same race-condition fix as the instance-hook
+    // reassignQuest above (see its own comment).
+    reassignQuest: async (id: string, memberId: string, _by?: string) => {
       // See the instance-hook reassignQuest above for why '' must map to
       // undefined/pool rather than being written through as an empty string,
       // and why a team-clone chore declines-in-place instead of releasing
@@ -609,7 +629,7 @@ useQuestStore.getState = () => {
       if (!memberId) {
         const chore = store.chores.find(c => c.id === id);
         if (chore?.teamGroupId && chore?.targetChildIds?.length) {
-          store.updateChore(id, { status: 'declined', assignedToId: undefined });
+          await store.updateChore(id, { status: 'declined', assignedToId: undefined });
           return;
         }
       }
@@ -621,7 +641,7 @@ useQuestStore.getState = () => {
       // only when wasMidReview.
       const wasMidReview = chore?.status === 'pending_approval' || chore?.status === 'redo_requested';
       const isPoolRelease = !memberId;
-      store.updateChore(id, {
+      await store.updateChore(id, {
         assignedToId: memberId || undefined,
         isPool: memberId ? undefined : true,
         ...(isPoolRelease ? { status: 'todo' as const } : {}),

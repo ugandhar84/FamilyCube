@@ -112,7 +112,7 @@ export function SubmitQuestSheet({
                     ) : (
                       <View style={{ borderRadius: 14, padding: 13, borderWidth: 1.5, borderStyle: 'dashed', borderColor: submitTarget?.photoRequired ? '#F59E0B' : colors.border,
                         backgroundColor: submitTarget?.photoRequired ? '#FEF3C710' : 'transparent' }}>
-                        <Text style={{ fontSize: TYPO.label, color: submitTarget?.photoRequired ? '#D97706' : colors.textTertiary, textAlign: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, color: submitTarget?.photoRequired ? colors.amber : colors.textTertiary, textAlign: 'center' }}>
                           {submitTarget?.photoRequired ? 'Attach a photo to unlock submission.' : 'No photo attached yet.'}
                         </Text>
                       </View>

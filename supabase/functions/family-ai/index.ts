@@ -513,7 +513,12 @@ Input: "${text}"
 
 Return JSON: {
   task: null | {
-    title: string,
+    title: string — a short, clean, action-verb task name (2–5 words). Strip all scheduling
+      details (times, dates, days, "every Monday", "by Friday"), filler words, and any
+      person's name unless the name IS the task identity (e.g. "Call Grandma"). Start with
+      an imperative verb. Examples: "Water the plants", "Take out the trash", "Finish math
+      homework", "Clean the garage", "Walk the dog", "Pay electricity bill". Never return
+      the raw input text — always distil it into a crisp, board-ready task title.
     category: one of ${JSON.stringify(taskDomains)} (pick the closest match, never invent a new value),
     kind: "event" | "quest" — decide using this rule, in order:
       1. Does the input mention a driver, ride, pickup, or drop-off ("pick up X from Y",
@@ -547,11 +552,12 @@ Return JSON: {
       a single named person -> that one name only, still as a one-item array. Empty
       array if nobody specific was named or implied.)
     recurrenceFrequency: "once" | "daily" | "weekly" | "monthly" — "once" unless the
-      input names a repeating pattern ("every Wednesday", "every day", "daily", "weekly",
-      "every week", "monthly", "every weekday", "weekdays"). "Pick up Maya from soccer
-      every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct from
-      "every day" which is all 7) is ALSO "weekly", not "daily" — "School drop-off every
-      weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
+      input names a repeating pattern ("every Wednesday", "every day", "everyday", "daily",
+      "weekly", "every week", "monthly", "every weekday", "weekdays"). Note: "everyday"
+      (one word) means the same as "every day" — treat it as "daily". "Pick up Maya from
+      soccer every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct
+      from "every day"/"everyday" which is all 7) is ALSO "weekly", not "daily" —
+      "School drop-off every weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
     recurrenceDays: number[] — weekly recurrence only, which weekdays it repeats on,
       0=Sunday..6=Saturday (e.g. "every Wednesday" -> [3], "every Mon and Thu" -> [1,4],
       "every weekday"/"weekdays" -> [1,2,3,4,5]). Empty array unless recurrenceFrequency

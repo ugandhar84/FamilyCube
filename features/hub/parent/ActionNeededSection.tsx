@@ -23,7 +23,7 @@ import { dedupeRideSeries } from '../lib/dedupeRideSeries';
 const MONEY_GREEN = '#10B981';
 // Indigo — "school supplies" accent, distinct from brand purple; kept as
 // one local constant instead of a repeated bare hex.
-const INDIGO_ACCENT = '#6366F1';
+const INDIGO_ACCENT = '#4A7FA5' // sky;
 
 // ─── Priority ranking ───────────────────────────────────────────────────────
 // A parent glances at this list for seconds between tasks — it has to read
@@ -67,7 +67,7 @@ function CheckinRow({ req, kidName, colors, isDark, active, approveRequest }: {
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-      backgroundColor: isDark ? '#1e293b' : '#F0FDF4', borderRadius: 14, padding: 12,
+      backgroundColor: colors.tealLight, borderRadius: 14, padding: 12,
       borderLeftWidth: 3, borderLeftColor: colors.parent }}>
       <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.parent + '20', alignItems: 'center', justifyContent: 'center' }}>
         <CheckinIcon size={17} color={colors.parent} />

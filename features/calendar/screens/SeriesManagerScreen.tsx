@@ -197,15 +197,15 @@ export default function SeriesManagerScreen() {
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 12,
                     borderRadius: RADIUS.md, borderWidth: 1,
-                    borderColor: selected ? '#7B5EA7' : colors.border,
+                    borderColor: selected ? colors.pink : colors.border,
                     backgroundColor: selected ? (isDark ? '#2A2438' : '#F5F3FA') : colors.card,
                     paddingVertical: 10, paddingHorizontal: 12, opacity: past ? 0.55 : 1,
                   }}
                 >
                   <View style={{
                     width: 22, height: 22, borderRadius: 6, borderWidth: 2,
-                    borderColor: selected ? '#7B5EA7' : '#C4C0CC',
-                    backgroundColor: selected ? '#7B5EA7' : 'transparent',
+                    borderColor: selected ? colors.pink : colors.border,
+                    backgroundColor: selected ? colors.pink : 'transparent',
                     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   }}>
                     {selected && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>✓</Text>}

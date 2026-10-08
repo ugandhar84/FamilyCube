@@ -34,7 +34,7 @@ export function KidLeaderboard({ activeId, kids, colors, isDark }: {
               backgroundColor: isMe ? BRAND.purple + '18' : 'transparent', borderWidth: isMe ? 1.5 : 0, borderColor: BRAND.purple + '40' }}>
               <Text style={{ fontSize: KID.title, width: 26 }}>{MEDALS[i] ?? `${i + 1}.`}</Text>
               <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} size={32}
-                ringColor={BRAND.purple} ringWidth={isMe ? 2 : 0} />
+                ringColor={BRAND.amber} ringWidth={isMe ? 2 : 0} />
               <Text style={{ flex: 1, fontSize: KID.body, fontWeight: isMe ? '900' : '700', color: isMe ? BRAND.purple : colors.textPrimary }}>
                 {k.name.split(' ')[0]}{isMe ? ' (you)' : ''}
               </Text>

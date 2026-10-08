@@ -545,7 +545,7 @@ function suggestTitle(rawInput: string, entry: CategoryEntry, person: string | n
     if (locs.pickup) return (person ? `Pickup ${person}` : 'Pickup') + ` from ${locs.pickup}`;
   }
   t = t.replace(LEADING_FRAME_RE, '');
-  const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately|(?:enable\s+)?call\s+(?:reminder|notification|alert)s?)\b/i;
+  const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|everyday|each\s+day|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately|(?:enable\s+)?call\s+(?:reminder|notification|alert)s?)\b/i;
   const m = cutoffRe.exec(t);
   if (m) t = m.index > 0 ? t.slice(0, m.index) : t.slice(m[0].length);
   t = t.replace(/\s+/g, ' ').trim().replace(/^[,.\-—]+|[,.\-—]+$/g, '').trim();
@@ -691,7 +691,7 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   if (weekdayRe.test(input)) {
     recurrence = 'weekly';
     recurrenceDays.push(1, 2, 3, 4, 5);
-  } else if (/\bdaily\b|\bevery day\b/.test(input)) {
+  } else if (/\bdaily\b|\bevery\s+day\b|\beveryday\b|\beach\s+day\b/.test(input)) {
     recurrence = 'daily';
   } else if (/\bmonthly\b|\bevery month\b/.test(input)) {
     recurrence = 'monthly';

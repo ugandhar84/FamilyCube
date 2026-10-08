@@ -54,7 +54,7 @@ export default function SwipeableEventCard({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
           style={{
             width: 24, height: 24, borderRadius: 7, borderWidth: 2,
-            borderColor: selected ? '#7B5EA7' : '#C4C0CC',
+            borderColor: selected ? '#7B5EA7' : 'rgba(223,97,60,0.15)',
             backgroundColor: selected ? '#7B5EA7' : 'transparent',
             alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}

@@ -33,6 +33,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility, eventAssignee } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
+import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -56,6 +57,9 @@ import AgendaView from './components/AgendaView';
 import SwipeableEventCard from './components/SwipeableEventCard';
 import DaySlotView from './components/DaySlotView';
 import { eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
+import { useUIStore } from '@/store/uiStore';
+import JustDescribeItEventScreen from './components/JustDescribeItEventScreen';
+import EventDetailScreen from './components/EventDetailScreen';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 // Minutes until a today-dated event starts; Infinity for other days / no time set
@@ -358,12 +362,13 @@ function FadeInView({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function CalendarScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery }: {
+export default function CalendarScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery, onRequestJustDescribe, onRequestEventDetail }: {
   hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
-  // TasksScreen hosts its own search icon on the tab-card and drives this
-  // screen's existing title/notes filter externally, instead of duplicating
-  // a second search affordance inline here.
   hideSearchBar?: boolean; externalSearchQuery?: string;
+  onRequestJustDescribe?: (prefill?: { date?: string; time?: string }) => void;
+  // When embedded, bubble event-detail taps up so the parent screen does the
+  // full-page early-return instead of CalendarScreen rendering inside itself.
+  onRequestEventDetail?: (ev: FamilyEvent) => void;
 } = {}) {
   const { colors, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
@@ -548,6 +553,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // Parents keep the pre-existing behavior — see everyone by default, filter
   // per family member. My Schedule/All is only a kid/teen/senior concept.
   const [scheduleFilter, setScheduleFilter] = useState<'mine' | 'all'>(isParent ? 'all' : 'mine');
+  const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
+  const [justDescribePrefill, setJustDescribePrefill] = useState<{ date?: string; time?: string }>({});
   const [showAdd,       setShowAdd]       = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
     title: string; category?: string; memberId?: string; startAt?: string; notes?: string;
@@ -586,6 +593,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     setFilterMember(null);
     setScheduleFilter(isParent ? 'all' : 'mine');
     setCompact(false);
+    setShowJustDescribeEvent(false);
     setShowAdd(false);
     setShowAskHelp(false);
     setEditEv(null);
@@ -603,7 +611,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // chronological single-day timeline. 'agenda' — grouped-by-date list
   // spanning many upcoming days. Defaults to 'agenda' — the most useful
   // at-a-glance view across the whole family's upcoming schedule.
-  const [viewMode,      setViewMode]      = useState<'month' | 'week' | 'day' | 'agenda'>('agenda');
+  const [viewMode,      setViewMode]      = useState<'month' | 'week' | 'day' | 'agenda'>('day');
   const [monthCursor,   setMonthCursor]   = useState(() => parseDate(toDateStr(new Date())));
   const [weekCursor,    setWeekCursor]    = useState(() => {
     const b = currentWeekBounds();
@@ -635,10 +643,28 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // always seen first, matching Month/Week/Agenda.
   const [dayDockedVisible, setDayDockedVisible] = useState(false);
   const dayDockAnim = useRef(new Animated.Value(0)).current;
+  const [showMonthPicker, setShowMonthPicker] = useState<'week' | 'month' | false>(false);
 
   React.useEffect(() => {
     setDayDockedVisible(false);
     dayDockAnim.setValue(0);
+    setShowMonthPicker(false);
+  }, [viewMode, selectedDate]);
+
+  // Auto-scroll day timeline to current hour (today) or 8 AM (other days)
+  React.useEffect(() => {
+    if (viewMode !== 'day') return;
+    const HOUR_H = 60;
+    const SLOT_START = 5;
+    const scrollHour = selectedDate === todayStr
+      ? Math.max(SLOT_START, new Date().getHours() - 1)
+      : 8;
+    const y = (scrollHour - SLOT_START) * HOUR_H;
+    // Delay until layout settles
+    const t = setTimeout(() => {
+      dayScrollRef.current?.scrollTo({ y, animated: true });
+    }, 350);
+    return () => clearTimeout(t);
   }, [viewMode, selectedDate]);
 
 
@@ -737,11 +763,26 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, weekCursor]));
 
+  // Default view on (re)focus: always land back on Day/today — whatever
+  // view or date the user had drilled into on a previous visit (Week,
+  // Month, a past/future day) resets rather than persisting silently.
+  useFocusEffect(useCallback(() => {
+    goToToday();
+    setViewMode('day');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
+
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
   // Net-new title/notes search — layers on top of the existing date/member/
   // role filters below, never replaces them.
   const [internalSearchQuery, setSearchQuery] = useState('');
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
+
+  // Opens event detail — bubbles to parent when embedded so the full-page
+  // swap happens at the top level, not inside a nested view.
+  const openDetail = (ev: FamilyEvent) => {
+    if (onRequestEventDetail) { onRequestEventDetail(ev); } else { openDetail(ev); }
+  };
 
   // AI state
   const [aiResult,       setAiResult]       = useState<AiResult | null>(null);
@@ -1048,22 +1089,46 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
   const selectedDateLabel = fmtDate(selectedDate);
 
-  const cardBg   = isDark ? '#131927' : '#FFFFFF';
-  const cardBord = isDark ? '#1E293B' : '#E2E8F0';
+  const familyName = useFamilyStore(s => s.familyName);
+  const cardBg   = colors.card;
+  const cardBord = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+
+  // Hide shared FAB when JustDescribeItEventScreen is open
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(showJustDescribeEvent);
+    return () => { useUIStore.getState().setFullBleedScreenActive(false); };
+  }, [showJustDescribeEvent]);
+
+  // Early-return: full-page event detail (only when standalone — when embedded,
+  // bubble up via onRequestEventDetail so the parent does the full-page swap)
+  if (detailEv && !onRequestEventDetail) {
+    return (
+      <EventDetailScreen
+        ev={detailEv}
+        onClose={() => setDetailEv(null)}
+        onDelete={async (id) => {
+          await deleteEvent(id);
+          setDetailEv(null);
+        }}
+      />
+    );
+  }
+
+  // Early-return: full-page event composer
+  if (showJustDescribeEvent) {
+    return (
+      <JustDescribeItEventScreen
+        visible
+        activeMemberId={activeMember?.id ?? ''}
+        prefillDate={justDescribePrefill.date}
+        prefillTime={justDescribePrefill.time}
+        onClose={() => { setShowJustDescribeEvent(false); setJustDescribePrefill({}); }}
+      />
+    );
+  }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
-      {!hideHeader && (
-        <AppHeader
-          memberName={activeMember?.name}
-          memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={switchMember}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
-      )}
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
 
       {/* ── Main Scroll: title + AI + member filter + timeline ──
@@ -1078,71 +1143,69 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
       {/* Calendar shares the 'tasks' tab route with Quests, so the shared
           Ask Cube FAB (morphed to "+") is visible here too — same overlap
           risk fixed across every other FAB-visible tab this pass. */}
-      <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}
+      <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}
         scrollEnabled={viewMode !== 'day'} bounces={viewMode !== 'day'}>
 
         {headerContent}
 
-        {/* [0] Scrollable: Title row + AI banner + AI panel */}
+        {/* [0] Scrollable: Figma TopBar + AI banner + AI panel */}
         <View>
-          <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }, hideHeader && { paddingTop: 0, paddingBottom: 2 }]}>
-            <View>
-              {!hideHeader && (
-                <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
-                  {isKid ? 'My Schedule' : 'Family Schedule'}
-                </Text>
-              )}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1 }}>
-                {!hideHeader && (
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
-                    {selectedDateLabel}
-                  </Text>
-                )}
+          {!hideHeader && (
+            <>
+              {/* Figma h1 block below the TopBar */}
+              <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
+                {/* "‹ Today" back link — Figma .back, shown when not on today */}
                 {selectedDate !== todayStr && (
-                  <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Today" pill [features/calendar/CalendarScreen.tsx:984]`); goToToday(); }}
-                    style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: BRAND.purple + '15' }}>
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>Today</Text>
+                  <TouchableOpacity onPress={goToToday} style={{ marginBottom: 2 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink }}>‹ Today</Text>
                   </TouchableOpacity>
                 )}
+                {/* Figma .topbar h1 */}
+                <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 32 }}>
+                  {isKid ? 'My schedule' : 'The family plan'}
+                </Text>
+                {/* Date subtitle */}
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                  {selectedDateLabel}
+                </Text>
               </View>
-            </View>
-          </View>
+            </>
+          )}
 
-          {/* Shared wrapping toolbar row — mirrors QuestsScreen's AI-pill +
-              search + "+Quest" pill composition: AI conflict pill (parent
-              only, renders nothing when there's nothing to flag), search,
-              then the role-appropriate action pill(s). */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 14, gap: 8 }}>
-            {isParent && (
-              <AiConflictBanner
-                hasConflicts={dayEvents.some(e => e.conflict || e.helperStatus === 'rejected')}
-                isAnalyzing={isAnalyzing}
-                showAiPanel={false}
-                aiResult={aiResult}
-                appliedSwaps={appliedSwaps}
-                onRunScan={runAiScan}
-                onClosePanel={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AI conflict panel [features/calendar/CalendarScreen.tsx:1006]`); setShowAiPanel(false); }}
-                onApplySwap={handleApplySwap}
-                colors={colors} isDark={isDark}
-              />
-            )}
-            {!hideSearchBar && <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />}
-            {isKid ? null : (
-              isParentOrSenior && !hideCreateButton && (
-                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open AddEventModal [features/calendar/CalendarScreen.tsx:1027]`); setShowAdd(true); }}>
-                  <I.Plus c="#fff" size={14} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
-                </TouchableOpacity>
-              )
-            )}
-          </View>
+          {hideHeader && selectedDate !== todayStr && (
+            <TouchableOpacity onPress={goToToday}
+              style={{ marginHorizontal: 20, marginTop: 4, alignSelf: 'flex-start',
+                borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: colors.pinkLight }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.pink }}>Today</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Toolbar row — AI conflict pill + search */}
+          {!hideHeader && (isParent || !hideSearchBar) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 6, gap: 8 }}>
+              {isParent && (
+                <AiConflictBanner
+                  hasConflicts={dayEvents.some(e => e.conflict || e.helperStatus === 'rejected')}
+                  isAnalyzing={isAnalyzing}
+                  showAiPanel={false}
+                  aiResult={aiResult}
+                  appliedSwaps={appliedSwaps}
+                  onRunScan={runAiScan}
+                  onClosePanel={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AI conflict panel [features/calendar/CalendarScreen.tsx:1006]`); setShowAiPanel(false); }}
+                  onApplySwap={handleApplySwap}
+                  colors={colors} isDark={isDark}
+                />
+              )}
+              {!hideSearchBar && <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />}
+            </View>
+          )}
 
           {/* Standalone AI results panel — kept separate from the pill row
               above (it expands full-width below the toolbar, same spot the
               old inline panel occupied) since AiConflictBanner's own pill
               is rendered with showAiPanel forced false above to avoid
               double-rendering the panel inline in the wrapping row. */}
-          {isParent && showAiPanel && (
+          {!hideHeader && isParent && showAiPanel && (
             <AiConflictBanner
               hasConflicts={false}
               isAnalyzing={isAnalyzing}
@@ -1160,11 +1223,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               row (always visible above the view tabs, not tucked inside
               one specific view). "All Family" + one pill per member,
               colored dot per role. Parent/senior only. */}
-          {isParentOrSenior && (
+          {!hideHeader && isParentOrSenior && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingTop: 10 }}>
+              contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingTop: 8 }}>
               <TouchableOpacity
-                style={[sc.pill, !filterMember ? { backgroundColor: colors.accent, borderColor: colors.accent } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : colors.accent + '30' }]}
+                style={[sc.pill, !filterMember ? { backgroundColor: colors.teal, borderColor: colors.teal } : { backgroundColor: isDark ? colors.surface : colors.surface, borderColor: isDark ? colors.border : colors.teal + '30' }]}
                 onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "All Family" for "member filter" [features/calendar/CalendarScreen.tsx:1063]`); setFilterMember(null); }}>
                 <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Family</Text>
               </TouchableOpacity>
@@ -1173,7 +1236,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 const isSel = filterMember === m.id;
                 return (
                   <TouchableOpacity key={m.id}
-                    style={[sc.pill, isSel ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
+                    style={[sc.pill, isSel ? { backgroundColor: colors.pink, borderColor: colors.pink } : { backgroundColor: isDark ? colors.surface : colors.surface, borderColor: isDark ? colors.border : 'rgba(123,94,167,0.2)' }]}
                     onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${m.name}" (id=${m.id}) for "member filter" newValue=${isSel ? 'cleared' : m.id} [features/calendar/CalendarScreen.tsx:1072]`); setFilterMember(isSel ? null : m.id); }}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isSel ? '#fff' : rs.dot }} />
                     <Text style={[sc.pillText, { color: isSel ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
@@ -1183,36 +1246,28 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             </ScrollView>
           )}
 
-          {/* Toolbar — Month / Week / Day / Agenda segmented switch. Month/
-              Week own their own prev/next chevrons inside the view itself;
-              Agenda has no single-date concept at all; so the day-step
-              chevrons + Range button only show for Day, where "which
-              single date" is still the relevant question. Available to
-              every role (parent/senior/teen/kid) — the "+ Event" create
-              button above and other genuine permission gates stay on
-              isParentOrSenior specifically; this is pure navigation, not a
-              permission. */}
+          {/* Day / Week / Month segmented switcher — a view-mode control, not
+              part of the header, so it must stay visible even when hideHeader
+              suppresses the AppHeader/title (e.g. embedded in TasksScreen) */}
           {canUseFullCalendarToolbar && (
-            <View style={{ marginTop: 10, gap: 8 }}>
-              {/* Mock's segmented control: equal-width tabs in one pill-shaped
-                  bar, active tab lifted on a white/card chip — not a
-                  scrolling row of separate pills. */}
-              <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 12, padding: 3,
-                borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ marginHorizontal: 20, marginTop: 10, marginBottom: 2 }}>
+              <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#EEEDF3', borderRadius: 14, padding: 4 }}>
                 {([
-                  { key: 'agenda' as const, label: 'Agenda' },
-                  { key: 'month' as const,  label: 'Month' },
-                  { key: 'week' as const,   label: 'Week' },
-                  { key: 'day' as const,    label: 'Day' },
-                ]).map(v => (
-                  <TouchableOpacity key={v.key} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${v.label}" for "view mode" [features/calendar/CalendarScreen.tsx:1102]`); setViewMode(v.key); }}
+                  { key: 'day'   as const, label: 'Day'   },
+                  { key: 'week'  as const, label: 'Week'  },
+                  { key: 'month' as const, label: 'Month' },
+                ] as const).map(v => (
+                  <TouchableOpacity key={v.key}
+                    onPress={() => { setViewMode(v.key); setShowMonthPicker(false); }}
                     style={withAndroidShadowFix({
-                      flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 9,
+                      flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
                       backgroundColor: viewMode === v.key ? colors.card : 'transparent',
-                      shadowColor: colors.textPrimary, shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
+                      shadowColor: colors.navy,
+                      shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0,
+                      shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
                     })}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700',
-                      color: viewMode === v.key ? colors.textPrimary : colors.textSecondary }}>
+                    <Text style={{ fontSize: 13, fontWeight: viewMode === v.key ? '700' : '500',
+                      color: viewMode === v.key ? colors.primary : colors.textSecondary }}>
                       {v.label}
                     </Text>
                   </TouchableOpacity>
@@ -1227,16 +1282,16 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             viewMode==='day', which a kid never reaches (no toolbar exists
             to set it) — silently hid this toggle from kids entirely. */}
         {(viewMode === 'day' || isKid) && !isParent && (
-          <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <View style={{ flexDirection: 'row', marginHorizontal: 14, marginTop: 10, marginBottom: 10,
-              backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
+          <View style={{ backgroundColor: 'transparent' }}>
+            <View style={{ flexDirection: 'row', marginHorizontal: 20, marginTop: 10, marginBottom: 6,
+              backgroundColor: isDark ? colors.surface : '#EEEDF3', borderRadius: 12, padding: 3 }}>
               {([{ key: 'mine', label: 'My Schedule' }, { key: 'all', label: 'All' }] as const).map(t => (
                 <TouchableOpacity key={t.key}
                   onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${t.label}" for "schedule scope" [features/calendar/CalendarScreen.tsx:1129]`); setScheduleFilter(t.key); if (t.key === 'mine') setFilterMember(null); }}
                   style={{ flex: 1, borderRadius: 9, paddingVertical: 8, alignItems: 'center',
-                    backgroundColor: scheduleFilter === t.key ? BRAND.purple : 'transparent' }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
-                    color: scheduleFilter === t.key ? '#fff' : colors.textSecondary }}>{t.label}</Text>
+                    backgroundColor: scheduleFilter === t.key ? colors.card : 'transparent' }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700',
+                    color: scheduleFilter === t.key ? colors.pink : colors.textSecondary }}>{t.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1250,7 +1305,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               selected={selectedDate}
               stripMap={filteredStripMap}
               colors={colors} isDark={isDark}
-              onSelectDay={(d) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected day "${d}" for "month grid" [features/calendar/CalendarScreen.tsx:1147]`); setSelectedDate(d); storeSelectDate(d); }}
+              onSelectDay={(d) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected day "${d}" for "month grid" [features/calendar/CalendarScreen.tsx:1147]`); setSelectedDate(d); storeSelectDate(d); setViewMode('day'); }}
               onChangeMonth={(delta) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped month nav delta=${delta} [features/calendar/CalendarScreen.tsx:1148]`); setMonthCursor(prev => {
                 const next = new Date(prev.getFullYear(), prev.getMonth() + delta, 1);
                 return next;
@@ -1266,7 +1321,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               events={scopedRangeEvents}
               members={members}
               colors={colors} isDark={isDark}
-              onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Week view → open detail sheet [features/calendar/CalendarScreen.tsx:1163]`); setDetailEv(ev); }}
+              onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Week view → open detail sheet [features/calendar/CalendarScreen.tsx:1163]`); openDetail(ev); }}
               onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Week view → routeLongPress [features/calendar/CalendarScreen.tsx:1164]`); routeLongPress(ev); }}
               onNavigateWeek={(delta) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped week nav delta=${delta} [features/calendar/CalendarScreen.tsx:1165]`); setWeekCursor(prev => addDays(prev, delta * 7)); }}
               // showAdd opens the parent/senior EventFormAdd modal — a kid
@@ -1280,9 +1335,9 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         {viewMode === 'agenda' && (
           <FadeInView>
             {rangeLoading && scopedRangeEvents.length === 0 ? (
-              <View style={{ paddingHorizontal: 14, gap: 10, paddingTop: 8 }}>
+              <View style={{ paddingHorizontal: 20, gap: 10, paddingTop: 8 }}>
                 {[70, 70, 70].map((h, i) => (
-                  <View key={i} style={{ height: h, borderRadius: 16, backgroundColor: isDark ? '#1E293B' : '#E8E6F0', opacity: 0.5 + i * 0.1 }} />
+                  <View key={i} style={{ height: h, borderRadius: 16, backgroundColor: colors.surface, opacity: 0.5 + i * 0.1 }} />
                 ))}
               </View>
             ) : (
@@ -1290,7 +1345,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 events={scopedRangeEvents}
                 members={members}
                 colors={colors} isDark={isDark}
-                onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Agenda view → open detail sheet [features/calendar/CalendarScreen.tsx:1187]`); setDetailEv(ev); }}
+                onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Agenda view → open detail sheet [features/calendar/CalendarScreen.tsx:1187]`); openDetail(ev); }}
                 onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Agenda view → routeLongPress [features/calendar/CalendarScreen.tsx:1188]`); routeLongPress(ev); }}
                 isViewerParent={isParent}
                 canDeleteEvent={(ev) => !isEventPast(ev.date, ev.time) && (isParent || ((isKid || isTeen) && !!ev.approvalPending && ev.memberId === activeMemberId))}
@@ -1324,66 +1379,46 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             style detail card kept appearing under Agenda/Week). */}
         {(viewMode === 'month' || viewMode === 'day') && (<React.Fragment>
         {viewMode === 'month' ? (
-          // Selected-day card below the month grid — matches the reference
-          // exactly: white rounded card, title + count badge header, each
-          // event a colored-left-bar + light-tint row (role color, not
-          // category) with the member's name as a pill on the right.
-          <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
-            <DayEventsSummaryCard
-              dateLabel={selectedDate === todayStr ? 'Today' : selectedDateLabel}
-              events={dayEvents}
-              loading={dayLoading}
-              isViewerParent={isParent}
-              members={members}
-              colors={colors} isDark={isDark}
-              onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Month day-summary card → open detail sheet [features/calendar/CalendarScreen.tsx:1230]`); setDetailEv(ev); }}
-              onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Month day-summary card → routeLongPress [features/calendar/CalendarScreen.tsx:1231]`); routeLongPress(ev); }}
-            />
-          </View>
+          // Figma .section-title + .agenda-list below the month grid
+          <DayEventsSummaryCard
+            dateLabel={selectedDate === todayStr ? 'Today' : selectedDateLabel}
+            events={dayEvents}
+            loading={dayLoading}
+            isViewerParent={isParent}
+            members={members}
+            colors={colors} isDark={isDark}
+            onSelectEvent={(ev) => { openDetail(ev); }}
+            onLongPressEvent={(ev) => { routeLongPress(ev); }}
+          />
         ) : viewMode === 'day' && canUseFullCalendarToolbar ? (
-          // Simple hour-slot list — matches the reference's Day view.
-          // The full date card scrolls away normally as part of the
-          // content (no stickyHeaderIndices — that fought this row's
-          // flexDirection layout and only ever pins something in place
-          // immediately, not the "scroll away, then dock" behavior this
-          // needed). Instead a slim compact bar sits fixed under the app
-          // header, hidden until the full card has scrolled out of view,
-          // then fades/slides in — the standard iOS collapsing-header
-          // pattern, driven by tracking scroll position against the
-          // card's own measured height.
-          <View ref={dayWrapperRef} style={{ paddingTop: 12, height: dayViewportHeight, position: 'relative' }}
+          // Figma Day view: .day-summary (AT A GLANCE card) + .section-title + .day-timeline
+          <View ref={dayWrapperRef} style={{ paddingTop: 8, height: dayViewportHeight, position: 'relative' }}
             onLayout={() => {
               dayWrapperRef.current?.measureInWindow((_x, pageY) => {
-                const available = windowHeight - pageY - 90; // ~90px breathing room above the tab bar
+                const available = windowHeight - pageY - 90;
                 if (available > 200) setDayViewportHeight(available);
               });
             }}>
-            {/* Docked compact bar — absolutely positioned over the top of
-                the scroller, invisible/non-interactive until scrolled past
-                the full card. Sits flush at true top:0 (not offset by the
-                wrapper's paddingTop, which only affects the ScrollView's
-                content below it) with its own full-bleed opaque background
-                so no sliver of the scrolled-away card can show through
-                behind or beside it. */}
+            {/* Docked compact bar */}
             <Animated.View pointerEvents={dayDockedVisible ? 'auto' : 'none'} style={{
               position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-              paddingTop: 12, paddingBottom: 8,
-              backgroundColor: isDark ? colors.background : '#F5F4FA',
+              paddingTop: 8, paddingBottom: 8,
+              backgroundColor: isDark ? '#0E0C13' : '#FFFFFF',
               opacity: dayDockAnim,
               transform: [{ translateY: dayDockAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
             }}>
-              <View style={withAndroidShadowFix({ marginHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
-                backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 8, paddingHorizontal: 14,
+              <View style={withAndroidShadowFix({ marginHorizontal: 20, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+                backgroundColor: colors.card, paddingVertical: 8, paddingHorizontal: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } })}>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1270]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronLeft c={colors.textSecondary} size={15} />
                 </TouchableOpacity>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>
                   {selectedDateLabel}
                 </Text>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "next day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1277]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronRight c={colors.textSecondary} size={15} />
                 </TouchableOpacity>
@@ -1401,36 +1436,103 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   Animated.timing(dayDockAnim, { toValue: shouldShow ? 1 : 0, duration: 180, useNativeDriver: true }).start();
                 }
               }}>
-              <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}
-                style={{ marginHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
-                backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 10, paddingHorizontal: 14,
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (full header) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1299]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                  style={{ padding: 6 }}>
-                  <I.ChevronLeft c={colors.textSecondary} size={16} />
-                </TouchableOpacity>
-                <View style={{ alignItems: 'center' }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-                    {selectedDateLabel}
-                  </Text>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }}>
-                    {dayEvents.filter(ev => ev.category !== 'Holiday').length} Scheduled Activit{dayEvents.filter(ev => ev.category !== 'Holiday').length === 1 ? 'y' : 'ies'}
+
+              {/* Day summary strip — date + event count + next event + nav */}
+              <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}>
+                {/* Date row with prev/next arrows */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 20, paddingTop: 6, paddingBottom: 4 }}>
+                  <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                    style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.surface : colors.primaryLight }}>
+                    <I.ChevronLeft c={colors.primary} size={16} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={goToToday} style={{ alignItems: 'center', flex: 1, paddingHorizontal: 8 }}>
+                    <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>
+                      {selectedDateLabel}
+                    </Text>
+                    {selectedDate === todayStr && (
+                      <View style={{ marginTop: 2, paddingHorizontal: 8, paddingVertical: 2,
+                        borderRadius: 6, backgroundColor: colors.primary }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff', letterSpacing: 0.8 }}>TODAY</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                    style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.surface : colors.primaryLight }}>
+                    <I.ChevronRight c={colors.primary} size={16} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Event summary pills row */}
+                {(() => {
+                  const dayCount = dayEvents.filter(ev => ev.category !== 'Holiday').length;
+                  const upcoming = dayEvents.filter(ev => ev.category !== 'Holiday' && ev.time && !isEventPast(ev.date, ev.time));
+                  const pending = dayEvents.filter(ev => ev.approvalPending || ev.helperStatus === 'pending' || ev.driverStatus === 'pending');
+                  const fmt12h = (t: string) => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`; };
+                  return (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                      paddingHorizontal: 20, paddingBottom: 10, flexWrap: 'wrap' }}>
+                      {/* Event count */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                        backgroundColor: isDark ? colors.surface : colors.primaryLight,
+                        borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+                        <I.Calendar c={colors.primary} size={13} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>
+                          {dayCount} event{dayCount === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                      {/* Next event time */}
+                      {upcoming[0] && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                          backgroundColor: isDark ? colors.surface : colors.tealLight,
+                          borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal }}>
+                            Next · {fmt12h(upcoming[0].time!)} {upcoming[0].title.length > 18 ? upcoming[0].title.slice(0,18) + '…' : upcoming[0].title}
+                          </Text>
+                        </View>
+                      )}
+                      {/* Pending badge */}
+                      {pending.length > 0 && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                          backgroundColor: isDark ? 'rgba(217,119,6,0.2)' : colors.amberLight,
+                          borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber }}>
+                            {pending.length} pending
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
+
+                {/* Section title */}
+                <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
+                  borderTopWidth: 1, borderTopColor: colors.border }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.2 }}>
+                    Timeline
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "next day" (full header) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1311]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                  style={{ padding: 6 }}>
-                  <I.ChevronRight c={colors.textSecondary} size={16} />
-                </TouchableOpacity>
               </View>
 
               <DaySlotView
                 dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday')}
                 members={members}
                 colors={colors} isDark={isDark}
-                onSelect={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Day slot view → open detail sheet [features/calendar/CalendarScreen.tsx:1321]`); setDetailEv(ev); }}
-                onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Day slot view → routeLongPress [features/calendar/CalendarScreen.tsx:1322]`); routeLongPress(ev); }}
-                onAddAtTime={(hourTimeKey) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Tap to add event" at hour=${hourTimeKey} in Day slot view → open EventFormAdd [features/calendar/CalendarScreen.tsx:1323]`); setShowAdd(true); }}
+                onSelect={(ev) => { openDetail(ev); }}
+                onLongPressEvent={(ev) => { routeLongPress(ev); }}
+                onAddAtTime={(hourTimeKey) => {
+                  const prefill = { date: selectedDate, time: hourTimeKey };
+                  if (onRequestJustDescribe) {
+                    onRequestJustDescribe(prefill);
+                  } else {
+                    setJustDescribePrefill(prefill);
+                    setShowJustDescribeEvent(true);
+                  }
+                }}
               />
+
             </ScrollView>
           </View>
         ) : (
@@ -1509,7 +1611,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                     ) : (
                     <TouchableOpacity
                       activeOpacity={0.78}
-                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in compact day timeline → open detail sheet [features/calendar/CalendarScreen.tsx:1400]`); setDetailEv(ev); }}
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in compact day timeline → open detail sheet [features/calendar/CalendarScreen.tsx:1400]`); openDetail(ev); }}
                       onLongPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in compact day timeline → routeLongPress [features/calendar/CalendarScreen.tsx:1401]`); routeLongPress(ev); }}
                       style={{
                         flex: 1, marginBottom: isLast ? 0 : 8, position: 'relative', overflow: 'hidden',
@@ -1535,7 +1637,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                           {(() => {
                             const all = ev.memberIds?.length ? members.filter(m => ev.memberIds!.includes(m.id)) : assignee ? [assignee] : [];
                             return all.length > 0 ? all.map(m => (
-                              <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={BRAND.purple} ringWidth={1.5} />
+                              <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={BRAND.teal} ringWidth={1.5} />
                             )) : null;
                           })()}
                           {ev.location ? (
@@ -1546,11 +1648,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                           ) : null}
                         </View>
                         {ev.helper ? (() => {
-                          const stColor = ev.helperStatus === 'confirmed' ? '#10B981' : ev.helperStatus === 'rejected' ? '#EF4444' : '#D97706';
+                          const stColor = ev.helperStatus === 'confirmed' ? colors.teal : ev.helperStatus === 'rejected' ? colors.danger : colors.amber;
                           return (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: stColor + '15', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 }}>
                               <Text style={{ fontSize: 12 }}>{helperEmoji}</Text>
-                              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
+                              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>{ev.helper.split(' ')[0]}</Text>
                               <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: stColor }} />
                             </View>
                           );
@@ -1659,7 +1761,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                       canDelete={canDelete}
                       onDelete={handleEvDelete}
                       onLongPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in full day timeline → routeLongPress [features/calendar/CalendarScreen.tsx:1546]`); routeLongPress(ev); }}
-                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in full day timeline → open detail sheet [features/calendar/CalendarScreen.tsx:1547]`); setDetailEv(ev); }}
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in full day timeline → open detail sheet [features/calendar/CalendarScreen.tsx:1547]`); openDetail(ev); }}
                     >
                       <EventCardTimeline
                         ev={ev}
@@ -1674,7 +1776,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                         isParent={isParent}
                         isKid={isKid}
                         canApproveRequest={!!canApproveRequest}
-                        onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) card body → open detail sheet [features/calendar/CalendarScreen.tsx:1562]`); setDetailEv(ev); }}
+                        onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) card body → open detail sheet [features/calendar/CalendarScreen.tsx:1562]`); openDetail(ev); }}
                         onLongPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) card body → routeLongPress [features/calendar/CalendarScreen.tsx:1563]`); routeLongPress(ev); }}
                         onAssignMember={(memberId) => { const m = members.find(x => x.id === memberId); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${m?.name}" (id=${memberId}) to assign on "${ev.title}" (id=${ev.id}) → updateEvent memberId [features/calendar/CalendarScreen.tsx:1564]`); updateEvent(ev.id, { memberId }); }}
                         onApprove={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Approve & Assign" on "${ev.title}" (id=${ev.id}) → updateEvent approvalPending=false [features/calendar/CalendarScreen.tsx:1565]`); updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' }); }}
@@ -1690,14 +1792,15 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             {/* Load more — only on days with 30+ events */}
             {hasMore && (
               <TouchableOpacity
-                style={{ marginHorizontal: 14, marginTop: 4, paddingVertical: 12, borderRadius: 16,
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9', alignItems: 'center' }}
+                style={{ marginHorizontal: 20, marginTop: 4, paddingVertical: 12, borderRadius: 16,
+                  backgroundColor: colors.surface, alignItems: 'center',
+                  borderWidth: 1, borderColor: colors.border }}
                 onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Load more events" for date=${selectedDate} [features/calendar/CalendarScreen.tsx:1583]`); loadMoreDay(); }}
                 disabled={dayLoading}
               >
                 {dayLoading
-                  ? <ActivityIndicator size="small" color={BRAND.purple} />
-                  : <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Load more events</Text>}
+                  ? <ActivityIndicator size="small" color={colors.pink} />
+                  : <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.pink }}>Load more events</Text>}
               </TouchableOpacity>
             )}
           </View>
@@ -1752,40 +1855,6 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         />
       )}
 
-      {/* Event detail + ride/helper-assignment actions — same EventDetailSheet
-          Hub uses (Accept/Decline/Take-Over/Swap all live there now), so
-          Calendar and Hub share one action surface instead of maintaining
-          duplicate accept/decline/reassign UI. */}
-      {detailEv && (
-        <EventDetailSheet
-          // Was `events.find(...) ?? detailEv` — events is the raw,
-          // unsanitized day cache, so this silently reintroduced full
-          // title/notes/location/doctorName for a "busy block" a senior
-          // had just been shown as stripped, the moment its id happened to
-          // also be present in that raw array (e.g. selected date
-          // matches, or it was prefetched). Re-applies the same
-          // sensitivity stripping scopedRangeEvents/dayEvents already do,
-          // instead of trusting the raw lookup (QA sweep, grandparent-role
-          // audit, Critical C4).
-          ev={(() => {
-            const fresh = events.find(e => e.id === detailEv.id) ?? detailEv;
-            if (sensitiveVisibility(fresh) !== 'busy-block') return fresh;
-            return {
-              ...fresh,
-              title: 'Busy', notes: undefined, location: undefined,
-              doctorName: undefined, subject: undefined, coachName: undefined,
-              helper: undefined, driverName: undefined,
-            };
-          })()}
-          members={members}
-          colors={colors} isDark={isDark}
-          activeName={activeMemberName}
-          activeMemberId={activeMemberId ?? undefined}
-          updateEvent={updateEvent}
-          onClose={() => setDetailEv(null)}
-          onEditFull={() => { const ev = detailEv; console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Edit full details" on "${ev.title}" (id=${ev.id}) → open EditEventModal [features/calendar/CalendarScreen.tsx:1691]`); setDetailEv(null); setEditEv(ev); }}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -1808,7 +1877,7 @@ const sc = StyleSheet.create({
   statusBadge:  { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
   statusText:   { fontSize: TYPO.label, fontWeight: '800' },
   rejectedBox:  { borderRadius: 14, borderWidth: 1, padding: 10 },
-  reassignBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.amber, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, alignSelf: 'flex-end' as any },
+  reassignBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#D97706', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, alignSelf: 'flex-end' as any },
 
   emptyBox:     { borderRadius: 24, borderWidth: 1, padding: 48, alignItems: 'center', marginHorizontal: 14 },
 });

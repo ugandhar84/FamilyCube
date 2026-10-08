@@ -80,7 +80,7 @@ export function GroceryRequestCard({
           <View style={{ gap: 6, marginBottom: 8 }}>
             {req.items.map((item: any) => (
               <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 10, padding: 10 }}>
+                backgroundColor: colors.surface, borderRadius: 10, padding: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
                   {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}

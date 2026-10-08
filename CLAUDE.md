@@ -158,6 +158,32 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 If UI change: start dev server, verify, share screenshot.
 If type/logic only: run `npx tsc --noEmit`.
 
+### 6. Screen canvas — pure white in light mode, no warm tints
+Every screen's root background (ScrollView, SafeAreaView, modal container) in light mode uses **`#FFFFFF`** (clean white — user hates warm-tinted backgrounds). Dark mode uses `#0E0C13`. Do NOT use `colors.background` (it has a warm cashmere tint the user dislikes). Cards and form fields use `colors.card` to lift off the white canvas.
+
+### 7. Cards float on the canvas — use `colors.card` for elevated surfaces
+TextInput fields, picker pills, coin buttons, and preview cards use `colors.card` (white/dark) so they pop off the cashmere `colors.background`. Surface-level groupings (tip areas, info callouts) use `colors.surface` or `colors.tealLight`/`colors.pinkLight`/`colors.amberLight`/`colors.primaryLight` for section pastel tints.
+
+### 8. Section headings in forms use role-matching brand accent colors
+- **Quest form WHAT heading** → `colors.pink` (lavender — CARE)
+- **Quest form WHEN heading** → `colors.teal` (sage — CONNECT)
+- **Quest form WHO heading** → `colors.amber` (amber — ORGANIZE / kid)
+- **Quest form REWARD heading** → `colors.pink`
+- Parent-role avatar chips → `colors.teal` / `colors.tealLight`
+- Kid-role avatar chips → `colors.amber` / `colors.amberLight`
+- Pool chip → `colors.amber` / `colors.amberLight` (open/first-come)
+- Do NOT use raw Figma purple (`#7350c0`) — use `colors.pink` instead.
+
+### 9. ⛔ Date/time labels — 12h human format is NON-NEGOTIABLE
+**NEVER** show ISO dates (`2026-10-12`) or 24h times (`17:00`) anywhere in the UI — not in chips, pills, labels, cards, or previews. This is a hard rule; violations must be fixed before claiming done.
+- Dates → `"Oct 12, 2026"` format (Month name, day, full year)
+- Times → `"5:00 PM"` format (12h + AM/PM, no leading zero on hour)
+- Combined → `"Oct 12 · 5:00 PM"` (interpunct separator, not comma)
+Use the module-level helpers in `JustDescribeItScreen.tsx` as the canonical pattern: `fmtQuestDate(iso)` and `fmtQuest12h(hhmm)`. Replicate these helpers in any new screen that formats dates/times.
+
+### 10. Introduce lighter pastel tokens when needed
+The brand palette already has `*Light` variants: `colors.primaryLight`, `colors.tealLight`, `colors.amberLight`, `colors.pinkLight`. Use these for card backgrounds, section tints, and unselected chip fills rather than hardcoding softer shades. If a new lightest tint is needed (e.g. a very subtle hover state), use `colors.surface` or add `opacity` to an existing light token — never hardcode a new hex.
+
 ---
 
 ## Dark Mode

@@ -20,12 +20,12 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Alert, Platform,
-  Switch, ActivityIndicator, Pressable, KeyboardAvoidingView,
+  Modal, Alert, Keyboard, Platform,
+  Switch, ActivityIndicator, Pressable,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
-import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, fromRow, FamilyEvent, EventType, HelperStatus, estimateOccurrenceCount } from '@/store/eventStore';
@@ -33,7 +33,7 @@ import { useGroceryStore } from '@/store/groceryStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
-// useKeyboardAwareMaxHeight removed — EditEventModal is now full-page, no sheet height cap needed
+import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 import { X } from './components/eventForm/Icons';
 import Chip from './components/eventForm/Chip';
@@ -62,7 +62,6 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
-import { useUIStore } from '@/store/uiStore';
 
 // ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
 // One stepper shell + one recurrence picker + one call-reminder toggle + one
@@ -102,8 +101,20 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   const { pastStores: cachedStores, pastItemNames: cachedItemNames, appendToCache } = useGroceryStore();
   const siblings = members.map(m => m.name);
 
-  // initialStep is kept in the prop signature for API compatibility with SmartTaskComposer,
-  // but the single-scroll layout no longer needs to jump to a specific step.
+  // ── Stepper ──────────────────────────────────────────────────────────────
+  // Same redesign as AddQuestModal: one long flat scroll → a small paged
+  // flow, same fields/state/submit logic, purely a layout change. Fixed
+  // 4-step list (unlike AddQuestModal's conditional grocery step) — every
+  // event category shares the same What/When/Who/Review shape here, so
+  // there's no category that skips a whole step the way chores' non-
+  // Errand/Shopping categories skip the grocery step.
+  const [step, setStep] = useState(initialStep === 'review' ? 3 : 0);
+  const stepIds = ['what', 'when', 'assign', 'review'] as const;
+  type StepId = typeof stepIds[number];
+  const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
+  const stepTitles: Record<StepId, string> = {
+    what: 'What is it?', when: 'When is it?', assign: 'Who & details', review: 'Review',
+  };
 
   const activeMember = members.find(m => m.id === activeMemberId);
   const isParent  = activeMember?.role === 'parent';
@@ -469,6 +480,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
     setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen(''); setGpTeenToggledByUser(false);
+    setStep(0);
     voice.reset();
     setVoiceDraft('');
   };
@@ -983,95 +995,28 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   const fieldBorderActive = catColor;
   // Figma "Content group" tip card: lavender tint
   const tipCardBg    = isDark ? colors.surface : colors.pinkLight;
-  const canvasBg     = isDark ? '#0E0C13' : '#FFFFFF';
-
-  // Hide shared FAB while this full-page form is open
-  useEffect(() => {
-    if (visible) useUIStore.getState().setFullBleedScreenActive(true);
-    else useUIStore.getState().setFullBleedScreenActive(false);
-    return () => { useUIStore.getState().setFullBleedScreenActive(false); };
-  }, [visible]);
-
-  if (!visible) return null;
-
-  // ── Section card style helpers (home-screen rhythm) ────────────────────────
-  const sectionCard = (accentColor: string, bgColor: string) => ({
-    backgroundColor: bgColor,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 12,
-    shadowColor: accentColor,
-    shadowOpacity: isDark ? 0.18 : 0.10,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  });
-  const sectionLabel = (accentColor: string) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-      <View style={{ width: 2, height: 16, borderRadius: 1, backgroundColor: accentColor }} />
-      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', color: accentColor }}>
-      </Text>
-    </View>
-  );
-
-  // ── Member row (Figma member-choice pattern) ────────────────────────────────
-  const MemberRow = ({ member, selected, onPress, accentColor: ac }: { member: any; selected: boolean; onPress: () => void; accentColor: string }) => (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: 12,
-        backgroundColor: selected ? ac + '18' : fieldBg,
-        borderRadius: 14, padding: 8, marginBottom: 8,
-      }}
-    >
-      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: ac + '22', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 15, fontWeight: '700', color: ac }}>{(member.name ?? '?')[0].toUpperCase()}</Text>
-      </View>
-      <Text style={{ flex: 1, fontSize: 16, fontWeight: selected ? '700' : '600', color: colors.textPrimary }} numberOfLines={1}>
-        {member.name}{member.role === 'kid' ? ' 🧒' : member.role === 'teen' ? ' 🧑' : member.role === 'senior' ? ' 👴' : ''}
-      </Text>
-      {selected && <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: ac, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✓</Text>
-      </View>}
-    </TouchableOpacity>
-  );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      {/* ── Header ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 }}>
-        <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx]`); reset(); onClose(); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: catColor }}>‹ Schedule</Text>
-        </TouchableOpacity>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: catColor + '18', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 }}>
-          <Text style={{ fontSize: 14 }}>{catEmoji}</Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: catColor }}>{isKid ? 'Request Help' : isSenior ? 'Ask for Help' : 'New Event'}</Text>
-        </View>
-        <View style={{ width: 80 }} />
-      </View>
-
-      {/* Page title */}
-      <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
-        <Text style={{ fontSize: 34, fontWeight: '800', letterSpacing: -0.5, color: colors.textPrimary }}>
-          {isKid ? '🙋 Request' : isSenior ? '🤝 Ask for Help' : 'Add event'}
-        </Text>
-        {isKid && <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>Your request goes to a parent for approval</Text>}
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
-      >
-            {/* ══ WHAT section ══════════════════════════════════════════════ */}
-            <View style={sectionCard(colors.teal, isDark ? '#161E18' : colors.tealLight)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View style={{ width: 2, height: 16, borderRadius: 1, backgroundColor: colors.teal }} />
-                <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.teal }}>What</Text>
-              </View>
+    <TaskFormShell
+      visible={visible}
+      onClose={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx]`); reset(); onClose(); }}
+      stepIds={stepIds}
+      stepTitles={stepTitles}
+      step={step}
+      setStep={setStep}
+      accentColor={catColor}
+      headerTitle={isKid ? '🙋 Request Help' : isSenior ? '🤝 Ask for Help' : 'New Event'}
+      headerSubtitle={
+        isKid
+          ? 'Your request goes to a parent for approval'
+          : isSenior
+          ? 'Let the family know what you need'
+          : `${catEmoji} ${category} — ${isParent ? 'full access' : 'senior view'}`
+      }
+      stepLabels={['What', 'When', 'Who', 'Review']}
+      hasDraft={title.trim().length > 0 || notes.trim().length > 0}
+    >
+            {currentStepId === 'what' && <>
             {/* ── Category selector ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -1195,14 +1140,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 </ScrollView>
               </View>
             )}
-            </View>{/* end WHAT card */}
+            </>}
 
-            {/* ══ WHEN section ══════════════════════════════════════════════ */}
-            <View style={sectionCard(colors.amber, isDark ? '#1E1A0E' : colors.amberLight)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View style={{ width: 2, height: 16, borderRadius: 1, backgroundColor: colors.amber }} />
-                <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.amber }}>When</Text>
-              </View>
+            {currentStepId === 'when' && <>
             {/* ── Ride needed? + pickup (kid only) — right above Date &
                 Time, which doubles as the drop-off time whenever ride
                 needed is on (relabeled below, no separate drop-off field
@@ -1360,14 +1300,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 variant="switch" pillStyle={f.dateBtn} containerPaddingHorizontal={4}
               />
             )}
-            </View>{/* end WHEN card */}
+            </>}
 
-            {/* ══ WHO & DETAILS section ════════════════════════════════════ */}
-            <View style={sectionCard(colors.pink, isDark ? '#1A1620' : colors.pinkLight)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View style={{ width: 2, height: 16, borderRadius: 1, backgroundColor: colors.pink }} />
-                <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.pink }}>Who &amp; Details</Text>
-              </View>
+            {currentStepId === 'assign' && <>
             <CategoryFields
               category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults} isKid={isKid}
               apptType={apptType} setApptType={setApptType} doctorName={doctorName} setDoctorName={setDoctorName}
@@ -1669,64 +1604,124 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 />
               </TouchableOpacity>
             )}
-            </View>{/* end WHO card */}
+            </>}
 
-            {/* ══ NOTES section ════════════════════════════════════════════ */}
-            <View style={sectionCard(colors.textTertiary, isDark ? '#16141A' : colors.surface)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View style={{ width: 2, height: 16, borderRadius: 1, backgroundColor: colors.textTertiary }} />
-                <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary }}>Notes</Text>
-              </View>
-              <TextInput
-                style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: fieldBg, borderColor: fieldBorder }]}
-                placeholder={isKid ? 'Any message for parents? (e.g. please pick me up early)' : 'Any details, instructions, or reminders…'}
-                placeholderTextColor={colors.textTertiary}
-                value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
-                onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Notes" on "AddEventModal" newValue=${notes} [features/calendar/EventFormModal.tsx:1106]`)}
-                multiline numberOfLines={3} textAlignVertical="top"
-              />
-              <Text style={{ fontSize: TYPO.micro, color: notes.length > 180 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: 4 }}>
-                {notes.length}/200
-              </Text>
+            {currentStepId === 'review' && (() => {
+              const forNames = memberIds.map(id => members.find(m => m.id === id)).filter(Boolean).map(m => m!.id === activeMemberId ? 'Me' : m!.name.split(' ')[0]);
+              const whoLabel = isKid ? 'You (pending approval)' : forNames.length ? forNames.join(', ') : 'Nobody yet';
+              const recurLabel = repeatFreq === 'none' ? 'One-time'
+                : repeatFreq === 'daily' ? 'Daily'
+                : repeatFreq === 'weekly' ? `Weekly${repeatDays.length ? ` · ${repeatDays.map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join('/')}` : ''}`
+                : 'Monthly';
+              return (
+                <View style={{ gap: 10 }}>
+                  <View style={[f.summaryCard, { backgroundColor: fieldBg, borderColor: fieldBorder, gap: 10 }]}>
+                    <View>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Event</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }} numberOfLines={2}>
+                        {finalTitle || '—'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Who</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {whoLabel}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>When</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {fmtDisplay(eventDate)}{!allDay ? ` · ${fmtTimeDisplay(eventDate)}` : ' · All day'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Category</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {catEmoji} {category}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Repeats</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {recurLabel}
+                        </Text>
+                      </View>
+                    </View>
 
-              {/* Pickup leg summary */}
-              {needsPickup && pickupTime && (category === 'Ride' || category === 'Medical' || category === 'Sports' || category === 'Study') && (
-                <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 12, marginTop: 10 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>↩ Return / Pickup leg will be created</Text>
-                  <Text style={{ fontSize: 12, color: colors.teal, marginTop: 2 }}>
-                    {fmtTimeDisplay(pickupTime)}{pickupLocation.trim() || dropLocation.trim() ? ` · ${dropLocation.trim() || '—'} → ${pickupLocation.trim() || '—'}` : ''}
+                    {/* ── Pickup/return leg summary — live-reported: the
+                        Review card showed Who/When/Category/Repeats but
+                        never the pickup/drop-off locations or return time a
+                        parent just set, even though needsPickup+pickupTime
+                        now correctly fork a real linked pickup leg on
+                        submit (see forkRideLegs above). A parent should SEE
+                        this is about to happen, not just trust it silently
+                        worked. Shown for any category that can carry a
+                        return leg, matching the fork's own category gate. */}
+                    {needsPickup && pickupTime && (category === 'Ride' || category === 'Medical' || category === 'Sports' || category === 'Study') && (
+                      <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#E2E8F0', paddingTop: 10 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                          ↩ Return / Pickup leg
+                        </Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }}>
+                          {fmtTimeDisplay(pickupTime)}
+                          {pickupLocation.trim() || dropLocation.trim()
+                            ? ` · ${dropLocation.trim() || '—'} → ${pickupLocation.trim() || '—'}`
+                            : ''}
+                        </Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                          Creates a separate, linked pickup {repeatFreq === 'none' ? 'event' : 'series'} on save
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* ── Notes — kept on the Review step (not "What") since
+                      it reads as final context right before creating,
+                      matching how a parent scans a summary before
+                      committing. Was a 3rd near-identical "a parent will
+                      review this" note here too — the header subtitle
+                      already sets that expectation up front, and
+                      HelperAssignmentSection's own note (shown only when
+                      Ride needed is on) already explains the driver-
+                      assignment specifics, so repeating it a third time
+                      added length without adding information. */}
+                  <Text style={[f.label, { color: colors.textSecondary, marginTop: 4 }]}>📝 Notes (optional)</Text>
+                  <TextInput
+                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: fieldBg, borderColor: fieldBorder }]}
+                    placeholder={isKid ? 'Any message for parents? (e.g. please pick me up early)' : 'Any details, instructions, or reminders…'}
+                    placeholderTextColor={colors.textTertiary}
+                    value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                    onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Notes" on "AddEventModal" newValue=${notes} [features/calendar/EventFormModal.tsx:1106]`)}
+                    multiline numberOfLines={3} textAlignVertical="top"
+                  />
+                  <Text style={{ fontSize: TYPO.micro, color: notes.length > 180 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8 }}>
+                    {notes.length}/200
                   </Text>
+
+                  {!canSubmit && (
+                    <Text style={{ fontSize: TYPO.label, color: colors.danger, textAlign: 'center' }}>
+                      Add a title on the first step.
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    style={[f.submitBtn, { backgroundColor: canSubmit && !saving ? catColor : colors.border, opacity: saving ? 0.7 : 1 }]}
+                    onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${isKid ? 'Send Request to Parent' : 'Add to Family Schedule'}" title="${finalTitle}" category=${category} → submit/addEvent [features/calendar/EventFormModal.tsx:1123]`); submit(); }} disabled={!canSubmit || saving}
+                  >
+                    {saving
+                      ? <ActivityIndicator color="#FFFFFF" size="small" />
+                      : <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>
+                          {isKid ? 'Send Request to Parent 🙋' : `Add to Schedule ${catEmoji}`}
+                        </Text>}
+                  </TouchableOpacity>
                 </View>
-              )}
-            </View>{/* end NOTES card */}
+              );
+            })()}
 
-            {!canSubmit && finalTitle === '' && (
-              <Text style={{ fontSize: TYPO.label, color: colors.danger, textAlign: 'center', marginBottom: 8 }}>Add a title above to continue.</Text>
-            )}
-          </ScrollView>
-
-          {/* ── Bottom action bar (Figma "Complete form actions") ── */}
-          <View style={{ backgroundColor: colors.card, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-            <TouchableOpacity
-              style={{ height: 48, borderRadius: 14, backgroundColor: canSubmit && !saving ? catColor : colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 10, opacity: saving ? 0.7 : 1 }}
-              onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${isKid ? 'Send Request to Parent' : 'Add to Family Schedule'}" title="${finalTitle}" category=${category} → submit/addEvent [features/calendar/EventFormModal.tsx:1123]`); submit(); }}
-              disabled={!canSubmit || saving}
-            >
-              {saving
-                ? <ActivityIndicator color="#FFFFFF" size="small" />
-                : <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>
-                    {isKid ? 'Send Request to Parent 🙋' : `Add to Schedule ${catEmoji}`}
-                  </Text>}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ height: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
-              onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx]`); reset(); onClose(); }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: catColor }}>Discard &amp; close</Text>
-            </TouchableOpacity>
-          </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </TaskFormShell>
   );
 }
 
@@ -1764,6 +1759,23 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // here (see TaskFormShell.tsx/MealFormSheet.tsx's own comments on why
   // that double-compensates with this same hook and was deliberately
   // removed) — this only adjusts the existing shrink amount.
+  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  // Live-reported: "form is hiding behind the keyboard litrally" — capping
+  // the sheet's own maxHeight only stops its TOP from going above the
+  // screen; it does nothing to lift the sheet's BOTTOM off the physical
+  // screen edge, which is exactly where f.sheet's bottom-anchoring puts it
+  // and exactly what the keyboard now covers. A real vertical shift
+  // (marginBottom = keyboard height) is what actually moves the sheet
+  // above it — see TaskFormShell.tsx's identical fix for the fuller
+  // explanation of why the height-clamp-only approach fell short.
+  const [editKeyboardHeight, setEditKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, (e) => setEditKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setEditKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const { updateEvent, addEvent, addRecurringEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
@@ -2291,15 +2303,27 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     );
   };
 
-  const editCanvasBg = isDark ? '#0E0C13' : '#FFFFFF';
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: editCanvasBg }} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View style={{ flex: 1 }}>
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      {/* Live-reported: KeyboardAvoidingView previously wrapped the whole
+          sheet — 'padding' behavior slid the entire card up 1:1 with the
+          keyboard instead of the sheet staying anchored near the screen's
+          bottom edge. Removed: the sheet already clamps its own height via
+          keyboardAwareMaxHeight (screen height minus the real keyboard
+          height) below, which is enough to keep its content — including
+          the Save/Close buttons, which scroll inside the body here — above
+          the keyboard without the whole view physically translating. */}
+        <View style={[f.backdrop, { paddingBottom: editKeyboardHeight }]}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
 
-          {/* ── Fixed header ── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 14 }}>
+          {/* Sheet — header outside scroll, content scrolls */}
+          <View style={[f.sheet, { backgroundColor: colors.card },
+            keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : null]}>
+            {/* Drag handle */}
+            <View style={[f.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
+
+            {/* ── Fixed header (never scrolls) ── */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: catColor + '22', alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 18 }}>{catEmoji}</Text>
               </View>
@@ -2373,9 +2397,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
             {/* ── Scrollable body (editable fields only) ── */}
             <ScrollView
+              // 'handled' (not 'always') — a tap on any real button/input
+              // still registers in one tap, but a tap on blank space now
+              // dismisses the keyboard instead of being swallowed silently
+              // (live-requested: tapping outside a text input should close it).
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ gap: 12, paddingHorizontal: 20, paddingBottom: 120 }}
+              contentContainerStyle={{ gap: 12, paddingBottom: 32 }}
             >
               {/* Date / Time — spec 2.9. Same PickerOverlay AddEventModal uses.
                   Spec 5.7 — also available to a senior editing their own event. */}
@@ -2932,7 +2960,27 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               )}
             </ScrollView>
           </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          {/* Filler pinned to the very bottom of the backdrop, UNDER the
+              sheet, same color as the sheet — same fix as
+              TaskFormShell.tsx's own filler (live-requested: "tuck in to
+              the keyboard some part of form so that it will not expose
+              transparent, or close the transparent with the color
+              filled"). paddingBottom on the backdrop (above) reserves room
+              for the keyboard so the sheet's flex-end position naturally
+              lands above it; this absolutely-positioned filler covers that
+              same reserved region regardless of any px of measurement slop
+              between keyboardWillShow's reported height and where the
+              keyboard actually settles, so a small mismatch reads as "the
+              sheet's own color extends down to the keyboard" instead of
+              the backdrop's scrim showing through. Positioned absolute
+              (not a normal flex sibling) so it sits BEHIND the sheet's
+              bottom edge instead of competing with it for the backdrop's
+              flex-end space. */}
+          {editKeyboardHeight > 0 && (
+            <View pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: editKeyboardHeight, backgroundColor: colors.card }} />
+          )}
+        </View>
+    </Modal>
   );
 }

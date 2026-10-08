@@ -433,6 +433,50 @@ export function itemEmoji(name: string | undefined | null): string | null {
   return result;
 }
 
+// ─── Local category guesser — no AI call, no latency, works offline ──────────
+// Maps common item name keywords → GroceryCategory. Used to auto-fill category
+// when an item is added without one, so the list groups correctly into
+// Produce / Dairy & Eggs / Bakery / Pantry / etc.
+const CATEGORY_RULES: { pattern: RegExp; cat: string }[] = [
+  // Produce
+  { pattern: /\b(tomato|tomatoes|lettuce|spinach|kale|carrot|onion|garlic|pepper|potato|cucumber|zucchini|courgette|broccoli|cauliflower|corn|mushroom|eggplant|aubergine|avocado|celery|ginger|radish|beet|turnip|leek|asparagus|artichoke|pea|bean|lentil|herb|cilantro|parsley|basil|mint|dill|chive|scallion|spring onion|sweet potato|yam|squash|pumpkin|fennel|cabbage|bok choy|arugula|rocket|watercress|endive|radicchio|apple|banana|orange|lemon|lime|grape|strawberr|blueberr|raspberry|watermelon|pineapple|mango|peach|pear|cherry|cherries|melon|kiwi|plum|apricot|fig|date[s]?\b|pomegranate|guava|papaya|coconut|lychee|jackfruit|fruit|vegetable|veggie|salad|greens|produce)\b/, cat: 'Produce' },
+  // Dairy & Eggs
+  { pattern: /\b(milk|cheese|cheddar|mozzarella|parmesan|brie|gouda|feta|ricotta|cream|butter|yogurt|yoghurt|kefir|ghee|egg[s]?\b|lactose|dairy|paneer|cottage cheese|cream cheese|sour cream|whipped cream|half.and.half|condensed milk|evaporated milk|oat milk|almond milk|soy milk|coconut milk carton)\b/, cat: 'Dairy & Eggs' },
+  // Meat
+  { pattern: /\b(chicken|turkey|beef|steak|pork|bacon|ham\b|sausage|lamb|mince|ground meat|ground beef|ground turkey|drumstick|wing[s]?\b|breast\b|thigh\b|brisket|rib[s]?\b|roast\b|deli meat|cold cut|salami|pepperoni|prosciutto|chorizo|hot dog|frankfurter)\b/, cat: 'Meat' },
+  // Seafood
+  { pattern: /\b(fish|salmon|tuna|shrimp|prawn|crab|lobster|scallop|oyster|clam|mussel|squid|octopus|tilapia|cod|halibut|mahi|sardine|anchov|herring|trout|bass\b|snapper|catfish|swordfish|seafood)\b/, cat: 'Dairy & Eggs' }, // group with protein
+  // Bakery
+  { pattern: /\b(bread|loaf|bun[s]?\b|roll[s]?\b|bagel|muffin|croissant|pastry|pastries|cake|cupcake|cookie|biscuit|cracker|tortilla|wrap[s]?\b|pita|naan|roti|chapati|sourdough|baguette|pretzel|donut|doughnut|scone|waffle|pancake mix|cornbread|bakery)\b/, cat: 'Bakery' },
+  // Frozen
+  { pattern: /\b(frozen|ice cream|gelato|sorbet|popsicle|ice pop|freezer|frost)\b/, cat: 'Frozen' },
+  // Beverages
+  { pattern: /\b(juice|soda|cola|lemonade|water|sparkling water|coffee|tea|chai|espresso|latte|hot chocolate|cocoa|wine|beer|cider|whiskey|vodka|rum|gin\b|tequila|bourbon|champagne|prosecco|kombucha|smoothie|energy drink|sports drink|gatorade|electrolyte|drink mix|beverage)\b/, cat: 'Pantry' },
+  // Snacks
+  { pattern: /\b(chip[s]?\b|crisp[s]?\b|popcorn|pretzel[s]?\b(?! roll)|trail mix|granola bar|protein bar|energy bar|candy|chocolate bar|gummy|lollipop|lollies|nuts\b|cashew|almond|pistachio|walnut|peanut(?! butter)|macadamia|pecan|sunflower seed|pumpkin seed|snack|jerky|beef jerky|rice cake|oat bar)\b/, cat: 'Snacks' },
+  // Pantry / dry goods
+  { pattern: /\b(rice|pasta|noodle|spaghetti|fettuccine|penne|macaroni|oat[s]?\b|oatmeal|cereal|flour|sugar|salt|oil|olive oil|vegetable oil|vinegar|sauce|ketchup|mustard|mayo|mayonnaise|dressing|syrup|honey|jam|jelly|peanut butter|almond butter|nutella|hazelnut spread|can[s]?\b|canned|tin\b|beans|chickpea|lentil|broth|stock|soup|tomato paste|tomato sauce|salsa|coconut milk\b|curry paste|seasoning|spice|turmeric|cumin|coriander|paprika|cinnamon|cardamom|masala|garam|chili powder|bay leaf|dried|herb|baking powder|baking soda|yeast|vanilla|cocoa powder|corn starch|tapioca|atta|flour|semolina|quinoa|couscous|bulgur|farro|barley|buckwheat|polenta|grits|millet|bread crumb|panko|soy sauce|fish sauce|oyster sauce|hoisin|teriyaki|worcestershire|hot sauce|sriracha|tabasco|pickle|relish|capers|olive[s]?\b|sun.dried|dried fruit|raisin|cranberry|date\b)\b/, cat: 'Pantry' },
+  // Household
+  { pattern: /\b(toilet paper|paper towel|tissue|napkin|trash bag|garbage bag|zip.?loc|sandwich bag|foil|aluminum foil|plastic wrap|cling film|sponge|scrub|mop|broom|vacuum|cleaning|cleaner|bleach|disinfect|detergent|laundry|dish soap|dishwasher|rinse aid|fabric softener|dryer sheet|stain remover|air freshener|candle|light bulb|battery|batteries|extension cord|household)\b/, cat: 'Household' },
+  // Pharmacy / personal care
+  { pattern: /\b(shampoo|conditioner|body wash|soap|hand soap|toothpaste|toothbrush|mouthwash|floss|deodorant|razor|shaving|lotion|moisturizer|sunscreen|makeup|lipstick|mascara|eyeliner|eyeshadow|nail polish|perfume|cologne|face wash|cotton ball|cotton swab|q.?tip|band.?aid|bandage|vitamin|supplement|medicine|medication|ibuprofen|tylenol|advil|paracetamol|antihistamine|antacid|cough|cold medicine|pharmacy|diaper|wipe[s]?\b|baby food|formula\b|feminine|pad[s]?\b|tampon)\b/, cat: 'Pharmacy' },
+  // Clothing
+  { pattern: /\b(shirt|t.shirt|pants|jeans|sock[s]?\b|shoe[s]?\b|sneaker|jacket|coat\b|hat\b|cap\b|underwear|clothing|apparel)\b/, cat: 'Clothing' },
+  // Pets
+  { pattern: /\b(dog food|cat food|pet food|litter\b|leash|collar|kibble|pet treat)\b/, cat: 'Pet Store' },
+];
+
+const categoryCache = new Map<string, string>();
+export function guessCategory(name: string | undefined | null): string {
+  if (!name) return 'Other';
+  const key = name.toLowerCase().trim();
+  if (categoryCache.has(key)) return categoryCache.get(key)!;
+  const match = CATEGORY_RULES.find(r => r.pattern.test(key));
+  const result = match?.cat ?? 'Other';
+  categoryCache.set(key, result);
+  return result;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Was purely relative ("just now"/"Xm ago"/"Xh ago" for anything under

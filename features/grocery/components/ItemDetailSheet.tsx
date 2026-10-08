@@ -1,9 +1,10 @@
-import { View, Text, Pressable, Modal } from 'react-native';
+import { ScrollView, View, Text, Pressable, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { GroceryItem } from '@/store/groceryStore';
 import { CatIcon, catDotColor, fmtProvenance } from './types';
 
-// ─── Item Detail Sheet ────────────────────────────────────────────────────────
+// ─── Item Detail — full-page screen (replaces modal sheet) ───────────────────
 
 export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelete, colors, isDark, priceInfo }: {
   item: GroceryItem | null; members: any[];
@@ -11,91 +12,101 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
   colors: any; isDark: boolean;
   priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' };
 }) {
+  const insets = useSafeAreaInsets();
   if (!item) return null;
   const dotColor = catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary;
-  const sheetBg  = colors.card;
+  const trusted = priceInfo?.source === 'kroger' || priceInfo?.source === 'receipt';
 
   return (
-    <Modal visible={!!item} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} onPress={onClose} />
-      <View style={{ backgroundColor: sheetBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 36 }}>
-        {/* Handle */}
-        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
-          <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      {/* Header */}
+      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+        flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: colors.surface, marginRight: 12 }}>
+          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Groceries</Text>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
         </View>
+        {priceInfo?.price != null && (
+          <View style={{ backgroundColor: trusted ? colors.tealLight : colors.amberLight, borderRadius: 12,
+            paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: trusted ? colors.teal : colors.amber }}>
+              ${priceInfo.price.toFixed(2)}
+            </Text>
+            <Text style={{ fontSize: 9, fontWeight: '700', color: trusted ? colors.teal : colors.amber }}>
+              {priceInfo.source === 'kroger' ? 'Kroger' : priceInfo.source === 'receipt' ? 'Receipt' : '~est'}
+            </Text>
+          </View>
+        )}
+      </View>
 
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 }}>
-          <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: dotColor + '18', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: dotColor + '30' }}>
+      <ScrollView contentContainerStyle={{ padding: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
+        {/* Category icon card */}
+        <View style={{ backgroundColor: dotColor + '12', borderRadius: 22, padding: 16,
+          flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: dotColor + '20',
+            alignItems: 'center', justifyContent: 'center' }}>
             <CatIcon category={item.category} size={24} color={dotColor} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>{item.name}</Text>
+            <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
             {item.category && (
-              <Text style={{ fontSize: 12, fontWeight: '700', color: dotColor, marginTop: 1 }}>{item.category}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: dotColor }}>{item.category}</Text>
             )}
           </View>
-          {priceInfo?.price != null ? (() => {
-            const trusted = priceInfo.source === 'kroger' || priceInfo.source === 'receipt';
-            const label = priceInfo.source === 'kroger' ? 'Kroger' : priceInfo.source === 'receipt' ? 'Receipt' : '~est';
-            return (
-              <View style={{ backgroundColor: trusted ? colors.successLight : colors.warningLight, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: trusted ? colors.success : colors.warning }}>
-                <Text style={{ fontSize: 16, fontWeight: '900', color: trusted ? colors.success : colors.warningDark }}>${priceInfo.price.toFixed(2)}</Text>
-                <Text style={{ fontSize: 9, fontWeight: '700', color: trusted ? colors.success : colors.warningDark }}>{label}</Text>
-              </View>
-            );
-          })() : priceInfo?.source === 'unrecognized' ? (
-            // Same "say so, don't stay blank" fix as ItemCard.tsx — the
-            // price-fetch ran and explicitly couldn't recognize this as a
-            // real shopping item, rather than still being in progress.
-            <View style={{ backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: colors.border, maxWidth: 120 }}>
-              <Ionicons name="help-circle-outline" size={16} color={colors.textTertiary} />
-              <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary, textAlign: 'center' }}>not recognized</Text>
-            </View>
-          ) : null}
         </View>
 
-        <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: 20, marginBottom: 14 }} />
+        {/* Detail fields */}
+        {item.quantity ? (
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14, minHeight: 56 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 4 }}>Quantity</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.quantity}</Text>
+          </View>
+        ) : null}
 
-        {/* Details */}
-        <View style={{ paddingHorizontal: 20, gap: 10 }}>
-          {item.quantity && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, width: 70 }}>Quantity</Text>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{item.quantity}</Text>
-            </View>
-          )}
-          {item.storePreference && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, width: 70 }}>Store</Text>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{item.storePreference}</Text>
-            </View>
-          )}
-          {item.notes && (
-            <View style={{ backgroundColor: colors.primaryLight, borderRadius: 12, padding: 12, borderLeftWidth: 3, borderLeftColor: colors.primary }}>
-              <Text style={{ fontSize: 12, color: colors.primary, fontStyle: 'italic' }}>"{item.notes}"</Text>
-            </View>
-          )}
-          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
-            {fmtProvenance(item, members)}
-          </Text>
-        </View>
+        {item.storePreference ? (
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14, minHeight: 56 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 4 }}>Store</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.storePreference}</Text>
+          </View>
+        ) : null}
+
+        {item.notes ? (
+          <View style={{ backgroundColor: colors.primaryLight, borderRadius: 22, padding: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>"{item.notes}"</Text>
+          </View>
+        ) : null}
+
+        <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185', lineHeight: 18 }}>
+          {fmtProvenance(item, members)}
+        </Text>
 
         {/* Actions */}
-        <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 18 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
           {onDelete && (
-            <Pressable onPress={() => { onDelete(); onClose(); }} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.dangerLight, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable onPress={() => { onDelete(); onClose(); }}
+              style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: colors.dangerLight,
+                alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="trash-outline" size={18} color={colors.danger} />
             </Pressable>
           )}
-          <Pressable onPress={() => { onEdit(); onClose(); }} style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 14, height: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>Edit</Text>
+          <Pressable onPress={() => { onEdit(); onClose(); }}
+            style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, height: 48,
+              alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#DFE5EF' }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primary }}>Edit</Text>
           </Pressable>
-          <Pressable onPress={() => { onBuy(); onClose(); }} style={{ flex: 2, backgroundColor: colors.success, borderRadius: 14, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textInverse }}>✓ Mark Bought</Text>
+          <Pressable onPress={() => { onBuy(); onClose(); }}
+            style={{ flex: 2, backgroundColor: colors.teal, borderRadius: 14, height: 48,
+              alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>✓ Mark Bought</Text>
           </Pressable>
         </View>
-      </View>
-    </Modal>
+      </ScrollView>
+    </View>
   );
 }

@@ -1,28 +1,46 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GroceryItem } from '@/store/groceryStore';
-import { CatIcon, catDotColor, itemEmoji } from './types';
+import { catDotColor } from './types';
 
-// ─── Item Card ────────────────────────────────────────────────────────────────
+// ─── Item Card — Figma "Shared groceries" list row ───────────────────────────
 
 export function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onToggleSelect, onPress, onEdit, onDelete, onMoveStore, colors, isDark, priceInfo, isLast }: {
   item: GroceryItem; members: any[];
   selected: boolean; selecting: boolean; isLast?: boolean;
   onBuy: () => void; onLongPress: () => void; onToggleSelect: () => void;
   onPress: () => void; onEdit: () => void; onDelete?: () => void;
-  // Tap-to-move to a different store's section — a one-tap store picker
-  // instead of a drag gesture (KISS: dragging a row between store sections
-  // that may be scrolled off-screen is fragile on a phone; tapping a fixed
-  // button and picking from a list works the same regardless of scroll
-  // position or how many sections there are). Omitted entirely wherever
-  // moving doesn't make sense (kid view, bulk-select mode).
   onMoveStore?: () => void;
   colors: any; isDark: boolean;
   priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' };
 }) {
-  const dotColor = catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary;
   const isBought = item.isBought;
-  const sepColor = colors.border;
+  const P = colors.primary;
+
+  // "Needed · Maya · 09:10" — added-by member name + time
+  const addedByMember = members.find((m: any) => m.id === item.addedBy);
+  const addedByName = addedByMember?.name?.split(' ')[0] ?? null;
+  const addedTime = item.createdAt
+    ? new Date(item.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false })
+    : null;
+
+  const priceStr = priceInfo?.price != null
+    ? `$${priceInfo.price.toFixed(2)}`
+    : item.estimatedPrice != null
+      ? `$${item.estimatedPrice.toFixed(2)}`
+      : null;
+
+  // Main label: "Tomatoes" or "Tomatoes · 1 pack · $1.80"
+  const titleParts = [item.name];
+  if (item.quantity) titleParts.push(item.quantity);
+  if (priceStr) titleParts.push(priceStr);
+
+  // Subtitle: "Needed · Maya · 09:10" or notes
+  const subtitleParts: string[] = [];
+  if (!isBought) subtitleParts.push('Needed');
+  if (addedByName) subtitleParts.push(addedByName);
+  if (addedTime) subtitleParts.push(addedTime);
+  if (item.notes) subtitleParts.push(item.notes);
 
   return (
     <Pressable
@@ -31,79 +49,68 @@ export function ItemCard({ item, members, selected, selecting, onBuy, onLongPres
       delayLongPress={350}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center',
-        paddingVertical: 11, paddingHorizontal: 16,
-        backgroundColor: pressed ? (isDark ? colors.primary + '12' : colors.primaryLight) : 'transparent',
+        paddingVertical: 14, paddingHorizontal: 0,
+        backgroundColor: pressed ? (isDark ? colors.primary + '10' : colors.primaryLight + '60') : 'transparent',
         opacity: isBought ? 0.45 : 1,
         borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
-        borderBottomColor: sepColor,
+        borderBottomColor: colors.border,
       })}
     >
-      {/* Left: checkbox or dot */}
-      <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
+      {/* Circle checkbox */}
+      <Pressable
+        onPress={isBought ? undefined : onBuy}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={{ marginRight: 14 }}>
         {selecting ? (
-          <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-            {selected && <Ionicons name="checkmark" size={12} color={colors.textInverse} />}
+          <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+            borderColor: selected ? P : colors.textTertiary,
+            backgroundColor: selected ? P : 'transparent',
+            alignItems: 'center', justifyContent: 'center' }}>
+            {selected && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
           </View>
         ) : (
-          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: (catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary) + '1A', alignItems: 'center', justifyContent: 'center' }}>
-            {/* Per-item emoji (e.g. 🧅 for "diced onion") when the item
-                name matches a known ingredient/household item — falls back
-                to the old category-level icon (same for every Produce
-                item, etc.) for anything unrecognized. See itemEmoji()'s
-                own comment in ./types for why this is keyword-matched
-                rather than AI-generated. */}
-            {(() => {
-              const emoji = itemEmoji(item.name);
-              return emoji
-                ? <Text style={{ fontSize: 17 }}>{emoji}</Text>
-                : <CatIcon category={item.category} size={18} color={catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary} />;
-            })()}
+          <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 1.5,
+            borderColor: isBought ? colors.success : colors.textTertiary,
+            backgroundColor: isBought ? colors.success + '20' : 'transparent',
+            alignItems: 'center', justifyContent: 'center' }}>
+            {isBought && <Ionicons name="checkmark" size={12} color={colors.success} />}
           </View>
         )}
-      </View>
+      </Pressable>
 
       {/* Body */}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: isBought ? colors.textTertiary : colors.textPrimary, textDecorationLine: isBought ? 'line-through' : 'none' }} numberOfLines={1}>
-          {item.name}
+        <Text style={{
+          fontSize: 15, fontWeight: '600',
+          color: isBought ? colors.textTertiary : colors.textPrimary,
+          textDecorationLine: isBought ? 'line-through' : 'none',
+        }} numberOfLines={2}>
+          {titleParts.join(' · ')}
         </Text>
-        {/* Subtitle: qty · store · AI badge */}
-        {(item.quantity || item.storePreference || item.aiGenerated || item.notes) && (
-          <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }} numberOfLines={1}>
-            {[
-              item.quantity,
-              item.storePreference,
-              item.aiGenerated ? '✨ AI' : null,
-              item.notes,
-            ].filter(Boolean).join(' · ')}
+        {subtitleParts.length > 0 && (
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textTertiary, marginTop: 2 }} numberOfLines={1}>
+            {subtitleParts.join(' · ')}
+          </Text>
+        )}
+        {priceInfo?.source === 'unrecognized' && (
+          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, fontStyle: 'italic', marginTop: 2 }}>
+            not recognized
           </Text>
         )}
       </View>
 
-      {/* Right: price + buy */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        {priceInfo?.price != null ? (
-          <Text style={{ fontSize: 12, fontWeight: '800', color: (priceInfo.source === 'kroger' || priceInfo.source === 'receipt') ? colors.success : colors.warningDark }}>
-            ${priceInfo.price.toFixed(2)}
-          </Text>
-        ) : priceInfo?.source === 'unrecognized' ? (
-          // Was silently showing nothing here — the price-fetch DID run,
-          // it just correctly refused to invent a number for something
-          // that isn't a real shopping item. Say so instead of leaving a
-          // blank space that reads as "still loading."
-          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary, fontStyle: 'italic', maxWidth: 90, textAlign: 'right' }}>
-            not recognized
-          </Text>
-        ) : null}
+      {/* Right: move-store + drag handle */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
         {onMoveStore && !isBought && !selecting && (
           <Pressable onPress={onMoveStore} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="storefront-outline" size={16} color={colors.textTertiary} />
+            style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="storefront-outline" size={15} color={colors.textTertiary} />
           </Pressable>
         )}
-        <Pressable onPress={onBuy} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isBought ? colors.successLight : colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isBought ? colors.success : colors.border }}>
-          <Ionicons name="checkmark" size={15} color={isBought ? colors.success : colors.textTertiary} />
-        </Pressable>
+        {/* Figma: ⋮⋮ drag handle */}
+        <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="ellipsis-vertical" size={16} color={colors.textTertiary} />
+        </View>
       </View>
     </Pressable>
   );

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Animated, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-// ─── CubeAI Grocery Banner ───────────────────────────────────────────────────
+// ─── CubeAI Grocery Banner — Figma white card style ──────────────────────────
 
 export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLoaded, priceLoading }: {
   isDark: boolean; colors: any;
@@ -29,48 +29,55 @@ export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLo
   const P = colors.primary;
 
   return (
-    <View style={{ paddingHorizontal: 16, paddingTop: 4, marginBottom: 6 }}>
+    <View style={{
+      backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#DFE5EF',
+      padding: 16,
+      shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05,
+      shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    }}>
       {/* Header row */}
       <Pressable onPress={() => setExpanded(v => !v)}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-        {/* Bot icon + pulse */}
-        <View style={{ width: 28, height: 28 }}>
-          <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: P + '18', alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="sparkles" size={14} color={P} />
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {/* Sparkles icon + live dot */}
+        <View style={{ width: 44, height: 44 }}>
+          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: P + '15',
+            alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="sparkles" size={22} color={P} />
           </View>
-          <View style={{ position: 'absolute', top: -2, right: -2, width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View style={{ position: 'absolute', width: 10, height: 10, borderRadius: 5, backgroundColor: colors.success, opacity: pulseOpacity, transform: [{ scale: pulseScale }] }} />
+          <View style={{ position: 'absolute', top: 0, right: 0, width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.View style={{ position: 'absolute', width: 10, height: 10, borderRadius: 5,
+              backgroundColor: colors.success, opacity: pulseOpacity, transform: [{ scale: pulseScale }] }} />
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success }} />
           </View>
         </View>
-        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-          CubeAI Shopping
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: P }}>{expanded ? 'Collapse' : 'Tools'}</Text>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={P} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>CubeAI Shopping</Text>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 2 }}>
+            Scan receipts · estimate prices
+          </Text>
         </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textTertiary} />
       </Pressable>
-      <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 10 }} />
-
-      <Text style={{ fontSize: 12, color: colors.textTertiary, marginBottom: expanded ? 12 : 0 }}>
-        Scan receipts · estimate prices
-      </Text>
 
       {/* Expanded tools */}
       {expanded && (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {/* Scan Receipt */}
-          <Pressable onPress={onScan} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, backgroundColor: P + '15', borderWidth: 1, borderColor: P + '40' }}>
-            <Ionicons name="receipt-outline" size={14} color={P} />
-            <Text style={{ fontSize: 12, fontWeight: '800', color: P }}>Scan Receipt</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+          <Pressable onPress={onScan}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 6, paddingVertical: 12, borderRadius: 14, backgroundColor: '#FFFFFF',
+              borderWidth: 1, borderColor: '#DFE5EF' }}>
+            <Ionicons name="receipt-outline" size={16} color={P} />
+            <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Scan Receipt</Text>
           </Pressable>
-          {/* Price Estimate */}
-          <Pressable onPress={onPriceCheck} disabled={priceLoading} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, backgroundColor: pricesLoaded ? colors.successLight : colors.surface, borderWidth: 1, borderColor: pricesLoaded ? colors.success : colors.border }}>
+          <Pressable onPress={onPriceCheck} disabled={priceLoading}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 6, paddingVertical: 12, borderRadius: 14,
+              backgroundColor: pricesLoaded ? colors.tealLight : '#FFFFFF',
+              borderWidth: 1, borderColor: pricesLoaded ? colors.teal : '#DFE5EF' }}>
             {priceLoading
               ? <ActivityIndicator size="small" color={P} />
-              : <Ionicons name="pricetag-outline" size={14} color={pricesLoaded ? colors.success : P} />}
-            <Text style={{ fontSize: 12, fontWeight: '800', color: pricesLoaded ? colors.success : P }}>
+              : <Ionicons name="pricetag-outline" size={16} color={pricesLoaded ? colors.teal : P} />}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: pricesLoaded ? colors.teal : P }}>
               {pricesLoaded ? 'Prices ✓' : 'Price Check'}
             </Text>
           </Pressable>

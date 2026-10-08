@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Modal, Alert, Image, ActivityIndicator, TextInput,
+  View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, ActivityIndicator, TextInput,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
@@ -9,7 +9,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun, GroceryRunItem } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { showToast } from '@/components/AppToast';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sh, rd } from './styles';
 import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
@@ -45,7 +45,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   // Live-requested: "apply same fixes in all bottomsheets - don't forget
   // 75% is max but fit to the content" — was a flat 90%, no keyboard
   // awareness at all despite the "add" tab's own TextInput.
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+  const insets = useSafeAreaInsets();
   const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
   const pendingScanAction = useRef<(() => void) | null>(null);
 
@@ -399,52 +399,61 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
       }}
       onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
     />
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border,
-          maxHeight: keyboardAwareMaxHeight ?? '75%', minHeight: '72%', flex: 1 }]}>
-          <View style={[sh.handle, { backgroundColor: colors.border }]} />
-
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={[sh.title, { color: colors.textPrimary, marginBottom: 2 }]}>{run.name}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[rd.statusBadge, { backgroundColor: isActive ? colors.successLight : isDone ? colors.surface : colors.primaryLight }]}>
-                  <Text style={[rd.statusText, { color: isActive ? colors.success : isDone ? colors.textSecondary : colors.primary }]}>
-                    {isActive ? '🛒 Shopping now' : isDone ? '✅ Done' : '📋 Draft'}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 13, color: colors.textSecondary }}>🏪 {run.store}</Text>
-              </View>
-            </View>
-            <Pressable onPress={onClose} style={rd.closeBtn}>
-              <Ionicons name="close" size={20} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-
+    <View style={{ flex: 1, backgroundColor: colors.card }}>
+      {/* Full-page header */}
+      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
+        flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: colors.surface, marginRight: 12 }}>
+          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Shopping Trip</Text>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>{run.name}</Text>
+        </View>
+        <View style={{ backgroundColor: isActive ? colors.tealLight : isDone ? colors.surface : colors.primaryLight,
+          borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: isActive ? colors.teal : isDone ? colors.textSecondary : colors.primary }}>
+            {isActive ? '🛒 Shopping now' : isDone ? '✅ Done' : '📋 Draft'}
+          </Text>
+        </View>
+      </View>
+      <View style={{ flex: 1, padding: 16 }}>
           {/* Progress bar */}
           {runItems.length > 0 && (
-            <View style={{ marginBottom: 12 }}>
-              <View style={[rd.progressBar, { backgroundColor: colors.surface }]}>
-                <View style={[rd.progressFill, { width: `${runItems.length ? (checkedCount / runItems.length) * 100 : 0}%`, backgroundColor: colors.primary }]} />
+            <View style={{ marginBottom: 14 }}>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' }}>
+                <View style={{ height: 6, borderRadius: 3, width: `${(checkedCount / runItems.length) * 100}%`, backgroundColor: colors.teal }} />
               </View>
-              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
-                {checkedCount} of {runItems.length} items
-              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>
+                  {checkedCount} of {runItems.length} items checked
+                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>
+                  {runItems.length > 0 ? Math.round((checkedCount / runItems.length) * 100) : 0}%
+                </Text>
+              </View>
             </View>
           )}
 
-          {/* Sub-tabs */}
+          {/* Sub-tabs — Figma toolbar style */}
           {!isDone && (
-            <View style={[rd.tabRow, { borderColor: border, backgroundColor: colors.surface }]}>
-              {(['items', 'add', 'receipt'] as const).map(t => (
-                <Pressable key={t} onPress={() => setTab(t)} style={[rd.tabBtn, tab === t && { backgroundColor: colors.primary }]}>
-                  <Text style={[rd.tabText, { color: tab === t ? colors.textInverse : colors.textSecondary }]}>
-                    {t === 'items' ? `List (${runItems.length})` : t === 'add' ? '+ Add' : '🧾 Receipt'}
-                  </Text>
-                </Pressable>
-              ))}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              {(['items', 'add', 'receipt'] as const).map(t => {
+                const active = tab === t;
+                return (
+                  <Pressable key={t} onPress={() => setTab(t)}
+                    style={{ flex: 1, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: active ? colors.primary : colors.card,
+                      borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: active ? (colors.textInverse ?? '#FFFFFF') : colors.primary }}>
+                      {t === 'items' ? `List (${runItems.length})` : t === 'add' ? '+ Add' : '🧾 Receipt'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
 
@@ -465,33 +474,47 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                   <Text style={{ fontSize: 40 }}>🛒</Text>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>No items yet</Text>
                   <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>Tap "+ Add" above to add items from your grocery list.</Text>
-                  <Pressable onPress={() => setTab('add')} style={{ backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 24, marginTop: 4 }}>
+                  <Pressable onPress={() => setTab('add')} style={{ backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 24, marginTop: 4 }}>
                     <Text style={{ color: colors.textInverse, fontWeight: '700', fontSize: 14 }}>+ Add Items</Text>
                   </Pressable>
                 </View>
               ) : (
-                runItems.map((ri, riIdx) => {
+                runItems.map((ri) => {
                   const isNotFound = notFoundIds.has(ri.itemId);
                   return (
                     <Pressable
                       key={ri.itemId}
                       onPress={() => !isDone && !isDraft && !isNotFound && toggleCheck(ri)}
-                      style={[rd.itemRow, {
-                        backgroundColor: isNotFound ? colors.dangerLight : 'transparent',
-                        borderBottomColor: border,
-                        borderBottomWidth: riIdx < runItems.length - 1 ? StyleSheet.hairlineWidth : 0,
-                        opacity: isNotFound ? 0.75 : isDraft ? 0.55 : 1,
-                      }]}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row', alignItems: 'center',
+                        paddingVertical: 12, paddingHorizontal: 12,
+                        backgroundColor: pressed ? (isDark ? colors.primary + '12' : colors.primaryLight)
+                          : isNotFound ? colors.dangerLight : colors.card,
+                        opacity: isNotFound ? 0.85 : isDraft ? 0.6 : 1,
+                        borderRadius: 14,
+                        borderWidth: 1,
+                        borderColor: isNotFound ? colors.danger : colors.border,
+                        marginBottom: 8,
+                        shadowColor: isDark ? 'transparent' : '#000',
+                        shadowOpacity: isDark ? 0 : 0.04,
+                        shadowRadius: 4,
+                        shadowOffset: { width: 0, height: 2 },
+                        elevation: 0,
+                        minHeight: 56,
+                      })}
                     >
                       {/* Checkbox */}
-                      <View style={[rd.checkbox, {
-                        borderColor: isNotFound ? colors.danger : ri.checkedInRun ? checkedColor : border,
-                        backgroundColor: isNotFound ? colors.dangerLight : ri.checkedInRun ? checkedColor : 'transparent',
-                      }]}>
+                      <View style={{
+                        width: 20, height: 20, borderRadius: 10, marginRight: 12,
+                        borderWidth: 1.8,
+                        borderColor: isNotFound ? colors.danger : ri.checkedInRun ? colors.teal : colors.textSecondary,
+                        backgroundColor: ri.checkedInRun ? colors.teal + '20' : 'transparent',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
                         {isNotFound
-                          ? <Text style={{ fontSize: 10 }}>✕</Text>
+                          ? <Text style={{ fontSize: 9, color: colors.danger }}>✕</Text>
                           : ri.checkedInRun
-                            ? <Ionicons name="checkmark" size={14} color={colors.textInverse} />
+                            ? <Ionicons name="checkmark" size={11} color={colors.teal} />
                             : loadingId === ri.itemId
                               ? <ActivityIndicator size="small" color={colors.primary} />
                               : null}
@@ -499,29 +522,22 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
 
                       {/* Item info */}
                       <View style={{ flex: 1 }}>
-                        <Text style={[rd.itemName, {
-                          color: isNotFound ? colors.danger : colors.textPrimary,
+                        <Text style={{
+                          fontSize: 16, fontWeight: '600',
+                          color: isNotFound ? colors.danger : ri.checkedInRun ? colors.textTertiary : colors.textPrimary,
                           textDecorationLine: ri.checkedInRun ? 'line-through' : 'none',
-                          opacity: ri.checkedInRun ? 0.5 : 1,
-                        }]}>
+                        }}>
                           {ri.item?.name ?? ri.itemId}
                         </Text>
                         {isNotFound
-                          ? <Text style={{ fontSize: 11, color: colors.danger, fontWeight: '600', marginTop: 1 }}>Not found here — stays on list</Text>
+                          ? <Text style={{ fontSize: 12, color: colors.danger, fontWeight: '600', marginTop: 2 }}>Not found — stays on list</Text>
                           : ri.item?.quantity
-                            ? <Text style={{ fontSize: 12, color: colors.textSecondary }}>{ri.item.quantity}</Text>
+                            ? <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textTertiary, marginTop: 2 }}>{ri.item.quantity}</Text>
                             : null}
                       </View>
 
-                      {/* Actions */}
+                      {/* Right actions */}
                       <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-                        {/* Return — one tap, pick who, quest created instantly.
-                            Was (ri.checkedInRun || isDone) — once a trip was
-                            marked done, EVERY item still listed got a Return
-                            button, including ones never actually checked off/
-                            bought (live-reported: "why are unbought items
-                            showing for return"). Only a checked (bought) item
-                            can meaningfully be "returned." */}
                         {ri.checkedInRun && !isNotFound && (
                           <Pressable
                             onPress={() => {
@@ -541,35 +557,32 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                             }}
                             hitSlop={6}
                             style={{
-                              paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
-                              backgroundColor: colors.warningLight,
-                              borderWidth: 1, borderColor: colors.warning,
+                              paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100,
+                              backgroundColor: colors.amberLight,
+                              borderWidth: 1, borderColor: colors.amber,
                             }}
                           >
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.warningDark }}>↩️ Return</Text>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>↩️</Text>
                           </Pressable>
                         )}
-                        {/* Not found toggle — only once shopping has started */}
                         {!isDone && !isDraft && !ri.checkedInRun && (
                           <Pressable
                             onPress={() => markNotFound(ri)}
                             hitSlop={6}
                             style={{
-                              paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8,
+                              paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100,
                               backgroundColor: isNotFound ? colors.dangerLight : colors.surface,
                               borderWidth: 1,
                               borderColor: isNotFound ? colors.danger : colors.border,
                             }}
                           >
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: isNotFound ? colors.danger : colors.textTertiary }}>
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: isNotFound ? colors.danger : colors.textTertiary }}>
                               {isNotFound ? 'Undo' : 'Not here'}
                             </Text>
                           </Pressable>
                         )}
-                        {/* Remove — still allowed while planning a draft trip
-                            (that's just editing the list, not shopping) */}
                         {!isDone && (
-                          <Pressable onPress={() => removeItemFromRun(run.id, ri.itemId)} style={{ padding: 4 }}>
+                          <Pressable onPress={() => removeItemFromRun(run.id, ri.itemId)} hitSlop={6} style={{ padding: 4 }}>
                             <Ionicons name="close-circle-outline" size={18} color={colors.textTertiary} />
                           </Pressable>
                         )}
@@ -615,19 +628,26 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                   <Text style={{ fontSize: 14, color: colors.textSecondary }}>All pending items are already in this run.</Text>
                 </View>
               ) : (
-                notInRun.map((item, itemIdx) => (
+                notInRun.map((item) => (
                   <Pressable
                     key={item.id}
                     onPress={() => !adding && handleAddToRun(item.id)}
-                    style={[rd.itemRow, { borderBottomColor: border, borderBottomWidth: itemIdx < notInRun.length - 1 ? StyleSheet.hairlineWidth : 0 }]}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row', alignItems: 'center',
+                      paddingVertical: 12, paddingHorizontal: 12,
+                      backgroundColor: pressed ? colors.primaryLight : '#FFFFFF',
+                      borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF',
+                      marginBottom: 8, minHeight: 56,
+                    })}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, color: colors.textPrimary }}>{item.name}</Text>
-                      {item.quantity && <Text style={{ fontSize: 12, color: colors.textSecondary }}>{item.quantity}</Text>}
-                      {item.storePreference && <Text style={{ fontSize: 11, color: colors.textTertiary }}>🏪 {item.storePreference}</Text>}
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
+                      {item.quantity && <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textTertiary, marginTop: 2 }}>{item.quantity}</Text>}
+                      {item.storePreference && <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 1 }}>🏪 {item.storePreference}</Text>}
                     </View>
-                    <View style={[rd.addBtn, { borderColor: colors.primary }]}>
-                      <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>+ Add</Text>
+                    <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
+                      backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: colors.primary }}>
+                      <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>+ Add</Text>
                     </View>
                   </Pressable>
                 ))
@@ -657,19 +677,25 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                     </View>
                   )}
                   {receiptAnalysis && !analyzingReceipt && (
-                    <View style={{ backgroundColor: colors.primaryLight, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border }}>
+                    <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 24,
+                      shadowColor: '#172337', shadowOpacity: 0.07, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}>
                       {!!receiptAnalysis.total && (
-                        <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 }}>
-                          Total: ${Number(receiptAnalysis.total).toFixed(2)}
-                        </Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#657185' }}>Receipt Total</Text>
+                          <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary }}>
+                            ${Number(receiptAnalysis.total).toFixed(2)}
+                          </Text>
+                        </View>
                       )}
                       {/* parse-grocery-receipt's own ExtractedItem shape —
                           totalPrice, not price. */}
                       {(receiptAnalysis.items ?? []).map((ri: any, idx: number) => (
-                        <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6,
-                          borderBottomWidth: idx < receiptAnalysis.items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
-                          <Text style={{ fontSize: 13, color: colors.textPrimary, flex: 1 }}>{ri.name}</Text>
-                          {!!ri.totalPrice && <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>${Number(ri.totalPrice).toFixed(2)}</Text>}
+                        <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                          paddingVertical: 8,
+                          borderBottomWidth: idx < receiptAnalysis.items.length - 1 ? StyleSheet.hairlineWidth : 0,
+                          borderBottomColor: '#DFE5EF' }}>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary, flex: 1 }}>{ri.name}</Text>
+                          {!!ri.totalPrice && <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>${Number(ri.totalPrice).toFixed(2)}</Text>}
                         </View>
                       ))}
                     </View>
@@ -702,17 +728,17 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <Pressable onPress={handleSwitchStore}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1.5, borderColor: colors.border,
-                        borderRadius: 10, paddingVertical: 10,
-                        backgroundColor: colors.surface }}>
+                        borderWidth: 1, borderColor: '#DFE5EF',
+                        borderRadius: 14, paddingVertical: 12,
+                        backgroundColor: '#FFFFFF' }}>
                       <Text style={{ fontSize: 14 }}>🏪</Text>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Switch Store</Text>
                     </Pressable>
                     <Pressable onPress={handleHandOff}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1.5, borderColor: colors.border,
-                        borderRadius: 10, paddingVertical: 10,
-                        backgroundColor: colors.surface }}>
+                        borderWidth: 1, borderColor: '#DFE5EF',
+                        borderRadius: 14, paddingVertical: 12,
+                        backgroundColor: '#FFFFFF' }}>
                       <Text style={{ fontSize: 14 }}>🤝</Text>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Hand Off</Text>
                     </Pressable>
@@ -737,7 +763,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                     // trip still needs a way to end without a purchase.
                     <Pressable onPress={handleCancelTrip}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1.5, borderColor: colors.danger, borderRadius: 10, paddingVertical: 10 }}>
+                        borderWidth: 1, borderColor: colors.danger, borderRadius: 14, paddingVertical: 12 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>Stop Shopping (no purchase)</Text>
                     </Pressable>
                   )}
@@ -747,8 +773,5 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
           )}
         </View>
       </View>
-    </Modal>
-
-    </>
-  );
+    </>);
 }

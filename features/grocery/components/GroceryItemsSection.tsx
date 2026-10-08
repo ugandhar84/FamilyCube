@@ -4,8 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { GroceryItem, useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
-import { FlatSectionHeader } from './FlatSectionHeader';
 import { DraggableItemRow } from './DraggableItemRow';
+import { guessCategory } from './types';
 import { StorePickerSheet } from './StorePickerSheet';
 import { s } from './styles';
 
@@ -229,67 +229,48 @@ export function GroceryItemsSection({
 
   const dragEnabled = !isKid && !isSelecting && groupedItems.length > 1;
 
+  // Group items by category (Figma: Produce / Dairy & Eggs / Bakery / Pantry / Other)
+  // Falls back to local keyword guesser if item has no stored category.
+  const CATEGORY_ORDER = ['Produce', 'Dairy & Eggs', 'Meat', 'Bakery', 'Frozen', 'Snacks', 'Pantry', 'Household', 'Pharmacy', 'Pet Store', 'Clothing', 'Other'];
+  const byCat: Record<string, GroceryItem[]> = {};
+  for (const item of groceryItems.filter(i => !i.isBought)) {
+    const cat = item.category ?? guessCategory(item.name);
+    if (!byCat[cat]) byCat[cat] = [];
+    byCat[cat].push(item);
+  }
+  const boughtItems = groceryItems.filter(i => i.isBought);
+  const catEntries: [string, GroceryItem[]][] = CATEGORY_ORDER
+    .filter(c => byCat[c]?.length)
+    .map(c => [c, byCat[c]]);
+  // Any category not in the ordered list goes at the end
+  for (const [cat, items] of Object.entries(byCat)) {
+    if (!CATEGORY_ORDER.includes(cat)) catEntries.push([cat, items]);
+  }
+  if (boughtItems.length > 0) catEntries.push(['✓ Bought', boughtItems]);
+
   return (
     <>
-      <FlatSectionHeader emoji="🛒" title="Groceries" accent={colors.success} colors={colors}
-        badge={`${groceryItems.filter(i => !i.isBought).length} left`} />
-      {groupedItems.map(([store, storeItems]) => (
-        <View key={store} style={{ marginBottom: 18 }} ref={(ref) => registerSectionLayout(store, ref)}>
-          {/* Store sub-header — highlights while a dragged item is hovering over this section */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4,
-            backgroundColor: hoveredStore === store ? P + '18' : 'transparent',
-            borderRadius: 8, paddingHorizontal: hoveredStore === store ? 6 : 0, paddingVertical: hoveredStore === store ? 3 : 0 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Ionicons name="storefront-outline" size={12} color={P} />
-              <Text style={{ fontSize: 11, fontWeight: '800', color: P, textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                {store === 'Any store' ? 'Any Store' : store}
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {onPinStore && store !== 'Any store' && storeItems.filter(i => !i.isBought).length >= 2 && !pinnedStores?.[store] && (
-                <Pressable onPress={() => onPinStore(store)} hitSlop={6}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <Ionicons name="location-outline" size={11} color={colors.textTertiary} />
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Pin</Text>
-                </Pressable>
-              )}
-              {/* Was: the Pin button vanished forever once a store had a
-                  pin, with no way back in to move or remove it. A pinned
-                  store now shows both actions — same hitSlop/visual weight
-                  as the original Pin button, distinguished by icon/label
-                  and separated by a bullet. */}
-              {(onPinStore || onUnpinStore) && store !== 'Any store' && !!pinnedStores?.[store] && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  {onPinStore && (
-                    <Pressable onPress={() => onPinStore(store)} hitSlop={6}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                      <Ionicons name="location" size={11} color={colors.textTertiary} />
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Move</Text>
-                    </Pressable>
-                  )}
-                  {onUnpinStore && (
-                    <Pressable onPress={() => onUnpinStore(store)} hitSlop={6}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                      <Ionicons name="close-circle-outline" size={11} color={colors.textTertiary} />
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Remove</Text>
-                    </Pressable>
-                  )}
-                </View>
-              )}
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary }}>
-                {storeItems.filter(i => !i.isBought).length} left
-              </Text>
-            </View>
-          </View>
-          <View>
-            {storeItems.map((item, idx) => (
+      {catEntries.map(([cat, catItems]) => (
+        <View key={cat} style={{ marginBottom: 4 }} ref={(ref) => registerSectionLayout(cat, ref)}>
+          {/* Figma: plain bold category heading */}
+          <Text style={{ fontSize: 20, fontWeight: '700', color: cat === '✓ Bought' ? colors.textTertiary : colors.textPrimary, marginBottom: 8, marginTop: 8 }}>
+            {cat}
+          </Text>
+          {/* Figma: card wrapping all rows in the category */}
+          <View style={{
+            backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+            paddingHorizontal: 16,
+            shadowColor: isDark ? 'transparent' : '#172337', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 8,
+            shadowOffset: { width: 0, height: 2 }, elevation: isDark ? 0 : 1,
+          }}>
+            {catItems.map((item, idx) => (
               <DraggableItemRow
                 key={item.id}
                 item={item}
                 members={members}
                 selected={selectedIds.has(item.id)}
                 selecting={isSelecting}
-                isLast={idx === storeItems.length - 1}
+                isLast={idx === catItems.length - 1}
                 priceInfo={priceMap[item.name]}
                 onPress={() => setDetailItem(item)}
                 onBuy={() => handleBuyItem(item)}

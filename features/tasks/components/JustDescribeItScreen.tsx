@@ -13,7 +13,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Animated, Easing, ActivityIndicator,
+  Animated, Easing, ActivityIndicator,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -325,7 +325,7 @@ export default function JustDescribeItScreen({
   if (!visible) return null;
 
   return (
-    <SafeAreaView style={[StyleSheet.absoluteFillObject, { backgroundColor: canvasBg, zIndex: 999 }]} edges={['top', 'bottom']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
           <ScrollView

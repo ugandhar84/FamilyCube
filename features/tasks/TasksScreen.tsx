@@ -452,6 +452,28 @@ export default function TasksScreen() {
     </View>
   );
 
+  // Full-page overlay — renders instead of the tab content, same pattern as hub review screens
+  if (showJustDescribe) {
+    return (
+      <JustDescribeItScreen
+        visible={true}
+        onClose={() => setShowJustDescribe(false)}
+        onOpenFullForm={(kind, prefill) => {
+          setShowJustDescribe(false);
+          setTimeout(() => {
+            if (kind === 'quest') {
+              setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+              setShowManualQuest(true);
+            } else {
+              setManualEventPrefill(prefill as typeof manualEventPrefill);
+              setShowManualEvent(true);
+            }
+          }, 350);
+        }}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       {/* Figma TopBar — PageTopBar, no legacy AppHeader */}
@@ -477,33 +499,6 @@ export default function TasksScreen() {
             onAiStateChange={setAiState} onExposeAiRunner={exposeAiRunner}
           />
         )}
-
-      {/* No FAB owned by this screen — parent creation routes through the
-          single shared FAB in app/(tabs)/_layout.tsx (morphs from Ask
-          Cube's sparkle into this screen's own "+" the moment Tasks is
-          focused — see openTaskComposerRequested below). Kids/teens rely
-          on the inline +Event/+Quest header buttons (CalendarScreen/
-          QuestsScreen, hideCreateButton removed) and their own dedicated
-          buttons elsewhere (Hub's Ask Parent flow, etc.) instead of a
-          floating FAB here. */}
-
-      {/* Figma "Just describe it" — dedicated Tasks-tab creation flow */}
-      <JustDescribeItScreen
-        visible={showJustDescribe}
-        onClose={() => setShowJustDescribe(false)}
-        onOpenFullForm={(kind, prefill) => {
-          setShowJustDescribe(false);
-          setTimeout(() => {
-            if (kind === 'quest') {
-              setManualQuestPrefill(prefill as typeof manualQuestPrefill);
-              setShowManualQuest(true);
-            } else {
-              setManualEventPrefill(prefill as typeof manualEventPrefill);
-              setShowManualEvent(true);
-            }
-          }, 350);
-        }}
-      />
 
       <AskParentSheet
         visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}

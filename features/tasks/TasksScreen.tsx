@@ -271,6 +271,10 @@ export default function TasksScreen() {
 
   // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
   const [showJustDescribe, setShowJustDescribe] = useState(false);
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(showJustDescribe);
+    return () => { useUIStore.getState().setFullBleedScreenActive(false); };
+  }, [showJustDescribe]);
 
   // Figma .quick-capture — real text input; on submit opens JustDescribeIt screen
   const [quickText, setQuickText] = useState('');

@@ -1053,6 +1053,35 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   const cardBg   = colors.card;
   const cardBord = isDark ? colors.border : 'rgba(223,97,60,0.10)';
 
+  // Full-page early-return: Add event
+  if (showAdd) {
+    return (
+      <EventFormAdd
+        visible={true}
+        activeMemberId={activeMember?.id ?? ''}
+        onClose={() => { setShowAdd(false); setAddPrefill(undefined); }}
+        prefill={addPrefill as any}
+      />
+    );
+  }
+
+  // Full-page early-return: Edit event
+  if (editEv) {
+    return (
+      <EditEventModal
+        event={editEv}
+        activeMemberId={activeMember?.id ?? ''}
+        onClose={() => setEditEv(null)}
+        onDelete={(scope) => {
+          notifyDeleteIfAssigned(editEv);
+          if (scope) useEventStore.getState().deleteEventScoped(editEv.id, scope);
+          else deleteEvent(editEv.id);
+          setEditEv(null);
+        }}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
@@ -1765,12 +1794,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
           instead — the purpose-built 3-step kid flow, not this shared
           adult form's isKid branch (removed; see KidRequestModal's own
           header comment for why). */}
-      <EventFormAdd
-        visible={showAdd}
-        activeMemberId={activeMember?.id ?? ''}
-        onClose={() => { setShowAdd(false); setAddPrefill(undefined); }}
-        prefill={addPrefill as any}
-      />
+      {/* AddEventModal / EditEventModal now handled by early-return above */}
       <KidRequestModal
         visible={showAskHelp}
         activeMemberId={activeMember?.id ?? ''}
@@ -1784,21 +1808,6 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
           activeMemberId={activeMember?.id ?? ''}
           editEvent={kidEditEv}
           onClose={() => setKidEditEv(null)}
-        />
-      )}
-
-      {/* Edit event — long-press on any card opens this */}
-      {editEv && (
-        <EditEventModal
-          event={editEv}
-          activeMemberId={activeMember?.id ?? ''}
-          onClose={() => setEditEv(null)}
-          onDelete={(scope) => {
-            notifyDeleteIfAssigned(editEv);
-            if (scope) useEventStore.getState().deleteEventScoped(editEv.id, scope);
-            else deleteEvent(editEv.id);
-            setEditEv(null);
-          }}
         />
       )}
 

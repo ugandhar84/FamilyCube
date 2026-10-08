@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
+  TextInput, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -48,6 +49,15 @@ export default function PaywallSheet({
   const [offering, setOffering]     = useState<any>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring]   = useState(false);
+
+  // Parental gate — required by App Store guideline 1.3 (Kids category):
+  // a child must not be able to trigger purchases without a parent solving
+  // a simple math challenge first. Gate is shown before every purchase
+  // attempt and re-generated each time.
+  const [gateVisible, setGateVisible]   = useState(false);
+  const [gateQuestion, setGateQuestion] = useState<{ a: number; b: number; answer: number }>({ a: 0, b: 0, answer: 0 });
+  const [gateInput, setGateInput]       = useState('');
+  const [gateError, setGateError]       = useState(false);
   // Admin-editable DISPLAY pricing (pricing_config table) — used only as
   // the fallback before RevenueCat's real offering loads, and as the
   // source of the discount badge/strikethrough RevenueCat has no
@@ -141,7 +151,26 @@ export default function PaywallSheet({
     return !!pkg?.product?.introPrice;
   };
 
-  const handlePurchase = async () => {
+  const openGate = () => {
+    const a = Math.floor(Math.random() * 90) + 10;
+    const b = Math.floor(Math.random() * 90) + 10;
+    setGateQuestion({ a, b, answer: a + b });
+    setGateInput('');
+    setGateError(false);
+    setGateVisible(true);
+  };
+
+  const confirmGate = () => {
+    if (parseInt(gateInput, 10) === gateQuestion.answer) {
+      setGateVisible(false);
+      executePurchase();
+    } else {
+      setGateError(true);
+      setGateInput('');
+    }
+  };
+
+  const executePurchase = async () => {
     if (purchasingRef.current) return;
     if (!isRevenueCatReady()) {
       closeAndAlert('Not available', 'Subscriptions require a TestFlight or App Store build.');
@@ -172,6 +201,8 @@ export default function PaywallSheet({
       closeAndAlert('Purchase failed', result.error);
     }
   };
+
+  const handlePurchase = () => openGate();
 
   const handleRestore = async () => {
     if (!user?.id) { closeAndAlert('Sign in required', 'Please sign in to restore purchases.'); return; }
@@ -355,6 +386,64 @@ export default function PaywallSheet({
         </Text>
 
       </ScrollView>
+
+      {/* Parental gate — App Store guideline 1.3 (Kids category):
+          a parent must solve a simple addition challenge before any
+          purchase can proceed. A child cannot easily bypass this. */}
+      <Modal
+        visible={gateVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGateVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.gateOverlay}
+        >
+          <View style={[s.gateCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="shield-checkmark-outline" size={32} color={colors.primary} style={{ alignSelf: 'center', marginBottom: 8 }} />
+            <Text style={[s.gateTitle, { color: colors.textPrimary }]}>Parent Check</Text>
+            <Text style={[s.gateSub, { color: colors.textSecondary }]}>
+              To confirm this purchase, please answer the question below.
+            </Text>
+            <Text style={[s.gateQ, { color: colors.textPrimary }]}>
+              What is {gateQuestion.a} + {gateQuestion.b}?
+            </Text>
+            <TextInput
+              style={[s.gateInput, {
+                backgroundColor: colors.surface,
+                color: colors.textPrimary,
+                borderColor: gateError ? colors.danger : colors.border,
+              }]}
+              keyboardType="number-pad"
+              value={gateInput}
+              onChangeText={v => { setGateInput(v); setGateError(false); }}
+              placeholder="Your answer"
+              placeholderTextColor={colors.textTertiary}
+              autoFocus
+              maxLength={6}
+            />
+            {gateError && (
+              <Text style={[s.gateErr, { color: colors.danger }]}>Incorrect — please try again.</Text>
+            )}
+            <View style={s.gateButtons}>
+              <TouchableOpacity
+                onPress={() => setGateVisible(false)}
+                style={[s.gateCancelBtn, { borderColor: colors.border }]}
+              >
+                <Text style={[s.gateCancelTxt, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmGate}
+                style={[s.gateConfirmBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={s.gateConfirmTxt}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </BottomSheet>
   );
 }
@@ -387,4 +476,16 @@ const s = StyleSheet.create({
   restoreBtn:       { alignItems: 'center', paddingVertical: 4 },
   restoreText:      { fontSize: 13 },
   legal:            { fontSize: 11, textAlign: 'center', lineHeight: 16, opacity: 0.7 },
+  gateOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 28 },
+  gateCard:         { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24, gap: 10 },
+  gateTitle:        { fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  gateSub:          { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  gateQ:            { fontSize: 22, fontWeight: '700', textAlign: 'center', marginTop: 4 },
+  gateInput:        { borderWidth: 1.5, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  gateErr:          { fontSize: 13, textAlign: 'center' },
+  gateButtons:      { flexDirection: 'row', gap: 10, marginTop: 4 },
+  gateCancelBtn:    { flex: 1, borderWidth: 1.5, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  gateCancelTxt:    { fontSize: 15, fontWeight: '600' },
+  gateConfirmBtn:   { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  gateConfirmTxt:   { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

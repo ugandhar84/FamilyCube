@@ -74,8 +74,6 @@ export default function PermissionsPrimingScreen() {
     router.replace('/onboarding/complete-profile');
   };
 
-  const skip = () => router.replace('/onboarding/complete-profile');
-
   const s = makeStyles(colors, isDark);
 
   return (
@@ -117,9 +115,6 @@ export default function PermissionsPrimingScreen() {
         <TouchableOpacity style={[s.btn, { backgroundColor: colors.primary }]} onPress={requestAll} disabled={requesting}>
           {requesting ? <ActivityIndicator color="#fff" /> : <Text style={s.btnTxt}>Continue</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={s.skipBtn} onPress={skip} disabled={requesting}>
-          <Text style={[s.skipTxt, { color: colors.textSecondary }]}>Not now</Text>
-        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -142,7 +137,5 @@ function makeStyles(colors: any, isDark: boolean) {
     actions: { marginTop: 'auto', marginBottom: 24, gap: 10 },
     btn: { borderRadius: 16, paddingVertical: 15, alignItems: 'center' },
     btnTxt: { fontSize: TYPO.subheading, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
-    skipBtn: { paddingVertical: 10, alignItems: 'center' },
-    skipTxt: { fontSize: TYPO.body, fontWeight: '600' },
   });
 }

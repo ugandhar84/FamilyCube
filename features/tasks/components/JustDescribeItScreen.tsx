@@ -141,10 +141,11 @@ export default function JustDescribeItScreen({
   const [questRecurrenceDays, setQuestRecurrenceDays] = useState<number[]>([]);
   const [questEndDate, setQuestEndDate] = useState('');
   const [questShowEndDatePick, setQuestShowEndDatePick] = useState(false);
-  const [questIsPool, setQuestIsPool] = useState(false);
+  const [questIsPool, setQuestIsPool] = useState(true);
   const [questCustomCoins, setQuestCustomCoins] = useState('');
   const [questBonusEnabled, setQuestBonusEnabled] = useState(false);
   const [questBonusCoins, setQuestBonusCoins] = useState('25');
+  const [questRequiresProof, setQuestRequiresProof] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [savingQuest, setSavingQuest] = useState(false);
 
@@ -171,7 +172,8 @@ export default function JustDescribeItScreen({
     setQuestRecurrence('once');
     setQuestRecurrenceDays([]);
     setQuestEndDate('');
-    setQuestIsPool(false);
+    setQuestIsPool(true);
+    setQuestRequiresProof(false);
     setQuestCustomCoins('');
     setQuestBonusEnabled(false);
     setQuestBonusCoins('25');
@@ -254,8 +256,6 @@ export default function JustDescribeItScreen({
     if (detected?.recurrenceDays?.length) {
       setQuestRecurrenceDays(detected.recurrenceDays);
     }
-    // Pre-select suggested assignee
-    if (assigneeMember) setQuestAssigneeIds([assigneeMember.id]);
     setQuestFormOpen(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   };
@@ -271,6 +271,7 @@ export default function JustDescribeItScreen({
         description: questDescription.trim() || undefined,
         coins: finalCoins,
         bonusCoins: bonusAmt > 0 ? bonusAmt : undefined,
+        photoRequired: questRequiresProof || undefined,
         assignedToIds: !questIsPool && questAssigneeIds.length > 0 ? questAssigneeIds : undefined,
         isPool: questIsPool || questAssigneeIds.length === 0,
         dueDate: questDueDate || undefined,
@@ -428,7 +429,7 @@ export default function JustDescribeItScreen({
                       </TouchableOpacity>
                     </View>
                     <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
-                      Audio stays private until you explicitly save.
+                      Audio stays private until you tap on-demand AI.
                     </Text>
                   </View>
                 )}
@@ -509,7 +510,7 @@ export default function JustDescribeItScreen({
                     <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 6 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: colors.teal }}>Your privacy</Text>
                       <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
-                        Detection runs entirely on your device. Nothing is sent anywhere until you explicitly save.
+                        Detection runs entirely on your device. Nothing is sent anywhere until you tap on-demand AI.
                       </Text>
                     </View>
                   </>
@@ -587,6 +588,25 @@ export default function JustDescribeItScreen({
                         multiline
                         style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: colors.textPrimary, minHeight: 80, textAlignVertical: 'top' }}
                       />
+                      {/* Photo proof toggle */}
+                      <TouchableOpacity
+                        onPress={() => setQuestRequiresProof(!questRequiresProof)}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                          backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
+                          borderColor: questRequiresProof ? colors.pink : colors.border,
+                          paddingHorizontal: 16, paddingVertical: 14 }}
+                      >
+                        <View style={{ gap: 2 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>📸 Require photo proof</Text>
+                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>Kid must submit a photo to mark done</Text>
+                        </View>
+                        <View style={{ width: 36, height: 22, borderRadius: 11,
+                          backgroundColor: questRequiresProof ? colors.pink : colors.surface,
+                          alignItems: questRequiresProof ? 'flex-end' : 'flex-start',
+                          paddingHorizontal: 2, justifyContent: 'center' }}>
+                          <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: questRequiresProof ? '#FFFFFF' : colors.textTertiary }} />
+                        </View>
+                      </TouchableOpacity>
                     </View>
 
                     {/* ── MAKE ROOM FOR IT — teal/sage section ── */}
@@ -698,23 +718,18 @@ export default function JustDescribeItScreen({
                       {questIsPool ? (
                         <View style={{ gap: 10 }}>
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                            {members.map(m => {
-                              const isAdult = m.role === 'parent';
-                              const accentColor = isAdult ? colors.teal : colors.amber;
-                              const lightBg = isAdult ? colors.tealLight : colors.amberLight;
-                              return (
-                                <View key={m.id} style={{ alignItems: 'center' }}>
-                                  <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: accentColor }}>
-                                    <Text style={{ fontSize: 20, fontWeight: '700', color: accentColor }}>{m.name[0].toUpperCase()}</Text>
-                                    <View style={{ position: 'absolute', bottom: 0, right: 0, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
-                                      <Text style={{ fontSize: 9 }}>⚡</Text>
-                                    </View>
+                            {members.filter(m => m.role === 'kid' || m.role === 'teen').map(m => (
+                              <View key={m.id} style={{ alignItems: 'center' }}>
+                                <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.amberLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.amber }}>
+                                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.amber }}>{m.name[0].toUpperCase()}</Text>
+                                  <View style={{ position: 'absolute', bottom: 0, right: 0, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                                    <Text style={{ fontSize: 9 }}>⚡</Text>
                                   </View>
                                 </View>
-                              );
-                            })}
+                              </View>
+                            ))}
                           </View>
-                          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.amber }}>Anyone can claim · first to grab it gets the coins</Text>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.amber }}>⚡ Any kid or teen can claim · first to grab it gets the coins</Text>
                         </View>
                       ) : (
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
@@ -862,20 +877,17 @@ export default function JustDescribeItScreen({
                             {/* Stacked avatars (pool = all members + ⚡, assigned = selected members) */}
                             <View style={{ flexDirection: 'row' }}>
                               {questIsPool
-                                ? members.slice(0, 3).map((m, i) => {
-                                    const isAdult = m.role === 'parent';
-                                    return (
-                                      <View key={m.id} style={{ width: 30, height: 30, borderRadius: 15, marginLeft: i > 0 ? -8 : 0,
-                                        backgroundColor: isAdult ? colors.tealLight : colors.amberLight,
-                                        alignItems: 'center', justifyContent: 'center',
-                                        borderWidth: 2, borderColor: colors.card }}>
-                                        <Text style={{ fontSize: 11, fontWeight: '800', color: isAdult ? colors.teal : colors.amber }}>{m.name[0]}</Text>
-                                        <View style={{ position: 'absolute', bottom: -2, right: -2, width: 13, height: 13, borderRadius: 7, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
-                                          <Text style={{ fontSize: 7 }}>⚡</Text>
-                                        </View>
+                                ? members.filter(m => m.role === 'kid' || m.role === 'teen').slice(0, 3).map((m, i) => (
+                                    <View key={m.id} style={{ width: 30, height: 30, borderRadius: 15, marginLeft: i > 0 ? -8 : 0,
+                                      backgroundColor: colors.amberLight,
+                                      alignItems: 'center', justifyContent: 'center',
+                                      borderWidth: 2, borderColor: colors.card }}>
+                                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>{m.name[0]}</Text>
+                                      <View style={{ position: 'absolute', bottom: -2, right: -2, width: 13, height: 13, borderRadius: 7, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                                        <Text style={{ fontSize: 7 }}>⚡</Text>
                                       </View>
-                                    );
-                                  })
+                                    </View>
+                                  ))
                                 : questAssigneeIds.length > 0
                                   ? questAssigneeIds.slice(0, 3).map((id, i) => {
                                       const m = members.find(mb => mb.id === id);

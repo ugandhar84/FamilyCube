@@ -312,7 +312,7 @@ export default function JustDescribeItScreen({
   const canvasBg    = isDark ? '#0E0C13' : '#FFFFFF';
   const fieldBg     = isDark ? colors.surface : '#FFFFFF';
   const fieldBorder = isDark ? colors.border : '#DFE5EF';
-  const activeBlue  = colors.primary;
+  const activeBlue  = colors.pink;
   const detCardBg   = isDark ? colors.surface : colors.pinkLight;
   const COIN_OPTIONS = [10, 20, 30, 50, 100];
   const RECUR_OPTIONS: Array<{ label: string; value: typeof questRecurrence }> = [

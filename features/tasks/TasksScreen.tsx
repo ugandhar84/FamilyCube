@@ -53,6 +53,7 @@ import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
+import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import { HouseholdWorkQueue } from '@/features/tasks/HouseholdWorkQueue';
 import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
 import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
@@ -271,10 +272,11 @@ export default function TasksScreen() {
 
   // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
   const [showJustDescribe, setShowJustDescribe] = useState(false);
+  const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
   useEffect(() => {
-    useUIStore.getState().setFullBleedScreenActive(showJustDescribe);
+    useUIStore.getState().setFullBleedScreenActive(showJustDescribe || showJustDescribeEvent);
     return () => { useUIStore.getState().setFullBleedScreenActive(false); };
-  }, [showJustDescribe]);
+  }, [showJustDescribe, showJustDescribeEvent]);
 
   // Figma .quick-capture — real text input; on submit opens JustDescribeIt screen
   const [quickText, setQuickText] = useState('');
@@ -457,6 +459,16 @@ export default function TasksScreen() {
   );
 
   // Full-page overlay — renders instead of the tab content, same pattern as hub review screens
+  if (showJustDescribeEvent) {
+    return (
+      <JustDescribeItEventScreen
+        visible
+        activeMemberId={activeMemberId ?? ''}
+        onClose={() => setShowJustDescribeEvent(false)}
+      />
+    );
+  }
+
   if (showJustDescribe) {
     return (
       <JustDescribeItScreen
@@ -488,7 +500,7 @@ export default function TasksScreen() {
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {segment === 'schedule'
-        ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
+        ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} onRequestJustDescribe={() => setShowJustDescribeEvent(true)} />
         : segment === 'queue'
         ? (
           <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>

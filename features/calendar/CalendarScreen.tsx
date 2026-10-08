@@ -361,12 +361,16 @@ function FadeInView({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function CalendarScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery }: {
+export default function CalendarScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery, onRequestJustDescribe }: {
   hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
   // TasksScreen hosts its own search icon on the tab-card and drives this
   // screen's existing title/notes filter externally, instead of duplicating
   // a second search affordance inline here.
   hideSearchBar?: boolean; externalSearchQuery?: string;
+  // When set, the + button calls this instead of opening the internal
+  // JustDescribeItEventScreen — lets a parent screen (TasksScreen) take
+  // over and do its own full-page early-return without a nested header.
+  onRequestJustDescribe?: () => void;
 } = {}) {
   const { colors, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
@@ -1101,7 +1105,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             <>
               {/* Figma TopBar — inlined PageTopBar, no legacy AppHeader */}
               <PageTopBar
-                onAddPress={isParentOrSenior && !hideCreateButton ? () => setShowJustDescribeEvent(true) : undefined}
+                onAddPress={isParentOrSenior && !hideCreateButton ? () => { if (onRequestJustDescribe) onRequestJustDescribe(); else setShowJustDescribeEvent(true); } : undefined}
                 onBellPress={() => setNotifPanelOpen(true)}
                 onAvatarPress={switchMember}
               />
@@ -1155,7 +1159,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             {!hideSearchBar && <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />}
             {isKid ? null : (
               isParentOrSenior && !hideCreateButton && (
-                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: colors.pink }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open JustDescribeItEventScreen [features/calendar/CalendarScreen.tsx:1027]`); setShowJustDescribeEvent(true); }}>
+                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: colors.pink }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open JustDescribeItEventScreen [features/calendar/CalendarScreen.tsx:1027]`); if (onRequestJustDescribe) onRequestJustDescribe(); else setShowJustDescribeEvent(true); }}>
                   <I.Plus c="#fff" size={14} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
                 </TouchableOpacity>

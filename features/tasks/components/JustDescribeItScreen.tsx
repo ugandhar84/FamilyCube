@@ -230,10 +230,14 @@ export default function JustDescribeItScreen({
 
   // Open the inline quest form pre-filled from detection
   const openInlineQuestForm = () => {
-    let cleanTitle = input.trim();
-    cleanTitle = cleanTitle
-      .replace(/\s+(at|by|@)\s+\d{1,2}(:\d{2})?\s*(am|pm|AM|PM)?/gi, '')
-      .replace(/\s+\d{1,2}:\d{2}\s*(am|pm|AM|PM)?/gi, '')
+    // Use the detection's pre-built clean title if available, otherwise fall back to stripping the raw input
+    const cleanTitle = detected?.title ?? input.trim()
+      .replace(/\s+(at|by|@)\s+\d{1,2}(:\d{2})?\s*(am|pm)?/gi, '')
+      .replace(/\s+\d{1,2}:\d{2}\s*(am|pm)?/gi, '')
+      .replace(/\s+(today|tonight|tomorrow)/gi, '')
+      .replace(/\s+(on|next|this)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gi, '')
+      .replace(/\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gi, '')
+      .replace(/\s+(on|by)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(st|nd|rd|th)?/gi, '')
       .replace(/\s+every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|day|week|month)/gi, '')
       .replace(/\s{2,}/g, ' ').trim();
     setQuestTitle(cleanTitle);

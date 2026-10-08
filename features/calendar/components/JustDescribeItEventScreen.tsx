@@ -2,11 +2,17 @@
  * JustDescribeItEventScreen — full-page natural-language event composer
  * for the Schedule tab's + button.
  *
- * Mirrors JustDescribeItScreen (chores) but routes to calendar events:
- *   1. Resting  — lavender info card + example text + "Speak your event" CTA
- *   2. Typing   — detection chips (category / time / who)
- *   3. Voice    — waveform + Stop / Cancel
- *   4. Expanded — inline event form: WHAT / WHEN / WHO sections
+ * Mirrors JustDescribeItScreen (chores) exactly in rhythm:
+ *   nav row ‹ Schedule · MEMBER
+ *   34px title + subtitle
+ *   composer card (same card style, mic inline)
+ *   voice card
+ *   detection chips card (colors.surface, dark pill for cat, card pills for time/who)
+ *   resting state (tealLight "one sentence" card → outlined CTA → tealLight privacy card)
+ *   CTA → "Set up event →"
+ *   inline form: pastel section cards (WHAT/tealLight · WHEN/amberLight · WHO/pinkLight)
+ *   preview card + save button + ‹ Back
+ *   date pickers rendered outside ScrollView
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -14,7 +20,7 @@ import {
   Animated, Easing, ActivityIndicator,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
@@ -22,13 +28,12 @@ import type { FamilyEvent } from '@/store/eventStore';
 import { detectLocalTask } from '@/features/tasks/lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { todayLocal } from '@/lib/dates';
-import { Mic, Square, X, ChevronDown, ChevronUp, Calendar, Clock } from 'lucide-react-native';
+import { Mic, Square } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
-import FamilyAvatar from '@/components/FamilyAvatar';
 
 const MIN_CHARS = 3;
 
-// ── Date/time helpers (CLAUDE.md Rule 9 — 12h human format, no ISO display) ───
+// ── Helpers (CLAUDE.md Rule 9 — 12h human format, no ISO display) ─────────────
 
 function fmtDate(iso: string): string {
   if (!iso) return '';
@@ -53,7 +58,7 @@ function shiftDate(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ── Voice waveform ─────────────────────────────────────────────────────────────
+// ── Voice waveform (identical to chore screen) ────────────────────────────────
 
 function WaveformBar({ delay, color }: { delay: number; color: string }) {
   const anim = useRef(new Animated.Value(0.3)).current;
@@ -78,25 +83,30 @@ function WaveformBar({ delay, color }: { delay: number; color: string }) {
 function Waveform({ color }: { color: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 48 }}>
-      {Array.from({ length: 20 }, (_, i) => (
-        <WaveformBar key={i} delay={i} color={color} />
-      ))}
+      {Array.from({ length: 20 }, (_, i) => <WaveformBar key={i} delay={i} color={color} />)}
     </View>
   );
 }
 
-// ── Event category chips ──────────────────────────────────────────────────────
+// ── Event categories ──────────────────────────────────────────────────────────
 
 const EVENT_CATEGORIES = [
+  { label: 'Event',    emoji: '🎉', value: 'Event' },
   { label: 'Medical',  emoji: '🏥', value: 'Medical' },
   { label: 'School',   emoji: '🏫', value: 'Study' },
   { label: 'Sports',   emoji: '⚽', value: 'Sports' },
   { label: 'Birthday', emoji: '🎂', value: 'Birthday' },
   { label: 'Ride',     emoji: '🚗', value: 'Ride' },
-  { label: 'Event',    emoji: '🎉', value: 'Event' },
-  { label: 'Reminder', emoji: '🔔', value: 'Reminder' },
   { label: 'Work',     emoji: '💼', value: 'Work' },
+  { label: 'Reminder', emoji: '🔔', value: 'Reminder' },
   { label: 'Other',    emoji: '📅', value: 'Other' },
+];
+
+const RECUR_OPTIONS: Array<{ label: string; value: 'once'|'daily'|'weekly'|'monthly' }> = [
+  { label: 'Once',    value: 'once' },
+  { label: 'Daily',   value: 'daily' },
+  { label: 'Weekly',  value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -111,36 +121,39 @@ export default function JustDescribeItEventScreen({
   activeMemberId?: string;
 }) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { members, activeMemberId: storeMemberId } = useFamilyStore();
   const activeMemberId = propActiveMemberId ?? storeMemberId;
   const { addEvent } = useEventStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
 
   // ── Composer state ─────────────────────────────────────────────────────
-  const [input, setInput] = useState('');
+  const [input, setInput]             = useState('');
   const [inputFocused, setInputFocused] = useState(false);
-  const [detection, setDetection] = useState<ReturnType<typeof detectLocalTask>>(null);
+  const [detection, setDetection]     = useState<ReturnType<typeof detectLocalTask>>(null);
 
   // ── Inline event form state ────────────────────────────────────────────
-  const [formOpen, setFormOpen] = useState(false);
-  const [evTitle, setEvTitle] = useState('');
-  const [evCategory, setEvCategory] = useState('Event');
-  const [evDate, setEvDate] = useState(shiftDate(todayLocal(), 1));
-  const [evTime, setEvTime] = useState('09:00');
-  const [evEndTime, setEvEndTime] = useState('10:00');
-  const [evAllDay, setEvAllDay] = useState(false);
-  const [evMemberIds, setEvMemberIds] = useState<string[]>([]);
-  const [evNotes, setEvNotes] = useState('');
-  const [evLocation, setEvLocation] = useState('');
-  const [showDatePick, setShowDatePick] = useState(false);
-  const [showTimePick, setShowTimePick] = useState(false);
+  const [formOpen, setFormOpen]         = useState(false);
+  const [evTitle, setEvTitle]           = useState('');
+  const [evCategory, setEvCategory]     = useState('Event');
+  const [evDate, setEvDate]             = useState(shiftDate(todayLocal(), 1));
+  const [evTime, setEvTime]             = useState('09:00');
+  const [evEndTime, setEvEndTime]       = useState('10:00');
+  const [evAllDay, setEvAllDay]         = useState(false);
+  const [evRecurrence, setEvRecurrence] = useState<'once'|'daily'|'weekly'|'monthly'>('once');
+  const [evRecurDays, setEvRecurDays]   = useState<number[]>([]);
+  const [evEndDate, setEvEndDate]       = useState('');
+  const [evMemberIds, setEvMemberIds]   = useState<string[]>([]);
+  const [evNotes, setEvNotes]           = useState('');
+  const [evLocation, setEvLocation]     = useState('');
+  const [showDatePick, setShowDatePick]     = useState(false);
+  const [showTimePick, setShowTimePick]     = useState(false);
   const [showEndTimePick, setShowEndTimePick] = useState(false);
-  const [showCatPicker, setShowCatPicker] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showEndDatePick, setShowEndDatePick] = useState(false);
+  const [saving, setSaving]             = useState(false);
 
   const dictation = useVoiceDictation();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef  = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const reset = () => {
@@ -154,15 +167,17 @@ export default function JustDescribeItEventScreen({
     setEvTime('09:00');
     setEvEndTime('10:00');
     setEvAllDay(false);
+    setEvRecurrence('once');
+    setEvRecurDays([]);
+    setEvEndDate('');
     setEvMemberIds([]);
     setEvNotes('');
     setEvLocation('');
     setShowDatePick(false);
     setShowTimePick(false);
     setShowEndTimePick(false);
-    setShowCatPicker(false);
+    setShowEndDatePick(false);
     setSaving(false);
-    setShowPreview(false);
     dictation.reset();
   };
 
@@ -180,7 +195,7 @@ export default function JustDescribeItEventScreen({
     if (t) setInput(t);
   };
 
-  // Open the inline form pre-filled from detection
+  // Open inline form pre-filled from detection
   const openInlineForm = () => {
     const cleanTitle = detection?.title ?? input.trim()
       .replace(/\s+(at|by|@)\s+\d{1,2}(:\d{2})?\s*(am|pm)?/gi, '')
@@ -197,7 +212,13 @@ export default function JustDescribeItEventScreen({
     if (detection?.category.kind === 'event' && detection.category.eventCategory) {
       setEvCategory(detection.category.eventCategory);
     }
-    // Pre-assign detected member if mentioned
+    if (detection?.recurrence && detection.recurrence !== 'once') {
+      setEvRecurrence(detection.recurrence as any);
+    }
+    if (detection?.recurrenceDays?.length) {
+      setEvRecurDays(detection.recurrenceDays);
+    }
+    // Pre-assign detected member
     if (detection?.memberNames.length) {
       const m = members.find(mb =>
         detection!.memberNames.some(n =>
@@ -236,591 +257,560 @@ export default function JustDescribeItEventScreen({
     }
   };
 
-  const isListening = dictation.state === 'listening';
-  const hasInput = input.trim().length >= MIN_CHARS;
-  const detected = detection;
-  const catLabel = detected?.category.kind === 'event'
-    ? detected.category.eventCategory
-    : detected?.category.kind === 'quest' ? null : null;
-  const catEmoji = detected?.category.emoji ?? '';
+  const isListening  = dictation.state === 'listening';
+  const hasInput     = input.trim().length >= MIN_CHARS;
+  const detected     = detection;
+  const catLabel     = detected?.category.kind === 'event' ? detected.category.eventCategory : null;
+  const catEmoji     = detected?.category.emoji ?? '';
   const detectedTime = detected?.when.time ? detected.when.time.slice(0, 5) : null;
   const detectedDate = detected?.when.date;
-  const timeLabel = detectedDate && detectedTime
+  const timeLabel    = detectedDate && detectedTime
     ? `${detectedDate === todayLocal() ? 'Today' : fmtDate(detectedDate)} · ${fmt12h(detectedTime)}`
     : detectedDate ? (detectedDate === todayLocal() ? 'Today' : fmtDate(detectedDate))
     : detectedTime ? fmt12h(detectedTime) : null;
   const detectedMemberName = detected?.memberNames[0] ?? null;
 
-  // Design tokens
+  // Design tokens — exact same pattern as JustDescribeItScreen
   const canvasBg    = isDark ? '#0E0C13' : '#FFFFFF';
-  const fieldBg     = isDark ? colors.surface : '#FFFFFF';
   const fieldBorder = isDark ? colors.border : '#DFE5EF';
-  const accent      = colors.teal;   // CONNECT (Schedule = teal)
-  const detCardBg   = isDark ? colors.surface : colors.tealLight;
-  const chipActive  = colors.teal;
-  const chipInact   = isDark ? colors.surface : colors.tealLight;
+  const activeBlue  = colors.teal;   // Schedule accent = sage/teal (CONNECT)
+
+  const catEntry = EVENT_CATEGORIES.find(c => c.value === evCategory);
 
   if (!visible) return null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+
         <ScrollView
           ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 80 }}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Header ── */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
-          }}>
-            <View>
-              <Text style={{ fontSize: 22, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.3 }}>
-                New Event
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 1 }}>
-                Describe what you're planning
+          <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
+
+            {/* ── Nav row: ‹ Schedule · · · MEMBER ── */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <TouchableOpacity onPress={handleClose} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 17, color: activeBlue }}>‹</Text>
+                <Text style={{ fontSize: 15, fontWeight: '500', color: activeBlue }}>Schedule</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 }}>
+                {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
               </Text>
             </View>
-            <TouchableOpacity
-              onPress={handleClose}
-              style={{
-                width: 36, height: 36, borderRadius: 18,
-                backgroundColor: isDark ? colors.surface : '#F0F0F0',
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <X size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
 
-          {/* ── Text input ── */}
-          {!isListening && (
-            <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+            {/* ── Page title ── */}
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 34, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, lineHeight: 40 }}>
+                Just describe it
+              </Text>
+              <Text style={{ fontSize: 15, fontWeight: '400', color: colors.textSecondary, lineHeight: 22 }}>
+                Type a thought. Speak a thought. Make it a plan.
+              </Text>
+            </View>
+
+            <View style={{ gap: 14 }}>
+
+              {/* ── Natural-language composer card ── */}
               <View style={{
-                flexDirection: 'row', alignItems: 'flex-start',
-                backgroundColor: fieldBg,
-                borderRadius: 16, borderWidth: 1.5,
-                borderColor: inputFocused ? accent : fieldBorder,
-                paddingHorizontal: 16, paddingVertical: 14, gap: 10,
-                shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.04,
-                shadowOffset: { width: 0, height: 2 }, shadowRadius: 6,
+                backgroundColor: colors.card, borderRadius: 20,
+                borderWidth: inputFocused || isListening ? 2 : 1,
+                borderColor: inputFocused || isListening ? activeBlue : colors.border,
+                padding: 20, gap: 12,
               }}>
-                <Text style={{ fontSize: 22, marginTop: 1 }}>📅</Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                  {isListening ? 'Editable transcript · listening' : 'What\'s coming up?'}
+                </Text>
                 <TextInput
                   ref={inputRef}
-                  style={{ flex: 1, fontSize: 16, color: colors.textPrimary, lineHeight: 24, minHeight: 60 }}
-                  placeholder={"\"Soccer practice Saturday 4pm\"\n\"Dentist for Mia next Thursday\""}
-                  placeholderTextColor={colors.textTertiary}
-                  multiline
-                  value={input}
+                  value={isListening ? dictation.liveTranscript : input}
                   onChangeText={setInput}
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
-                  returnKeyType="done"
-                  blurOnSubmit
+                  editable={!isListening}
+                  placeholder="Something on the calendar?"
+                  placeholderTextColor={colors.textTertiary}
+                  multiline
+                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 30 }}
                 />
-                {input.length > 0 && (
-                  <TouchableOpacity onPress={() => setInput('')} style={{ padding: 2, marginTop: 2 }}>
-                    <X size={16} color={colors.textTertiary} />
+                {/* Tools row */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                    {isListening ? 'Recording…' : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={isListening ? handleStopVoice : () => dictation.start()}
+                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {isListening
+                      ? <Square size={16} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
+                      : <Mic size={16} color={colors.textSecondary} strokeWidth={1.8} />}
                   </TouchableOpacity>
-                )}
+                </View>
               </View>
-            </View>
-          )}
 
-          {/* ── Voice waveform ── */}
-          {isListening && (
-            <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-              <View style={{
-                backgroundColor: detCardBg,
-                borderRadius: 16, padding: 20, alignItems: 'center', gap: 12,
-              }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: accent }}>
-                  Listening…
-                </Text>
-                <Waveform color={accent} />
-                <TouchableOpacity
-                  onPress={handleStopVoice}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 8,
-                    backgroundColor: accent, borderRadius: 24, paddingHorizontal: 20, paddingVertical: 10,
-                  }}
-                >
-                  <Square size={14} color="#fff" fill="#fff" />
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Stop</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* ── Detection chips ── */}
-          {hasInput && !isListening && (
-            <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-              <View style={{
-                backgroundColor: detCardBg, borderRadius: 14, padding: 14,
-                flexDirection: 'row', flexWrap: 'wrap', gap: 8,
-              }}>
-                {catLabel && (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? colors.teal + '30' : colors.tealLight,
-                    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-                  }}>
-                    <Text style={{ fontSize: 13 }}>{catEmoji}</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: accent }}>{catLabel}</Text>
+              {/* ── Voice dictation card ── */}
+              {isListening && (
+                <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 18, gap: 12 }}>
+                  <View style={{ alignSelf: 'flex-start', backgroundColor: colors.card, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: activeBlue }}>● Listening · speak now</Text>
                   </View>
-                )}
-                {timeLabel && (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? colors.amber + '30' : colors.amberLight,
-                    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-                  }}>
-                    <Clock size={12} color={colors.amber} />
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.amber }}>{timeLabel}</Text>
+                  <Waveform color={activeBlue} />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={handleStopVoice} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Stop</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => dictation.reset()} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Cancel</Text>
+                    </TouchableOpacity>
                   </View>
-                )}
-                {detectedMemberName && (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? colors.primary + '30' : colors.primaryLight,
-                    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-                  }}>
-                    <Text style={{ fontSize: 12 }}>👤</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>{detectedMemberName}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* ── Voice / Fill Form CTAs ── */}
-          {!isListening && (
-            <View style={{ paddingHorizontal: 20, flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-              {!hasInput && (
-                <TouchableOpacity
-                  onPress={() => dictation.start()}
-                  style={{
-                    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                    gap: 8, backgroundColor: accent, borderRadius: 14,
-                    paddingVertical: 14,
-                  }}
-                >
-                  <Mic size={18} color="#fff" />
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Speak your event</Text>
-                </TouchableOpacity>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                    Audio stays private until you tap on-demand AI.
+                  </Text>
+                </View>
               )}
-              {hasInput && !formOpen && (
+
+              {/* ── Detection chips card ── */}
+              {!isListening && hasInput && detected && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {catLabel && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                        backgroundColor: isDark ? colors.card : colors.navy,
+                        borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 }}>
+                        {catEmoji ? <Text style={{ fontSize: 14 }}>{catEmoji}</Text> : null}
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : '#FFFFFF' }}>
+                          {catLabel}
+                          {detected.category.kw.length > 0 ? `  · from "${detected.category.kw[0]}"` : ''}
+                        </Text>
+                      </View>
+                    )}
+                    {timeLabel && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                        backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                        borderWidth: 1, borderColor: colors.border }}>
+                        <Text style={{ fontSize: 13 }}>🕐</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>{timeLabel}</Text>
+                      </View>
+                    )}
+                    {detectedMemberName && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                        backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                        borderWidth: 1, borderColor: colors.border }}>
+                        <Text style={{ fontSize: 13 }}>👤</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>{detectedMemberName}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>Detected · adjust in the form below</Text>
+                </View>
+              )}
+
+              {/* ── Resting empty state ── */}
+              {!isListening && !hasInput && (
                 <>
+                  <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, lineHeight: 24 }}>One sentence is enough</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.teal, lineHeight: 20 }}>
+                      "Soccer practice Saturday 4pm" or "Dentist for Mia next Thursday"
+                    </Text>
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 2 }}>
+                      We'll detect the category, date, time and who's involved. You confirm before anything is saved.
+                    </Text>
+                  </View>
+
                   <TouchableOpacity
                     onPress={() => dictation.start()}
-                    style={{
-                      width: 48, height: 48, borderRadius: 14,
-                      backgroundColor: isDark ? colors.surface : '#F0F0F0',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}
+                    style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1.5, borderColor: activeBlue, backgroundColor: colors.card }}
                   >
-                    <Mic size={20} color={accent} />
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: activeBlue }}>Speak your event</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={openInlineForm}
-                    style={{
-                      flex: 1, backgroundColor: accent, borderRadius: 14,
-                      alignItems: 'center', justifyContent: 'center',
-                      paddingVertical: 14,
-                    }}
-                  >
-                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
-                      Fill in details →
+
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
+                    Your own wording comes first. Type or voice — there's no extra create menu.
+                  </Text>
+                  <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 6 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.teal }}>Your privacy</Text>
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
+                      Detection runs entirely on your device. Nothing is sent anywhere until you tap on-demand AI.
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 </>
               )}
-            </View>
-          )}
 
-          {/* ── Resting info card ── */}
-          {!hasInput && !isListening && (
-            <View style={{ paddingHorizontal: 20, gap: 12 }}>
-              <View style={{
-                backgroundColor: detCardBg, borderRadius: 16, padding: 16, gap: 8,
-              }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: accent }}>
-                  📅 How it works
-                </Text>
-                <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                  Describe your event naturally — day, time, and who's involved. We'll pull out the details for you.
-                </Text>
-                <View style={{ gap: 6, marginTop: 4 }}>
-                  {[
-                    '"Soccer practice Saturday 4pm for Jake"',
-                    '"Dentist appointment next Thursday morning"',
-                    '"Piano lesson for Mia every Wednesday 3pm"',
-                  ].map((ex, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      onPress={() => setInput(ex.replace(/"/g, ''))}
-                      style={{
-                        backgroundColor: isDark ? colors.card : '#FFFFFF',
-                        borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
-                        borderWidth: 1, borderColor: fieldBorder,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, color: colors.textSecondary, fontStyle: 'italic' }}>
-                        {ex}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              <View style={{
-                backgroundColor: isDark ? colors.surface : colors.amberLight,
-                borderRadius: 16, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'flex-start',
-              }}>
-                <Text style={{ fontSize: 20 }}>🔒</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber }}>
-                    Private until saved
-                  </Text>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginTop: 2 }}>
-                    Your description stays on-device until you tap on-demand AI.
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* ── Inline Event Form ── */}
-          {formOpen && (
-            <View style={{ paddingHorizontal: 20, gap: 0 }}>
-
-              {/* WHAT section */}
-              <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: accent, letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>
-                  WHAT
-                </Text>
-
-                {/* Title */}
-                <View style={{
-                  backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                  borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10,
-                }}>
-                  <TextInput
-                    style={{ fontSize: 16, color: colors.textPrimary, fontWeight: '500' }}
-                    placeholder="Event title"
-                    placeholderTextColor={colors.textTertiary}
-                    value={evTitle}
-                    onChangeText={setEvTitle}
-                  />
-                </View>
-
-                {/* Category picker */}
+              {/* ── CTA: open inline form ── */}
+              {!isListening && hasInput && detected && !formOpen && (
                 <TouchableOpacity
-                  onPress={() => setShowCatPicker(v => !v)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                    borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12,
-                  }}
+                  onPress={openInlineForm}
+                  style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 16 }}>
-                      {EVENT_CATEGORIES.find(c => c.value === evCategory)?.emoji ?? '📅'}
-                    </Text>
-                    <Text style={{ fontSize: 15, color: colors.textPrimary }}>
-                      {EVENT_CATEGORIES.find(c => c.value === evCategory)?.label ?? evCategory}
-                    </Text>
-                  </View>
-                  {showCatPicker ? <ChevronUp size={16} color={colors.textSecondary} /> : <ChevronDown size={16} color={colors.textSecondary} />}
-                </TouchableOpacity>
-                {showCatPicker && (
-                  <View style={{
-                    backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                    borderColor: fieldBorder, marginTop: 4, overflow: 'hidden',
-                  }}>
-                    {EVENT_CATEGORIES.map(c => (
-                      <TouchableOpacity
-                        key={c.value}
-                        onPress={() => { setEvCategory(c.value); setShowCatPicker(false); }}
-                        style={{
-                          flexDirection: 'row', alignItems: 'center', gap: 10,
-                          paddingHorizontal: 14, paddingVertical: 12,
-                          backgroundColor: evCategory === c.value
-                            ? (isDark ? accent + '30' : colors.tealLight)
-                            : 'transparent',
-                          borderBottomWidth: 1, borderBottomColor: fieldBorder,
-                        }}
-                      >
-                        <Text style={{ fontSize: 18 }}>{c.emoji}</Text>
-                        <Text style={{ fontSize: 15, color: colors.textPrimary, fontWeight: evCategory === c.value ? '700' : '400' }}>
-                          {c.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                {/* Location */}
-                <View style={{
-                  backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                  borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12, marginTop: 10,
-                }}>
-                  <TextInput
-                    style={{ fontSize: 15, color: colors.textPrimary }}
-                    placeholder="Location (optional)"
-                    placeholderTextColor={colors.textTertiary}
-                    value={evLocation}
-                    onChangeText={setEvLocation}
-                  />
-                </View>
-              </View>
-
-              {/* WHEN section */}
-              <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.amber, letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>
-                  WHEN
-                </Text>
-
-                {/* All-day toggle */}
-                <TouchableOpacity
-                  onPress={() => setEvAllDay(v => !v)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                    borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10,
-                  }}
-                >
-                  <Text style={{ fontSize: 15, color: colors.textPrimary }}>All-day</Text>
-                  <View style={{
-                    width: 44, height: 26, borderRadius: 13,
-                    backgroundColor: evAllDay ? accent : (isDark ? colors.surface : '#DDE2EC'),
-                    justifyContent: 'center', paddingHorizontal: 3,
-                  }}>
-                    <View style={{
-                      width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF',
-                      alignSelf: evAllDay ? 'flex-end' : 'flex-start',
-                      shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 1 }, shadowRadius: 2,
-                    }} />
-                  </View>
-                </TouchableOpacity>
-
-                {/* Date */}
-                <TouchableOpacity
-                  onPress={() => setShowDatePick(true)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                    borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12,
-                    marginBottom: evAllDay ? 0 : 10,
-                  }}
-                >
-                  <Calendar size={16} color={accent} />
-                  <Text style={{ fontSize: 15, color: evDate ? colors.textPrimary : colors.textTertiary }}>
-                    {evDate ? fmtDate(evDate) : 'Pick date'}
-                  </Text>
-                </TouchableOpacity>
-                {showDatePick && (
-                  <AppDateTimePicker
-                    visible={showDatePick}
-                    mode="date"
-                    value={new Date(evDate + 'T00:00:00')}
-                    onConfirm={d => { setEvDate(d.toISOString().slice(0, 10)); setShowDatePick(false); }}
-                    onCancel={() => setShowDatePick(false)}
-                  />
-                )}
-
-                {/* Time */}
-                {!evAllDay && (
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity
-                      onPress={() => setShowTimePick(true)}
-                      style={{
-                        flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-                        backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                        borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12,
-                      }}
-                    >
-                      <Clock size={16} color={accent} />
-                      <Text style={{ fontSize: 15, color: colors.textPrimary }}>
-                        {fmt12h(evTime)}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setShowEndTimePick(true)}
-                      style={{
-                        flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-                        backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                        borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12,
-                      }}
-                    >
-                      <Clock size={16} color={colors.textSecondary} />
-                      <Text style={{ fontSize: 15, color: colors.textPrimary }}>
-                        {fmt12h(evEndTime)}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {showTimePick && (
-                  <AppDateTimePicker
-                    visible={showTimePick}
-                    mode="time"
-                    value={(() => { const [h, m] = evTime.split(':'); const d = new Date(); d.setHours(+h, +m, 0, 0); return d; })()}
-                    onConfirm={d => { setEvTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setShowTimePick(false); }}
-                    onCancel={() => setShowTimePick(false)}
-                  />
-                )}
-                {showEndTimePick && (
-                  <AppDateTimePicker
-                    visible={showEndTimePick}
-                    mode="time"
-                    value={(() => { const [h, m] = evEndTime.split(':'); const d = new Date(); d.setHours(+h, +m, 0, 0); return d; })()}
-                    onConfirm={d => { setEvEndTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setShowEndTimePick(false); }}
-                    onCancel={() => setShowEndTimePick(false)}
-                  />
-                )}
-              </View>
-
-              {/* WHO section */}
-              <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.pink, letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>
-                  WHO
-                </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  {members.map(m => {
-                    const sel = evMemberIds.includes(m.id);
-                    const roleColor = m.role === 'kid' ? colors.kid : m.role === 'parent' ? colors.parent : colors.textSecondary;
-                    const roleBg = m.role === 'kid' ? colors.amberLight : m.role === 'parent' ? colors.tealLight : colors.surface;
-                    return (
-                      <TouchableOpacity
-                        key={m.id}
-                        onPress={() => setEvMemberIds(prev =>
-                          prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
-                        )}
-                        style={{
-                          flexDirection: 'row', alignItems: 'center', gap: 8,
-                          backgroundColor: sel ? (isDark ? roleColor + '40' : roleBg) : (isDark ? colors.surface : '#F5F5F5'),
-                          borderRadius: 24, paddingHorizontal: 12, paddingVertical: 8,
-                          borderWidth: 2, borderColor: sel ? roleColor : 'transparent',
-                        }}
-                      >
-                        <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={28} siblings={members.filter(s => s.id !== m.id).map(s => s.name)} />
-                        <Text style={{ fontSize: 14, fontWeight: sel ? '700' : '400', color: sel ? roleColor : colors.textSecondary }}>
-                          {m.name.split(' ')[0]}
-                        </Text>
-                        {sel && <Text style={{ fontSize: 12, color: roleColor }}>✓</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* NOTES */}
-              <View style={{ marginBottom: 24 }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>
-                  NOTES
-                </Text>
-                <View style={{
-                  backgroundColor: fieldBg, borderRadius: 12, borderWidth: 1.5,
-                  borderColor: fieldBorder, paddingHorizontal: 14, paddingVertical: 12,
-                }}>
-                  <TextInput
-                    style={{ fontSize: 15, color: colors.textPrimary, minHeight: 64 }}
-                    placeholder="Any extra details…"
-                    placeholderTextColor={colors.textTertiary}
-                    multiline
-                    value={evNotes}
-                    onChangeText={setEvNotes}
-                  />
-                </View>
-              </View>
-
-              {/* Preview toggle */}
-              {evTitle.trim().length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setShowPreview(v => !v)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    paddingVertical: 10, marginBottom: showPreview ? 0 : 16,
-                  }}
-                >
-                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                    {showPreview ? 'Hide preview' : 'Preview event card'}
-                  </Text>
-                  {showPreview ? <ChevronUp size={14} color={colors.textSecondary} /> : <ChevronDown size={14} color={colors.textSecondary} />}
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
                 </TouchableOpacity>
               )}
 
-              {/* Preview card */}
-              {showPreview && evTitle.trim().length > 0 && (
-                <View style={{
-                  backgroundColor: isDark ? colors.card : '#FFFFFF',
-                  borderRadius: 16, padding: 16, marginBottom: 16,
-                  borderWidth: 1.5, borderColor: accent + '40',
-                  shadowColor: accent, shadowOpacity: 0.08,
-                  shadowOffset: { width: 0, height: 3 }, shadowRadius: 8,
-                }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <Text style={{ fontSize: 20 }}>
-                      {EVENT_CATEGORIES.find(c => c.value === evCategory)?.emoji ?? '📅'}
-                    </Text>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
-                      {evTitle.trim()}
-                    </Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                      {fmtDate(evDate)}
-                      {!evAllDay && evTime ? ` · ${fmt12h(evTime)}` : ''}
-                      {!evAllDay && evEndTime ? ` – ${fmt12h(evEndTime)}` : ''}
-                    </Text>
-                  </View>
-                  {evMemberIds.length > 0 && (
-                    <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
-                      {evMemberIds.map(id => {
-                        const m = members.find(mb => mb.id === id);
-                        return m ? (
-                          <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={20} />
-                            <Text style={{ fontSize: 12, color: colors.textSecondary }}>{m.name.split(' ')[0]}</Text>
-                          </View>
-                        ) : null;
-                      })}
+              {/* No detection fallback */}
+              {!isListening && hasInput && !detected && !formOpen && (
+                <TouchableOpacity
+                  onPress={openInlineForm}
+                  style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Fill in details →</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* ══════════════════════════════════════════════════════
+                  ── Inline event form (expands below detection chips) ──
+                  ══════════════════════════════════════════════════════ */}
+              {formOpen && (
+                <View style={{ gap: 16 }}>
+
+                  {/* ── WHAT — tealLight section ── */}
+                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                    backgroundColor: colors.tealLight,
+                    borderWidth: 1, borderColor: colors.border,
+                    shadowColor: colors.teal, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
+                    <View style={{ gap: 6 }}>
+                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.teal, opacity: 0.6 }} />
+                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHAT'S THE EVENT</Text>
                     </View>
-                  )}
-                  {evLocation ? (
-                    <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4 }}>📍 {evLocation}</Text>
-                  ) : null}
+
+                    {/* Title */}
+                    <TextInput
+                      value={evTitle}
+                      onChangeText={setEvTitle}
+                      placeholder="Event title"
+                      placeholderTextColor={colors.textTertiary}
+                      style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
+                    />
+
+                    {/* Category chips */}
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Category</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {EVENT_CATEGORIES.map(c => (
+                        <TouchableOpacity
+                          key={c.value}
+                          onPress={() => setEvCategory(c.value)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                            paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14,
+                            backgroundColor: evCategory === c.value ? colors.teal : colors.card,
+                            borderWidth: 1, borderColor: evCategory === c.value ? colors.teal : colors.border }}
+                        >
+                          <Text style={{ fontSize: 14 }}>{c.emoji}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: evCategory === c.value ? '#FFFFFF' : colors.textPrimary }}>{c.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Location */}
+                    <TextInput
+                      value={evLocation}
+                      onChangeText={setEvLocation}
+                      placeholder="📍 Location (optional)"
+                      placeholderTextColor={colors.textTertiary}
+                      style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: colors.textPrimary }}
+                    />
+                  </View>
+
+                  {/* ── WHEN — amberLight section ── */}
+                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                    backgroundColor: colors.amberLight,
+                    borderWidth: 1, borderColor: colors.border,
+                    shadowColor: colors.amber, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
+                    <View style={{ gap: 6 }}>
+                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.amber, opacity: 0.6 }} />
+                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHEN</Text>
+                    </View>
+
+                    {/* All-day toggle */}
+                    <TouchableOpacity
+                      onPress={() => setEvAllDay(v => !v)}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
+                        borderColor: evAllDay ? colors.amber : colors.border,
+                        paddingHorizontal: 16, paddingVertical: 14 }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>All day</Text>
+                      <View style={{ width: 36, height: 22, borderRadius: 11,
+                        backgroundColor: evAllDay ? colors.amber : colors.surface,
+                        alignItems: evAllDay ? 'flex-end' : 'flex-start',
+                        paddingHorizontal: 2, justifyContent: 'center' }}>
+                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: evAllDay ? '#FFFFFF' : colors.textTertiary }} />
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Date + time row */}
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <TouchableOpacity
+                        onPress={() => setShowDatePick(true)}
+                        style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                      >
+                        <Text style={{ fontSize: 15 }}>📅</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmtDate(evDate)}</Text>
+                      </TouchableOpacity>
+                      {!evAllDay && (
+                        <TouchableOpacity
+                          onPress={() => setShowTimePick(true)}
+                          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                        >
+                          <Text style={{ fontSize: 15 }}>🕐</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmt12h(evTime)}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* End time (non-all-day) */}
+                    {!evAllDay && (
+                      <TouchableOpacity
+                        onPress={() => setShowEndTimePick(true)}
+                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                      >
+                        <Text style={{ fontSize: 15 }}>🏁</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>Ends {fmt12h(evEndTime)}</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Repeat chips */}
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeat</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {RECUR_OPTIONS.map(opt => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          onPress={() => setEvRecurrence(opt.value)}
+                          style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
+                            backgroundColor: evRecurrence === opt.value ? colors.amber : colors.card,
+                            borderWidth: 1, borderColor: evRecurrence === opt.value ? colors.amber : colors.border }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: evRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>{opt.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Day-of-week chips — weekly only */}
+                    {evRecurrence === 'weekly' && (
+                      <>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeats on</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {['S','M','T','W','T','F','S'].map((label, idx) => {
+                            const sel = evRecurDays.includes(idx);
+                            return (
+                              <TouchableOpacity
+                                key={idx}
+                                onPress={() => setEvRecurDays(prev => sel ? prev.filter(d => d !== idx) : [...prev, idx])}
+                                style={{ flex: 1, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                                  backgroundColor: sel ? colors.amber : colors.card,
+                                  borderWidth: 1, borderColor: sel ? colors.amber : colors.border }}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textPrimary }}>{label}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </>
+                    )}
+
+                    {evRecurrence !== 'once' && (
+                      <>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Ends on (optional)</Text>
+                        <TouchableOpacity
+                          onPress={() => setShowEndDatePick(true)}
+                          style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                        >
+                          <Text style={{ fontSize: 15 }}>🏁</Text>
+                          <Text style={{ fontSize: 14, color: evEndDate ? colors.textPrimary : colors.textTertiary }}>
+                            {evEndDate ? fmtDate(evEndDate) : 'No end date'}
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+
+                  {/* ── WHO — pinkLight section ── */}
+                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                    backgroundColor: colors.pinkLight,
+                    borderWidth: 1, borderColor: colors.border,
+                    shadowColor: colors.pink, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
+                    <View style={{ gap: 6 }}>
+                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
+                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHO'S INVOLVED</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                      {members.map(m => {
+                        const sel = evMemberIds.includes(m.id);
+                        const isAdult = m.role === 'parent';
+                        const accentColor = isAdult ? colors.teal : colors.amber;
+                        return (
+                          <TouchableOpacity
+                            key={m.id}
+                            onPress={() => setEvMemberIds(prev => sel ? prev.filter(id => id !== m.id) : [...prev, m.id])}
+                            style={{ alignItems: 'center', gap: 4 }}
+                          >
+                            <View style={{
+                              width: 52, height: 52, borderRadius: 26,
+                              backgroundColor: sel ? accentColor : colors.card,
+                              alignItems: 'center', justifyContent: 'center',
+                              borderWidth: sel ? 0 : 1.5, borderColor: colors.border,
+                            }}>
+                              <Text style={{ fontSize: 20, fontWeight: '700', color: sel ? '#FFFFFF' : accentColor }}>
+                                {m.name[0].toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 11, color: sel ? accentColor : colors.textSecondary, fontWeight: sel ? '700' : '400' }}>
+                              {m.name.split(' ')[0]}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                      {evMemberIds.length === 0 && (
+                        <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center', paddingTop: 8 }}>Tap to add family members</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* ── NOTES — surface card ── */}
+                  <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1, borderColor: colors.border }}>
+                    <View style={{ gap: 6 }}>
+                      <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.textTertiary, opacity: 0.5 }} />
+                      <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>NOTES</Text>
+                    </View>
+                    <TextInput
+                      value={evNotes}
+                      onChangeText={setEvNotes}
+                      placeholder="Any extra details…"
+                      placeholderTextColor={colors.textTertiary}
+                      multiline
+                      style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: colors.textPrimary, minHeight: 80, textAlignVertical: 'top' }}
+                    />
+                  </View>
+
+                  {/* ── PREVIEW CARD ── */}
+                  <View style={{ gap: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.5, textTransform: 'uppercase' }}>Card preview</Text>
+                    <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: fieldBorder,
+                      paddingHorizontal: 16, paddingVertical: 14, gap: 8,
+                      shadowColor: '#000', shadowOpacity: isDark ? 0.25 : 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: evTitle.trim() ? colors.textPrimary : colors.textTertiary }} numberOfLines={1}>
+                            {evTitle.trim() || 'Event title…'}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                            {catEntry ? `${catEntry.emoji} ${catEntry.label}` : ''}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                          <View style={{ flexDirection: 'row' }}>
+                            {evMemberIds.slice(0, 3).map((id, i) => {
+                              const m = members.find(mb => mb.id === id);
+                              if (!m) return null;
+                              const isAdult = m.role === 'parent';
+                              return (
+                                <View key={id} style={{ width: 30, height: 30, borderRadius: 15, marginLeft: i > 0 ? -8 : 0,
+                                  backgroundColor: isAdult ? colors.tealLight : colors.amberLight,
+                                  alignItems: 'center', justifyContent: 'center',
+                                  borderWidth: 2, borderColor: colors.card }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '800', color: isAdult ? colors.teal : colors.amber }}>{m.name[0]}</Text>
+                                </View>
+                              );
+                            })}
+                            {evMemberIds.length === 0 && (
+                              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 12, color: colors.textTertiary }}>?</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Chips row */}
+                      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                        <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>
+                            📅 {fmtDate(evDate)}{!evAllDay && evTime ? ` · ${fmt12h(evTime)}` : ''}
+                          </Text>
+                        </View>
+                        {evRecurrence !== 'once' && (
+                          <View style={{ backgroundColor: colors.amberLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.amber }}>
+                              🔁 {evRecurrence === 'weekly' && evRecurDays.length > 0
+                                ? `Weekly · ${evRecurDays.map(d => ['S','M','T','W','T','F','S'][d]).join('/')}`
+                                : evRecurrence.charAt(0).toUpperCase() + evRecurrence.slice(1)}
+                            </Text>
+                          </View>
+                        )}
+                        {evLocation ? (
+                          <View style={{ backgroundColor: colors.tealLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>📍 {evLocation}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {evNotes.trim() ? (
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }} numberOfLines={2}>{evNotes}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {/* Save button */}
+                  <TouchableOpacity
+                    onPress={handleSave}
+                    disabled={!evTitle.trim() || saving}
+                    style={{ height: 52, borderRadius: 14,
+                      backgroundColor: evTitle.trim() ? activeBlue : (isDark ? colors.surface : '#E6EAF1'),
+                      alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
+                  >
+                    {saving
+                      ? <ActivityIndicator color="#FFFFFF" />
+                      : <Text style={{ fontSize: 15, fontWeight: '700', color: evTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>Add to schedule</Text>}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={() => setFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>‹ Back · edit description</Text>
+                  </TouchableOpacity>
+
                 </View>
               )}
 
-              {/* Save button */}
-              <TouchableOpacity
-                onPress={handleSave}
-                disabled={!evTitle.trim() || saving}
-                style={{
-                  backgroundColor: evTitle.trim() ? accent : (isDark ? colors.surface : '#DDE2EC'),
-                  borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={{
-                      fontSize: 16, fontWeight: '700',
-                      color: evTitle.trim() ? '#FFFFFF' : colors.textTertiary,
-                    }}>
-                      Add to Schedule
-                    </Text>
-                }
-              </TouchableOpacity>
-
             </View>
-          )}
-
+          </View>
         </ScrollView>
+
+        {/* Date / time pickers rendered outside ScrollView */}
+        <AppDateTimePicker
+          visible={showDatePick}
+          mode="date"
+          value={new Date(evDate + 'T00:00:00')}
+          onConfirm={d => { setEvDate(d.toISOString().slice(0, 10)); setShowDatePick(false); }}
+          onCancel={() => setShowDatePick(false)}
+        />
+        <AppDateTimePicker
+          visible={showTimePick}
+          mode="time"
+          value={(() => { const [h, m] = evTime.split(':'); const d = new Date(); d.setHours(+h, +m, 0, 0); return d; })()}
+          onConfirm={d => { setEvTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setShowTimePick(false); }}
+          onCancel={() => setShowTimePick(false)}
+        />
+        <AppDateTimePicker
+          visible={showEndTimePick}
+          mode="time"
+          value={(() => { const [h, m] = evEndTime.split(':'); const d = new Date(); d.setHours(+h, +m, 0, 0); return d; })()}
+          onConfirm={d => { setEvEndTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setShowEndTimePick(false); }}
+          onCancel={() => setShowEndTimePick(false)}
+        />
+        <AppDateTimePicker
+          visible={showEndDatePick}
+          mode="date"
+          value={new Date((evEndDate || evDate) + 'T00:00:00')}
+          onConfirm={d => { setEvEndDate(d.toISOString().slice(0, 10)); setShowEndDatePick(false); }}
+          onCancel={() => setShowEndDatePick(false)}
+        />
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

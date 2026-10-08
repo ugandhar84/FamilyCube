@@ -785,7 +785,7 @@ export default function JustDescribeItEventScreen({
                                 colors={colors}
                               />
                             </View>
-                            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.6, color: colors.textTertiary, textTransform: 'uppercase' }}>Driver</Text>
+                            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.6, color: colors.textTertiary, textTransform: 'uppercase' }}>Who's driving?</Text>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                               {driverCandidates.map(m => {
                                 const sel = evDriverId === m.id;

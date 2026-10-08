@@ -309,7 +309,7 @@ export default function JustDescribeItScreen({
     : null;
 
   // Figma tokens
-  const canvasBg    = isDark ? '#0E0C13' : '#F5F7FB';
+  const canvasBg    = isDark ? '#0E0C13' : '#FFFFFF';
   const fieldBg     = isDark ? colors.surface : '#FFFFFF';
   const fieldBorder = isDark ? colors.border : '#DFE5EF';
   const activeBlue  = colors.primary;
@@ -334,39 +334,37 @@ export default function JustDescribeItScreen({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={{ paddingHorizontal: 24, paddingTop: 24, gap: 16 }}>
+            <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
 
-              {/* Household chrome */}
+              {/* ── Nav row: ‹ Today · · · UGANDHAR ── */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
-                  {familyName.toUpperCase()} / {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
-                </Text>
-                <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={{ fontSize: 28, lineHeight: 34, color: activeBlue, fontWeight: '400' }}>+</Text>
+                <TouchableOpacity onPress={handleClose} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ fontSize: 17, color: activeBlue }}>‹</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '500', color: activeBlue }}>Today</Text>
                 </TouchableOpacity>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 }}>
+                  {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
+                </Text>
               </View>
 
-              {/* Back link */}
-              <TouchableOpacity onPress={handleClose} style={{ marginTop: -8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: activeBlue }}>‹ Close · return to Today</Text>
-              </TouchableOpacity>
-
-              {/* Page title */}
-              <Text style={{ fontSize: 29, fontWeight: '700', color: colors.textPrimary, lineHeight: 41 }}>
-                Just describe it
-              </Text>
-
-              <View style={{ gap: 12 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
-                  Type or speak — we'll figure out the rest
+              {/* ── Page title ── */}
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 34, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, lineHeight: 40 }}>
+                  Just describe it
                 </Text>
+                <Text style={{ fontSize: 15, fontWeight: '400', color: colors.textSecondary, lineHeight: 22 }}>
+                  Type a thought. Speak a thought. Make it a plan.
+                </Text>
+              </View>
+
+              <View style={{ gap: 14 }}>
 
                 {/* ── Natural-language composer ── */}
                 <View style={{
-                  backgroundColor: fieldBg, borderRadius: 22,
+                  backgroundColor: colors.card, borderRadius: 20,
                   borderWidth: inputFocused || isListening ? 2 : 1,
-                  borderColor: inputFocused || isListening ? activeBlue : fieldBorder,
-                  padding: 20, gap: 16, minHeight: 170,
+                  borderColor: inputFocused || isListening ? activeBlue : colors.border,
+                  padding: 20, gap: 12,
                 }}>
                   <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                     {isListening ? 'Editable transcript · listening' : 'What needs doing?'}
@@ -379,23 +377,23 @@ export default function JustDescribeItScreen({
                     onBlur={() => setInputFocused(false)}
                     editable={!isListening}
                     placeholder="Something on your mind?"
-                    placeholderTextColor={colors.textSecondary}
+                    placeholderTextColor={colors.textTertiary}
                     multiline
-                    style={{ fontSize: 24, fontWeight: '500', lineHeight: 34, color: colors.textPrimary, minHeight: 34 }}
+                    style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 30 }}
                   />
                   {/* Tools row */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 48 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                      <Text style={{ fontSize: 12, color: colors.textTertiary }}>
                         {isListening ? 'Recording…' : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
                       </Text>
                       {hasInput && !isListening && (
                         <TouchableOpacity
                           onPress={handleAiAutoFill}
                           disabled={aiAutoFilling}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: detCardBg }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.pinkLight }}
                         >
-                          {aiAutoFilling ? <ActivityIndicator size="small" color={colors.pink} /> : <Text style={{ fontSize: 12 }}>✨</Text>}
+                          {aiAutoFilling ? <ActivityIndicator size="small" color={colors.pink} /> : <Text style={{ fontSize: 11 }}>✨</Text>}
                           <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink }}>
                             {aiAutoFilling ? 'Filling…' : 'AI fill'}
                           </Text>
@@ -404,19 +402,19 @@ export default function JustDescribeItScreen({
                     </View>
                     <TouchableOpacity
                       onPress={isListening ? handleStopVoice : () => dictation.start()}
-                      style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: detCardBg, alignItems: 'center', justifyContent: 'center' }}
+                      style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
                     >
                       {isListening
-                        ? <Square size={20} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
-                        : <Mic size={20} color={activeBlue} strokeWidth={1.8} />}
+                        ? <Square size={16} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
+                        : <Mic size={16} color={colors.textSecondary} strokeWidth={1.8} />}
                     </TouchableOpacity>
                   </View>
                 </View>
 
                 {/* ── Voice dictation card ── */}
                 {isListening && (
-                  <View style={{ backgroundColor: detCardBg, borderRadius: 22, padding: 16, gap: 12 }}>
-                    <View style={{ alignSelf: 'flex-start', backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(52,93,227,0.08)', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <View style={{ backgroundColor: colors.pinkLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 18, gap: 12 }}>
+                    <View style={{ alignSelf: 'flex-start', backgroundColor: colors.card, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
                       <Text style={{ fontSize: 12, fontWeight: '600', color: activeBlue }}>● Listening · speak now</Text>
                     </View>
                     <Waveform color={activeBlue} />
@@ -424,64 +422,93 @@ export default function JustDescribeItScreen({
                       <TouchableOpacity onPress={handleStopVoice} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Stop</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => dictation.reset()} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: fieldBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: fieldBorder }}>
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Cancel audio</Text>
+                      <TouchableOpacity onPress={() => dictation.reset()} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }}>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Cancel</Text>
                       </TouchableOpacity>
                     </View>
-                    <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
-                      Audio stays private until you explicitly save. No task is auto-created.
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                      Audio stays private until you explicitly save.
                     </Text>
                   </View>
                 )}
 
-                {/* ── Detection chips ── */}
+                {/* ── Detection chips — pill row in a beige card ── */}
                 {!isListening && hasInput && detected && (
-                  <View style={{ backgroundColor: detCardBg, borderRadius: 22, padding: 16, gap: 10 }}>
-                    {catLabel && (
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                        {catEmoji ? `${catEmoji}  ` : ''}{catLabel}
-                        {detected.category.kw.length > 0 ? `  ·  from "${detected.category.kw[0]}"` : ''}
-                      </Text>
-                    )}
-                    {timeLabel && (
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                        🕐  {timeLabel}
-                      </Text>
-                    )}
-                    {loadingSuggestion && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <ActivityIndicator size="small" color={activeBlue} />
-                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Checking schedule…</Text>
-                      </View>
-                    )}
-                    {displayAssignee && !loadingSuggestion && (
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, lineHeight: 22 }}>
-                        👤  {displayAssignee}{suggestion && !detectedMemberName ? ' · Suggested' : ''}
-                      </Text>
-                    )}
+                  <View style={{ backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {catLabel && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                          backgroundColor: isDark ? colors.card : colors.navy,
+                          borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 }}>
+                          {catEmoji ? <Text style={{ fontSize: 14 }}>{catEmoji}</Text> : null}
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : '#FFFFFF' }}>
+                            {catLabel}
+                            {detected.category.kw.length > 0 ? `  · from "${detected.category.kw[0]}"` : ''}
+                          </Text>
+                        </View>
+                      )}
+                      {timeLabel && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                          backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                          borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ fontSize: 13 }}>🕐</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>{timeLabel}</Text>
+                        </View>
+                      )}
+                      {loadingSuggestion && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                          backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                          borderWidth: 1, borderColor: colors.border }}>
+                          <ActivityIndicator size="small" color={activeBlue} />
+                          <Text style={{ fontSize: 13, color: colors.textSecondary }}>Suggesting…</Text>
+                        </View>
+                      )}
+                      {displayAssignee && !loadingSuggestion && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                          backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                          borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ fontSize: 13 }}>👤</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>
+                            {displayAssignee}{suggestion && !detectedMemberName ? ' · Suggested' : ''}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Detected · adjust in the form below</Text>
                   </View>
                 )}
 
                 {/* ── Resting empty state ── */}
                 {!isListening && !hasInput && (
                   <>
-                    <View style={{ backgroundColor: fieldBg, borderRadius: 22, padding: 16, gap: 12, shadowColor: '#172337', shadowOpacity: 0.07, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
-                      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>One sentence is enough</Text>
-                      <Text style={{ fontSize: 16, fontWeight: '400', color: colors.textPrimary, lineHeight: 22 }}>
-                        "Pick up trash every Monday at 5 PM" or "Jaswi finish homework by 7 PM"
+                    {/* "One sentence is enough" — pinkLight card */}
+                    <View style={{ backgroundColor: colors.pinkLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
+                      <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, lineHeight: 24 }}>One sentence is enough</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink, lineHeight: 20 }}>
+                        "water the plants every Monday" or "Jaswi finish homework by 7 PM"
+                      </Text>
+                      <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 2 }}>
+                        We can suggest category, time and person. You confirm the details before anything is saved.
                       </Text>
                     </View>
+
+                    {/* Speak your task — outlined primary button */}
                     <TouchableOpacity
                       onPress={() => dictation.start()}
-                      style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1.5, borderColor: activeBlue, backgroundColor: fieldBg }}
+                      style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 1.5, borderColor: activeBlue, backgroundColor: colors.card }}
                     >
-                      <Mic size={18} color={activeBlue} strokeWidth={1.8} />
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: activeBlue }}>Speak your task</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: activeBlue }}>Speak your task</Text>
                     </TouchableOpacity>
-                    <View style={{ backgroundColor: fieldBg, borderRadius: 22, padding: 16, gap: 12, shadowColor: '#172337', shadowOpacity: 0.07, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
-                      <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>Your privacy</Text>
-                      <Text style={{ fontSize: 16, fontWeight: '400', color: colors.textPrimary, lineHeight: 22 }}>
-                        Detection runs entirely on your device. Nothing is sent until you explicitly save.
+
+                    {/* Privacy — tealLight card */}
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
+                      Your own wording comes first. Use type or voice—there's no extra create menu.
+                    </Text>
+                    <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 6 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.teal }}>Your privacy</Text>
+                      <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
+                        Detection runs entirely on your device. Nothing is sent anywhere until you explicitly save.
                       </Text>
                     </View>
                   </>
@@ -492,9 +519,9 @@ export default function JustDescribeItScreen({
                   detected.category.kind === 'quest' ? (
                     <TouchableOpacity
                       onPress={openInlineQuestForm}
-                      style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                      style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
                     >
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Set up chore →</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up chore →</Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
@@ -511,9 +538,9 @@ export default function JustDescribeItScreen({
                         });
                         reset();
                       }}
-                      style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                      style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
                     >
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
                     </TouchableOpacity>
                   )
                 )}
@@ -522,9 +549,9 @@ export default function JustDescribeItScreen({
                 {!isListening && hasInput && !detected && (
                   <TouchableOpacity
                     onPress={() => { onOpenFullForm('quest', { title: input.trim() }); reset(); }}
-                    style={{ height: 48, borderRadius: 14, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                    style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>Open full form →</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Open full form →</Text>
                   </TouchableOpacity>
                 )}
 
@@ -532,17 +559,24 @@ export default function JustDescribeItScreen({
                     ── Inline quest form (expands below detection chips) ──
                     ══════════════════════════════════════════════════════ */}
                 {questFormOpen && (
-                  <View style={{ gap: 20 }}>
+                  <View style={{ gap: 16 }}>
 
-                    {/* WHAT'S THE CHORE? */}
-                    <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>What's the chore?</Text>
+                    {/* ── WHAT'S THE CHORE? — pink/lavender section ── */}
+                    <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                      backgroundColor: colors.pinkLight,
+                      borderWidth: 1, borderColor: colors.border,
+                      shadowColor: colors.pink, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
+                      {/* Section label */}
+                      <View style={{ gap: 6 }}>
+                        <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
+                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHAT'S THE CHORE</Text>
+                      </View>
                       <TextInput
                         value={questTitle}
                         onChangeText={setQuestTitle}
                         placeholder="Chore title"
                         placeholderTextColor={colors.textTertiary}
-                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
+                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
                       />
                       <TextInput
                         value={questDescription}
@@ -550,50 +584,58 @@ export default function JustDescribeItScreen({
                         placeholder="What does done look like? (optional)"
                         placeholderTextColor={colors.textTertiary}
                         multiline
-                        style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, fontSize: 14, color: colors.textPrimary, minHeight: 80, textAlignVertical: 'top' }}
+                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: colors.textPrimary, minHeight: 80, textAlignVertical: 'top' }}
                       />
                     </View>
 
-                    {/* MAKE ROOM FOR IT */}
-                    <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal, letterSpacing: 0.5, textTransform: 'uppercase' }}>Make room for it</Text>
+                    {/* ── MAKE ROOM FOR IT — teal/sage section ── */}
+                    <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                      backgroundColor: colors.tealLight,
+                      borderWidth: 1, borderColor: colors.border,
+                      shadowColor: colors.teal, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
+                      <View style={{ gap: 6 }}>
+                        <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.teal, opacity: 0.6 }} />
+                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHEN</Text>
+                      </View>
+
+                      {/* Date + time row */}
                       <View style={{ flexDirection: 'row', gap: 10 }}>
                         <TouchableOpacity
                           onPress={() => setQuestShowDatePick(true)}
-                          style={{ flex: 1, backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                         >
-                          <Text style={{ fontSize: 16 }}>📅</Text>
+                          <Text style={{ fontSize: 15 }}>📅</Text>
                           <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmtDate(questDueDate)}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => setQuestShowTimePick(true)}
-                          style={{ flex: 1, backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                         >
-                          <Text style={{ fontSize: 16 }}>🕐</Text>
+                          <Text style={{ fontSize: 15 }}>🕐</Text>
                           <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmt12h(questDueTime)}</Text>
                         </TouchableOpacity>
                       </View>
 
-                      {/* Repeat */}
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Repeat</Text>
+                      {/* Repeat chips */}
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeat</Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         {RECUR_OPTIONS.map(opt => (
                           <TouchableOpacity
                             key={opt.value}
                             onPress={() => setQuestRecurrence(opt.value)}
                             style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
-                              backgroundColor: questRecurrence === opt.value ? colors.teal : fieldBg,
-                              borderWidth: 1, borderColor: questRecurrence === opt.value ? colors.teal : fieldBorder }}
+                              backgroundColor: questRecurrence === opt.value ? colors.teal : colors.card,
+                              borderWidth: 1, borderColor: questRecurrence === opt.value ? colors.teal : colors.border }}
                           >
                             <Text style={{ fontSize: 13, fontWeight: '600', color: questRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>{opt.label}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
 
-                      {/* Day-of-week picker — shown for Weekly */}
+                      {/* Day-of-week chips — weekly only */}
                       {questRecurrence === 'weekly' && (
                         <>
-                          <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Repeats on</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeats on</Text>
                           <View style={{ flexDirection: 'row', gap: 6 }}>
                             {['S','M','T','W','T','F','S'].map((label, idx) => {
                               const sel = questRecurrenceDays.includes(idx);
@@ -601,9 +643,9 @@ export default function JustDescribeItScreen({
                                 <TouchableOpacity
                                   key={idx}
                                   onPress={() => setQuestRecurrenceDays(prev => sel ? prev.filter(d => d !== idx) : [...prev, idx])}
-                                  style={{ flex: 1, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                                    backgroundColor: sel ? colors.teal : fieldBg,
-                                    borderWidth: 1, borderColor: sel ? colors.teal : fieldBorder }}
+                                  style={{ flex: 1, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                                    backgroundColor: sel ? colors.teal : colors.card,
+                                    borderWidth: 1, borderColor: sel ? colors.teal : colors.border }}
                                 >
                                   <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textPrimary }}>{label}</Text>
                                 </TouchableOpacity>
@@ -615,12 +657,12 @@ export default function JustDescribeItScreen({
 
                       {questRecurrence !== 'once' && (
                         <>
-                          <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Ends on (optional)</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Ends on (optional)</Text>
                           <TouchableOpacity
                             onPress={() => setQuestShowEndDatePick(true)}
-                            style={{ backgroundColor: fieldBg, borderRadius: 14, borderWidth: 1, borderColor: fieldBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                            style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                           >
-                            <Text style={{ fontSize: 16 }}>🏁</Text>
+                            <Text style={{ fontSize: 15 }}>🏁</Text>
                             <Text style={{ fontSize: 14, color: questEndDate ? colors.textPrimary : colors.textTertiary }}>
                               {questEndDate ? fmtDate(questEndDate) : 'No end date'}
                             </Text>
@@ -629,36 +671,40 @@ export default function JustDescribeItScreen({
                       )}
                     </View>
 
-                    {/* WHO'S ON IT? — avatar chips only */}
-                    <View style={{ gap: 10 }}>
+                    {/* ── WHO'S ON IT? — amber section ── */}
+                    <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                      backgroundColor: colors.amberLight,
+                      borderWidth: 1, borderColor: colors.border,
+                      shadowColor: colors.amber, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, letterSpacing: 0.5, textTransform: 'uppercase' }}>Who's on it?</Text>
-                        {/* Pool toggle */}
+                        <View style={{ gap: 6 }}>
+                          <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.amber, opacity: 0.6 }} />
+                          <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHO'S ON IT</Text>
+                        </View>
+                        {/* Pool toggle pill */}
                         <TouchableOpacity
                           onPress={() => { setQuestIsPool(!questIsPool); if (!questIsPool) setQuestAssigneeIds([]); }}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-                            backgroundColor: questIsPool ? colors.amberLight : fieldBg,
-                            borderWidth: 1, borderColor: questIsPool ? colors.amber : fieldBorder }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+                            backgroundColor: questIsPool ? colors.amber : colors.card,
+                            borderWidth: 1, borderColor: questIsPool ? colors.amber : colors.border }}
                         >
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: questIsPool ? colors.amber : colors.textSecondary }}>
-                            {questIsPool ? '🏊 Pool' : 'Pool'}
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: questIsPool ? '#FFFFFF' : colors.textSecondary }}>
+                            ⚡ Pool
                           </Text>
                         </TouchableOpacity>
                       </View>
 
                       {questIsPool ? (
-                        <View style={{ gap: 8 }}>
-                          {/* Member avatars with ⚡ overlay */}
+                        <View style={{ gap: 10 }}>
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                             {members.map(m => {
                               const isAdult = m.role === 'parent';
                               const accentColor = isAdult ? colors.teal : colors.amber;
                               const lightBg = isAdult ? colors.tealLight : colors.amberLight;
                               return (
-                                <View key={m.id} style={{ alignItems: 'center', gap: 4 }}>
-                                  <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: lightBg, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: accentColor }}>
+                                <View key={m.id} style={{ alignItems: 'center' }}>
+                                  <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: accentColor }}>
                                     <Text style={{ fontSize: 20, fontWeight: '700', color: accentColor }}>{m.name[0].toUpperCase()}</Text>
-                                    {/* ⚡ badge */}
                                     <View style={{ position: 'absolute', bottom: 0, right: 0, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
                                       <Text style={{ fontSize: 9 }}>⚡</Text>
                                     </View>
@@ -667,17 +713,14 @@ export default function JustDescribeItScreen({
                               );
                             })}
                           </View>
-                          <View style={{ backgroundColor: colors.amberLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
-                            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.amber }}>⚡ Anyone can claim · first to grab it gets the coins</Text>
-                          </View>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.amber }}>Anyone can claim · first to grab it gets the coins</Text>
                         </View>
                       ) : (
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                           {members.map(m => {
                             const sel = questAssigneeIds.includes(m.id);
                             const isAdult = m.role === 'parent';
                             const accentColor = isAdult ? colors.teal : colors.amber;
-                            const lightBg = isAdult ? colors.tealLight : colors.amberLight;
                             return (
                               <TouchableOpacity
                                 key={m.id}
@@ -686,30 +729,36 @@ export default function JustDescribeItScreen({
                               >
                                 <View style={{
                                   width: 52, height: 52, borderRadius: 26,
-                                  backgroundColor: sel ? accentColor : lightBg,
+                                  backgroundColor: sel ? accentColor : colors.card,
                                   alignItems: 'center', justifyContent: 'center',
-                                  borderWidth: sel ? 0 : 1.5, borderColor: fieldBorder,
+                                  borderWidth: sel ? 0 : 1.5, borderColor: colors.border,
                                 }}>
                                   <Text style={{ fontSize: 20, fontWeight: '700', color: sel ? '#FFFFFF' : accentColor }}>
                                     {m.name[0].toUpperCase()}
                                   </Text>
                                 </View>
                                 {m.id === assigneeMember?.id && !sel && (
-                                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accentColor }} />
+                                  <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: accentColor }} />
                                 )}
                               </TouchableOpacity>
                             );
                           })}
                           {questAssigneeIds.length === 0 && (
-                            <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center' }}>Tap to assign · or enable Pool</Text>
+                            <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center', paddingTop: 8 }}>Tap to assign · or enable Pool ⚡</Text>
                           )}
                         </View>
                       )}
                     </View>
 
-                    {/* REWARD */}
-                    <View style={{ gap: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.5, textTransform: 'uppercase' }}>Reward</Text>
+                    {/* ── REWARD — pink section ── */}
+                    <View style={{ borderRadius: 24, padding: 20, gap: 14,
+                      backgroundColor: colors.pinkLight,
+                      borderWidth: 1, borderColor: colors.border,
+                      shadowColor: colors.pink, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
+                      <View style={{ gap: 6 }}>
+                        <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
+                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>REWARD</Text>
+                      </View>
 
                       {/* Coin presets */}
                       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -718,18 +767,18 @@ export default function JustDescribeItScreen({
                             key={c}
                             onPress={() => { setQuestCoins(c); setQuestCustomCoins(''); }}
                             style={{ flex: 1, paddingVertical: 10, borderRadius: 14, alignItems: 'center',
-                              backgroundColor: questCoins === c && !questCustomCoins ? colors.amber : fieldBg,
-                              borderWidth: 1, borderColor: questCoins === c && !questCustomCoins ? colors.amber : fieldBorder }}
+                              backgroundColor: questCoins === c && !questCustomCoins ? colors.amber : colors.card,
+                              borderWidth: 1, borderColor: questCoins === c && !questCustomCoins ? colors.amber : colors.border }}
                           >
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: questCoins === c && !questCustomCoins ? '#FFFFFF' : colors.textPrimary }}>🪙{c}</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: questCoins === c && !questCustomCoins ? '#FFFFFF' : colors.textPrimary }}>🪙 {c}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
 
-                      {/* Custom coins — labeled input row */}
-                      <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: questCustomCoins ? colors.amber : fieldBorder, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' }}>
-                        <View style={{ paddingHorizontal: 14, paddingVertical: 14, borderRightWidth: 1, borderRightColor: questCustomCoins ? colors.amber : fieldBorder }}>
-                          <Text style={{ fontSize: 14, color: colors.amber }}>🪙</Text>
+                      {/* Custom coins — prefixed input */}
+                      <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: questCustomCoins ? colors.amber : colors.border, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' }}>
+                        <View style={{ paddingHorizontal: 16, paddingVertical: 14, borderRightWidth: 1, borderRightColor: questCustomCoins ? colors.amber : colors.border }}>
+                          <Text style={{ fontSize: 15, color: colors.amber }}>🪙</Text>
                         </View>
                         <TextInput
                           value={questCustomCoins}
@@ -737,36 +786,36 @@ export default function JustDescribeItScreen({
                           placeholder="Custom coins…"
                           placeholderTextColor={colors.textTertiary}
                           keyboardType="number-pad"
-                          style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 15, fontWeight: '600', color: questCustomCoins ? colors.amber : colors.textPrimary }}
+                          style={{ flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontWeight: '600', color: questCustomCoins ? colors.amber : colors.textPrimary }}
                         />
                         {questCustomCoins ? (
-                          <TouchableOpacity onPress={() => setQuestCustomCoins('')} style={{ paddingHorizontal: 14 }}>
+                          <TouchableOpacity onPress={() => setQuestCustomCoins('')} style={{ paddingHorizontal: 16 }}>
                             <Text style={{ fontSize: 13, color: colors.textTertiary }}>✕</Text>
                           </TouchableOpacity>
                         ) : null}
                       </View>
 
-                      {/* Bonus reward — card toggle + inline input */}
-                      <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: questBonusEnabled ? colors.amber : fieldBorder, overflow: 'hidden' }}>
+                      {/* Bonus reward toggle card */}
+                      <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: questBonusEnabled ? colors.amber : colors.border, overflow: 'hidden' }}>
                         <TouchableOpacity
                           onPress={() => setQuestBonusEnabled(!questBonusEnabled)}
-                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14 }}
+                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 }}
                         >
                           <View style={{ gap: 2 }}>
                             <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>⭐ Bonus reward</Text>
                             <Text style={{ fontSize: 11, color: colors.textSecondary }}>Extra coins for early or exceptional finish</Text>
                           </View>
-                          <View style={{ width: 32, height: 20, borderRadius: 10,
+                          <View style={{ width: 36, height: 22, borderRadius: 11,
                             backgroundColor: questBonusEnabled ? colors.amber : colors.surface,
                             alignItems: questBonusEnabled ? 'flex-end' : 'flex-start',
                             paddingHorizontal: 2, justifyContent: 'center' }}>
-                            <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: questBonusEnabled ? '#FFFFFF' : colors.textTertiary }} />
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: questBonusEnabled ? '#FFFFFF' : colors.textTertiary }} />
                           </View>
                         </TouchableOpacity>
                         {questBonusEnabled && (
                           <View style={{ flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.amberLight }}>
-                            <View style={{ paddingHorizontal: 14, paddingVertical: 12, borderRightWidth: 1, borderRightColor: colors.amberLight }}>
-                              <Text style={{ fontSize: 14 }}>⭐</Text>
+                            <View style={{ paddingHorizontal: 16, paddingVertical: 13, borderRightWidth: 1, borderRightColor: colors.amberLight }}>
+                              <Text style={{ fontSize: 15 }}>⭐</Text>
                             </View>
                             <TextInput
                               value={questBonusCoins}
@@ -774,7 +823,7 @@ export default function JustDescribeItScreen({
                               placeholder="Bonus coins amount"
                               placeholderTextColor={colors.textTertiary}
                               keyboardType="number-pad"
-                              style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '600', color: colors.amber }}
+                              style={{ flex: 1, paddingHorizontal: 16, paddingVertical: 13, fontSize: 15, fontWeight: '600', color: colors.amber }}
                             />
                           </View>
                         )}

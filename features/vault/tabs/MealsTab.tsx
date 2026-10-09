@@ -29,7 +29,7 @@ import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
-export default function MealsTab({ colors, isDark, weekOverride, onAiReady }: { colors: any; isDark: boolean; weekOverride?: string; onAiReady?: (trigger: () => void) => void }) {
+export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAddReady }: { colors: any; isDark: boolean; weekOverride?: string; onAiReady?: (trigger: () => void) => void; onAddReady?: (trigger: (day?: string) => void) => void }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -156,6 +156,9 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady }: { 
 
   // Expose generateMealPlan trigger to parent (MealsScreen's "Preview AI meal plan →" button)
   useEffect(() => { onAiReady?.(generateMealPlan); }, [onAiReady, generateMealPlan]);
+
+  // Expose "Add meal" trigger to parent (MealsWeekPage's "Add meal" button)
+  useEffect(() => { onAddReady?.((day) => setAddDay(day ?? DAYS[0])); }, [onAddReady]);
 
   const confirmPlan = async () => {
     if (!pendingOptions) return;

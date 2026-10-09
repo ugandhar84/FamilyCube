@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import {
-  View, Text, StyleSheet, ActivityIndicator, Animated, Alert,
+  View, Text, StyleSheet, ActivityIndicator, Animated, Alert, ScrollView,
 } from 'react-native';
 import { ChefHat, RefreshCw, MessageSquare, Check, ShoppingBag, Lock } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,7 +31,22 @@ import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
-export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAddReady }: { colors: any; isDark: boolean; weekOverride?: string; onAiReady?: (trigger: () => void) => void; onAddReady?: (trigger: (day?: string) => void) => void }) {
+export type MealFormState = {
+  addDay: string | null;
+  editMeal: Meal | null;
+  familyId: string;
+  saving: boolean;
+  onSave: (patch: any) => void | Promise<void>;
+  onClose: () => void;
+};
+
+export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAddReady, onFormStateChange, showAddButton }: {
+  colors: any; isDark: boolean; weekOverride?: string;
+  onAiReady?: (trigger: () => void) => void;
+  onAddReady?: (trigger: (day?: string) => void) => void;
+  onFormStateChange?: (state: MealFormState | null) => void;
+  showAddButton?: boolean;
+}) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -76,21 +91,22 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   // submit for all the app wide"].
   const { submitting: savingMeal, guard: guardSaveMeal } = useSubmitGuard();
 
-  // Hide FAB (fullBleedScreenActive) and tab bar whenever any overlay is open
+  // Notify parent of form state so MealsWeekPage early-returns the form as a full page.
   useEffect(() => {
-    const anyOpen = !!(addDay || editMeal);
-    if (anyOpen) {
-      hideTabBar();
+    if (addDay || editMeal) {
       useUIStore.getState().setFullBleedScreenActive(true);
+      onFormStateChange?.({
+        addDay, editMeal, familyId,
+        saving: savingMeal,
+        onSave: saveMeal,
+        onClose: () => { setAddDay(null); setEditMeal(null); },
+      });
     } else {
-      showTabBar();
       useUIStore.getState().setFullBleedScreenActive(false);
+      onFormStateChange?.(null);
     }
-    return () => {
-      showTabBar();
-      useUIStore.getState().setFullBleedScreenActive(false);
-    };
-  }, [addDay, editMeal]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addDay, editMeal, savingMeal]);
 
   // Pulse animation for the AI dot
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -397,14 +413,29 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   }, [meals]);
 
   if (loading) return (
-    <View>
+    <View style={{ flex: 1 }}>
       <FlatSectionHeader Icon={ChefHat} title="Meal Planner" accent={colors.danger} colors={colors} />
       <ActivityIndicator color={colors.danger} style={{ marginVertical: 24 }} />
     </View>
   );
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
+    >
+      {/* ── Add meal button (scrolls with content) ── */}
+      {showAddButton && !isKidOrTeen && (
+        <TouchableOpacity
+          onPress={() => setAddDay(DAYS[0])}
+          activeOpacity={0.82}
+          style={{ borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+            backgroundColor: colors.primary, marginBottom: 16 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>+ Add meal</Text>
+        </TouchableOpacity>
+      )}
+
       {/* ── CubeAI Planner Banner (flat) ─────────────────────────────── */}
       {/* Parent-only action, but kid/teen still SEE the banner — a
           translucent "Parents only" overlay rather than hidden outright
@@ -513,17 +544,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         )}
       </View>
 
-      {/* ── Meal Form Sheet — shared Add/Edit stepper ────── */}
-      <MealFormSheet
-        visible={!!addDay || !!editMeal}
-        day={addDay}
-        editingMeal={editMeal}
-        familyId={familyId}
-        colors={colors} isDark={isDark}
-        onClose={() => { setAddDay(null); setEditMeal(null); }}
-        onSave={saveMeal}
-        saving={savingMeal}
-      />
+    </ScrollView>
 
       {/* ── Recipe Detail — full-page ────── */}
       <RecipeModal meal={activeRecipe} visible={!!activeRecipe}
@@ -558,6 +579,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
           colors={colors} isDark={isDark}
         />
       )}
-    </>
+    </View>
   );
 }

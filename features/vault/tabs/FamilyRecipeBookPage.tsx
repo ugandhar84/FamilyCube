@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
-  TextInput, Platform, Image, KeyboardAvoidingView,
+  TextInput, Platform, Image, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2, Camera, ImagePlus, RefreshCw } from 'lucide-react-native';
@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import type { Meal } from './meals/types';
-import { DAYS, weekOf } from './meals/types';
+import { DAYS, weekOf, DIETARY_OPTIONS } from './meals/types';
 import RecipeModal from './meals/RecipeModal';
 
 type FamilyRecipe = {
@@ -69,7 +69,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   // Steps as one big text block — user types/dictates; AI parses into array on refine
   const [newStepsText, setNewStepsText]   = useState('');
   const [newPrepMins, setNewPrepMins]     = useState('');
-  const [newTags, setNewTags]             = useState('');
+  const [newTags, setNewTags]             = useState<string[]>([]);
   const [newImageUrl, setNewImageUrl]     = useState<string | null>(null);
   const [savingRecipe, setSavingRecipe]   = useState(false);
   const [refining, setRefining]           = useState(false);
@@ -77,7 +77,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
 
   const resetAddRecipeForm = () => {
     setNewTitle(''); setNewEmoji(''); setNewIngredients(['']);
-    setNewStepsText(''); setNewPrepMins(''); setNewTags('');
+    setNewStepsText(''); setNewPrepMins(''); setNewTags([]);
     setAiTip(null); setNewImageUrl(null);
   };
 
@@ -94,7 +94,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           title: newTitle.trim(),
           ingredients: newIngredients.map(s => s.trim()).filter(Boolean),
           steps: newStepsText.split('\n').map(s => s.trim()).filter(Boolean),
-          dietaryTags: newTags.split(',').map(s => s.trim()).filter(Boolean),
+          dietaryTags: newTags,
           prepMinutes: newPrepMins ? parseInt(newPrepMins, 10) : undefined,
           familyId: familyId ?? '',
         },
@@ -105,7 +105,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       if (r?.emoji) setNewEmoji(r.emoji);
       if (r?.ingredients?.length) setNewIngredients(r.ingredients);
       if (r?.steps?.length) setNewStepsText(r.steps.join('\n'));
-      if (r?.dietaryTags?.length) setNewTags(r.dietaryTags.join(', '));
+      if (r?.dietaryTags?.length) setNewTags(r.dietaryTags);
       if (r?.prepMinutes) setNewPrepMins(String(r.prepMinutes));
       if (r?.tip) setAiTip(r.tip);
       if (r?.imageUrl) setNewImageUrl(r.imageUrl);
@@ -123,7 +123,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
     try {
       const ingredients = newIngredients.map(s => s.trim()).filter(Boolean);
       const prepSteps   = newStepsText.split('\n').map(s => s.trim()).filter(Boolean);
-      const dietaryTags = newTags.split(',').map(s => s.trim()).filter(Boolean);
+      const dietaryTags = newTags;
       const id = `${familyId}-recipe-${Date.now()}`;
       const { data, error } = await supabase.from('family_recipes').insert({
         id, family_id: familyId,
@@ -445,8 +445,10 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           {/* ── Single scrollable body — photo + all form fields scroll together ── */}
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
-            keyboardShouldPersistTaps="handled">
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={Keyboard.dismiss}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
 
             {/* Hero photo — full-bleed inside scroll, no horizontal padding */}
             {newImageUrl ? (
@@ -614,20 +616,40 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
               />
             </View>
 
-            {/* Dietary tags */}
+            {/* Dietary tags — multi-select pills */}
             <View style={{ gap: 10 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.teal }}>
                 DIETARY TAGS (OPTIONAL)
               </Text>
-              <TextInput
-                value={newTags} onChangeText={setNewTags}
-                placeholder="e.g. gluten-free, kid-friendly, high-protein"
-                placeholderTextColor={colors.textTertiary}
-                style={{ height: 48, borderRadius: 14,
-                  backgroundColor: isDark ? colors.surface : colors.surface,
-                  paddingHorizontal: 14, fontSize: 15, color: colors.textPrimary }}
-              />
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>Separate tags with commas</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {DIETARY_OPTIONS.map(tag => {
+                  const sel = newTags.includes(tag);
+                  return (
+                    <Pressable
+                      key={tag}
+                      onPress={() => setNewTags(prev =>
+                        prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                      )}
+                      style={({ pressed }) => ({
+                        borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                        borderWidth: 1.5,
+                        backgroundColor: sel ? colors.teal + '20' : 'transparent',
+                        borderColor: sel ? colors.teal : colors.border,
+                        opacity: pressed ? 0.75 : 1,
+                      })}>
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: sel ? colors.teal : colors.textSecondary }}>
+                        {tag}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {newTags.length > 0 && (
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                  {newTags.length} tag{newTags.length > 1 ? 's' : ''} selected
+                </Text>
+              )}
             </View>
 
             {/* Refine with AI card */}

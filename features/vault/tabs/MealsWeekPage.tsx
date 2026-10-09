@@ -8,12 +8,14 @@
  *   "Add meal" CTA
  *   Day cards (via MealsTab)
  */
-import { useCallback, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import MealsTabComp from './MealsTab';
+import MealsTabComp, { type MealFormState } from './MealsTab';
+import MealFormSheet from './meals/MealFormSheet';
+import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 function weekOf(offset = 0): string {
   const d = new Date();
@@ -50,20 +52,29 @@ export default function MealsWeekPage({
   const currentWeek = weekOf(weekOffset);
   const weekRange   = fmtWeekRange(currentWeek);
 
-  // AI trigger — wired from MealsTab via onAiReady
-  const aiTriggerRef = useRef<(() => void) | null>(null);
-  const handleAiReady = useCallback((fn: () => void) => {
-    aiTriggerRef.current = fn;
-    onAiReady?.(fn);
-  }, [onAiReady]);
 
-  // Add meal trigger — MealsTab exposes this via onAddReady
-  const addMealTriggerRef = useRef<((day?: string) => void) | null>(null);
-  const handleAddReady = useCallback((fn: (day?: string) => void) => {
-    addMealTriggerRef.current = fn;
-  }, []);
+  // Form state lifted from MealsTab — when set, render the form as a full page
+  const [formState, setFormState] = useState<MealFormState | null>(null);
 
   const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+
+  // Early-return: show add/edit form as a full standalone page with swipe-back support
+  if (formState) {
+    return (
+      <SwipeBackWrapper onDismiss={formState.onClose}>
+        <MealFormSheet
+          visible
+          day={formState.addDay}
+          editingMeal={formState.editMeal}
+          familyId={formState.familyId}
+          colors={colors} isDark={isDark}
+          onClose={formState.onClose}
+          onSave={formState.onSave}
+          saving={formState.saving}
+        />
+      </SwipeBackWrapper>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
@@ -101,78 +112,37 @@ export default function MealsWeekPage({
         </Text>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-      >
-
-        {/* ── Week navigator ── */}
-        <View style={{
-          paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4,
-          flexDirection: 'row', alignItems: 'center', gap: 10,
-        }}>
-          <Pressable onPress={() => setWeekOffset(w => w - 1)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>‹</Text>
-          </Pressable>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
-            {weekRange}
-          </Text>
-          <Pressable onPress={() => setWeekOffset(w => w + 1)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>›</Text>
-          </Pressable>
-        </View>
-
-        <Text style={{
-          fontSize: 13, fontWeight: '500', color: colors.textSecondary,
-          paddingHorizontal: 20, marginBottom: 14, lineHeight: 18,
-        }}>
-          Shared with the {familyName}s · tap any slot to edit. An open slot is an invitation, not a missed task.
+      {/* Week navigator */}
+      <View style={{
+        paddingHorizontal: 20, paddingVertical: 12,
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.06)',
+      }}>
+        <Pressable onPress={() => setWeekOffset(w => w - 1)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>‹</Text>
+        </Pressable>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
+          {weekRange}
         </Text>
+        <Pressable onPress={() => setWeekOffset(w => w + 1)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>›</Text>
+        </Pressable>
+      </View>
 
-        {/* ── AI suggestions card (lavender) — matches Figma ── */}
-        <View style={{
-          marginHorizontal: 20, marginBottom: 16,
-          backgroundColor: colors.pinkLight, borderRadius: 18, padding: 18, gap: 6,
-        }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
-            Want a few meal ideas?
-          </Text>
-          <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
-            Optional suggestions that fit the week. Review before adding anything.
-          </Text>
-          <Pressable style={{ marginTop: 2 }} onPress={() => aiTriggerRef.current?.()}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink }}>
-              Preview AI meal plan →
-            </Text>
-          </Pressable>
-        </View>
+      {/* MealsTab fills the rest — manages its own scroll, AI banner, day cards */}
+      <View style={{ flex: 1 }}>
+        <MealsTabComp
+          colors={colors}
+          isDark={isDark}
+          weekOverride={currentWeek}
+          onFormStateChange={setFormState}
+          showAddButton
+        />
+      </View>
 
-        {/* ── Add meal button — matches Figma ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-          <Pressable
-            onPress={() => addMealTriggerRef.current?.()}
-            style={({ pressed }) => ({
-              borderRadius: 14, paddingVertical: 16, alignItems: 'center',
-              backgroundColor: pressed ? P + 'CC' : P,
-            })}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Add meal</Text>
-          </Pressable>
-        </View>
-
-        {/* ── Day cards ── */}
-        <View style={{ paddingHorizontal: 20 }}>
-          <MealsTabComp
-            colors={colors}
-            isDark={isDark}
-            weekOverride={currentWeek}
-            onAiReady={handleAiReady}
-            onAddReady={handleAddReady}
-          />
-        </View>
-
-      </ScrollView>
     </View>
   );
 }

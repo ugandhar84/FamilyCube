@@ -12,7 +12,6 @@ import { em } from './styles';
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
 import { useFamilyStore } from '@/store/familyStore';
-import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 // Voice import — soft: the lib may not be linked in all build variants
 let Voice: any = null;
@@ -79,18 +78,24 @@ export default function MealFormSheet({
   const { members } = useFamilyStore();
   const isEdit = !!editingMeal;
 
-  // Animation
-  const slideAnim = useRef(new Animated.Value(60)).current;
+  // Page-slide animation: slides in from the right like a navigation push
+  const slideAnim = useRef(new Animated.Value(400)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (visible) {
-      slideAnim.setValue(60); fadeAnim.setValue(0);
+      slideAnim.setValue(400); fadeAnim.setValue(0);
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(fadeAnim,  { toValue: 1, duration: 220, easing: Easing.out(Easing.quad),  useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 200, easing: Easing.out(Easing.quad),  useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
+
+  // Auto-grow heights for multiline fields
+  const [ingredientsH, setIngredientsH] = useState(110);
+  const [stepsH, setStepsH]             = useState(110);
+  const [recipeH, setRecipeH]           = useState(130);
+  const [noteH, setNoteH]               = useState(70);
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [touched, setTouched]               = useState(false);
@@ -226,11 +231,9 @@ export default function MealFormSheet({
   const activeMember = members.find(m => (m as any).active) ?? members[0];
 
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60 }}>
-      <SwipeBackWrapper onDismiss={onClose}>
-        <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
 
               {/* ── ReviewInbox-style header ── */}
               <View style={{
@@ -280,7 +283,7 @@ export default function MealFormSheet({
                 keyboardShouldPersistTaps="always"
                 onScrollBeginDrag={Keyboard.dismiss}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+                contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}>
 
                 {/* ── Recipe suggestions — from book + history ── */}
                 {!editingMeal && suggestions.length > 0 && (
@@ -520,9 +523,10 @@ export default function MealFormSheet({
                     value={ingredients} onChangeText={setIngredients}
                     placeholder={'500g chicken breast\n300g rice\n2 lemons\n1 cucumber'}
                     placeholderTextColor={colors.textTertiary}
-                    multiline numberOfLines={5}
+                    multiline
+                    onContentSizeChange={e => setIngredientsH(Math.max(110, e.nativeEvent.contentSize.height + 8))}
                     style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary,
-                      minHeight: 110, textAlignVertical: 'top', lineHeight: 22 }}
+                      height: ingredientsH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
                 </FieldCard>
 
@@ -532,9 +536,10 @@ export default function MealFormSheet({
                     value={prepSteps} onChangeText={setPrepSteps}
                     placeholder={'Season chicken\nBoil quinoa 15 min\nGrill 6 min each side'}
                     placeholderTextColor={colors.textTertiary}
-                    multiline numberOfLines={5}
+                    multiline
+                    onContentSizeChange={e => setStepsH(Math.max(110, e.nativeEvent.contentSize.height + 8))}
                     style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary,
-                      minHeight: 110, textAlignVertical: 'top', lineHeight: 22 }}
+                      height: stepsH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
                 </FieldCard>
 
@@ -547,9 +552,10 @@ export default function MealFormSheet({
                     value={recipeText} onChangeText={setRecipeText}
                     placeholder="Describe the full recipe, cooking tips, serving suggestions…"
                     placeholderTextColor={colors.textTertiary}
-                    multiline numberOfLines={6}
+                    multiline
+                    onContentSizeChange={e => setRecipeH(Math.max(130, e.nativeEvent.contentSize.height + 8))}
                     style={{ fontSize: 14, fontWeight: '400', color: colors.textPrimary,
-                      minHeight: 130, textAlignVertical: 'top', lineHeight: 22 }}
+                      height: recipeH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
 
                   {/* Voice mic row */}
@@ -588,14 +594,15 @@ export default function MealFormSheet({
                     value={note} onChangeText={setNote}
                     placeholder="e.g. Ava can help assemble bowls after study group."
                     placeholderTextColor={colors.textTertiary}
-                    multiline numberOfLines={3}
+                    multiline
+                    onContentSizeChange={e => setNoteH(Math.max(70, e.nativeEvent.contentSize.height + 8))}
                     style={{ fontSize: 14, fontWeight: '400', color: colors.textPrimary,
-                      minHeight: 70, textAlignVertical: 'top', lineHeight: 22 }}
+                      height: noteH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
                 </FieldCard>
 
                 {/* Keep plan connected tip */}
-                <View style={{ borderRadius: 16, backgroundColor: colors.tealLight, padding: 18, marginBottom: 8 }}>
+                <View style={{ borderRadius: 16, backgroundColor: colors.tealLight, padding: 18, marginBottom: 20 }}>
                   <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>
                     Keep the plan connected
                   </Text>
@@ -603,36 +610,26 @@ export default function MealFormSheet({
                     The recipe and grocery link stay attached. Date, meal time and chef assignment stay unchanged in this draft.
                   </Text>
                 </View>
-              </ScrollView>
 
-              {/* ── Fixed footer ── */}
-              <View style={{
-                position: 'absolute', bottom: 0, left: 0, right: 0,
-                paddingBottom: insets.bottom + 8, paddingTop: 12, paddingHorizontal: 20,
-                backgroundColor: '#FFFFFF',
-                borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-                gap: 10,
-              }}>
+                {/* ── Buttons scroll with content ── */}
                 <TouchableOpacity onPress={handleSave} disabled={saving}
                   style={{ borderRadius: 16, paddingVertical: 17, alignItems: 'center',
                     backgroundColor: saving ? colors.primary + '80' : colors.primary }}>
                   {saving
                     ? <ActivityIndicator size="small" color="#fff" />
                     : <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
-                        {isEdit ? 'Save dinner changes' : 'Add meal'}
+                        {isEdit ? 'Save changes' : 'Add meal'}
                       </Text>}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingVertical: 6 }}>
+                <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingVertical: 12 }}>
                   <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>
                     Cancel · back to week
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </ScrollView>
 
-            </View>
-          </KeyboardAvoidingView>
-        </Animated.View>
-      </SwipeBackWrapper>
+        </View>
+      </KeyboardAvoidingView>
 
       <PickerOverlay
         showDate={false} showTime={showTimePicker}
@@ -644,6 +641,6 @@ export default function MealFormSheet({
         colors={colors}
         timeLabel="🕐 What time is this meal?"
       />
-    </View>
+    </Animated.View>
   );
 }

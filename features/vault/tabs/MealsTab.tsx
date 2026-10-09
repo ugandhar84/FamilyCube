@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useUIStore } from '@/store/uiStore';
 import {
   View, Text, StyleSheet, ActivityIndicator, Animated, Alert,
 } from 'react-native';
@@ -73,6 +75,22 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   // (add mode) [live-requested app-wide: "We should avoid double tab
   // submit for all the app wide"].
   const { submitting: savingMeal, guard: guardSaveMeal } = useSubmitGuard();
+
+  // Hide FAB (fullBleedScreenActive) and tab bar whenever any overlay is open
+  useEffect(() => {
+    const anyOpen = !!(addDay || editMeal);
+    if (anyOpen) {
+      hideTabBar();
+      useUIStore.getState().setFullBleedScreenActive(true);
+    } else {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    }
+    return () => {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, [addDay, editMeal]);
 
   // Pulse animation for the AI dot
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -500,6 +518,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         visible={!!addDay || !!editMeal}
         day={addDay}
         editingMeal={editMeal}
+        familyId={familyId}
         colors={colors} isDark={isDark}
         onClose={() => { setAddDay(null); setEditMeal(null); }}
         onSave={saveMeal}

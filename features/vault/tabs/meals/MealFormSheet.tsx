@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ScrollView,
   KeyboardAvoidingView, Platform, Keyboard, StyleSheet, ActivityIndicator,
-  Animated, Easing,
+  Animated, Easing, FlatList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Mic, MicOff, X } from 'lucide-react-native';
 import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
+import { supabase } from '@/lib/supabase';
 import { em } from './styles';
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
@@ -55,12 +56,20 @@ export interface MealFormPatch {
   start_time: string | null; timezone: string | null;
 }
 
+type SuggestionItem = {
+  id: string; title: string; emoji?: string | null;
+  ingredients?: string[]; prep_steps?: string[];
+  dietary_tags?: string[]; prep_minutes?: number | null;
+  source: 'recipe' | 'history';
+};
+
 export default function MealFormSheet({
-  visible, day, editingMeal, colors, isDark, onClose, onSave, saving,
+  visible, day, editingMeal, familyId, colors, isDark, onClose, onSave, saving,
 }: {
   visible: boolean;
   day: string | null;
   editingMeal: Meal | null;
+  familyId?: string;
   colors: any; isDark: boolean;
   onClose: () => void;
   onSave: (patch: MealFormPatch) => void | Promise<void>;
@@ -99,6 +108,38 @@ export default function MealFormSheet({
   const [recipeText, setRecipeText]   = useState('');
   const [note, setNote]               = useState('');
   const [startTime, setStartTime]     = useState<Date | null>(null);
+
+  // Recipe suggestions from recipe book + history
+  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  useEffect(() => {
+    if (!visible || !familyId || editingMeal) { setSuggestions([]); return; }
+    Promise.all([
+      supabase.from('family_recipes').select('id,title,emoji,ingredients,prep_steps,dietary_tags,prep_minutes')
+        .eq('family_id', familyId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('family_meals').select('id,title,emoji,ingredients,prep_steps,dietary_tags,prep_minutes')
+        .eq('family_id', familyId).order('created_at', { ascending: false }).limit(20),
+    ]).then(([recipeRes, histRes]) => {
+      const recipeItems: SuggestionItem[] = (recipeRes.data ?? []).map((r: any) => ({ ...r, source: 'recipe' as const }));
+      const seen = new Set(recipeItems.map(r => r.title.toLowerCase().trim()));
+      const histItems: SuggestionItem[] = (histRes.data ?? [])
+        .filter((m: any) => {
+          const k = m.title?.toLowerCase().trim();
+          if (!k || seen.has(k)) return false;
+          seen.add(k); return true;
+        })
+        .map((m: any) => ({ ...m, source: 'history' as const }));
+      setSuggestions([...recipeItems, ...histItems].slice(0, 12));
+    });
+  }, [visible, familyId, editingMeal]);
+
+  const applySuggestion = (s: SuggestionItem) => {
+    setTitle(s.title);
+    if (s.emoji) setEmoji(s.emoji);
+    if (s.ingredients?.length) setIngredients(s.ingredients.join('\n'));
+    if (s.prep_steps?.length) setPrepSteps(s.prep_steps.join('\n'));
+    if (s.dietary_tags?.length) setDietTags(s.dietary_tags);
+    if (s.prep_minutes) setPrepMins(String(s.prep_minutes));
+  };
 
   // Voice recording
   const [isRecording, setIsRecording] = useState(false);
@@ -240,6 +281,55 @@ export default function MealFormSheet({
                 onScrollBeginDrag={Keyboard.dismiss}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+
+                {/* ── Recipe suggestions — from book + history ── */}
+                {!editingMeal && suggestions.length > 0 && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.7,
+                      color: colors.teal, marginBottom: 10 }}>
+                      FROM YOUR RECIPE BOOK & HISTORY
+                    </Text>
+                    <FlatList
+                      data={suggestions}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      keyExtractor={item => item.id}
+                      contentContainerStyle={{ gap: 10, paddingRight: 4 }}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          onPress={() => applySuggestion(item)}
+                          style={{
+                            width: 140, borderRadius: 14,
+                            backgroundColor: item.source === 'recipe' ? colors.amberLight : colors.tealLight,
+                            padding: 12, gap: 4,
+                            borderWidth: 1,
+                            borderColor: item.source === 'recipe'
+                              ? (colors.amber + '30') : (colors.teal + '30'),
+                          }}>
+                          <Text style={{ fontSize: 24, marginBottom: 2 }}>
+                            {item.emoji || '🍽️'}
+                          </Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700',
+                            color: colors.textPrimary, lineHeight: 17 }} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600',
+                            color: item.source === 'recipe' ? colors.amber : colors.teal }}>
+                            {item.source === 'recipe' ? '📖 Recipe book' : '🕐 History'}
+                          </Text>
+                          {item.prep_minutes ? (
+                            <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                              {item.prep_minutes} min
+                            </Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      )}
+                    />
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 8 }}>
+                      Tap any card to pre-fill this meal
+                    </Text>
+                  </View>
+                )}
 
                 {/* DATE — read-only display */}
                 <FieldCard label="Date" colors={colors}>

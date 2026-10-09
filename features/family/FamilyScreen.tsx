@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Image,
   Animated, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { AnimatedPressable } from '@/components/AnimatedPressable';
 import {
   Users, MapPin, Heart, GraduationCap, Home, Image as ImageIcon,
   Gift, Gamepad2, Plus, ChevronRight,
@@ -48,12 +49,16 @@ function FamilyMemberAvatar({ member, size = 52 }: { member: any; size?: number 
   );
 }
 
-// Staggered entrance animation for a single card
-function AnimatedCard({ index, children, style }: { index: number; children: React.ReactNode; style?: any }) {
+// Staggered entrance animation — re-plays every time `animKey` changes (tab focus)
+function AnimatedCard({ index, animKey, children, style }: {
+  index: number; animKey: number; children: React.ReactNode; style?: any;
+}) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
+    opacity.setValue(0);
+    translateY.setValue(24);
     const delay = index * 55;
     Animated.parallel([
       Animated.timing(opacity, {
@@ -65,7 +70,7 @@ function AnimatedCard({ index, children, style }: { index: number; children: Rea
         easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [animKey]);
 
   return (
     <Animated.View style={[style, { opacity, transform: [{ translateY }] }]}>
@@ -82,18 +87,30 @@ export default function FamilyScreen() {
   const familyName = (members[0] as any)?.familyName ?? 'Family';
   const P = colors.primary;
 
-  // Header fade-in
+  // Header fade-in + card animation key — increments each focus to replay entrance
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-16)).current;
+  const [focusCount, setFocusCount] = useState(0);
 
-  useEffect(() => {
-    useUIStore.getState().setFullBleedScreenActive(true);
+  const playEntrance = useCallback(() => {
+    headerOpacity.setValue(0);
+    headerY.setValue(-16);
     Animated.parallel([
       Animated.timing(headerOpacity, { toValue: 1, duration: 280, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       Animated.timing(headerY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
+    setFocusCount(c => c + 1);
+  }, []);
+
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(true);
+    playEntrance();
     return () => useUIStore.getState().setFullBleedScreenActive(false);
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    playEntrance();
+  }, [playEntrance]));
 
   const TOOLS: Tool[] = [
     {
@@ -201,7 +218,7 @@ export default function FamilyScreen() {
         </Animated.View>
 
         {/* ── Family card ── */}
-        <AnimatedCard index={1} style={{ marginHorizontal: 20, marginBottom: 32 }}>
+        <AnimatedCard index={1} animKey={focusCount} style={{ marginHorizontal: 20, marginBottom: 32 }}>
         <View style={{
           backgroundColor: colors.surface, borderRadius: 20, padding: 20,
           shadowColor: isDark ? 'transparent' : '#172337',
@@ -253,15 +270,14 @@ export default function FamilyScreen() {
           {TOOLS.map((tool, index) => {
             const Icon = tool.icon;
             return (
-              <AnimatedCard key={tool.key} index={index} style={{ width: '47%' }}>
-                <Pressable
+              <AnimatedCard key={tool.key} index={index + 2} animKey={focusCount} style={{ width: '47%' }}>
+                <AnimatedPressable
                   onPress={() => router.push(tool.route as any)}
-                  style={({ pressed }) => ({
-                    backgroundColor: pressed ? tool.accent + 'CC' : tool.accent,
+                  style={{
+                    backgroundColor: tool.accent,
                     borderRadius: 18, padding: 18,
                     minHeight: 140, justifyContent: 'space-between',
-                    opacity: pressed ? 0.9 : 1,
-                  })}>
+                  }}>
                   {/* Icon */}
                   <Icon size={26} color={P} strokeWidth={1.8} />
 
@@ -275,7 +291,7 @@ export default function FamilyScreen() {
                     </Text>
                     <Text style={{ fontSize: 18, color: P, marginTop: 6 }}>→</Text>
                   </View>
-                </Pressable>
+                </AnimatedPressable>
               </AnimatedCard>
             );
           })}

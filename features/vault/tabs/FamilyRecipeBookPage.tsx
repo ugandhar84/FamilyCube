@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
-  TextInput, Platform, Image,
+  TextInput, Platform, Image, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2, Camera, ImagePlus, RefreshCw } from 'lucide-react-native';
@@ -417,6 +417,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
 
       {/* ── Add new recipe — full-page overlay ── */}
       <FullPageOverlay visible={showAddRecipe} onDismiss={() => setShowAddRecipe(false)} zIndex={90}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
           {/* Header */}
           <View style={{
@@ -668,36 +669,32 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
               </View>
             ) : null}
 
+            {/* Save + Cancel scroll with the form — no fixed footer */}
+            <View style={{ gap: 10, paddingTop: 8 }}>
+              <Pressable
+                onPress={saveNewRecipe}
+                disabled={savingRecipe || !newTitle.trim()}
+                style={({ pressed }) => ({
+                  borderRadius: 16, paddingVertical: 17, alignItems: 'center',
+                  backgroundColor: newTitle.trim() ? (pressed ? P + 'CC' : P) : colors.border,
+                  flexDirection: 'row', justifyContent: 'center', gap: 8,
+                })}>
+                {savingRecipe
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <>
+                      <Check size={17} color="#fff" strokeWidth={2.5} />
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Save to recipe book</Text>
+                    </>}
+              </Pressable>
+              <Pressable onPress={() => setShowAddRecipe(false)} style={{ alignItems: 'center', paddingVertical: 6 }}>
+                <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>Cancel</Text>
+              </Pressable>
+            </View>
+
             </View>{/* end form fields padded section */}
           </ScrollView>
-
-          {/* Fixed footer */}
-          <View style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            paddingBottom: insets.bottom + 8, paddingTop: 12, paddingHorizontal: 20,
-            backgroundColor: canvas, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-            gap: 10,
-          }}>
-            <Pressable
-              onPress={saveNewRecipe}
-              disabled={savingRecipe || !newTitle.trim()}
-              style={({ pressed }) => ({
-                borderRadius: 16, paddingVertical: 17, alignItems: 'center',
-                backgroundColor: newTitle.trim() ? (pressed ? P + 'CC' : P) : colors.border,
-                flexDirection: 'row', justifyContent: 'center', gap: 8,
-              })}>
-              {savingRecipe
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <>
-                    <Check size={17} color="#fff" strokeWidth={2.5} />
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Save to recipe book</Text>
-                  </>}
-            </Pressable>
-            <Pressable onPress={() => setShowAddRecipe(false)} style={{ alignItems: 'center', paddingVertical: 6 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>Cancel</Text>
-            </Pressable>
-          </View>
         </View>
+        </KeyboardAvoidingView>
       </FullPageOverlay>
 
       {/* ── "Add to week" — full-page overlay (no bottom sheets) ── */}

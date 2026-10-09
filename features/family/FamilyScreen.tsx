@@ -4,7 +4,7 @@ import {
   Animated, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import {
   Users, MapPin, Heart, GraduationCap, Home, Image as ImageIcon,
@@ -49,24 +49,25 @@ function FamilyMemberAvatar({ member, size = 52 }: { member: any; size?: number 
   );
 }
 
-// Staggered entrance animation — re-plays every time `animKey` changes (tab focus)
+// Staggered entrance animation — re-plays when `animKey` changes (tab switch only)
 function AnimatedCard({ index, animKey, children, style }: {
   index: number; animKey: number; children: React.ReactNode; style?: any;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(24)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
+    // Start invisible and slide up
     opacity.setValue(0);
-    translateY.setValue(24);
-    const delay = index * 55;
+    translateY.setValue(20);
+    const delay = 60 + index * 50; // slight initial delay so header lands first
     Animated.parallel([
       Animated.timing(opacity, {
-        toValue: 1, duration: 300, delay,
+        toValue: 1, duration: 280, delay,
         easing: Easing.out(Easing.quad), useNativeDriver: true,
       }),
       Animated.timing(translateY, {
-        toValue: 0, duration: 320, delay,
+        toValue: 0, duration: 300, delay,
         easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }),
     ]).start();
@@ -87,17 +88,25 @@ export default function FamilyScreen() {
   const familyName = (members[0] as any)?.familyName ?? 'Family';
   const P = colors.primary;
 
-  // Header fade-in + card animation key — increments each focus to replay entrance
+  // Header fade-in + card animation
+  // Only plays on first mount and when switching FROM another tab —
+  // never on back-navigation from a subpage (which would flash cards to 0).
+  // `hasAnimated` tracks whether we've run the intro this tab-session;
+  // `lastTabName` lets us detect a real tab switch vs a stack pop.
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-16)).current;
   const [focusCount, setFocusCount] = useState(0);
+  const navigation = useNavigation();
+  // Track whether we're in a "subpage pushed" state so blur/focus from
+  // back-navigation doesn't re-trigger the entrance animation.
+  const isSubpageActive = useRef(false);
 
   const playEntrance = useCallback(() => {
     headerOpacity.setValue(0);
     headerY.setValue(-16);
     Animated.parallel([
-      Animated.timing(headerOpacity, { toValue: 1, duration: 280, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(headerY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(headerOpacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(headerY, { toValue: 0, duration: 340, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
     setFocusCount(c => c + 1);
   }, []);
@@ -105,10 +114,33 @@ export default function FamilyScreen() {
   useEffect(() => {
     useUIStore.getState().setFullBleedScreenActive(true);
     playEntrance();
-    return () => useUIStore.getState().setFullBleedScreenActive(false);
+
+    // Listen for subpages being pushed/popped on this navigator so we can
+    // skip the entrance animation when the user just pops back to this screen.
+    const unsubPush = (navigation as any).addListener?.('blur', () => {
+      // Check if a route was pushed on top (state has more than 1 route)
+      const state = (navigation as any).getState?.();
+      if (state && state.index > 0) {
+        isSubpageActive.current = true;
+      }
+    });
+
+    return () => {
+      useUIStore.getState().setFullBleedScreenActive(false);
+      unsubPush?.();
+    };
   }, []);
 
   useFocusEffect(useCallback(() => {
+    if (isSubpageActive.current) {
+      // Returning from a subpage — keep content visible, no animation flash
+      isSubpageActive.current = false;
+      // Ensure header is fully visible in case it was mid-animation
+      headerOpacity.setValue(1);
+      headerY.setValue(0);
+      return;
+    }
+    // Real tab switch — play full entrance
     playEntrance();
   }, [playEntrance]));
 

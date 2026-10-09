@@ -3,13 +3,14 @@ import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { CalendarDays, Sparkles, ShoppingBag, ChefHat } from 'lucide-react-native';
+import { CalendarDays, Sparkles, BookOpen, ChefHat } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useUIStore } from '@/store/uiStore';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useFamilyStore } from '@/store/familyStore';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import MealsWeekPage from './MealsWeekPage';
+import FamilyRecipeBookPage from './FamilyRecipeBookPage';
 import { supabase } from '@/lib/supabase';
 import type { Meal } from './meals/types';
 
@@ -36,6 +37,7 @@ export default function MealsScreen() {
   const P = colors.primary;
 
   const [showWeekPlan, setShowWeekPlan] = useState(false);
+  const [showRecipes, setShowRecipes]   = useState(false);
 
   // Fetch tonight's dinner to show in the hero card
   const [tonightMeal, setTonightMeal] = useState<Meal | null>(null);
@@ -64,6 +66,11 @@ export default function MealsScreen() {
     return () => useUIStore.getState().setFullBleedScreenActive(false);
   }, []);
 
+  useEffect(() => {
+    if (showWeekPlan || showRecipes) hideTabBar(); else showTabBar();
+    return () => showTabBar();
+  }, [showWeekPlan, showRecipes]);
+
   const canvas = isDark ? '#0E0C13' : '#FFFFFF';
   const cardBg = isDark ? colors.card : '#FFFFFF';
 
@@ -87,13 +94,13 @@ export default function MealsScreen() {
       onPress: () => setShowWeekPlan(true),
     },
     {
-      key: 'grocery',
-      title: 'Shared groceries',
-      subtitle: "See what's on the list and add missing ingredients",
-      icon: ShoppingBag,
+      key: 'recipes',
+      title: 'Family recipe book',
+      subtitle: 'Saved family recipes — add any to this week in one tap',
+      icon: BookOpen,
       color: colors.teal,
       bg: colors.tealLight,
-      onPress: () => router.push('/(tabs)/grocery' as any),
+      onPress: () => setShowRecipes(true),
     },
   ];
 
@@ -271,6 +278,15 @@ export default function MealsScreen() {
         <MealsWeekPage
           onClose={() => setShowWeekPlan(false)}
         />
+      </FullPageOverlay>
+
+      {/* ── Family recipe book overlay ── */}
+      <FullPageOverlay
+        visible={showRecipes}
+        onDismiss={() => setShowRecipes(false)}
+        zIndex={50}
+      >
+        <FamilyRecipeBookPage onClose={() => setShowRecipes(false)} />
       </FullPageOverlay>
 
     </View>

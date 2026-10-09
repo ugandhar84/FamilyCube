@@ -22,13 +22,14 @@ import RecipeModal from './meals/RecipeModal';
 import DayCard from './meals/DayCard';
 import AiPlannerBanner from './meals/AiPlannerBanner';
 import MealSelectionPhase from './meals/MealSelectionPhase';
+import AiSuggestionsPage from './meals/AiSuggestionsPage';
 import MealFormSheet from './meals/MealFormSheet';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
-export default function MealsTab({ colors, isDark, weekOverride }: { colors: any; isDark: boolean; weekOverride?: string }) {
+export default function MealsTab({ colors, isDark, weekOverride, onAiReady }: { colors: any; isDark: boolean; weekOverride?: string; onAiReady?: (trigger: () => void) => void }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -61,6 +62,7 @@ export default function MealsTab({ colors, isDark, weekOverride }: { colors: any
   const [pendingOptions, setPendingOptions] = useState<AiDayOptions[] | null>(null);
   const [selected, setSelected]             = useState<Record<string, number[]>>({}); // day → [indices]
   const [savingPlan, setSavingPlan]         = useState(false);
+  const [showAiPage, setShowAiPage]         = useState(false); // full-page AI suggestions overlay
 
   // Modals
   const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
@@ -145,11 +147,15 @@ export default function MealsTab({ colors, isDark, weekOverride }: { colors: any
       setGroceryList(result.groceryAutoList ?? []);
       setTip(result.nutritionCoachingTip ?? null);
       setAiOpen(false);
+      setShowAiPage(true); // open full-page suggestions overlay
     } catch {
       setAiError('Couldn\'t generate plan. Check connection and try again.');
     }
     setAiLoading(false);
   };
+
+  // Expose generateMealPlan trigger to parent (MealsScreen's "Preview AI meal plan →" button)
+  useEffect(() => { onAiReady?.(generateMealPlan); }, [onAiReady, generateMealPlan]);
 
   const confirmPlan = async () => {
     if (!pendingOptions) return;
@@ -190,6 +196,7 @@ export default function MealsTab({ colors, isDark, weekOverride }: { colors: any
         setMeals(prev => [...prev.filter(m => !m.ai_generated), ...(inserted as Meal[])]);
         setPendingOptions(null);
         setSelected({});
+        setShowAiPage(false);
         Alert.alert('Plan Saved', `${inserted.length} meal${inserted.length > 1 ? 's' : ''} added to your week.`);
       } else {
         Alert.alert('Nothing Saved', 'No meals were inserted. Try selecting at least one meal per day.');
@@ -490,19 +497,45 @@ export default function MealsTab({ colors, isDark, weekOverride }: { colors: any
         visible={!!addDay || !!editMeal}
         day={addDay}
         editingMeal={editMeal}
-        members={members} colors={colors} isDark={isDark}
+        colors={colors} isDark={isDark}
         onClose={() => { setAddDay(null); setEditMeal(null); }}
         onSave={saveMeal}
         saving={savingMeal}
       />
 
-      {/* Modals */}
+      {/* ── Recipe Detail — full-page ────── */}
       <RecipeModal meal={activeRecipe} visible={!!activeRecipe}
         onClose={() => setActiveRecipe(null)}
         onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}
         senderId={activeMember?.id ?? ''}
         hideAddToGrocery={isKidOrTeen}
         colors={colors} isDark={isDark} />
+
+      {/* ── AI Suggestions — full-page overlay ────── */}
+      {!!pendingOptions && (
+        <AiSuggestionsPage
+          visible={showAiPage}
+          pendingOptions={pendingOptions}
+          selected={selected} setSelected={setSelected}
+          tip={tip} savingPlan={savingPlan} confirmPlan={confirmPlan}
+          existingMeals={meals} weekRange={curWeek}
+          onClose={() => setShowAiPage(false)}
+          onViewMeal={(preview) => {
+            // Convert preview → Meal-like object for RecipeModal
+            setActiveRecipe({
+              id: 'preview', day: preview.day, title: preview.title,
+              type: 'dinner', week_of: curWeek,
+              emoji: preview.emoji ?? null,
+              prep_minutes: preview.prepMinutes,
+              ingredients: preview.ingredients,
+              prep_steps: preview.prepSteps ?? [],
+              dietary_tags: preview.dietaryTags,
+              chef_id: null, ai_generated: true,
+            });
+          }}
+          colors={colors} isDark={isDark}
+        />
+      )}
     </>
   );
 }

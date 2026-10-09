@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +36,9 @@ export default function MealsScreen({ hideHeader = false }: { hideHeader?: boole
   const [weekOffset, setWeekOffset] = useState(0);
   const currentWeek = weekOf(weekOffset);
   const weekRange   = fmtWeekRange(currentWeek);
+
+  const aiTriggerRef = useRef<(() => void) | null>(null);
+  const handleAiReady = useCallback((fn: () => void) => { aiTriggerRef.current = fn; }, []);
 
   useEffect(() => {
     useUIStore.getState().setFullBleedScreenActive(true);
@@ -104,7 +107,7 @@ export default function MealsScreen({ hideHeader = false }: { hideHeader?: boole
           <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textSecondary, lineHeight: 20 }}>
             Optional suggestions that fit the week. Review before adding anything.
           </Text>
-          <Pressable style={{ marginTop: 4 }}>
+          <Pressable style={{ marginTop: 4 }} onPress={() => aiTriggerRef.current?.()}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink }}>
               Preview AI meal plan →
             </Text>
@@ -124,7 +127,7 @@ export default function MealsScreen({ hideHeader = false }: { hideHeader?: boole
 
         {/* ── Day cards from MealsTab ── */}
         <View style={{ paddingHorizontal: 20 }}>
-          <MealsTabComp colors={colors} isDark={isDark} weekOverride={currentWeek} />
+          <MealsTabComp colors={colors} isDark={isDark} weekOverride={currentWeek} onAiReady={handleAiReady} />
         </View>
 
         {/* ── Open shared groceries link ── */}

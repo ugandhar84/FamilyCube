@@ -61,7 +61,7 @@ function Key({ label, onPress, disabled }: { label: string; onPress: () => void;
   if (label === '') return <View style={styles.keyPlaceholder} />;
 
   return (
-    <Pressable onPress={handlePress} disabled={disabled} style={styles.keyWrap}>
+    <Pressable allowRapidPress onPress={handlePress} disabled={disabled} style={styles.keyWrap}>
       <Animated.View style={[styles.key, {
         backgroundColor: colors.surface,
         borderColor: colors.border,

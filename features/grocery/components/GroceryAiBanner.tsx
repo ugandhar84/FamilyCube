@@ -30,7 +30,7 @@ export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLo
 
   return (
     <View style={{
-      backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#DFE5EF',
+      backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
       padding: 16,
       shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05,
       shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
@@ -64,8 +64,8 @@ export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLo
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
           <Pressable onPress={onScan}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              gap: 6, paddingVertical: 12, borderRadius: 14, backgroundColor: '#FFFFFF',
-              borderWidth: 1, borderColor: '#DFE5EF' }}>
+              gap: 6, paddingVertical: 12, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+              borderWidth: 1, borderColor: colors.border }}>
             <Ionicons name="receipt-outline" size={16} color={P} />
             <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Scan Receipt</Text>
           </Pressable>
@@ -73,7 +73,7 @@ export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLo
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               gap: 6, paddingVertical: 12, borderRadius: 14,
               backgroundColor: pricesLoaded ? colors.tealLight : '#FFFFFF',
-              borderWidth: 1, borderColor: pricesLoaded ? colors.teal : '#DFE5EF' }}>
+              borderWidth: 1, borderColor: pricesLoaded ? colors.teal : colors.border }}>
             {priceLoading
               ? <ActivityIndicator size="small" color={P} />
               : <Ionicons name="pricetag-outline" size={16} color={pricesLoaded ? colors.teal : P} />}

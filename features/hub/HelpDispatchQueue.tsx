@@ -16,6 +16,7 @@ import { useGroceryStore } from '@/store/groceryStore';
 import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -96,10 +97,12 @@ const DECLINE_PRESETS = [
 
 interface Props {
   onRequestHelpOpen: () => void;
+  onClose?: () => void;
 }
 
-export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
+export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const members = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const {
@@ -243,34 +246,48 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
   const divider = colors.border;
   const allReqs  = [...pending, ...assigned, ...completed];
 
+  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+  const sectionLabel = (text: string, count: number, color: string) => (
+    <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.7, color, marginTop: 6 }}>
+      {text} · {count}
+    </Text>
+  );
+
   return (
-    <View style={[q.card, { backgroundColor: cardBg, borderColor: colors.surface }]}>
-      {/* Header */}
-      <View style={[q.header, { borderBottomColor: divider }]}>
-        <View style={[q.iconWrap, { backgroundColor: BRAND.amber + '25' }]}>
-          <HelpCircleIcon color={BRAND.amber} />
+    <View style={{ flex: 1, backgroundColor: canvas }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 14, gap: 6,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: divider, backgroundColor: canvas }}>
+        {onClose && (
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Back</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.6, color: colors.textTertiary }}>FAMILY CUBE · KID REQUESTS</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+          <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary }}>Kid requests</Text>
+          <TouchableOpacity style={[q.askBtn, { backgroundColor: colors.pink, marginBottom: 4 }]} onPress={onRequestHelpOpen}>
+            <PlusIcon color="#fff" size={14} />
+            <Text style={q.askBtnText}>Ask for help</Text>
+          </TouchableOpacity>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[q.title, { color: colors.textPrimary }]}>Family Support & Help Queue</Text>
-          <Text style={[q.subtitle, { color: colors.textSecondary }]}>
-            Kids ask for assistance & parents approve/self-assign
-          </Text>
-        </View>
-        <TouchableOpacity style={[q.askBtn, { backgroundColor: BRAND.purple }]} onPress={onRequestHelpOpen}>
-          <PlusIcon color="#fff" size={14} />
-          <Text style={q.askBtnText}>Ask for Help</Text>
-        </TouchableOpacity>
+        <Text style={{ fontSize: 14, color: colors.textSecondary }}>
+          {pending.length > 0 ? `${pending.length} waiting on you` : 'Nothing waiting on you'}
+          {assigned.length > 0 ? ` · ${assigned.length} in progress` : ''}
+        </Text>
       </View>
+
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
 
       {/* Empty state */}
       {allReqs.length === 0 && (
         <View style={[q.emptyBox, { backgroundColor: colors.surface }]}>
           <Text style={[q.emptyText, { color: colors.textTertiary }]}>
-            No active help requests. Kids can click "Ask for Help" anytime!
+            No requests right now. When a kid asks for help, it shows up here.
           </Text>
         </View>
       )}
 
+      {pending.length > 0 && sectionLabel('NEEDS YOU', pending.length, colors.amber)}
       {/* ── Pending requests ── */}
       {pending.map(req => {
         const meta      = REQUEST_META[req.type];
@@ -281,7 +298,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
         const isSelf    = selHelper === activeMemberId;
 
         return (
-          <View key={req.id} style={[q.reqCard, { backgroundColor: BRAND.amber + '18', borderColor: BRAND.amber + '33' }]}>
+          <View key={req.id} style={[q.reqCard, { backgroundColor: colors.amberLight, borderColor: 'transparent' }]}>
             {/* Top row */}
             <View style={q.reqTop}>
               <View style={{ flex: 1 }}>
@@ -312,11 +329,11 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
               <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '33', paddingTop: 10, gap: 8 }}>
                 {/* Bulk actions header */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: colors.amber }}>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: colors.amber }}>
                     📦 {req.items.length} items requested by {memberName(req.fromMemberId)}:
                   </Text>
                   <TouchableOpacity onPress={() => setItemExpanded(p => ({ ...p, [req.id]: !p[req.id] }))}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>
                       {itemExpanded[req.id] ? '▲ collapse' : '▼ review items'}
                     </Text>
                   </TouchableOpacity>
@@ -338,35 +355,35 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <Text style={{ fontSize: 13 }}>{item.emoji ?? '🛒'}</Text>
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
+                              <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                                 {item.name}{item.qty ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.qty}</Text> : null}
                               </Text>
-                              <Text style={{ fontSize: 10, color: colors.textTertiary }}>{item.category}</Text>
+                              <Text style={{ fontSize: 12, color: colors.textTertiary }}>{item.category}</Text>
                             </View>
                             {isPending ? (
                               <View style={{ flexDirection: 'row', gap: 6 }}>
                                 <TouchableOpacity
                                   onPress={() => { approveItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore({ ...req, items: [item] }); }}
                                   style={{ borderRadius: 8, backgroundColor: colors.teal, paddingHorizontal: 10, paddingVertical: 5 }}>
-                                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>✓ OK</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>✓ OK</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                   onPress={() => rejectItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id])}
                                   style={{ borderRadius: 8, backgroundColor: colors.danger, paddingHorizontal: 10, paddingVertical: 5 }}>
-                                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>✗ No</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>✗ No</Text>
                                 </TouchableOpacity>
                               </View>
                             ) : (
                               <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
                                 backgroundColor: isApproved ? '#10B98120' : '#EF444420' }}>
-                                <Text style={{ fontSize: 10, fontWeight: '900', color: isApproved ? '#10B981' : '#EF4444' }}>
+                                <Text style={{ fontSize: 12, fontWeight: '900', color: isApproved ? '#10B981' : '#EF4444' }}>
                                   {isApproved ? '✓ Approved' : '✗ Rejected'}
                                 </Text>
                               </View>
                             )}
                           </View>
                           {(item.parentNote) && (
-                            <Text style={{ fontSize: 10, fontStyle: 'italic', color: colors.textTertiary, paddingLeft: 20 }}>
+                            <Text style={{ fontSize: 12, fontStyle: 'italic', color: colors.textTertiary, paddingLeft: 20 }}>
                               "{item.parentNote}"
                             </Text>
                           )}
@@ -390,12 +407,12 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                         <TouchableOpacity
                           onPress={() => { approveAllItems(req.id, activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore(req, new Set(req.items!.filter(i => i.status === 'pending').map(i => i.id))); }}
                           style={{ flex: 1, borderRadius: 12, backgroundColor: colors.teal, paddingVertical: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✓ Approve All</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✓ Approve All</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => rejectAllItems(req.id, activeMemberId ?? '', itemNote[req.id])}
                           style={{ flex: 1, borderRadius: 12, backgroundColor: colors.danger, paddingVertical: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✗ Reject All</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✗ Reject All</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -568,6 +585,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
         );
       })}
 
+      {assigned.length > 0 && sectionLabel('IN PROGRESS', assigned.length, colors.pink)}
       {/* ── Assigned / In-Progress ── */}
       {assigned.map(req => {
         const requester   = members.find(m => m.id === req.fromMemberId);
@@ -576,7 +594,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
         const canComplete = isParentOrSenior || req.assignedHelper === activeMemberId || req.fromMemberId === activeMemberId;
 
         return (
-          <View key={req.id} style={[q.reqCard, { backgroundColor: BRAND.purple + '18', borderColor: BRAND.purple + '30' }]}>
+          <View key={req.id} style={[q.reqCard, { backgroundColor: colors.pinkLight, borderColor: 'transparent' }]}>
             <View style={q.reqTop}>
               <View style={{ flex: 1 }}>
                 <View style={q.badges}>
@@ -680,11 +698,12 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
         );
       })}
 
+      {completed.length > 0 && sectionLabel('RECENTLY DONE', completed.length, colors.teal)}
       {/* ── Completed (last 3) ── */}
       {completed.map(req => {
         const requester = members.find(m => m.id === req.fromMemberId);
         return (
-          <View key={req.id} style={[q.completedRow, { backgroundColor: colors.teal + '18', borderColor: colors.border }]}>
+          <View key={req.id} style={[q.completedRow, { backgroundColor: colors.tealLight, borderColor: 'transparent' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <CheckCircle color="#10B981" size={14} />
               <Text style={[q.completedText, { color: colors.teal }]} numberOfLines={1}>
@@ -698,6 +717,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
           </View>
         );
       })}
+      </ScrollView>
     </View>
   );
 }
@@ -710,40 +730,40 @@ const q = StyleSheet.create({
   iconWrap:    { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   title:       { fontSize: 13, fontWeight: '900' },
   subtitle:    { fontSize: 10, marginTop: 1 },
-  askBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18 },
-  askBtnText:  { color: '#fff', fontSize: 11, fontWeight: '900' },
-  emptyBox:    { padding: 16, borderRadius: 16, alignItems: 'center' },
-  emptyText:   { fontSize: 11, textAlign: 'center' },
+  askBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20 },
+  askBtnText:  { color: '#fff', fontSize: 13, fontWeight: '900' },
+  emptyBox:    { padding: 20, borderRadius: 18, alignItems: 'center' },
+  emptyText:   { fontSize: 14, textAlign: 'center' },
 
-  reqCard:     { borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
+  reqCard:     { borderRadius: 18, borderWidth: 0, padding: 16, gap: 12 },
   reqTop:      { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   badges:      { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 4 },
-  reqName:     { fontSize: 11, fontWeight: '900' },
-  reqDetail:   { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  badge:       { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText:   { fontSize: 9, fontWeight: '900' },
+  reqName:     { fontSize: 14, fontWeight: '900' },
+  reqDetail:   { fontSize: 15, fontWeight: '600', marginTop: 2, lineHeight: 21 },
+  badge:       { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
+  badgeText:   { fontSize: 11, fontWeight: '900' },
   coinBadge:   { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  coinText:    { fontSize: 12, fontWeight: '900' },
+  coinText:    { fontSize: 14, fontWeight: '900' },
 
   actionsWrap: { borderTopWidth: 1, paddingTop: 10, gap: 8 },
   actionHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  actionHeaderText: { fontSize: 10, fontWeight: '900' },
-  declineLink: { fontSize: 10, fontWeight: '900', color: '#C54A27' },
+  actionHeaderText: { fontSize: 12, fontWeight: '900' },
+  declineLink: { fontSize: 12, fontWeight: '900', color: '#C54A27' },
 
   declinePanel:{ borderRadius: 14, borderWidth: 1, padding: 10, gap: 8, marginTop: 4 },
-  declinePanelTitle: { fontSize: 10, fontWeight: '900' },
+  declinePanelTitle: { fontSize: 12, fontWeight: '900' },
   presets:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  presetChip:  { borderRadius: 10, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
-  presetText:  { fontSize: 9, fontWeight: '700' },
-  declineInput:{ borderWidth: 1, borderRadius: 10, padding: 8, fontSize: 11 },
-  declineBtn:  { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  declineBtnText: { fontSize: 10, fontWeight: '900' },
+  presetChip:  { borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
+  presetText:  { fontSize: 11, fontWeight: '700' },
+  declineInput:{ borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14 },
+  declineBtn:  { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  declineBtnText: { fontSize: 13, fontWeight: '900' },
 
-  selfAssignBtn:  { borderRadius: 14, padding: 10, backgroundColor: '#3D7A5A', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  selfAssignText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  selfAssignBtn:  { borderRadius: 14, padding: 13, backgroundColor: '#3D7A5A', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  selfAssignText: { color: '#fff', fontSize: 14, fontWeight: '900' },
 
-  helperTrigger:     { borderWidth: 1, borderRadius: 14, padding: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  helperTriggerText: { fontSize: 11, fontWeight: '700' },
+  helperTrigger:     { borderWidth: 1, borderRadius: 14, padding: 13, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  helperTriggerText: { fontSize: 13, fontWeight: '700' },
   // Was elevation:20 with no iOS shadow at all — absurdly high for a small
   // inline dropdown (this app's own Modal-based overlays top out around
   // 16-24, and THOSE render in their own native Android window/surface, so
@@ -756,26 +776,26 @@ const q = StyleSheet.create({
   helperDropdown:    { position: 'absolute', top: 44, left: 0, right: 0, borderWidth: 1, borderRadius: 12, zIndex: 999,
                        elevation: 6, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8 },
   helperOption:      { padding: 10 },
-  helperOptionText:  { fontSize: 12, fontWeight: '600' },
+  helperOptionText:  { fontSize: 14, fontWeight: '600' },
 
-  assignBtn:     { backgroundColor: BRAND.purple, borderRadius: 14, padding: 10, alignItems: 'center', justifyContent: 'center', minWidth: 72, flexDirection: 'row', gap: 4 },
-  assignBtnText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  assignBtn:     { backgroundColor: BRAND.purple, borderRadius: 14, padding: 13, alignItems: 'center', justifyContent: 'center', minWidth: 72, flexDirection: 'row', gap: 4 },
+  assignBtnText: { color: '#fff', fontSize: 13, fontWeight: '900' },
 
-  noteInput:   { borderWidth: 1, borderRadius: 10, padding: 8, fontSize: 11, marginTop: 2 },
-  charCount:   { fontSize: 9, textAlign: 'right', marginTop: 2, fontWeight: '500' },
-  waitText:    { fontSize: 10, fontWeight: '700' },
-  withdrawText:{ fontSize: 10, fontWeight: '700', color: '#C54A27' },
+  noteInput:   { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14, marginTop: 2 },
+  charCount:   { fontSize: 11, textAlign: 'right', marginTop: 2, fontWeight: '500' },
+  waitText:    { fontSize: 12, fontWeight: '700' },
+  withdrawText:{ fontSize: 12, fontWeight: '700', color: '#C54A27' },
 
-  noteBox:     { borderRadius: 12, padding: 10 },
-  noteBoxText: { fontSize: 11, fontWeight: '600', fontStyle: 'italic' },
+  noteBox:     { borderRadius: 14, padding: 12 },
+  noteBoxText: { fontSize: 13, fontWeight: '600', fontStyle: 'italic' },
 
-  assignedText:  { fontSize: 11, fontWeight: '600' },
-  completeBtn:   { backgroundColor: BRAND.purple, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  completeBtnText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  assignedText:  { fontSize: 13, fontWeight: '600' },
+  completeBtn:   { backgroundColor: BRAND.purple, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  completeBtnText: { color: '#fff', fontSize: 12, fontWeight: '900' },
   reassignBox:   {},
-  reassignLabel: { fontSize: 10, fontWeight: '800', whiteSpace: 'nowrap' } as any,
+  reassignLabel: { fontSize: 12, fontWeight: '800', whiteSpace: 'nowrap' } as any,
 
-  completedRow:  { borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  completedText: { fontSize: 11, fontWeight: '600', flex: 1 },
-  helperTag:     { fontSize: 10, fontWeight: '900', marginLeft: 8 },
+  completedRow:  { borderRadius: 18, borderWidth: 0, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  completedText: { fontSize: 13, fontWeight: '600', flex: 1 },
+  helperTag:     { fontSize: 12, fontWeight: '900', marginLeft: 8 },
 });

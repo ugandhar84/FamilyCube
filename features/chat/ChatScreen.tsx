@@ -43,6 +43,7 @@ import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useChatStore, ChatMessage, dmChannelId, coupleChannelId } from '@/store/chatStore';
+import { useUIStore } from '@/store/uiStore';
 import { useCoupleChannelStore } from '@/store/coupleChannelStore';
 import CouplePinModal from '@/components/CouplePinModal';
 import { useFeatureFlag } from '@/lib/featureFlags';
@@ -851,11 +852,221 @@ export default function ChatScreen() {
   }, [openCoupleChannel, channelId]));
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  // Inbox view: false = show channel list, true = show thread
+  const [threadOpen, setThreadOpen] = useState(false);
+
+  const openChannel = (id: string) => {
+    switchChannel(id);
+    setThreadOpen(true);
+  };
+
+  const pendingChatChannelId = useUIStore(st => st.pendingChatChannelId);
+  useEffect(() => {
+    if (!pendingChatChannelId) return;
+    useUIStore.getState().setPendingChatChannelId(null);
+    openChannel(pendingChatChannelId);
+  }, [pendingChatChannelId]);
+
+  // ── Inbox list view ────────────────────────────────────────────────────────
+  if (!threadOpen) {
+    const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: canvas }} edges={['top']}>
+        <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+
+        {/* Header */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.6 }}>
+            FAMILY CUBE · CHAT
+          </Text>
+          <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, marginTop: 2 }}>
+            Messages
+          </Text>
+        </View>
+
+        {/* Presence card — Figma: pinkLight rounded card with family faces */}
+        {members.length > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+            marginHorizontal: 20, marginTop: 12, marginBottom: 4,
+            padding: 12, borderRadius: 18,
+            backgroundColor: isDark ? colors.surface : colors.pinkLight }}>
+            <View style={{ flexDirection: 'row' }}>
+              {members.slice(0, 5).map((m, i) => (
+                <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i,
+                  width: 28, height: 28, borderRadius: 14,
+                  borderWidth: 2, borderColor: isDark ? colors.surface : colors.pinkLight, overflow: 'hidden' }}>
+                  <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+                    siblings={[]} size={24}
+                    ringColor={m.role === 'parent' ? colors.teal : colors.amber}
+                    ringWidth={0} bgColor={(m.role === 'parent' ? colors.teal : colors.amber) + '44'} />
+                </View>
+              ))}
+            </View>
+            <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : '#707688', fontWeight: '500' }}>
+              {members.length} people active today
+            </Text>
+          </View>
+        )}
+
+        {/* Channel / DM list */}
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
+          {/* Group channels section */}
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.7,
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 }}>CHANNELS</Text>
+          <View style={{ paddingHorizontal: 16, gap: 10 }}>
+          {allChannels.filter(ch => !(ch as any).isDM).map(ch => {
+            const chAny = ch as any;
+            if (chAny.lock && !isParent) return null;
+            const unread = unreadCounts[ch.id] ?? 0;
+            const isPinned = pinnedChannels.includes(ch.id);
+            const lastMsg = (channels[ch.id]?.messages ?? [])[0];
+            const lastSender = lastMsg ? (memberMap[lastMsg.senderId]?.name?.split(' ')[0] ?? '') : null;
+            const lastText = lastMsg?.text
+              ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
+              : lastMsg?.voiceUri ? '🎤 Voice note'
+              : lastMsg?.imageUri ? '📷 Photo'
+              : null;
+            const lastTime = lastActivity[ch.id]
+              ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              : null;
+            const chAccent = chAny.isCoupleChannel ? colors.pink
+              : ch.id === 'all' ? colors.teal
+              : ch.id.startsWith('seniors') ? colors.amber
+              : ch.id === 'parents' ? colors.primary
+              : colors.teal;
+            const chAccentLight = chAny.isCoupleChannel ? colors.pinkLight
+              : ch.id === 'all' ? colors.tealLight
+              : ch.id.startsWith('seniors') ? colors.amberLight
+              : ch.id === 'parents' ? colors.primaryLight
+              : colors.tealLight;
+
+            return (
+              <Pressable key={ch.id} onPress={() => openChannel(ch.id)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                  padding: 14, borderRadius: 18,
+                  backgroundColor: isDark ? colors.card : chAccentLight }}>
+                {/* Icon circle — white on pastel card */}
+                <View style={{ width: 48, height: 48, borderRadius: 16,
+                  backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {isPinned
+                    ? <Pin size={18} color={chAccent} fill={chAccent} />
+                    : <Text style={{ fontSize: 22 }}>
+                        {chAny.isCoupleChannel ? '💑'
+                          : ch.id === 'all' ? '🏠'
+                          : ch.id.startsWith('seniors') ? '👴'
+                          : ch.id === 'parents' ? '👨‍👩‍👧'
+                          : '#'}
+                      </Text>
+                  }
+                </View>
+                {/* Text */}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : chAccent }} numberOfLines={1}>
+                      {ch.label}
+                    </Text>
+                    {isPinned && <Pin size={10} color={chAccent} fill={chAccent} />}
+                  </View>
+                  {lastText
+                    ? <Text style={{ fontSize: 13, color: unread > 0 ? colors.textPrimary : colors.textSecondary,
+                        fontWeight: unread > 0 ? '600' : '400', marginTop: 2 }} numberOfLines={1}>
+                        {lastSender ? `${lastSender}: ` : ''}{lastText}
+                      </Text>
+                    : <Text style={{ fontSize: 13, color: colors.textTertiary, marginTop: 2 }}>No messages yet</Text>
+                  }
+                </View>
+                {/* Right: time + unread badge */}
+                <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  {lastTime && <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : chAccent + 'BB' }}>{lastTime}</Text>}
+                  {unread > 0 && (
+                    <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5,
+                      backgroundColor: chAccent, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
+                    </View>
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+          </View>
+
+          {/* DMs section */}
+          {allChannels.some(ch => (ch as any).isDM) && (
+            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.7,
+              paddingHorizontal: 20, paddingTop: 24, paddingBottom: 10 }}>DIRECT MESSAGES</Text>
+          )}
+          <View style={{ paddingHorizontal: 16, gap: 10 }}>
+          {allChannels.filter(ch => (ch as any).isDM).map(ch => {
+            const chAny = ch as any;
+            const other = memberMap[chAny.otherId];
+            const unread = unreadCounts[ch.id] ?? 0;
+            const lastMsg = (channels[ch.id]?.messages ?? [])[0];
+            const lastText = lastMsg?.text
+              ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
+              : lastMsg?.voiceUri ? '🎤 Voice note'
+              : lastMsg?.imageUri ? '📷 Photo'
+              : null;
+            const lastTime = lastActivity[ch.id]
+              ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              : null;
+            const dmAccent = other?.role === 'parent' ? colors.teal : colors.amber;
+            const dmLight = other?.role === 'parent' ? colors.tealLight : colors.amberLight;
+
+            return (
+              <Pressable key={ch.id} onPress={() => openChannel(ch.id)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                  padding: 14, borderRadius: 18,
+                  backgroundColor: isDark ? colors.card : dmLight }}>
+                {/* Avatar in white circle */}
+                <View style={{ width: 48, height: 48, borderRadius: 24,
+                  backgroundColor: isDark ? colors.surface : '#FFFFFF', overflow: 'hidden', flexShrink: 0,
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <FamilyAvatar name={other?.name ?? ch.label} emoji={other?.emoji}
+                    avatarUrl={other?.avatarUrl} siblings={[]} size={44}
+                    ringColor={dmAccent} ringWidth={0} bgColor={dmAccent + '44'} />
+                </View>
+                {/* Text */}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : dmAccent }} numberOfLines={1}>
+                    {other?.name ?? ch.label}
+                  </Text>
+                  {lastText
+                    ? <Text style={{ fontSize: 13, color: unread > 0 ? colors.textPrimary : colors.textSecondary,
+                        fontWeight: unread > 0 ? '600' : '400', marginTop: 2 }} numberOfLines={1}>
+                        {lastText}
+                      </Text>
+                    : <Text style={{ fontSize: 13, color: colors.textTertiary, marginTop: 2 }}>Say hello 👋</Text>
+                  }
+                </View>
+                {/* Right */}
+                <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  {lastTime && <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : dmAccent + 'BB' }}>{lastTime}</Text>}
+                  {unread > 0 && (
+                    <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5,
+                      backgroundColor: dmAccent, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
+                    </View>
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <View>
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+        {/* Breadcrumb back to inbox */}
+        <Pressable onPress={() => setThreadOpen(false)}
+          style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 2 }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal }}>← Messages</Text>
+        </Pressable>
 
         {couplePinModal && (
           <CouplePinModal
@@ -1455,8 +1666,8 @@ export default function ChatScreen() {
                 </Pressable>
 
                 {/* Text input */}
-                <View style={[s.inputBubble, { backgroundColor: colors.surface,
-                  borderColor: dictation.state === 'listening' ? colors.teal : colors.borderMed }]}>
+                <View style={[s.inputBubble, { backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  borderColor: dictation.state === 'listening' ? colors.teal : (isDark ? colors.borderMed : '#dddfea') }]}>
                   <TextInput
                     ref={inputRef}
                     value={dictation.state === 'listening' ? (preDictationText.current + dictation.liveTranscript) : text}
@@ -1492,8 +1703,8 @@ export default function ChatScreen() {
                 {canSend ? (
                   <Pressable onPress={handleSend} disabled={sendingMessage}
                     style={withAndroidShadowFix([s.sendBtn, {
-                      backgroundColor: colors.primary,
-                      shadowColor: colors.primary,
+                      backgroundColor: colors.pink,
+                      shadowColor: colors.pink,
                       shadowOpacity: 0.35, shadowRadius: 8,
                       shadowOffset: { width: 0, height: 3 }, elevation: 5,
                       opacity: sendingMessage ? 0.6 : 1,

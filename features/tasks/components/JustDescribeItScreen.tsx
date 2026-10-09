@@ -19,6 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { useChoreStore, findLikelyDuplicateChore } from '@/store/choreStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { detectLocalTask } from '../lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
@@ -124,6 +125,8 @@ export default function JustDescribeItScreen({
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
+  const allChores = useChoreStore(st => st.chores);
+  const [dupAck, setDupAck] = useState(false);
   const { familyName = 'Family' } = useFamilyStore() as any;
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const { addQuest } = useQuestStore();
@@ -287,8 +290,20 @@ export default function JustDescribeItScreen({
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   };
 
+  const likelyDuplicate = questFormOpen && !questIsPool && questAssigneeIds.length > 0 || questFormOpen && questIsPool
+    ? findLikelyDuplicateChore(allChores, {
+        title: questTitle,
+        assignedToId: !questIsPool && questAssigneeIds.length > 0 ? questAssigneeIds[0] : undefined,
+        dueDate: questDueDate || undefined,
+        dueTime: questDueTime || undefined,
+      })
+    : undefined;
+
+  useEffect(() => { setDupAck(false); }, [questTitle, questDueDate, questDueTime, questIsPool, questAssigneeIds.join(',')]);
+
   const handleSaveQuest = async () => {
     if (!questTitle.trim() || savingQuest) return;
+    if (likelyDuplicate && !dupAck) { setDupAck(true); return; }
     setSavingQuest(true);
     try {
       const finalCoins = questCustomCoins ? parseInt(questCustomCoins) || questCoins : questCoins;
@@ -987,6 +1002,18 @@ export default function JustDescribeItScreen({
                       </View>
                     </View>
 
+                    {likelyDuplicate && dupAck && (
+                      <View style={{ borderRadius: 14, padding: 14, backgroundColor: colors.amberLight, gap: 4 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber }}>Looks like a duplicate</Text>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>
+                          "{likelyDuplicate.title}" is already open
+                          {likelyDuplicate.dueDate ? ` for ${fmtDate(likelyDuplicate.dueDate)}` : ''}
+                          {likelyDuplicate.assignedToId ? ` for ${members.find(m => m.id === likelyDuplicate.assignedToId)?.name?.split(' ')[0] ?? 'someone'}` : ''}.
+                          Tap "Create anyway" to add another, or change the title, date or assignee.
+                        </Text>
+                      </View>
+                    )}
+
                     {/* Save button */}
                     <TouchableOpacity
                       onPress={handleSaveQuest}
@@ -997,7 +1024,7 @@ export default function JustDescribeItScreen({
                     >
                       {savingQuest
                         ? <ActivityIndicator color="#FFFFFF" />
-                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>Save chore</Text>}
+                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>{likelyDuplicate && dupAck ? 'Create anyway' : 'Save chore'}</Text>}
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={() => setQuestFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>

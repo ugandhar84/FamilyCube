@@ -32,6 +32,7 @@ import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import { PinStoreLocationSheet } from './components/PinStoreLocationSheet';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { showAlert } from '@/components/AppAlert';
+import { localDateStr } from '@/lib/dates';
 
 import { AddItemSheet } from './components/AddItemSheet';
 import { CreateRunSheet } from './components/CreateRunSheet';
@@ -321,14 +322,17 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const draftRuns  = runs.filter(r => r.status === 'draft');
   const doneRuns   = runs.filter(r => r.status === 'done');
 
-  // Hide tab bar whenever any full-page sub-screen or overlay is open
-  useEffect(() => {
-    const anyOpen = !!tab || showAddItem || showNewRun || !!selectedRunId || showReceiptScan || !!detailItem || showAiSuggestions;
-    if (anyOpen) hideTabBar(); else showTabBar();
-    return () => showTabBar();
-  }, [tab, showAddItem, showNewRun, selectedRunId, showReceiptScan, detailItem, showAiSuggestions]);
+  // Always hide tab bar + FAB on every focus (covers Hub→Grocery→back→Grocery re-entry)
+  useFocusEffect(useCallback(() => {
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []));
 
-  const bg       = '#FFFFFF';
+  const bg       = isDark ? '#0E0C13' : '#FFFFFF';
   const card     = colors.card;
   const border   = colors.border;
   const P        = colors.primary;
@@ -380,7 +384,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
       isDaily: false,
       recurrence: 'once',
       status: 'todo',
-      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      dueDate: localDateStr(new Date(Date.now() + 7 * 86400000)),
       photoRequired: false,
       isAdultTask: isAdultAssignee,
     });
@@ -483,7 +487,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: isDark ? colors.surface : '#FFFFFF',
         gap: 8,
       }}>
         {!hideHeader && (
@@ -532,7 +536,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
               backgroundColor: colors.tealLight, borderRadius: 16, padding: 16,
               opacity: pressed ? 0.85 : 1,
             })}>
-            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: '#FFFFFF',
+            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="cart" size={22} color={colors.teal} />
             </View>
@@ -605,10 +609,10 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
       {/* List sub-screen */}
       <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
-        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: '#FFFFFF', gap: 10 }}>
+            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 10 }}>
             {/* Family chrome */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
@@ -732,10 +736,10 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
       {/* Runs sub-screen */}
       <FullPageOverlay visible={tab === 'runs'} onDismiss={() => setTab(null)} zIndex={41}>
-        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: '#FFFFFF', gap: 8 }}>
+            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}
@@ -765,10 +769,10 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
       {/* History sub-screen */}
       <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
-        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: '#FFFFFF', gap: 8 }}>
+            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}
@@ -790,10 +794,10 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
       {/* Insights sub-screen */}
       <FullPageOverlay visible={tab === 'insights'} onDismiss={() => setTab(null)} zIndex={43}>
-        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: '#FFFFFF', gap: 8 }}>
+            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}

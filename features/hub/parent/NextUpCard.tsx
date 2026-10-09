@@ -72,7 +72,7 @@ export function NextUpTimeline({
     // not just land on Schedule's default day view and make the user find
     // and tap it again themselves.
     if (ev) useUIStore.getState().setRequestedEventDetailId(ev.id);
-    router.push('/(tabs)/tasks' as any);
+    router.push('/(tabs)/schedule' as any);
   }
 
   // Was hardcoded to "Your afternoon" regardless of actual time of day —

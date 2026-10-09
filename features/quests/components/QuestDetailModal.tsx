@@ -1493,12 +1493,16 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
             </>
           )}
 
-          {/* ── 10. Send appreciation (Figma "celebrate" card) ──────────────── */}
+          {/* ── 10. Appreciation (Figma "celebrate" card) ──────────────────── */}
           {(() => {
             // Only show when the quest is done (approved) — a quick-thank-you prompt
             if (liveQuest.status !== 'approved') return null;
-            const alreadyCheered = cheered || (liveQuest.cheers ?? []).some((c: any) => c.memberId === activeMemberId);
-            const cheerCount = (liveQuest.cheers ?? []).length;
+            const cheers = (liveQuest.cheers ?? []) as any[];
+            const alreadyCheered = cheered || cheers.some(c => c.memberId === activeMemberId);
+            // Your own task: you can't thank yourself, so show who has appreciated it instead.
+            const isOwnTask = !!activeMemberId && (liveQuest.assignedToId === activeMemberId || (liveQuest.assignedToIds ?? []).includes(activeMemberId));
+            const cheerers = cheers.map(c => ({ id: c.memberId, name: members.find(m => m.id === c.memberId)?.name?.split(' ')[0] ?? 'Someone', note: c.note }));
+            const subColor = isDark ? colors.textSecondary : '#786F5F';
             return (
               <>
                 <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 16 }} />
@@ -1513,33 +1517,54 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                     color: isDark ? colors.amber : '#B8860B',
                     marginBottom: 6,
                   }}>
-                    🏆 Small Win
+                    {isOwnTask ? '🏆 Appreciated by' : '🏆 Small Win'}
                   </Text>
                   <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 }}>
                     {liveQuest.title}
                   </Text>
-                  <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : '#786F5F', marginBottom: 10, lineHeight: 17 }}>
-                    {alreadyCheered
-                      ? `You sent appreciation${cheerCount > 1 ? ` · ${cheerCount} cheers total` : ''} 🎉`
-                      : 'A quick thank-you goes a long way.'}
-                  </Text>
-                  {!alreadyCheered && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        cheerQuest(liveQuest.id, activeMemberId);
-                        setCheered(true);
-                      }}
-                      activeOpacity={0.75}
-                      style={{
-                        alignSelf: 'flex-start',
-                        backgroundColor: isDark ? colors.surface : '#FFFFFF',
-                        borderRadius: 12, paddingVertical: 9, paddingHorizontal: 16,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '650' as any, color: isDark ? colors.amber : '#87681C' }}>
-                        Send appreciation 🙌
+                  {isOwnTask ? (
+                    cheerers.length === 0 ? (
+                      <Text style={{ fontSize: 12, color: subColor, lineHeight: 17 }}>
+                        No appreciation yet. Your family can send some from here.
                       </Text>
-                    </TouchableOpacity>
+                    ) : (
+                      <View style={{ gap: 8, marginTop: 4 }}>
+                        {cheerers.map(c => (
+                          <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={{ fontSize: 14 }}>🙌</Text>
+                            <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: '600' }}>
+                              {c.name}{c.note ? <Text style={{ fontWeight: '400', color: subColor }}> — "{c.note}"</Text> : null}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 12, color: subColor, marginBottom: 10, lineHeight: 17 }}>
+                        {alreadyCheered
+                          ? `You sent appreciation${cheers.length > 1 ? ` · ${cheers.length} cheers total` : ''} 🎉`
+                          : 'A quick thank-you goes a long way.'}
+                      </Text>
+                      {!alreadyCheered && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            cheerQuest(liveQuest.id, activeMemberId);
+                            setCheered(true);
+                          }}
+                          activeOpacity={0.75}
+                          style={{
+                            alignSelf: 'flex-start',
+                            backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                            borderRadius: 12, paddingVertical: 9, paddingHorizontal: 16,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.amber : '#87681C' }}>
+                            Send appreciation 🙌
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
                   )}
                 </View>
               </>

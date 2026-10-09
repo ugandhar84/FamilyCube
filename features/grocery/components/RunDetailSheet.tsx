@@ -96,13 +96,16 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
 
   // Realtime subscription for run items
   const runItemSubRef = useRef<any>(null);
+  const didInitTab = useRef(false);
+  useEffect(() => { if (!visible) didInitTab.current = false; }, [visible]);
 
   const refetch = useCallback(() => {
     if (!run || !visible) return;
     loadRunDetail(run.id).then(detail => {
       const items = detail?.runItems ?? [];
       setRunItems(items);
-      if (items.length === 0) setTab('add');
+      if (items.length === 0 && !didInitTab.current) setTab('add');
+      didInitTab.current = true;
     });
   }, [run?.id, visible, loadRunDetail]);
 
@@ -151,6 +154,10 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   useEffect(() => {
     const unsubscribe = useGroceryStore.subscribe((state, prevState) => {
       if (state.runs === prevState.runs) return;
+      const sig = (st: typeof state) => JSON.stringify(
+        (st.runs.find(r => r.id === run?.id)?.runItems ?? []).map(ri => [ri.itemId, ri.checkedInRun]),
+      );
+      if (sig(state) === sig(prevState)) return;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => { debounceRef.current = null; refetch(); }, 200);
     });
@@ -158,7 +165,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
       unsubscribe();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [refetch]);
+  }, [refetch, run?.id]);
 
   if (!run) return null;
 
@@ -636,7 +643,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                       flexDirection: 'row', alignItems: 'center',
                       paddingVertical: 12, paddingHorizontal: 12,
                       backgroundColor: pressed ? colors.primaryLight : '#FFFFFF',
-                      borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF',
+                      borderRadius: 14, borderWidth: 1, borderColor: colors.border,
                       marginBottom: 8, minHeight: 56,
                     })}
                   >
@@ -677,11 +684,11 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                     </View>
                   )}
                   {receiptAnalysis && !analyzingReceipt && (
-                    <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 24,
+                    <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 24,
                       shadowColor: '#172337', shadowOpacity: 0.07, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}>
                       {!!receiptAnalysis.total && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#657185' }}>Receipt Total</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Receipt Total</Text>
                           <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary }}>
                             ${Number(receiptAnalysis.total).toFixed(2)}
                           </Text>
@@ -693,7 +700,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                         <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                           paddingVertical: 8,
                           borderBottomWidth: idx < receiptAnalysis.items.length - 1 ? StyleSheet.hairlineWidth : 0,
-                          borderBottomColor: '#DFE5EF' }}>
+                          borderBottomColor: colors.border }}>
                           <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary, flex: 1 }}>{ri.name}</Text>
                           {!!ri.totalPrice && <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>${Number(ri.totalPrice).toFixed(2)}</Text>}
                         </View>
@@ -728,17 +735,17 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <Pressable onPress={handleSwitchStore}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1, borderColor: '#DFE5EF',
+                        borderWidth: 1, borderColor: colors.border,
                         borderRadius: 14, paddingVertical: 12,
-                        backgroundColor: '#FFFFFF' }}>
+                        backgroundColor: isDark ? colors.surface : '#FFFFFF' }}>
                       <Text style={{ fontSize: 14 }}>🏪</Text>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Switch Store</Text>
                     </Pressable>
                     <Pressable onPress={handleHandOff}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1, borderColor: '#DFE5EF',
+                        borderWidth: 1, borderColor: colors.border,
                         borderRadius: 14, paddingVertical: 12,
-                        backgroundColor: '#FFFFFF' }}>
+                        backgroundColor: isDark ? colors.surface : '#FFFFFF' }}>
                       <Text style={{ fontSize: 14 }}>🤝</Text>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Hand Off</Text>
                     </Pressable>

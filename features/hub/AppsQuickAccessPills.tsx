@@ -19,7 +19,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check, UserCircle2 } from 'lucide-react-native';
+import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check, UserCircle2, Gift } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
@@ -64,6 +64,7 @@ const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
   // entry point for every role (the header gear icon was removed once
   // this shipped), so it leads the default row rather than trailing it.
   { id: 'profile',  label: 'Profile',  Icon: UserCircle2,  roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'store',    label: 'Store',    Icon: Gift,         roles: ['parent', 'kid', 'teen'] },
   { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid', 'teen'] },
   { id: 'health',   label: 'Health',   Icon: Heart,        roles: ['parent', 'kid', 'teen'] },
   { id: 'memories', label: 'Memories', Icon: ImageIcon,    roles: ['parent', 'kid', 'teen', 'senior'] },

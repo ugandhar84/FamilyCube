@@ -7,25 +7,27 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import { tabBarAnim, showTabBar } from '@/lib/tabBarVisibility';
+import { tabBarAnim, showTabBar, hideTabBar } from '@/lib/tabBarVisibility';
 import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
 import { useChatStore } from '@/store/chatStore';
-import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useChoreStore } from '@/store/choreStore';
+import { countOverdueChores } from '@/lib/overdue';
 import { useAuthStore } from '@/store/authStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
 import { useUIStore } from '@/store/uiStore';
-import { Sparkles, Plus, Home, ListChecks, MessageCircle } from 'lucide-react-native';
+import { Sparkles, Plus, Home, ListChecks, MessageCircle, CalendarDays } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 import { useDeviceClass } from '@/lib/useDeviceClass';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid-outline',
-  tasks:    'calendar-outline',
+  schedule: 'calendar-outline',
+  tasks:    'checkbox-outline',
   chat:     'chatbubbles-outline',
   profile:  'apps-outline',
   memories: 'images-outline',
@@ -34,7 +36,8 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
-  tasks:    'calendar',
+  schedule: 'calendar',
+  tasks:    'checkbox',
   chat:     'chatbubbles',
   profile:  'apps',
   memories: 'images',
@@ -60,15 +63,17 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // destinations. The '/(tabs)/profile' ROUTE stays registered below (not in
 // this array) since the pills still navigate to it — only the always-
 // visible tab-bar entry point is gone.
+// Store moved to Hub's AppsQuickAccessPills — no longer a bottom-nav tab.
 const TABS_DEFAULT = [
   { name: 'index',    label: 'Hub'      },
+  { name: 'schedule', label: 'Schedule' },
   { name: 'tasks',    label: 'Tasks'    },
-  { name: 'store',    label: 'Store'    },
   { name: 'chat',     label: 'Chat'     },
   { name: 'gps',      label: 'Family'   },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
+  { name: 'schedule', label: 'Schedule' },
   { name: 'tasks',    label: 'Tasks'    },
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
@@ -99,7 +104,7 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
   // deliberate per-tab requests, not a library-wide switch; gps/profile/
   // memories stay on Ionicons (ICON_OUTLINE/ICON_FILLED) below.
   const LUCIDE_ICONS: Partial<Record<TabName, typeof Home>> = {
-    index: Home, tasks: ListChecks, chat: MessageCircle,
+    index: Home, schedule: CalendarDays, tasks: ListChecks, chat: MessageCircle,
   };
   const LucideIcon = LUCIDE_ICONS[name];
   if (LucideIcon) {
@@ -129,10 +134,23 @@ function CustomTabBar({ state, navigation }: any) {
   const hasUnreadChat = Object.values(chatUnreadCounts).some(n => n > 0);
   const lastNavTime = useRef(0);
   const { members, activeMemberId } = useFamilyStore();
-  const activeRole = members.find(m => m.id === activeMemberId)?.role;
+  const activeMember = members.find(m => m.id === activeMemberId);
+  const activeRole = activeMember?.role;
+  const overdueCount = useChoreStore(s => countOverdueChores(s.chores, activeMember));
+  const overduePulse = useRef(new Animated.Value(1)).current;
+  const prevOverdue = useRef(0);
+  useEffect(() => {
+    if (overdueCount > prevOverdue.current) {
+      const beat = Animated.sequence([
+        Animated.timing(overduePulse, { toValue: 1.4, duration: 220, useNativeDriver: true }),
+        Animated.timing(overduePulse, { toValue: 1, duration: 220, useNativeDriver: true }),
+      ]);
+      Animated.sequence([beat, beat, beat]).start();
+    }
+    prevOverdue.current = overdueCount;
+  }, [overdueCount]);
   const isSenior = activeRole === 'senior';
-  const pendingRedemptions = useRewardStore(s => s.redemptions).filter(r => r.status === 'pending').length;
-  const showStoreBadge = activeRole === 'parent' && pendingRedemptions > 0;
+  // Store moved to Hub pills — badge was on the store tab, now unused here
   const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
   const activeColor   = colors.primary;
@@ -146,8 +164,12 @@ function CustomTabBar({ state, navigation }: any) {
 
   useEffect(() => {
     if (activeTabIndex < 0) return;
+    if (activeRouteName === 'meals' || activeRouteName === 'grocery') {
+      hideTabBar();
+      return;
+    }
     showTabBar();
-  }, [activeTabIndex]);
+  }, [activeTabIndex, activeRouteName]);
 
   const floatBottom = (insets.bottom || 16) + 10;
   const [barHeight, setBarHeight] = useState(0);
@@ -191,7 +213,6 @@ function CustomTabBar({ state, navigation }: any) {
           const focused = activeTabIndex === index;
           const route   = state.routes.find((r: any) => r.name === name);
           const showBadge = name === 'chat' && hasUnreadChat;
-          const showStoreCount = name === 'store' && showStoreBadge;
 
           return (
             <Pressable
@@ -218,13 +239,15 @@ function CustomTabBar({ state, navigation }: any) {
                     inactiveColor={inactiveColor}
                   />
                   {showBadge && <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />}
-                  {showStoreCount && (
-                    <View style={[styles.countBadge, { backgroundColor: colors.danger }]}>
-                      <Text style={styles.countBadgeText}>{pendingRedemptions > 9 ? '9+' : pendingRedemptions}</Text>
-                    </View>
+                  {name === 'tasks' && overdueCount > 0 && (
+                    <Animated.View
+                      accessibilityLabel={`${overdueCount} overdue`}
+                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: isDark ? colors.card : '#fff', transform: [{ scale: overduePulse }] }]}>
+                      <Text style={styles.countBadgeText}>{overdueCount > 99 ? '99+' : overdueCount}</Text>
+                    </Animated.View>
                   )}
                 </View>
-                <Text style={[
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[
                   styles.tabLabel,
                   { color: focused ? activeColor : inactiveColor, fontWeight: focused ? '700' : '500' },
                 ]}>
@@ -281,7 +304,7 @@ export default function TabLayout() {
   // on stale state after certain tab sequences (live-reported repeatedly:
   // "+" stuck showing on Hub/Apps after visiting Chat). Plain conditional
   // icon render instead — no animation, but always correct.
-  const onTasksTab = activeTabName === 'tasks';
+  const onTasksTab = activeTabName === 'tasks' || activeTabName === 'schedule';
   // Store and FindFam (gps) both have their own focused, full-screen
   // purposes (redeem/approve perks; check the family map) where a
   // household-wide AI assistant launcher is off-topic clutter, same
@@ -289,6 +312,9 @@ export default function TabLayout() {
   // their own, so the button simply disappears rather than swapping icon.
   const onStoreTab = activeTabName === 'store';
   const onGpsTab = activeTabName === 'gps';
+  // Meals is a full-page ReviewInbox-style screen with its own nav chrome —
+  // hide both the FAB and the tab bar while it's active.
+  const onMealsTab = activeTabName === 'meals';
   // Memories gets the same treatment as Tasks — shared FAB morphs to "+"
   // and posts a memory instead of opening Ask Cube, rather than being
   // hidden. Posting a memory isn't parent-only the way Ask Cube is, so
@@ -495,6 +521,7 @@ export default function TabLayout() {
         }}
       >
         <Tabs.Screen name="index"    />
+        <Tabs.Screen name="schedule" />
         <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
         <Tabs.Screen name="store"    />
@@ -552,7 +579,7 @@ export default function TabLayout() {
               both are focused, single-purpose screens (redeem/approve
               perks; check the family map) where a household-wide AI
               launcher doesn't add anything and just clutters the corner. */}
-          {!onChatTab && !onStoreTab && !onGpsTab && !onTasksTab && !fullBleedScreenActive
+          {!onChatTab && !onStoreTab && !onGpsTab && !onTasksTab && !onMealsTab && !fullBleedScreenActive
             && (activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (() => {
             // Health & Records has its own inner segmented switch (Health/
             // Immunizations/Records) nested inside one route — the FAB

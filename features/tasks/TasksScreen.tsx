@@ -70,7 +70,7 @@ import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 
 type Segment = 'schedule' | 'chores' | 'queue';
 
-export default function TasksScreen() {
+export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedule' | 'chores' } = {}) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
@@ -109,7 +109,7 @@ export default function TasksScreen() {
   // KidRequestModal directly and only covered rides — this FAB covers
   // every ask category from one place, matching the Hub's own FAB.
   const isKidCreator = activeMember?.role === 'kid';
-  const [segment, setSegment] = useState<Segment>('chores');
+  const [segment, setSegment] = useState<Segment>(lockedSegment ?? 'chores');
 
   // One search query per segment — kept separate so switching tabs doesn't
   // carry a Schedule search term into Chores' unrelated result set.
@@ -292,8 +292,10 @@ export default function TasksScreen() {
   useFocusEffect(useCallback(() => {
     const requestedSegment = useUIStore.getState().requestedTasksSegment;
     if (requestedSegment) {
-      useUIStore.getState().setRequestedTasksSegment(undefined);
-      setSegment(requestedSegment);
+      if (!lockedSegment || requestedSegment === lockedSegment) {
+        useUIStore.getState().setRequestedTasksSegment(undefined);
+        setSegment(requestedSegment);
+      }
     }
     const requestedEventId = useUIStore.getState().requestedEventDetailId;
     if (requestedEventId) {
@@ -359,16 +361,16 @@ export default function TasksScreen() {
   // Fixed header — title + tab switcher, never scrolls
   const fixedHeader = (
     <View style={{ backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', paddingBottom: 8 }}>
-      <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginHorizontal: 20, marginTop: 14, marginBottom: 12 }}>
-        Family calendar
+      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginHorizontal: 20, marginTop: 14, marginBottom: 12 }}>
+        {lockedSegment === 'schedule' ? 'Schedule' : lockedSegment === 'chores' ? 'Tasks' : 'Schedule'}
       </Text>
-      <View style={{
+      {!lockedSegment && <View style={{
         flexDirection: 'row', gap: 4, marginHorizontal: 20,
         padding: 4, borderRadius: 14,
         backgroundColor: isDark ? colors.surface : '#EEEDF3',
       }}>
         {([
-          { key: 'schedule' as const, label: 'Calendar' },
+          { key: 'schedule' as const, label: 'Schedule' },
           { key: 'chores' as const, label: 'Tasks' },
         ] as { key: Segment; label: string }[]).map(({ key, label }) => {
           const active = segment === key;
@@ -396,7 +398,7 @@ export default function TasksScreen() {
             </TouchableOpacity>
           );
         })}
-      </View>
+      </View>}
     </View>
   );
 

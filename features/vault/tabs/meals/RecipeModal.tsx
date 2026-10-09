@@ -26,6 +26,8 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
 
   const [addingCart, setAddingCart] = useState(false);
   const [cartDone,   setCartDone]   = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
 
   // Animation
   const slideAnim = useRef(new Animated.Value(60)).current;
@@ -58,12 +60,13 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
     await onAddToGrocery(meal.ingredients);
     setAddingCart(false);
     setCartDone(true);
-    setTimeout(() => onClose(), 1200);
+    closeTimer.current = setTimeout(() => onClose(), 1200);
   };
 
   const shareRecipe = () => {
     const msg = `@[Everyone|everyone] 🍽️ *${meal.title}* ${meal.emoji ?? ''}\n⏱ ${meal.prep_minutes ?? '?'} min\n\n*Ingredients:*\n${meal.ingredients.map(i => `• ${i}`).join('\n')}\n\n*Steps:*\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
     useChatStore.getState().sendMessage('all', senderId, msg);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
     onClose();
   };
 
@@ -71,13 +74,13 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60 }}>
       <SwipeBackWrapper onDismiss={onClose}>
         <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+          <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
             {/* ── ReviewInbox-style header ── */}
             <View style={{
               paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
               borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-              backgroundColor: '#FFFFFF', gap: 6,
+              backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 6,
             }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>

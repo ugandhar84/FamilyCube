@@ -504,6 +504,45 @@ const getActiveMemberId = (): string | null => {
 // notification in the app (rewardStore/helpStore/kidRequestStore/
 // groceryStore, quest-event-notifier's fire()) — best-effort, never blocks
 // the actual handoff state change.
+// ── Duplicate-create guard ───────────────────────────────────────────────────
+// Two creates of the same chore (same title, assignee, due date/time) within a
+// few seconds are a double-tap / double-submit, not two intentions — the second
+// call returns the first call's promise instead of inserting a second row.
+const _inflightCreates = new Map<string, Promise<any>>();
+const OPEN_CHORE_STATUSES_EXCLUDED = ['approved', 'auto_approved', 'completed', 'declined', 'cancelled', 'archived'];
+
+function choreCreateSig(c: { title?: string; assignedToId?: string | null; dueDate?: string | null; dueTime?: string | null }): string {
+  return [
+    (c.title ?? '').trim().toLowerCase().replace(/\s+/g, ' '),
+    c.assignedToId ?? 'pool', c.dueDate ?? '', c.dueTime ?? '',
+  ].join('|');
+}
+
+/** An existing, still-open chore with the same title + assignee + due date/time (recurring instances excluded). */
+export function findLikelyDuplicateChore(
+  chores: ChoreTask[],
+  draft: { title?: string; assignedToId?: string | null; dueDate?: string | null; dueTime?: string | null },
+): ChoreTask | undefined {
+  if (!(draft.title ?? '').trim()) return undefined;
+  const sig = choreCreateSig(draft);
+  return chores.find(c =>
+    !c.instanceDate && !OPEN_CHORE_STATUSES_EXCLUDED.includes(c.status) && choreCreateSig(c) === sig,
+  );
+}
+
+export type DisputeResult = { ok: boolean; error?: string; executed?: boolean };
+const STALE_DISPUTE = 'This approval just changed — pull to refresh and try again.';
+
+function disputeErrorMessage(raw: string): string {
+  if (/own approval/i.test(raw)) return "You can't dispute your own approval.";
+  if (/only a parent/i.test(raw)) return 'Only a parent can do that.';
+  if (/original approver/i.test(raw)) return 'Only the parent who approved this can co-sign.';
+  if (/already has an open dispute|already requested/i.test(raw)) return 'This approval already has an open dispute.';
+  if (/not approved/i.test(raw)) return 'This chore is no longer approved, so there is nothing to change.';
+  if (/caller is not member/i.test(raw)) return 'Your session changed — switch back to your profile and try again.';
+  return "Couldn't update the approval — please try again.";
+}
+
 function memberName(memberId: string | undefined | null): string {
   if (!memberId) return 'Someone';
   try {
@@ -935,6 +974,7 @@ interface ChoreState {
 
   // ── Chore CRUD ─────────────────────────────────────────────────────────────
   addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
+  _addChoreImpl:       (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
   updateChore:         (id: string, updates: Partial<ChoreTask>) => Promise<void>;
   deleteChore:         (id: string) => Promise<void>;
 
@@ -1064,10 +1104,10 @@ interface ChoreState {
   // flagApprovalForDiscussion: soft flag, no financial effect — notifies the
   // approving parent that a co-parent wants to discuss it. Never visible to
   // the kid (spec: "no visibility into the parents' disagreement").
-  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => Promise<void>;
+  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // standByApproval: the approving parent dismisses a flag/reversal request
   // without reversing — clears disputeStatus, no financial effect.
-  standByApproval:           (choreId: string, byParentId: string) => Promise<void>;
+  standByApproval:           (choreId: string, byParentId: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // acknowledgeRecentApproval: a parent clears one chore from their own
   // "Recently Approved" Hub list. Per-viewer (adds byParentId to
   // reviewAckIds) so it doesn't cut short the 7-day dispute window for a
@@ -1080,13 +1120,13 @@ interface ChoreState {
   // trail). Otherwise sets disputeStatus: 'reversal_requested' and waits for
   // the ORIGINAL approving parent's coSignReversal — never a silent,
   // unilateral clawback by default.
-  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string) => Promise<void>;
+  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // coSignReversal: the original approving parent (chore.reviewedById)
   // agrees with a pending reversal request — executes the clawback.
-  coSignReversal:            (choreId: string, coSigningParentId: string) => Promise<void>;
+  coSignReversal:            (choreId: string, coSigningParentId: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // Internal — the actual clawback logic shared by the unilateral-allowed
   // and co-signed paths. Not intended to be called directly from UI.
-  _executeReversal:          (choreId: string, byParentId: string, reason: string) => Promise<void>;
+  _applyReversalLocally:     (chore: ChoreTask, byParentId: string, reason: string, coinsRemoved: number) => void;
 
   // ── Points economy ────────────────────────────────────────────────────────
   awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => Promise<void>;
@@ -1585,7 +1625,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // CHORE CRUD
   // ─────────────────────────────────────────────────────────────────────────
 
-  addChore: async (partial) => {
+  addChore: (partial) => {
+    const sig = choreCreateSig(partial as any);
+    const inflight = _inflightCreates.get(sig);
+    if (inflight) return inflight;
+    const p = get()._addChoreImpl(partial);
+    _inflightCreates.set(sig, p);
+    p.then(() => setTimeout(() => _inflightCreates.delete(sig), 8000), () => _inflightCreates.delete(sig));
+    return p;
+  },
+
+  _addChoreImpl: async (partial) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
 
@@ -3972,6 +4022,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
     if ((chore.cheers ?? []).some(c => c.memberId === fromMemberId)) return; // one cheer per person
+    if (chore.assignedToId === fromMemberId) return; // can't cheer your own chore
     const entry: ChoreCheer = {
       memberId: fromMemberId, at: new Date().toISOString(),
       ...(opts?.coins ? { coins: opts.coins } : {}),
@@ -4200,17 +4251,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // SCENARIO 4.7 — DISPUTED APPROVAL (TWO PARENTS DISAGREE)
   // ─────────────────────────────────────────────────────────────────────────
 
-  flagApprovalForDiscussion: async (choreId, byParentId, note) => {
+  // Server-authoritative dispute actions (20260997000000_approval_dispute_rpcs.sql):
+  // status, co-sign rule, the unilateral-reversal setting and the coin
+  // clawback are all decided and committed atomically in the RPC — the
+  // client only patches its local copy from the returned row.
+  flagApprovalForDiscussion: async (choreId, byParentId, note, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
-    if (byParentId === chore.reviewedById) return; // can't dispute your own approval
-
-    await get().updateChore(choreId, {
-      disputeStatus: 'flagged',
-      disputeReason: note,
-      disputedById:  byParentId,
-      disputedAt:    new Date().toISOString(),
+    if (!chore) return { ok: false, error: STALE_DISPUTE };
+    const { error } = await supabase.rpc('flag_approval', {
+      p_chore_id: choreId, p_by_parent_id: byParentId, p_note: note ?? null,
     });
+    if (error) {
+      console.warn('[choreStore] flag_approval failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? {
+      ...c, disputeStatus: 'flagged', disputeReason: note, disputedById: byParentId, disputedAt: new Date().toISOString(),
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
 
     // Notify the original approving parent — never the kid (spec: a kid
     // should have no visibility into the parents' disagreement).
@@ -4223,28 +4283,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] flagApprovalForDiscussion notification failed', e);
     }
+    return { ok: true };
   },
 
-  standByApproval: async (choreId, byParentId) => {
+  standByApproval: async (choreId, byParentId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !chore.disputeStatus) return;
-
-    await get().updateChore(choreId, {
-      disputeStatus: undefined,
-      disputeReason: undefined,
-      disputedById:  undefined,
-      disputedAt:    undefined,
-    });
+    if (!chore || !chore.disputeStatus) return { ok: false, error: STALE_DISPUTE };
+    const { error } = await supabase.rpc('stand_by_approval', { p_chore_id: choreId, p_by_parent_id: byParentId });
+    if (error) {
+      console.warn('[choreStore] stand_by_approval failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? {
+      ...c, disputeStatus: undefined, disputeReason: undefined, disputedById: undefined, disputedAt: undefined,
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
 
     try {
       const { useChatStore } = require('./chatStore');
       if (chore.disputedById) {
         useChatStore.getState().sendMessage(chore.disputedById, byParentId,
-          `${chore.title}" was reviewed again and the approval stands — no changes made.`);
+          `"${chore.title}" was reviewed again and the approval stands — no changes made.`);
       }
     } catch (e) {
       console.warn('[choreStore] standByApproval notification failed', e);
     }
+    return { ok: true };
   },
 
   acknowledgeRecentApproval: async (choreId, byParentId) => {
@@ -4263,90 +4329,78 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // called from requestApprovalReversal (unilateral-allowed path) or
   // coSignReversal (co-signed path) — never exposed directly to UI, so
   // every reversal always has disputeReason/disputedById/reversedById set.
-  _executeReversal: async (choreId, byParentId, reason) => {
-    const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !chore.assignedToId) return;
-    if (!['approved', 'auto_approved'].includes(chore.status)) return;
-
-    const pointsPaid = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-    const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+  _applyReversalLocally: (chore, byParentId, reason, coinsRemoved) => {
     const now = new Date().toISOString();
-
-    await get().updateChore(choreId, {
-      status:         'declined',
-      declinedAt:     now,
-      disputeStatus:  undefined,
-      disputeReason:  reason,
-      disputedById:   chore.disputedById ?? byParentId,
-      disputedAt:     chore.disputedAt ?? now,
-      reversedAt:     now,
-      reversedById:   byParentId,
-    });
-
-    // Claw back the payout — a real negative transaction, not a silent
-    // balance edit; awardPoints already writes both the point_transactions
-    // audit row and the live members balance patch for a negative amount.
-    if (pointsPaid > 0) {
-      await get().awardPoints(chore.assignedToId, choreId, -pointsPaid, 0, wallet);
+    const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+    set(s => ({ chores: s.chores.map(c => c.id === chore.id ? {
+      ...c, status: 'declined', declinedAt: now, disputeStatus: undefined, disputeReason: reason,
+      disputedById: c.disputedById ?? byParentId, disputedAt: c.disputedAt ?? now,
+      reversedAt: now, reversedById: byParentId,
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    if (coinsRemoved > 0 && chore.assignedToId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        useFamilyStore.setState((s: any) => ({
+          members: s.members.map((m: any) => m.id === chore.assignedToId
+            ? wallet === 'gpCoins'
+              ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) - coinsRemoved) }
+              : { ...m, coins: Math.max(0, (m.coins ?? 0) - coinsRemoved), mainCoins: Math.max(0, (m.mainCoins ?? 0) - coinsRemoved) }
+            : m),
+        }));
+      } catch { /* familyStore not mounted yet — server balance already updated */ }
     }
 
     try {
       const { useChatStore } = require('./chatStore');
       useChatStore.getState().sendMessage(chore.assignedToId, byParentId,
-        `⚠️ The approval for "${chore.title}" was reversed by a parent${reason ? ` — "${reason}"` : ''}. ${pointsPaid > 0 ? `${pointsPaid} coins were removed from your balance.` : ''}`);
+        `⚠️ The approval for "${chore.title}" was reversed by a parent${reason ? ` — "${reason}"` : ''}. ${coinsRemoved > 0 ? `${coinsRemoved} coins were removed from your balance.` : ''}`);
     } catch (e) {
       console.warn('[choreStore] reversal notification (assignee) failed', e);
     }
-    // Real push/bell notification alongside the chat message above (kept as
-    // the in-thread record) — mirrors this file's other "add a real
-    // notification alongside the existing chat DM" upgrades.
     if (chore.familyId) {
       supabase.functions.invoke('family-notifier', {
         body: {
           type: 'approval_reversed', familyId: chore.familyId, memberIds: [chore.assignedToId], persist: true,
           excludeMemberId: byParentId,
-          payload: { questId: choreId, questTitle: chore.title, byName: memberName(byParentId), reason },
+          payload: { questId: chore.id, questTitle: chore.title, byName: memberName(byParentId), reason },
         },
       }).catch(e => console.warn('[choreStore] reversal notify (assignee) failed', e?.message));
     }
-    // Audit finding — when this runs via the UNILATERAL path (household
-    // setting allows a single parent to reverse without a co-sign), the
-    // ORIGINAL approving parent (whose approval is being overridden) never
-    // learned about it at all — only the co-signed path (requestApprovalReversal,
-    // below) notified them, and only that a request existed, not that it
-    // executed. byParentId === chore.reviewedById can't happen in practice
-    // (requestApprovalReversal's own guard blocks disputing your own
-    // approval before reaching here) but is excluded defensively anyway.
     if (chore.familyId && chore.reviewedById && chore.reviewedById !== byParentId) {
       supabase.functions.invoke('family-notifier', {
         body: {
           type: 'approval_reversed', familyId: chore.familyId, memberIds: [chore.reviewedById], persist: true,
           excludeMemberId: byParentId,
-          payload: { questId: choreId, questTitle: chore.title, byName: memberName(byParentId), reason },
+          payload: { questId: chore.id, questTitle: chore.title, byName: memberName(byParentId), reason },
         },
       }).catch(e => console.warn('[choreStore] reversal notify (approver) failed', e?.message));
     }
   },
 
-  requestApprovalReversal: async (choreId, byParentId, reason) => {
+  requestApprovalReversal: async (choreId, byParentId, reason, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
-    if (byParentId === chore.reviewedById) return; // can't dispute your own approval
-
-    if (get().householdSettings.allowUnilateralReversal) {
-      await get()._executeReversal(choreId, byParentId, reason);
-      return;
-    }
-
-    // Default, safe path — needs the original approver's co-sign. No
-    // financial effect happens here; the chore stays approved/paid until
-    // coSignReversal actually executes it.
-    await get().updateChore(choreId, {
-      disputeStatus: 'reversal_requested',
-      disputeReason: reason,
-      disputedById:  byParentId,
-      disputedAt:    new Date().toISOString(),
+    if (!chore) return { ok: false, error: STALE_DISPUTE };
+    const { data, error } = await supabase.rpc('request_reversal', {
+      p_chore_id: choreId, p_by_parent_id: byParentId, p_reason: reason,
     });
+    if (error) {
+      console.warn('[choreStore] request_reversal failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (result?.executed) {
+      // Household allows unilateral reversal — the server already reversed it.
+      get()._applyReversalLocally(chore, byParentId, reason, result.coins_removed ?? 0);
+      return { ok: true, executed: true };
+    }
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? {
+      ...c, disputeStatus: 'reversal_requested', disputeReason: reason, disputedById: byParentId, disputedAt: new Date().toISOString(),
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
 
     try {
       const { useChatStore } = require('./chatStore');
@@ -4357,23 +4411,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] requestApprovalReversal notification failed', e);
     }
+    return { ok: true };
   },
 
-  coSignReversal: async (choreId, coSigningParentId) => {
+  coSignReversal: async (choreId, coSigningParentId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || chore.disputeStatus !== 'reversal_requested') return;
-    // Only the ORIGINAL approving parent can co-sign — the requester
-    // already agreed by definition, and this must be a second, independent
-    // parent's sign-off, not the same person confirming their own request.
-    if (coSigningParentId !== chore.reviewedById) return;
-
-    // Snapshot before _executeReversal's own updateChore call clears
-    // disputedById/disputeStatus as part of executing the reversal.
+    if (!chore || chore.disputeStatus !== 'reversal_requested') return { ok: false, error: STALE_DISPUTE };
     const requesterId = chore.disputedById;
-    await get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
-    // Audit finding — the parent who originally REQUESTED the reversal
-    // never learned it was actually co-signed and executed; they'd only
-    // find out by reopening the chore and noticing it flipped to declined.
+    const reason = chore.disputeReason ?? '';
+    const { data, error } = await supabase.rpc('cosign_reversal', {
+      p_chore_id: choreId, p_cosigner_id: coSigningParentId,
+    });
+    if (error) {
+      console.warn('[choreStore] cosign_reversal failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    get()._applyReversalLocally(chore, coSigningParentId, reason, result?.coins_removed ?? 0);
+    // The parent who originally REQUESTED the reversal never learned it was
+    // actually co-signed and executed without this.
     if (chore.familyId && requesterId && requesterId !== coSigningParentId) {
       supabase.functions.invoke('family-notifier', {
         body: {
@@ -4383,6 +4440,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         },
       }).catch(e => console.warn('[choreStore] coSignReversal notify', e?.message));
     }
+    return { ok: true };
   },
 
   // G1 — an approved recurring chore only resets to an unassigned 'todo'

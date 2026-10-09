@@ -639,7 +639,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
             // actual Schedule view lives in the Tasks tab's embedded segment.
             useUIStore.getState().setRequestedTasksSegment('schedule');
             useUIStore.getState().setRequestedEventDetailId(myPendingHelperEvent.id);
-            router.push('/(tabs)/tasks' as any);
+            router.push('/(tabs)/schedule' as any);
           }
           // 'backlog' branch removed — backlogTask was dropped from
           // needsYouItem's own possible kinds (never a real urgency

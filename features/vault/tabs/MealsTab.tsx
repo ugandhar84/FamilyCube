@@ -88,10 +88,14 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('family_meals').select('*').eq('family_id', familyId).eq('week_of', curWeek).order('day');
-    if (data) setMeals(data as Meal[]);
-    setLoading(false);
-  }, [curWeek]);
+    try {
+      const { data, error } = await supabase.from('family_meals').select('*').eq('family_id', familyId).eq('week_of', curWeek).order('day');
+      if (error) console.warn('[MealsTab] load error:', error.message, 'family_id:', familyId, 'week_of:', curWeek);
+      if (data) setMeals(data as Meal[]);
+    } finally {
+      setLoading(false);
+    }
+  }, [curWeek, familyId]);
 
   useEffect(() => { load(); }, [load]);
 

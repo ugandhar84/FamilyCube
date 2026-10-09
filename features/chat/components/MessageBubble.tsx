@@ -192,9 +192,9 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   // own system blue / the actual Messages bubble color; a fixed literal
   // rather than colors.info since info is a shared semantic token used for
   // generic info states elsewhere, not specifically "my chat bubble."
-  const bubbleMe       = '#0A84FF';
-  const bubbleMeTxt    = '#FFFFFF';
-  const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
+  const bubbleMe       = isDark ? (colors.pink + 'CC') : '#e9edfb';
+  const bubbleMeTxt    = isDark ? '#FFFFFF' : colors.textPrimary;
+  const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : (isDark ? colors.card : '#FFFFFF');
   const bubbleOtherTxt = colors.textPrimary;
   // Was 'rgba(255,255,255,0.65)' for isMe — correct on white text sitting
   // ON the colored bubble, but the timestamp/read-status now render below

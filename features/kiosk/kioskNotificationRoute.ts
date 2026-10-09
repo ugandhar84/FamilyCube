@@ -15,6 +15,7 @@ import type { KioskTabKey } from './kioskTabs';
 
 const ROUTE_TO_KIOSK_TAB: Record<string, KioskTabKey> = {
   '/(tabs)/tasks': 'tasks',
+  '/(tabs)/schedule': 'schedule',
   '/(tabs)': 'overview',
   '/(tabs)/chat': 'chat',
   '/(tabs)/store': 'store',

@@ -99,6 +99,10 @@ interface DBRow {
 const PAGE_SIZE    = 100;
 const OLDER_SIZE   = 50;
 const OFFLINE_KEY  = '@familycube_chat_offline_v1';
+// Cache the last 50 messages per channel so the inbox preview and thread
+// open instantly from device storage, then refresh from server in the background.
+const CHANNEL_CACHE_PREFIX = '@familycube_chat_channel_v1:';
+const CHANNEL_CACHE_LIMIT  = 50;
 
 // Global unread-badge subscription state — see ensureGlobalUnreadSubscription.
 let _globalUnreadSub: ReturnType<typeof supabase.channel> | null = null;
@@ -723,6 +727,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get()._subs[channelId]) return;
     if (current?.loading) return;
 
+    // Seed from device cache immediately so inbox previews + thread are
+    // instant, then fetch server in the background and replace.
+    const cacheKey = CHANNEL_CACHE_PREFIX + channelId;
+    try {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const cachedMsgs: ChatMessage[] = JSON.parse(cached);
+        set(s => ({
+          channels: {
+            ...s.channels,
+            [channelId]: { ...(s.channels[channelId] ?? emptyChannel()), messages: cachedMsgs, loading: true },
+          },
+        }));
+      }
+    } catch { /* cache miss is fine */ }
+
     // UI state (channels, _subs) stays keyed by the bare channelId
     // throughout this function — only the actual DB read/write/realtime-
     // filter need the family-scoped id for the 5 fixed group channels
@@ -754,6 +774,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [channelId]: { ...(s.channels[channelId] ?? emptyChannel()), messages: msgs, hasMore, oldestTs, loading: false },
         },
       }));
+
+      // Persist latest CHANNEL_CACHE_LIMIT messages to device storage for
+      // next-open instant preview. Async, non-blocking, failures are silent.
+      AsyncStorage.setItem(cacheKey, JSON.stringify(msgs.slice(-CHANNEL_CACHE_LIMIT))).catch(() => {});
 
       // Subscribe to new messages on this channel
       if (!get()._subs[channelId]) {

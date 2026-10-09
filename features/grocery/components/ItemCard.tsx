@@ -21,7 +21,7 @@ export function ItemCard({ item, members, selected, selecting, onBuy, onLongPres
   const addedByMember = members.find((m: any) => m.id === item.addedBy);
   const addedByName = addedByMember?.name?.split(' ')[0] ?? null;
   const addedTime = item.createdAt
-    ? new Date(item.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false })
+    ? new Date(item.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     : null;
 
   const priceStr = priceInfo?.price != null

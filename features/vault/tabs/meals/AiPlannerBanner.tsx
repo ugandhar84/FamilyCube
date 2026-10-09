@@ -60,7 +60,7 @@ export default function AiPlannerBanner({
           </ScrollView>
 
           {/* Input + send */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, backgroundColor: isDark ? colors.surface : colors.background, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8 }}>
             <TextInput
               value={aiPref} onChangeText={setAiPref}
               placeholder="e.g. Kid-friendly, high-protein, 30 min max…"

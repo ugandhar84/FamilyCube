@@ -35,7 +35,7 @@ import { DisputesInboxScreen, type DisputeKind } from './parent/DisputesInboxScr
 import { RidesControlRoomScreen } from './parent/RidesControlRoomScreen';
 import { ActiveTripDetailScreen } from './parent/ActiveTripDetailScreen';
 import { RedoDisputeReviewScreen } from './parent/RedoDisputeReviewScreen';
-import { ReversalCoSignReviewScreen } from './parent/ReversalCoSignReviewScreen';
+import { ApprovalDetailScreen } from './parent/ApprovalDetailScreen';
 import { RewardReviewScreen } from './parent/RewardReviewScreen';
 import HelpDispatchQueue from './HelpDispatchQueue';
 import RequestHelpModal from './RequestHelpModal';
@@ -145,6 +145,12 @@ export default function HubScreen() {
   const [showDisputesInbox, setShowDisputesInbox] = useState(false);
   const [redoDisputeChoreId, setRedoDisputeChoreId] = useState<string | null>(null);
   const [reversalChoreId, setReversalChoreId] = useState<string | null>(null);
+  const approvalDetailRequest = useUIStore(st => st.openApprovalDetailChoreId);
+  useEffect(() => {
+    if (!approvalDetailRequest) return;
+    useUIStore.getState().setOpenApprovalDetailChoreId(null);
+    setReversalChoreId(approvalDetailRequest);
+  }, [approvalDetailRequest]);
   useEffect(() => {
     const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom;
     useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
@@ -730,7 +736,7 @@ export default function HubScreen() {
         {reviewRedemptionId ? <RewardReviewScreen redemptionId={reviewRedemptionId} onClose={() => setReviewRedemptionId(null)} /> : null}
       </FullPageOverlay>
       <FullPageOverlay visible={showHelpQueue} onDismiss={() => setShowHelpQueue(false)} zIndex={51}>
-        <HelpDispatchQueue onRequestHelpOpen={() => setShowRequestHelp(true)} />
+        <HelpDispatchQueue onRequestHelpOpen={() => setShowRequestHelp(true)} onClose={() => setShowHelpQueue(false)} />
       </FullPageOverlay>
       <RequestHelpModal
         visible={showRequestHelp}
@@ -753,7 +759,7 @@ export default function HubScreen() {
         {redoDisputeChoreId ? <RedoDisputeReviewScreen choreId={redoDisputeChoreId} onClose={() => setRedoDisputeChoreId(null)} /> : null}
       </FullPageOverlay>
       <FullPageOverlay visible={!!reversalChoreId} onDismiss={() => setReversalChoreId(null)} zIndex={52}>
-        {reversalChoreId ? <ReversalCoSignReviewScreen choreId={reversalChoreId} onClose={() => setReversalChoreId(null)} /> : null}
+        {reversalChoreId ? <ApprovalDetailScreen choreId={reversalChoreId} onClose={() => setReversalChoreId(null)} /> : null}
       </FullPageOverlay>
 
       {/* ── Rides — same full-page overlay treatment as Review inbox.

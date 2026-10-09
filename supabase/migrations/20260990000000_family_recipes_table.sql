@@ -5,7 +5,7 @@
 
 create table if not exists public.family_recipes (
   id            text        primary key,
-  family_id     text        not null references public.families(id) on delete cascade,
+  family_id     text        not null,
   title         text        not null,
   emoji         text,
   image_url     text,                          -- AI-generated or uploaded photo
@@ -32,7 +32,7 @@ create policy "family members can read recipes"
   using (
     exists (
       select 1 from public.members m
-      where m.family_id = family_recipes.family_id
+      where m.family_id::text = family_recipes.family_id
         and m.id = auth.uid()::text
     )
   );
@@ -43,7 +43,7 @@ create policy "family members can add recipes"
   with check (
     exists (
       select 1 from public.members m
-      where m.family_id = family_recipes.family_id
+      where m.family_id::text = family_recipes.family_id
         and m.id = auth.uid()::text
     )
   );
@@ -55,7 +55,7 @@ create policy "creator or parent can update recipes"
     created_by = auth.uid()::text
     or exists (
       select 1 from public.members m
-      where m.family_id = family_recipes.family_id
+      where m.family_id::text = family_recipes.family_id
         and m.id = auth.uid()::text
         and m.role = 'parent'
     )
@@ -67,7 +67,7 @@ create policy "creator or parent can delete recipes"
     created_by = auth.uid()::text
     or exists (
       select 1 from public.members m
-      where m.family_id = family_recipes.family_id
+      where m.family_id::text = family_recipes.family_id
         and m.id = auth.uid()::text
         and m.role = 'parent'
     )

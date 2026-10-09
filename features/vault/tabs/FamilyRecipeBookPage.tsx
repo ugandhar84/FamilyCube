@@ -14,7 +14,6 @@ import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2, C
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
-import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import type { Meal } from './meals/types';
 import { DAYS, weekOf, DIETARY_OPTIONS } from './meals/types';
@@ -157,21 +156,13 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   const [pickerType, setPickerType]   = useState<string>('Dinner');
   const [saving, setSaving]           = useState(false);
 
-  // Hide FAB + tab bar whenever any sub-overlay is open inside this page
+  // Keep FAB hidden while this page is mounted (tab bar is already hidden by MealsScreen/layout)
   useEffect(() => {
-    const anyOpen = showAddRecipe || !!addTarget || !!activeRecipe;
-    if (anyOpen) {
-      hideTabBar();
-      useUIStore.getState().setFullBleedScreenActive(true);
-    } else {
-      showTabBar();
-      useUIStore.getState().setFullBleedScreenActive(false);
-    }
+    useUIStore.getState().setFullBleedScreenActive(true);
     return () => {
-      showTabBar();
       useUIStore.getState().setFullBleedScreenActive(false);
     };
-  }, [showAddRecipe, addTarget, activeRecipe]);
+  }, []);
 
   useEffect(() => {
     if (!familyId) { setLoading(false); return; }

@@ -18,7 +18,7 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
   const trusted = priceInfo?.source === 'kroger' || priceInfo?.source === 'receipt';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
       {/* Header */}
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 12,
         borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
@@ -63,15 +63,15 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
 
         {/* Detail fields */}
         {item.quantity ? (
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14, minHeight: 56 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 4 }}>Quantity</Text>
+          <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, minHeight: 56 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Quantity</Text>
             <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.quantity}</Text>
           </View>
         ) : null}
 
         {item.storePreference ? (
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14, minHeight: 56 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 4 }}>Store</Text>
+          <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, minHeight: 56 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Store</Text>
             <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.storePreference}</Text>
           </View>
         ) : null}
@@ -82,7 +82,7 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
           </View>
         ) : null}
 
-        <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185', lineHeight: 18 }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
           {fmtProvenance(item, members)}
         </Text>
 
@@ -96,8 +96,8 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
             </Pressable>
           )}
           <Pressable onPress={() => { onEdit(); onClose(); }}
-            style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 14, height: 48,
-              alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#DFE5EF' }}>
+            style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', borderRadius: 14, height: 48,
+              alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }}>
             <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primary }}>Edit</Text>
           </Pressable>
           <Pressable onPress={() => { onBuy(); onClose(); }}

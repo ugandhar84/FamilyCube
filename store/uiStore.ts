@@ -39,6 +39,12 @@ interface UIState {
   // "Grocery + FAB should be similar like in the other pages"). Reads this
   // once on focus to open AddItemSheet, then clears it immediately.
   openGroceryComposerRequested: boolean;
+  // One-shot: a screen asks Chat to open this channel on next focus (e.g. co-parent dispute -> parents' DM).
+  pendingChatChannelId: string | null;
+  // One-shot: a Hub row asks HubScreen to open the approval action center for this chore.
+  openApprovalDetailChoreId: string | null;
+  setOpenApprovalDetailChoreId: (id: string | null) => void;
+  setPendingChatChannelId: (id: string | null) => void;
   setOpenGroceryComposerRequested: (v: boolean) => void;
   // Live-updated (not one-shot) by HealthRecordsScreen/HealthTab so the
   // shared FAB's own background color in app/(tabs)/_layout.tsx can track
@@ -89,6 +95,10 @@ export const useUIStore = create<UIState>((set) => ({
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   openGroceryComposerRequested: false,
+  pendingChatChannelId: null,
+  openApprovalDetailChoreId: null,
+  setOpenApprovalDetailChoreId: (id) => set({ openApprovalDetailChoreId: id }),
+  setPendingChatChannelId: (id) => set({ pendingChatChannelId: id }),
   setOpenGroceryComposerRequested: (v) => set({ openGroceryComposerRequested: v }),
   healthRecordsActiveSegment: 'health',
   setHealthRecordsActiveSegment: (v) => set({ healthRecordsActiveSegment: v }),

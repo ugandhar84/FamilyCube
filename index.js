@@ -15,6 +15,11 @@ import { Platform } from 'react-native';
 import { install } from 'react-native-quick-crypto';
 install();
 
+// Double-tap protection for every button — must run before any screen module
+// evaluates (see lib/pressGuard.tsx).
+import { installPressGuard } from './lib/pressGuard';
+installPressGuard();
+
 if (Platform.OS === 'android') {
   try {
     // v22+ modular API — getMessaging()/setBackgroundMessageHandler() as

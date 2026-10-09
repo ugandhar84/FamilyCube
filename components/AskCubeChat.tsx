@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle, Trash2 } from 'lucide-react-native';
@@ -95,18 +96,15 @@ interface ChatMessage {
   revealDone?: boolean;
 }
 
-export default function AskCubeChat({ visible, onClose, activeMember, members, variant = 'sheet' }: {
+export default function AskCubeChat({ visible, onClose, activeMember, members, variant = 'sheet', inline = false }: {
   visible: boolean;
   onClose: () => void;
   activeMember: FamilyMember;
   members: FamilyMember[];
-  /** 'sheet' (default, unchanged): full-width bottom sheet, right for a
-   * phone screen. 'kiosk': live-flagged — a full-width sheet on a wide
-   * landscape kitchen tablet stretched every line to an unreadable measure
-   * and looked like a takeover rather than a quick chat. Renders instead as
-   * a smaller centered floating window, docked to the bottom-right corner
-   * near where AskFam's own launch button lives in KioskHeader. */
+  /** 'sheet' (default): full-width bottom sheet. 'kiosk': compact floating window for the kitchen tablet. */
   variant?: 'sheet' | 'kiosk';
+  /** When true, renders the chat UI without any Modal wrapper — for embedding inline in a screen. */
+  inline?: boolean;
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -129,6 +127,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const declineKidRequest = useKidRequestStore(s => s.declineRequest);
 
   const [expandedRecipe, setExpandedRecipe] = useState<{ msgId: string; index: number } | null>(null);
+
 
   // App Store rejection (guidelines 5.1.1(i)/5.1.2(i)) — must explicitly
   // disclose and get consent before sending a member's message to the
@@ -847,61 +846,53 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
 
   const isKiosk = variant === 'kiosk';
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={
-          isKiosk
-            // Full-height, right-anchored side sheet — same real shape as
-            // every other kiosk form (KioskFormDrawer's drawer variant,
-            // KioskAppBottomSheet): flush, no inset/radius/shadow, no
-            // percentage cap [live-requested: "need that ask fam to cover
-            // whole height of the tab like other forms"]. Was previously a
-            // small bottom-right-anchored floating card (420×560, 80% cap)
-            // — the one kiosk surface that didn't match the rest.
-            ? { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }
-            : { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }
-        }>
-          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} />
-          <View style={
-            isKiosk
-              ? { backgroundColor: colors.card, width: 480, maxWidth: '100%', height: '100%',
+  const chatContent = (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <View
+        style={
+          inline
+            ? { flex: 1, backgroundColor: '#FFFFFF' }
+            : isKiosk
+              ? { backgroundColor: '#FFFFFF', width: 480, maxWidth: '100%', height: '100%',
                   borderLeftWidth: 1, borderLeftColor: colors.border, paddingTop: 14, overflow: 'hidden' }
-              : { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-                  height: '85%', paddingTop: 12 }
-          }>
+              : { flex: 1, backgroundColor: '#FFFFFF', paddingTop: insets.top }
+        }
+      >
 
-            {!isKiosk && (
-              <View style={{ width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12, backgroundColor: colors.border }} />
-            )}
+        {/* Breadcrumb — left-aligned, ReviewInbox style */}
+        {!isKiosk && (
+          <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 2 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.6 }}>
+              FAMILY CUBE · AI
+            </Text>
+            <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink }}>← Hub</Text>
+            </Pressable>
+          </View>
+        )}
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: colors.primary + '18',
-                alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                <Sparkles size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Ask Fam</Text>
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Ask about the family's schedule or chores</Text>
-              </View>
-              <Pressable onPress={openHistory} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : colors.surface, marginRight: 8 }}>
-                <History size={17} color={colors.textSecondary} />
-              </Pressable>
-              <Pressable onPress={startNewChat} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                disabled={messages.length === 0 && !conversationId}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : colors.surface, marginRight: 8,
-                  opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
-                <SquarePen size={17} color={colors.textSecondary} />
-              </Pressable>
-              <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : colors.surface }}>
-                <X size={18} color={colors.textSecondary} />
-              </Pressable>
-            </View>
+        {/* Page title row — ReviewInbox style: title left, icon buttons right */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,
+          paddingTop: 8, paddingBottom: 14,
+          borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : colors.pinkLight }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>AskFam</Text>
+            <Text style={{ fontSize: 13, color: colors.pink, marginTop: 1, fontWeight: '600' }}>Private family assistant</Text>
+          </View>
+          {/* Icon buttons: white circle on pinkLight bg — ReviewInbox pattern */}
+          <Pressable onPress={openHistory} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: isDark ? colors.surface : colors.pinkLight, marginRight: 8 }}>
+            <History size={17} color={colors.pink} />
+          </Pressable>
+          <Pressable onPress={startNewChat} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+            disabled={messages.length === 0 && !conversationId}
+            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: isDark ? colors.surface : colors.pinkLight,
+              opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
+            <SquarePen size={17} color={colors.pink} />
+          </Pressable>
+        </View>
 
             <View style={{ flex: 1 }}>
             <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12 }}
@@ -918,41 +909,58 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                 setShowScrollToBottom(distanceFromBottom > 40);
               }}
               scrollEventThrottle={100}>
+              {/* Intro card — collapses once thread has messages */}
               {messages.length === 0 && !sending && (
-                <View style={{ alignItems: 'center', paddingVertical: 30, gap: 14 }}>
-                  <Sparkles size={28} color={colors.textTertiary} />
-                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', maxWidth: 260 }}>
-                    Ask me anything about your family's schedule and chores
-                  </Text>
-                  {/* Personalized to real upcoming data (see starterPrompts
-                      above) instead of a static generic hint — tapping one
-                      sends it immediately via the same send() every other
-                      message goes through. */}
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, maxWidth: 320 }}>
+                <>
+                  {/* ReviewInbox-style: pastel bg card + white icon circle */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                    backgroundColor: isDark ? colors.surface : colors.pinkLight,
+                    borderRadius: 20, padding: 18, marginBottom: 16 }}>
+                    <View style={{ width: 48, height: 48, borderRadius: 15,
+                      backgroundColor: isDark ? colors.card : '#FFFFFF',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Sparkles size={24} color={colors.pink} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Help with the family load</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 17 }}>
+                        Ask about plans, tasks, meals, rides, or messages.
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Figma: horizontal scrollable suggestion chips */}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 7, paddingBottom: 4, paddingRight: 4 }}
+                    style={{ marginBottom: 16 }}>
                     {starterPrompts.map(p => (
                       <Pressable key={p} onPress={() => send(p)}
-                        style={{ borderRadius: 16, borderWidth: 1, borderColor: colors.border,
-                          backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 8 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textPrimary }}>{p}</Text>
+                        style={{ borderRadius: 999, borderWidth: 1, borderColor: colors.pink + '40',
+                          backgroundColor: colors.pinkLight, paddingHorizontal: 16, paddingVertical: 10 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink }}>{p}</Text>
                       </Pressable>
                     ))}
-                  </View>
-                </View>
+                  </ScrollView>
+                </>
               )}
               {messages.map(m => (
                 <View key={m.id} style={{ alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                  <View style={{ maxWidth: m.role === 'user' ? '85%' : '92%', borderRadius: 16,
-                    paddingHorizontal: 14, paddingVertical: m.role === 'user' ? 10 : 13,
-                    backgroundColor: m.role === 'user' ? colors.primary : colors.card,
-                    borderWidth: m.role === 'user' ? 0 : 1, borderColor: colors.border,
-                    borderBottomRightRadius: m.role === 'user' ? 4 : 16,
-                    borderBottomLeftRadius: m.role === 'user' ? 16 : 4 }}>
+                  {/* Figma: small sender label above each bubble */}
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: colors.pink,
+                    marginBottom: 3, marginHorizontal: 4 }}>
+                    {m.role === 'assistant' ? 'AskFam' : 'You'}
+                  </Text>
+                  <View style={{ maxWidth: m.role === 'user' ? '85%' : '92%', borderRadius: 18,
+                    paddingHorizontal: 15, paddingVertical: m.role === 'user' ? 11 : 14,
+                    // Flat: user=light lavender, ai=very light gray-lavender tint
+                    backgroundColor: m.role === 'user' ? colors.pinkLight : (isDark ? colors.surface : '#F4F3FA'),
+                    borderBottomRightRadius: m.role === 'user' ? 4 : 18,
+                    borderBottomLeftRadius: m.role === 'user' ? 18 : 4 }}>
                     {m.role === 'user' ? (
-                      <Text style={{ fontSize: TYPO.body, color: '#fff', lineHeight: 22 }}>{m.content}</Text>
+                      <Text style={{ fontSize: 16, color: colors.textPrimary, lineHeight: 23 }}>{m.content}</Text>
                     ) : (
                       <AskCubeMessageText
                         content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber}
-                        chores={m.chores} linkColor={colors.primary}
+                        chores={m.chores} linkColor={colors.pink}
                         onChorePress={(choreId) => {
                           onClose();
                           // A bare router.push here bypassed kiosk gating
@@ -1046,20 +1054,37 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                       {m.followUps.map(f => (
                         <Pressable key={f} onPress={() => send(f)}
-                          style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.primary + '40',
-                            backgroundColor: colors.primary + '12', paddingHorizontal: 10, paddingVertical: 6 }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.primary }}>{f}</Text>
+                          style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.pink + '40',
+                            backgroundColor: colors.pink + '12', paddingHorizontal: 10, paddingVertical: 6 }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.pink }}>{f}</Text>
                         </Pressable>
                       ))}
+                    </View>
+                  )}
+                  {/* "Add to plan" / "Share with family" — only when no proposals,
+                      or all proposals are still pending (hide once acted on) */}
+                  {m.role === 'assistant' && m.id !== messages[0]?.id && m.content && m.revealDone &&
+                    !m.proposals?.length && (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                      <Pressable onPress={() => send('Add that to the plan')}
+                        style={{ borderRadius: 20, borderWidth: 1.5, borderColor: colors.pink + '60',
+                          backgroundColor: colors.pinkLight, paddingHorizontal: 14, paddingVertical: 8 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>+ Add to plan</Text>
+                      </Pressable>
+                      <Pressable onPress={() => send('Share this with the family')}
+                        style={{ borderRadius: 20, borderWidth: 1.5, borderColor: colors.pink + '60',
+                          backgroundColor: colors.pinkLight, paddingHorizontal: 14, paddingVertical: 8 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Share with family</Text>
+                      </Pressable>
                     </View>
                   )}
                 </View>
               ))}
               {sending && (
                 <View style={{ alignItems: 'flex-start' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 16,
-                    paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.surface }}>
-                    <Sparkles size={13} color={colors.primary} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 18,
+                    paddingHorizontal: 14, paddingVertical: 11, backgroundColor: isDark ? colors.surface : '#F4F3FA' }}>
+                    <Sparkles size={13} color={colors.pink} />
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{thinkingWord}…</Text>
                   </View>
                 </View>
@@ -1071,7 +1096,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                 onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 style={withAndroidShadowFix({ position: 'absolute', bottom: 12, alignSelf: 'center',
                   flexDirection: 'row', alignItems: 'center', gap: 4,
-                  backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                  backgroundColor: colors.pink, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
                   shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 })}>
                 <ChevronDown size={14} color="#fff" />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Latest</Text>
@@ -1079,81 +1104,82 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
             )}
             </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16,
-              paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8), borderTopWidth: 1, borderTopColor: colors.border }}>
-              <Pressable
-                onPress={async () => {
-                  // Single mic control feeds the text box directly — while
-                  // listening, the box shows the live transcript; a pause
-                  // enables Send (silenceReady below) but the mic keeps
-                  // listening until the user taps the mic again to stop, or
-                  // taps Send to stop-and-send in one step.
-                  // Tapping mic-to-STOP (as opposed to Send-to-stop-and-send)
-                  // previously discarded the transcript entirely — the box
-                  // fell back to `input`, which nothing had ever set, so the
-                  // just-dictated text visibly vanished. Now it lands in
-                  // `input`, editable with the keyboard, exactly like typing
-                  // it — the user decides from there whether to edit and
-                  // send or clear it.
-                  if (voice.state === 'listening') {
-                    const transcript = voice.liveTranscript;
-                    await voice.stop();
-                    if (transcript.trim()) setInput(transcript);
-                    return;
-                  }
-                  await voice.start();
-                }}
-                style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: voice.state === 'listening' ? colors.danger + '20' : colors.surface }}>
-                {voice.state === 'listening'
-                  ? <ActivityIndicator size="small" color={colors.danger} />
-                  : <Mic size={18} color={colors.textSecondary} />}
-              </Pressable>
-              <View style={{ flex: 1, justifyContent: 'center' }}>
-                <TextInput
-                  value={voice.state === 'listening' ? (voice.liveTranscript || 'Listening…') : input}
-                  onChangeText={setInput}
-                  placeholder="Ask Fam anything…"
-                  placeholderTextColor={colors.placeholder}
-                  editable={voice.state !== 'listening'}
-                  style={{ fontSize: TYPO.body,
-                    color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
-                    backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1,
-                    borderColor: voice.state === 'listening' ? colors.danger + '60' : colors.borderMed,
-                    paddingHorizontal: 16, paddingVertical: 10, paddingRight: input && voice.state !== 'listening' ? 36 : 16 }}
-                  onSubmitEditing={() => send(input)}
-                  returnKeyType="send"
-                />
-                {/* Clear-in-one-tap — a dictated (or typed) message the user
-                    decides not to send shouldn't need manual backspacing. */}
-                {!!input && voice.state !== 'listening' && (
-                  <Pressable onPress={() => setInput('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={{ position: 'absolute', right: 10, width: 20, height: 20, borderRadius: 10,
-                      alignItems: 'center', justifyContent: 'center', backgroundColor: colors.border }}>
-                    <X size={12} color={colors.textSecondary} />
-                  </Pressable>
-                )}
+            {/* Figma compose bar: white input + lavender "Ask" button */}
+            <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#e8e8ee',
+              paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                {/* Mic */}
+                <Pressable
+                  onPress={async () => {
+                    if (voice.state === 'listening') {
+                      const transcript = voice.liveTranscript;
+                      await voice.stop();
+                      if (transcript.trim()) setInput(transcript);
+                      return;
+                    }
+                    await voice.start();
+                  }}
+                  style={{ width: 40, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: voice.state === 'listening' ? colors.danger + '15' : colors.surface }}>
+                  {voice.state === 'listening'
+                    ? <ActivityIndicator size="small" color={colors.danger} />
+                    : <Mic size={18} color={colors.textSecondary} />}
+                </Pressable>
+                {/* Input */}
+                <View style={{ flex: 1 }}>
+                  <TextInput
+                    value={voice.state === 'listening' ? (voice.liveTranscript || 'Listening…') : input}
+                    onChangeText={setInput}
+                    placeholder="Ask anything about family life"
+                    placeholderTextColor={colors.textTertiary}
+                    editable={voice.state !== 'listening'}
+                    style={{ fontSize: 14,
+                      color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
+                      backgroundColor: '#FFFFFF', height: 50, borderRadius: 15, borderWidth: 1,
+                      borderColor: voice.state === 'listening' ? colors.danger + '60' : (isDark ? colors.border : '#daddE8'),
+                      paddingHorizontal: 14, paddingRight: input && voice.state !== 'listening' ? 36 : 14 }}
+                    onSubmitEditing={() => send(input)}
+                    returnKeyType="send"
+                  />
+                  {!!input && voice.state !== 'listening' && (
+                    <Pressable onPress={() => setInput('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{ position: 'absolute', right: 10, top: 15, width: 20, height: 20, borderRadius: 10,
+                        alignItems: 'center', justifyContent: 'center', backgroundColor: colors.border }}>
+                      <X size={12} color={colors.textSecondary} />
+                    </Pressable>
+                  )}
+                </View>
+                {/* Ask button — Figma: lavender pill labeled "Ask" */}
+                <Pressable
+                  onPress={async () => {
+                    if (voice.state === 'listening') {
+                      const transcript = voice.liveTranscript;
+                      await voice.stop();
+                      if (transcript.trim()) send(transcript);
+                      return;
+                    }
+                    send(input);
+                  }}
+                  disabled={voice.state === 'listening' ? !(voice.silenceReady && voice.liveTranscript.trim()) : (!input.trim() || sending)}
+                  style={{ minWidth: 62, height: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12,
+                    backgroundColor: (voice.state === 'listening' ? voice.silenceReady && voice.liveTranscript.trim() : input.trim() && !sending) ? colors.pink : (isDark ? colors.surface : '#e8e8f0') }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700',
+                    color: (voice.state === 'listening' ? voice.silenceReady && voice.liveTranscript.trim() : input.trim() && !sending) ? '#fff' : colors.textTertiary }}>
+                    Ask
+                  </Text>
+                </Pressable>
               </View>
-              <Pressable
-                onPress={async () => {
-                  if (voice.state === 'listening') {
-                    const transcript = voice.liveTranscript;
-                    await voice.stop();
-                    if (transcript.trim()) send(transcript);
-                    return;
-                  }
-                  send(input);
-                }}
-                disabled={voice.state === 'listening' ? !(voice.silenceReady && voice.liveTranscript.trim()) : (!input.trim() || sending)}
-                style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: (voice.state === 'listening' ? voice.silenceReady && voice.liveTranscript.trim() : input.trim() && !sending) ? colors.primary : colors.border }}>
-                <Send size={16} color={(voice.state === 'listening' ? voice.silenceReady && voice.liveTranscript.trim() : input.trim() && !sending) ? '#fff' : colors.textTertiary} />
-              </Pressable>
+              {/* Figma: privacy note */}
+              <Text style={{ fontSize: 9, color: colors.textTertiary, lineHeight: 14,
+                marginTop: 8, marginBottom: Math.max(10, insets.bottom + 2) }}>
+                AskFam suggests actions. Nothing is added, changed, or shared until you confirm it.
+              </Text>
             </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+      </View>
+    </KeyboardAvoidingView>
+  );
 
+  const overlays = (<>
       {(() => {
         const msg = expandedRecipe ? messages.find(m => m.id === expandedRecipe.msgId) : null;
         const p = msg?.proposals?.[expandedRecipe?.index ?? -1];
@@ -1181,12 +1207,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         onClose={() => setHistoryVisible(false)}
         title="Chat history"
         subtitle={conversations.length ? `${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}` : undefined}
-        accentColor={colors.primary}
+        accentColor={colors.pink}
         maxHeight="75%"
       >
         {historyLoading ? (
           <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.pink} />
           </View>
         ) : conversations.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 32, gap: 8 }}>
@@ -1203,11 +1229,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                   key={c.id}
                   onPress={() => openConversationFromHistory(c.id)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
-                    backgroundColor: isActive ? colors.primary + '12' : colors.surface,
-                    borderWidth: isActive ? 1 : 0, borderColor: colors.primary + '40' }}>
-                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primary + '18',
+                    backgroundColor: isActive ? colors.pink + '12' : colors.surface,
+                    borderWidth: isActive ? 1 : 0, borderColor: colors.pink + '40' }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.pink + '18',
                     alignItems: 'center', justifyContent: 'center' }}>
-                    <MessageCircle size={15} color={colors.primary} />
+                    <MessageCircle size={15} color={colors.pink} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={1} style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
@@ -1267,6 +1293,31 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           }
         }}
       />
+  </>);
+
+  if (inline) {
+    return (
+      <>
+        {chatContent}
+        {overlays}
+      </>
+    );
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={
+        isKiosk
+          ? { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }
+          : { flex: 1 }
+      }>
+        {isKiosk ? chatContent : (
+          <SwipeBackWrapper onDismiss={onClose}>
+            {chatContent}
+          </SwipeBackWrapper>
+        )}
+      </View>
+      {overlays}
     </Modal>
   );
 }

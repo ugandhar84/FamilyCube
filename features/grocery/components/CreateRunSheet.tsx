@@ -76,13 +76,13 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
   if (!visible) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
       {/* Header — ReviewInbox pattern */}
       <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-        backgroundColor: '#FFFFFF', gap: 8 }}>
+        backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
         <View style={{ gap: 4 }}>
           <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
@@ -101,8 +101,8 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
 
         {/* Figma: "Planned start" labeled field card */}
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 16 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185', marginBottom: 4 }}>Planned start</Text>
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginBottom: 4 }}>Planned start</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => setPickerMode('date')} style={{ flex: 1 }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: plannedAt ? colors.textPrimary : colors.textTertiary }}>
@@ -119,11 +119,11 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
           {!plannedAt && (
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
               <Pressable onPress={() => setPickerMode('date')}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#DFE5EF', padding: 10, alignItems: 'center' }}>
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>📅 Date</Text>
               </Pressable>
               <Pressable onPress={() => setPickerMode('time')}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#DFE5EF', padding: 10, alignItems: 'center' }}>
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>🕐 Time</Text>
               </Pressable>
             </View>
@@ -131,7 +131,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
         </View>
 
         {/* Figma: "Choose your branch" card with store rows + pin link */}
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF',
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
           padding: 20, gap: 14,
           shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 8,
           shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
@@ -145,10 +145,10 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
                 <Text style={{ fontSize: 15, fontWeight: store === storeName ? '700' : '600', color: colors.textPrimary }}>
                   {store === storeName ? 'Selected · ' : ''}{storeName}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185' }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                   Pinned branch{store !== storeName ? ' · not selected' : ''}
                 </Text>
-                {i < pinnedStoreNames.length - 1 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: '#DFE5EF', marginTop: 10 }} />}
+                {i < pinnedStoreNames.length - 1 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />}
               </Pressable>
             ))
           ) : (
@@ -157,17 +157,17 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
                 <Text style={{ fontSize: 15, fontWeight: store === s ? '700' : '600', color: colors.textPrimary }}>
                   {store === s ? 'Selected · ' : ''}{s}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185' }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                   {store === s ? 'Selected store' : 'not selected'}
                 </Text>
-                {i < 2 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: '#DFE5EF', marginTop: 10 }} />}
+                {i < 2 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />}
               </Pressable>
             ))
           )}
 
           {/* Type custom store */}
-          <View style={{ borderRadius: 10, borderWidth: 1, borderColor: store ? P : '#DFE5EF',
-            padding: 12, backgroundColor: '#FFFFFF' }}>
+          <View style={{ borderRadius: 10, borderWidth: 1, borderColor: store ? P : colors.border,
+            padding: 12, backgroundColor: isDark ? colors.surface : '#FFFFFF' }}>
             <TextInput
               style={{ fontSize: 14, color: colors.textPrimary }}
               placeholder="Or type store name…"
@@ -179,7 +179,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
           {/* Figma: "Pin a specific store location →" link */}
           <Pressable
             onPress={() => onPinStore?.(store.trim() || 'Store')}
-            style={{ borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14, alignItems: 'center' }}>
+            style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, alignItems: 'center' }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: P }}>Pin a specific store location →</Text>
           </Pressable>
         </View>
@@ -198,7 +198,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
               <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
                 {activeMember.name} · Selected
               </Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                 Run owner · shopper · drives
               </Text>
             </View>
@@ -212,7 +212,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
               {approvedItems.length} item{approvedItems.length !== 1 ? 's' : ''} ready to shop
             </Text>
             {kidPendingCount > 0 && (
-              <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                 {kidPendingCount} kid request{kidPendingCount !== 1 ? 's' : ''} excluded (pending approval).
               </Text>
             )}
@@ -220,13 +220,13 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
         )}
 
         {/* Figma: footer note */}
-        <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185', lineHeight: 18 }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
           Starts a shared shopping run only. It does not purchase items or dispatch a ride.
         </Text>
 
         {/* Optional trip name */}
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14 }}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 4 }}>Trip name (optional)</Text>
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Trip name (optional)</Text>
           <TextInput
             style={{ fontSize: 14, color: colors.textPrimary }}
             placeholder={store ? `${store} trip` : 'e.g. Diwali party groceries'}

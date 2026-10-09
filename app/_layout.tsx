@@ -647,9 +647,8 @@ function RootNavigator() {
         navigateFromNotification('/(tabs)/grocery', isKioskDevice);
       } else if (data?.type === 'schedule_conflict') {
         // schedule-conflict-sweep's server-side double-booking push —
-        // lands on the merged Tasks tab, which defaults to its Schedule
-        // segment (see features/tasks/TasksScreen.tsx).
-        navigateFromNotification('/(tabs)/tasks', isKioskDevice);
+        // lands on the Schedule tab.
+        navigateFromNotification('/(tabs)/schedule', isKioskDevice);
       } else {
         // Was: router.push('/(tabs)/notifications') — that page
         // (NotificationsScreen.tsx, via the all-notifications/notifications

@@ -1,6 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform, Alert, ActivityIndicator, Animated,
+  TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarDays, Sparkles, BookOpen, ChefHat } from 'lucide-react-native';
@@ -9,12 +11,15 @@ import { useUIStore } from '@/store/uiStore';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useFamilyStore } from '@/store/familyStore';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { PanResponder } from 'react-native';
 import MealsWeekPage from './MealsWeekPage';
 import FamilyRecipeBookPage from './FamilyRecipeBookPage';
 import AiSuggestionsPage from './meals/AiSuggestionsPage';
-import AiPlannerBanner from './meals/AiPlannerBanner';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { router } from 'expo-router';
 import { type Meal, type AiDayOptions, type AiMealResult, weekOf, detectDays } from './meals/types';
+import { localDateStr } from '@/lib/dates';
 
 function todayDayAbbr(): string {
   const ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -22,11 +27,13 @@ function todayDayAbbr(): string {
 }
 
 function currentWeekOf(): string {
+  // Must use localDateStr (not toISOString) to match weekOf() in types.ts —
+  // toISOString() is UTC and can return the wrong date for IST/east-of-UTC zones.
   const d = new Date();
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 export default function MealsScreen() {
@@ -61,27 +68,56 @@ export default function MealsScreen() {
     ])).start();
   }, []);
   const [aiLoading, setAiLoading]           = useState(false);
+  const [cacheLoading, setCacheLoading]     = useState(false);
   const [pendingOptions, setPendingOptions] = useState<AiDayOptions[] | null>(null);
   const [selected, setSelected]             = useState<Record<string, number[]>>({});
   const [tip, setTip]                       = useState<string | null>(null);
   const [groceryList, setGroceryList]       = useState<string[]>([]);
   const [savingPlan, setSavingPlan]         = useState(false);
 
-  // Fetch tonight's dinner to show in the hero card
+  // Fetch today's next upcoming meal based on current time of day
   const [tonightMeal, setTonightMeal] = useState<Meal | null>(null);
+  const [tonightLabel, setTonightLabel] = useState('TODAY\'S MEAL');
   useEffect(() => {
     if (!familyId) return;
     const today = todayDayAbbr();
     const week  = currentWeekOf();
+    const hour  = new Date().getHours();
+    // Pick which meal slot to show based on time of day
+    // Before 10am → breakfast; 10am–3pm → lunch; after 3pm → dinner
+    let preferredTypes: string[];
+    let label: string;
+    if (hour < 10) {
+      preferredTypes = ['breakfast', 'Breakfast'];
+      label = 'THIS MORNING';
+    } else if (hour < 15) {
+      preferredTypes = ['lunch', 'Lunch'];
+      label = 'TODAY\'S LUNCH';
+    } else {
+      preferredTypes = ['dinner', 'Dinner'];
+      label = 'TONIGHT\'S DINNER';
+    }
+    setTonightLabel(label);
+    // Fetch all of today's meals — no week_of filter to avoid UTC/local mismatch;
+    // day+family uniquely scopes to this week in practice.
     supabase
       .from('family_meals')
       .select('*')
       .eq('family_id', familyId)
-      .eq('week_of', week)
       .eq('day', today)
-      .in('type', ['dinner', 'Dinner'])
-      .limit(1)
-      .then(({ data }) => { if (data?.[0]) setTonightMeal(data[0] as Meal); });
+      .gte('week_of', week) // must be this week or later (catches next-week spill)
+      .order('week_of', { ascending: true })
+      .limit(10)
+      .then(({ data }) => {
+        if (!data?.length) return;
+        // Sort: preferred type first, then rest
+        const sorted = [...data].sort((a, b) => {
+          const ai = preferredTypes.indexOf(a.type);
+          const bi = preferredTypes.indexOf(b.type);
+          return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+        });
+        setTonightMeal(sorted[0] as Meal);
+      });
   }, [familyId]);
 
   // Chef name for tonight's meal
@@ -89,15 +125,70 @@ export default function MealsScreen() {
     ? members.find(m => m.id === tonightMeal.chef_id)?.name?.split(' ')[0] ?? null
     : null;
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    hideTabBar();
     useUIStore.getState().setFullBleedScreenActive(true);
-    return () => useUIStore.getState().setFullBleedScreenActive(false);
-  }, []);
+    return () => {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []));
 
   useEffect(() => {
-    if (showWeekPlan || showRecipes || showInspirationPage) hideTabBar(); else showTabBar();
-    return () => showTabBar();
+    if (showWeekPlan || showRecipes || showInspirationPage) hideTabBar();
+    // Don't showTabBar here — the screen itself keeps it hidden
   }, [showWeekPlan, showRecipes, showInspirationPage]);
+
+  // Load cached suggestions — DB first (shared across family), AsyncStorage fallback
+  useEffect(() => {
+    if (!showInspirationPage || pendingOptions) return;
+    const famId = familyId ?? 'family-1';
+    const curWeek = weekOf();
+    const localKey = `cubeai_meal_suggestions_${famId}_${curWeek}`;
+    setCacheLoading(true);
+
+    supabase
+      .from('family_ai_meal_cache')
+      .select('suggestions, tip, grocery_list, preferences')
+      .eq('family_id', famId)
+      .eq('week_of', curWeek)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data?.suggestions?.length) {
+          const opts = data.suggestions as AiDayOptions[];
+          const defaults: Record<string, number[]> = {};
+          opts.forEach((d: AiDayOptions) => { defaults[d.day] = [0]; });
+          setPendingOptions(opts);
+          setSelected(defaults);
+          setGroceryList((data.grocery_list as string[]) ?? []);
+          setTip(data.tip ?? null);
+          if (data.preferences) setAiPref(data.preferences);
+          setCacheLoading(false);
+          return;
+        }
+        // Fallback to local AsyncStorage cache
+        AsyncStorage.getItem(localKey)
+          .then(raw => {
+            if (raw) {
+              try {
+                const cached = JSON.parse(raw);
+                if (cached?.suggestions?.length) {
+                  const opts = cached.suggestions as AiDayOptions[];
+                  const defaults: Record<string, number[]> = {};
+                  opts.forEach((d: AiDayOptions) => { defaults[d.day] = [0]; });
+                  setPendingOptions(opts);
+                  setSelected(defaults);
+                  setGroceryList(cached.groceryList ?? []);
+                  setTip(cached.tip ?? null);
+                  if (cached.preferences) setAiPref(cached.preferences);
+                }
+              } catch { /* corrupt cache */ }
+            }
+            setCacheLoading(false);
+          })
+          .catch(() => setCacheLoading(false));
+      });
+  }, [showInspirationPage]);
 
   const generateMealPlan = async () => {
     setAiLoading(true);
@@ -125,6 +216,26 @@ export default function MealsScreen() {
       setSelected(defaults);
       setGroceryList(result.groceryAutoList ?? []);
       setTip(result.nutritionCoachingTip ?? null);
+      // Cache suggestions in DB (family-shared) + AsyncStorage (offline fallback)
+      const famId = familyId ?? 'family-1';
+      const curWeekStr = weekOf();
+      const localKey = `cubeai_meal_suggestions_${famId}_${curWeekStr}`;
+      const payload = {
+        suggestions: result.weeklyOptions,
+        tip: result.nutritionCoachingTip ?? null,
+        groceryList: result.groceryAutoList ?? [],
+        preferences: aiPref.trim(),
+      };
+      AsyncStorage.setItem(localKey, JSON.stringify(payload)).catch(() => {});
+      supabase.from('family_ai_meal_cache').upsert({
+        family_id: famId,
+        week_of: curWeekStr,
+        suggestions: result.weeklyOptions,
+        tip: result.nutritionCoachingTip ?? null,
+        grocery_list: result.groceryAutoList ?? [],
+        preferences: aiPref.trim(),
+        generated_at: new Date().toISOString(),
+      }, { onConflict: 'family_id,week_of' }).then(() => {});
     } catch {
       Alert.alert('CubeAI', 'Couldn\'t generate plan. Check connection and try again.');
       setShowInspirationPage(false);
@@ -132,20 +243,40 @@ export default function MealsScreen() {
     setAiLoading(false);
   };
 
-  const confirmPlan = async () => {
+  const confirmPlan = async (dayOverrides?: Record<string, string>, mealTypeOverrides?: Record<string, string>) => {
     if (!pendingOptions) return;
     setSavingPlan(true);
     const curWeek = weekOf();
     const famId = familyId ?? 'family-1';
-    const MEAL_TYPE_LABELS = ['lunch', 'dinner'];
+
+    // Resolve "next-Mon" → { day: "Mon", weekOf: next-week local date }
+    const resolveAssignedDay = (key: string): { day: string; weekOfStr: string } => {
+      if (key.startsWith('next-')) {
+        const day = key.slice(5);
+        const d = new Date();
+        const todayIdx = d.getDay(); // 0=Sun
+        const daysUntilMonday = todayIdx === 0 ? 1 : 8 - todayIdx;
+        d.setDate(d.getDate() + daysUntilMonday);
+        // weekOf uses Monday of the week — compute Monday of next week using localDateStr
+        const mon = new Date(d);
+        mon.setDate(mon.getDate() - (mon.getDay() === 0 ? 6 : mon.getDay() - 1));
+        return { day, weekOfStr: localDateStr(mon) };
+      }
+      return { day: key, weekOfStr: curWeek };
+    };
+
     const upserts = pendingOptions.flatMap((dayOpt: AiDayOptions) => {
       const indices = selected[dayOpt.day] ?? [0];
       return indices.map((idx: number, slot: number) => {
         const m = dayOpt.options[idx];
+        const rowKey = `${dayOpt.day}-${idx}`;
+        const rawDay = dayOverrides?.[rowKey] ?? dayOpt.day;
+        const { day: assignedDay, weekOfStr: assignedWeek } = resolveAssignedDay(rawDay);
+        const assignedType = mealTypeOverrides?.[rowKey] ?? 'dinner';
         return {
-          id: `${famId}-${curWeek}-${dayOpt.day}-${slot}-${Date.now()}`,
-          family_id: famId, week_of: curWeek, day: dayOpt.day,
-          title: m.mealName, type: indices.length > 1 ? (MEAL_TYPE_LABELS[slot] ?? 'dinner') : 'dinner',
+          id: `${famId}-${assignedWeek}-${assignedDay}-${slot}-${Date.now()}`,
+          family_id: famId, week_of: assignedWeek, day: assignedDay,
+          title: m.mealName, type: assignedType,
           chef_id: null, ingredients: m.ingredientsList, emoji: m.emoji ?? null,
           prep_minutes: m.prepMinutes, dietary_tags: m.dietaryTags,
           kid_friendly_rating: m.kidFriendlyRating, prep_steps: m.prepSteps ?? [],
@@ -157,9 +288,14 @@ export default function MealsScreen() {
       await supabase.from('family_meals').delete().eq('family_id', famId).eq('week_of', curWeek).eq('ai_generated', true);
       const { data: inserted, error: insertErr } = await supabase.from('family_meals').insert(upserts).select();
       if (insertErr) throw new Error(insertErr.message);
+      // Clear both caches — plan accepted, next open should start fresh
+      const localKey = `cubeai_meal_suggestions_${famId}_${curWeek}`;
+      AsyncStorage.removeItem(localKey).catch(() => {});
+      supabase.from('family_ai_meal_cache').delete().eq('family_id', famId).eq('week_of', curWeek).then(() => {});
       Alert.alert('Plan Saved', `${inserted?.length ?? 0} meal${(inserted?.length ?? 0) !== 1 ? 's' : ''} added to your week.`);
       setPendingOptions(null);
       setSelected({});
+      setCacheLoading(false);
       setShowInspirationPage(false);
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message ?? 'Something went wrong.');
@@ -170,6 +306,22 @@ export default function MealsScreen() {
 
   const canvas = isDark ? '#0E0C13' : '#FFFFFF';
   const cardBg = isDark ? colors.card : '#FFFFFF';
+
+  // Track whether any sub-page overlay is open — used to block the root swipe
+  const subPageOpen = useRef(false);
+  useEffect(() => {
+    subPageOpen.current = showWeekPlan || showRecipes || showInspirationPage;
+  }, [showWeekPlan, showRecipes, showInspirationPage]);
+
+  // Edge swipe-back: start within 30px of left edge, drag 100px → go back
+  // Disabled when a sub-page overlay is open (its own SwipeBackWrapper handles the gesture)
+  const swipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) =>
+      !subPageOpen.current && g.dx > 10 && Math.abs(g.dy) < 40 && g.moveX - g.dx < 30,
+    onPanResponderRelease: (_, g) => {
+      if (!subPageOpen.current && (g.dx > 100 || g.vx > 0.8)) router.back();
+    },
+  })).current;
 
   const categories = [
     {
@@ -202,7 +354,7 @@ export default function MealsScreen() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: canvas }}>
+    <View style={{ flex: 1, backgroundColor: canvas }} {...swipePan.panHandlers}>
 
       {/* ── ReviewInbox-style header ── */}
       <View style={{
@@ -212,32 +364,34 @@ export default function MealsScreen() {
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
         backgroundColor: canvas,
-        gap: 8,
+        gap: 6,
       }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
-            {familyName.toUpperCase()}
+            FAMILY CUBE / {familyName.toUpperCase()}
           </Text>
           {activeMember && (
             <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-              {(activeMember as any).name}
+              {(activeMember as any).name} · {(activeMember as any).role === 'parent' ? 'Parent / Admin' : 'Member'}
             </Text>
           )}
         </View>
 
-        <View style={{ gap: 4, marginTop: 2 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-            Meals
-          </Text>
-          <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-            Plan the week, explore recipes, and keep the list stocked.
-          </Text>
-        </View>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Hub</Text>
+        </TouchableOpacity>
+
+        <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
+          Meals
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+          Plan the week, explore recipes, and keep the list stocked.
+        </Text>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 80 }}
+        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 32 }}
       >
 
         {/* ── Tonight's dinner hero card ── */}
@@ -279,11 +433,11 @@ export default function MealsScreen() {
 
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, color: colors.primary }}>
-                TONIGHT'S DINNER
+                {tonightLabel}
               </Text>
               <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3, lineHeight: 25 }}
                 numberOfLines={2}>
-                {tonightMeal?.title ?? 'No dinner planned yet'}
+                {tonightMeal?.title ?? 'No meal planned yet'}
               </Text>
             </View>
           </View>
@@ -386,60 +540,35 @@ export default function MealsScreen() {
         <FamilyRecipeBookPage onClose={() => setShowRecipes(false)} />
       </FullPageOverlay>
 
-      {/* ── A little inspiration — standalone AI suggestions page ── */}
+      {/* ── A little inspiration — single page handles both generate + results ── */}
       <FullPageOverlay
         visible={showInspirationPage}
-        onDismiss={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setAiOpen(true); }}
+        onDismiss={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setCacheLoading(false); }}
         zIndex={60}
       >
-        {pendingOptions ? (
-          <AiSuggestionsPage
-            visible
-            pendingOptions={pendingOptions}
-            selected={selected}
-            setSelected={setSelected}
-            tip={tip}
-            savingPlan={savingPlan}
-            confirmPlan={confirmPlan}
-            existingMeals={[]}
-            weekRange={weekOf()}
-            onClose={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setAiOpen(true); }}
-            onViewMeal={() => {}}
-            colors={colors}
-            isDark={isDark}
-          />
-        ) : (
-          <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
-            <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16 }}>
-              <Pressable onPress={() => { setShowInspirationPage(false); setAiOpen(true); }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>← Meals</Text>
-              </Pressable>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5,
-                color: colors.textPrimary, marginTop: 8 }}>
-                A little inspiration
-              </Text>
-            </View>
-            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
-              <AiPlannerBanner
-                colors={colors} isDark={isDark}
-                aiOpen={aiOpen} setAiOpen={setAiOpen}
-                pulseOpacity={pulseOpacity} pulseScale={pulseScale}
-                aiPref={aiPref} setAiPref={setAiPref}
-                aiLoading={aiLoading} aiError={null}
-                generateMealPlan={generateMealPlan}
-              />
-              {aiLoading && (
-                <View style={{ alignItems: 'center', gap: 12, marginTop: 40 }}>
-                  <ActivityIndicator size="large" color={colors.pink} />
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>
-                    CubeAI is crafting your week…
-                  </Text>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        )}
+        <AiSuggestionsPage
+          visible={showInspirationPage}
+          pendingOptions={pendingOptions ?? []}
+          selected={selected}
+          setSelected={setSelected}
+          tip={tip}
+          savingPlan={savingPlan}
+          cacheLoading={cacheLoading}
+          aiLoading={aiLoading}
+          aiOpen={aiOpen}
+          setAiOpen={setAiOpen}
+          aiPref={aiPref}
+          setAiPref={setAiPref}
+          pulseOpacity={pulseOpacity}
+          pulseScale={pulseScale}
+          generateMealPlan={generateMealPlan}
+          confirmPlan={confirmPlan}
+          existingMeals={[]}
+          weekRange={weekOf()}
+          onClose={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setCacheLoading(false); }}
+          colors={colors}
+          isDark={isDark}
+        />
       </FullPageOverlay>
 
     </View>

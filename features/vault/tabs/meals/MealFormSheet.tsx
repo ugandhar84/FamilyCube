@@ -236,13 +236,13 @@ export default function MealFormSheet({
   return (
     <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
               {/* ── ReviewInbox-style header ── */}
               <View style={{
                 paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
                 borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-                backgroundColor: '#FFFFFF', gap: 6,
+                backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 6,
               }}>
                 {/* Family chrome */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -340,9 +340,15 @@ export default function MealFormSheet({
                 {/* DATE — read-only display */}
                 <FieldCard label="Date" colors={colors}>
                   <Text style={{ fontSize: 16, fontWeight: '500', color: colors.textPrimary }}>
-                    {day
-                      ? new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-                      : editingMeal?.day ?? '—'}
+                    {(() => {
+                      const dayName = day ?? editingMeal?.day;
+                      const idx = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].indexOf(dayName ?? '');
+                      if (idx < 0) return '—';
+                      const now = new Date();
+                      const target = new Date(now);
+                      target.setDate(now.getDate() - ((now.getDay() + 6) % 7) + idx);
+                      return target.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                    })()}
                   </Text>
                 </FieldCard>
 

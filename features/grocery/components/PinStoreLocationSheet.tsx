@@ -82,12 +82,12 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
   if (!visible) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
       {/* Header — ReviewInbox pattern */}
       <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-        backgroundColor: '#FFFFFF', gap: 8 }}>
+        backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>GROCERIES</Text>
         </View>
@@ -105,9 +105,9 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
 
         {/* Figma: search field with active blue border */}
-        <View style={{ borderRadius: 14, borderWidth: 2, borderColor: P, backgroundColor: '#FFFFFF',
+        <View style={{ borderRadius: 14, borderWidth: 2, borderColor: P, backgroundColor: isDark ? colors.surface : '#FFFFFF',
           padding: 14, gap: 4 }}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 2 }}>Find a store or address</Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 2 }}>Find a store or address</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={{ flex: 1 }}>
               <LocationAutocompleteInput
@@ -175,7 +175,7 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
         </View>
 
         {/* Figma: "Pin this exact branch" detail card */}
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF',
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
           padding: 20, gap: 10,
           shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 8,
           shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
@@ -183,7 +183,7 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
           <View style={{ gap: 3 }}>
             <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{store || 'Store'}</Text>
             {marker && (
-              <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185' }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
                 {`${marker.latitude.toFixed(5)}, ${marker.longitude.toFixed(5)}`}
               </Text>
             )}
@@ -194,21 +194,21 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
         </View>
 
         {/* Figma: household nickname field */}
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 14 }}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#657185', marginBottom: 4 }}>Household store nickname</Text>
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Household store nickname</Text>
           <Text style={{ fontSize: 15, color: nickname ? colors.textPrimary : colors.textTertiary }}>
             {nickname || store || 'e.g. Riverside Tesco'}
           </Text>
         </View>
 
         {/* Figma: footer note */}
-        <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185', lineHeight: 18 }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
           Pinning shares this branch with your household. Other {store || 'store'} locations remain separate choices.
         </Text>
 
         {/* Figma: "Back · keep store selection" link card */}
         <Pressable onPress={onClose}
-          style={{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#DFE5EF', padding: 16, alignItems: 'center' }}>
+          style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, alignItems: 'center' }}>
           <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>Back · keep store selection</Text>
         </Pressable>
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Animated, Easing } from 'react-native';
+import { View, Text, Animated, Easing, Image } from 'react-native';
+import { useUnsplashMealImage } from '@/lib/hooks/useUnsplashMealImage';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { weekOf, DAYS } from '@/features/vault/tabs/meals/types';
@@ -40,20 +41,35 @@ export function TonightMealCard({
   }, []);
 
   useEffect(() => {
-    if (!familyId) { setMeals([]); return; }
+    if (!familyId) return; // wait — don't set [] yet, familyId may still be loading
     let cancelled = false;
     const today = DAYS[(new Date().getDay() + 6) % 7];
+    const hour  = new Date().getHours();
+    // Show the most relevant meal slot for the time of day, fall back to all today's meals
+    const preferOrder = hour < 10
+      ? ['breakfast', 'snack', 'lunch', 'dinner']
+      : hour < 15
+      ? ['lunch', 'breakfast', 'snack', 'dinner']
+      : ['dinner', 'lunch', 'snack', 'breakfast'];
     (async () => {
       const { data, error } = await supabase
         .from('family_meals')
         .select('id, title, emoji, type, chef_id, start_time, prep_minutes')
         .eq('family_id', familyId)
-        .eq('week_of', weekOf())
+        .gte('week_of', weekOf())
         .eq('day', today)
+        .order('week_of', { ascending: true })
         .order('type');
       if (cancelled) return;
       if (error) { setMeals([]); return; }
-      setMeals((data as TodayMeal[]) ?? []);
+      const rows = (data as TodayMeal[]) ?? [];
+      // Sort by preferred time-of-day order so primary meal is most relevant
+      const sorted = [...rows].sort((a, b) => {
+        const ai = preferOrder.indexOf(a.type?.toLowerCase());
+        const bi = preferOrder.indexOf(b.type?.toLowerCase());
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+      setMeals(sorted);
     })();
     return () => { cancelled = true; };
   }, [familyId]);
@@ -61,6 +77,7 @@ export function TonightMealCard({
   const hasMeals = meals && meals.length > 0;
   const primary = meals?.[0];
   const chef = primary?.chef_id ? members.find(m => m.id === primary.chef_id) : undefined;
+  const foodImage = useUnsplashMealImage(primary?.title ?? '');
 
   return (
     <AnimatedPressable
@@ -74,20 +91,24 @@ export function TonightMealCard({
         shadowColor: colors.navy, shadowOffset: { width: 0, height: 7 },
         shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
       }}>
-      {/* Left photo / emoji slot */}
+      {/* Left food image slot */}
       <View style={{
         width: 110, minHeight: 145,
-        alignItems: 'center', justifyContent: 'center',
+        alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
         backgroundColor: hasMeals ? colors.tealLight : colors.surface,
       }}>
-        <Text style={{ fontSize: 40 }}>
-          {primary?.emoji ?? (hasMeals ? '🍽️' : '🍽️')}
-        </Text>
+        {foodImage ? (
+          <Image source={{ uri: foodImage }} style={{ width: 110, height: '100%' as any }} resizeMode="cover" />
+        ) : (
+          <Text style={{ fontSize: 38, opacity: hasMeals ? 1 : 0.35 }}>🍽️</Text>
+        )}
         {hasMeals && meals!.length > 1 && (
-          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal,
-            marginTop: 6, letterSpacing: 0.3 }}>
-            +{meals!.length - 1} more
-          </Text>
+          <View style={{ position: 'absolute', bottom: 6 }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal,
+              letterSpacing: 0.3 }}>
+              +{meals!.length - 1} more
+            </Text>
+          </View>
         )}
       </View>
 
@@ -100,7 +121,7 @@ export function TonightMealCard({
             backgroundColor: colors.teal, marginBottom: 5, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10,
             fontWeight: '700', letterSpacing: 0.9 }}>
-            TODAY'S MEALS
+            {new Date().getHours() < 10 ? 'THIS MORNING' : new Date().getHours() < 15 ? "TODAY'S LUNCH" : "TONIGHT'S DINNER"}
           </Text>
         </View>
 
@@ -109,7 +130,7 @@ export function TonightMealCard({
             {/* Primary meal */}
             <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary,
               marginBottom: 3 }} numberOfLines={1}>
-              {TYPE_EMOJI[primary!.type] ?? '🍽️'} {primary!.title}
+              {primary!.title}
             </Text>
 
             {/* Extra meals as small pills */}
@@ -119,43 +140,25 @@ export function TonightMealCard({
                   <View key={m.id} style={{ borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2,
                     backgroundColor: colors.amberLight }}>
                     <Text style={{ fontSize: 10, fontWeight: '700', color: colors.amber }}>
-                      {TYPE_EMOJI[m.type] ?? '🍽️'} {m.title.length > 14 ? m.title.slice(0, 12) + '…' : m.title}
+                      {m.title.length > 14 ? m.title.slice(0, 12) + '…' : m.title}
                     </Text>
                   </View>
                 ))}
               </View>
             )}
 
-            {/* Chef avatar with pulse glow + prep time */}
+            {/* Chef name with pulse flash */}
             {chef && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 2 }}>
-                {/* Pulsing halo ring */}
-                <View style={{ position: 'relative', width: 28, height: 28 }}>
-                  <Animated.View style={{
-                    position: 'absolute', top: -4, left: -4, width: 36, height: 36,
-                    borderRadius: 18, backgroundColor: colors.teal,
-                    opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.35] }),
-                    transform: [{ scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.4] }) }],
-                  }} />
-                  <View style={{ width: 28, height: 28, borderRadius: 14,
-                    backgroundColor: `hsl(${(chef.name || '').charCodeAt(0) % 360},60%,55%)`,
-                    alignItems: 'center', justifyContent: 'center',
-                    borderWidth: 2, borderColor: colors.teal }}>
-                    <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>
-                      {(chef.name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-                <View>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>
-                    {chef.name.split(' ')[0]} is cooking
+              <View style={{ marginTop: 4, marginBottom: 2 }}>
+                <Animated.Text style={{ fontSize: 12, fontWeight: '700',
+                  color: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [colors.teal, colors.primary] }) }}>
+                  {chef.name.split(' ')[0]} is cooking
+                </Animated.Text>
+                {primary?.prep_minutes ? (
+                  <Text style={{ fontSize: 10, color: colors.textTertiary }}>
+                    ~{primary.prep_minutes} min
                   </Text>
-                  {primary?.prep_minutes ? (
-                    <Text style={{ fontSize: 10, color: colors.textTertiary }}>
-                      ~{primary.prep_minutes} min
-                    </Text>
-                  ) : null}
-                </View>
+                ) : null}
               </View>
             )}
             {!chef && primary?.prep_minutes ? (

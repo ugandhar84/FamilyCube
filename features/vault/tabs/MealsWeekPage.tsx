@@ -8,7 +8,7 @@
  *   "Add meal" CTA
  *   Day cards (via MealsTab)
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
@@ -16,13 +16,16 @@ import { useFamilyStore } from '@/store/familyStore';
 import MealsTabComp, { type MealFormState } from './MealsTab';
 import MealFormSheet from './meals/MealFormSheet';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useUIStore } from '@/store/uiStore';
+import { localDateStr } from '@/lib/dates';
 
 function weekOf(offset = 0): string {
   const d = new Date();
   const day = d.getDay();
   const diff = (day === 0 ? -6 : 1 - day) + offset * 7;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function fmtWeekRange(weekOf: string): string {
@@ -51,6 +54,16 @@ export default function MealsWeekPage({
   const [weekOffset, setWeekOffset] = useState(0);
   const currentWeek = weekOf(weekOffset);
   const weekRange   = fmtWeekRange(currentWeek);
+
+  useEffect(() => {
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => {
+      // Returning to MealsScreen (still on meals tab) — keep tab bar hidden
+      hideTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []);
 
 
   // Form state lifted from MealsTab — when set, render the form as a full page
@@ -119,14 +132,14 @@ export default function MealsWeekPage({
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.06)',
       }}>
-        <Pressable onPress={() => setWeekOffset(w => w - 1)}
+        <Pressable allowRapidPress onPress={() => setWeekOffset(w => w - 1)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>‹</Text>
         </Pressable>
         <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
           {weekRange}
         </Text>
-        <Pressable onPress={() => setWeekOffset(w => w + 1)}
+        <Pressable allowRapidPress onPress={() => setWeekOffset(w => w + 1)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>›</Text>
         </Pressable>

@@ -12,8 +12,9 @@ import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 // ─── Recipe Detail — full-page overlay ────────────────────────────────────────
 
-export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, senderId, colors, isDark, hideAddToGrocery }: {
+export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGrocery, senderId, colors, isDark, hideAddToGrocery }: {
   meal: Meal | null; visible: boolean; onClose: () => void;
+  onEdit?: (meal: Meal) => void;
   onAddToGrocery: (items: string[]) => Promise<void>;
   senderId: string; colors: any; isDark: boolean;
   hideAddToGrocery?: boolean;
@@ -112,7 +113,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
 
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 120, gap: 16 }}>
+              contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32, gap: 16 }}>
 
               {/* Info card */}
               <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
@@ -150,14 +151,16 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
                   </View>
                 )}
 
-                {/* Edit meal button */}
-                <View style={{ borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-                  marginTop: 8, overflow: 'hidden' }}>
-                  <TouchableOpacity onPress={onClose}
-                    style={{ paddingVertical: 12, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: P }}>Edit meal</Text>
-                  </TouchableOpacity>
-                </View>
+                {/* Edit meal button — only shown when caller provides onEdit */}
+                {!!onEdit && (
+                  <View style={{ borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+                    marginTop: 8, overflow: 'hidden' }}>
+                    <TouchableOpacity onPress={() => { onClose(); onEdit(meal); }}
+                      style={{ paddingVertical: 12, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: P }}>Edit meal</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               {/* Full recipe text if present */}
@@ -210,35 +213,29 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
                 </View>
               </View>
 
-            </ScrollView>
-
-            {/* ── Fixed footer ── */}
-            <View style={{
-              position: 'absolute', bottom: 0, left: 0, right: 0,
-              paddingBottom: insets.bottom + 8, paddingTop: 12, paddingHorizontal: 20,
-              backgroundColor: '#FFFFFF',
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-              flexDirection: 'row', gap: 10,
-            }}>
-              {!hideAddToGrocery && (
-                <TouchableOpacity onPress={handleAddToCart} disabled={addingCart || cartDone}
+              {/* ── Action buttons — scroll with content ── */}
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {!hideAddToGrocery && (
+                  <TouchableOpacity onPress={handleAddToCart} disabled={addingCart || cartDone}
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      borderRadius: 14, paddingVertical: 15,
+                      backgroundColor: cartDone ? colors.success : colors.teal }}>
+                    {addingCart
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : cartDone
+                        ? <><Check size={16} color="#fff" /><Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Added!</Text></>
+                        : <><ShoppingBag size={16} color="#fff" /><Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Add to grocery</Text></>}
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={shareRecipe}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    borderRadius: 14, paddingVertical: 15,
-                    backgroundColor: cartDone ? colors.success : colors.teal }}>
-                  {addingCart
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : cartDone
-                      ? <><Check size={16} color="#fff" /><Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Added!</Text></>
-                      : <><ShoppingBag size={16} color="#fff" /><Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Add to grocery</Text></>}
+                    borderRadius: 14, paddingVertical: 15, backgroundColor: colors.accent }}>
+                  <Send size={16} color="#fff" />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Share recipe</Text>
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={shareRecipe}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  borderRadius: 14, paddingVertical: 15, backgroundColor: colors.accent }}>
-                <Send size={16} color="#fff" />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Share recipe</Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+
+            </ScrollView>
 
           </View>
         </Animated.View>

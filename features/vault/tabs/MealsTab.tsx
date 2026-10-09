@@ -310,6 +310,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
       {/* ── Recipe Detail — full-page ────── */}
       <RecipeModal meal={activeRecipe} visible={!!activeRecipe}
         onClose={() => setActiveRecipe(null)}
+        onEdit={isKidOrTeen ? undefined : m => { setActiveRecipe(null); setEditMeal(m); }}
         onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}
         senderId={activeMember?.id ?? ''}
         hideAddToGrocery={isKidOrTeen}

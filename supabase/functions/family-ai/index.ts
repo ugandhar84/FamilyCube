@@ -25,7 +25,8 @@ const json = (body: unknown, status = 200) =>
 
 const GEMINI_KEY       = Deno.env.get('GEMINI_API_KEY') ?? '';
 const GEMINI_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-const IMAGEN_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict';
+// gemini-2.0-flash-exp supports image output via responseModalities — works with AI Studio key
+const GEMINI_IMAGE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
 const DEEPSEEK_KEY     = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
 const DEEPSEEK_URL     = 'https://api.deepseek.com/chat/completions';
 const SUPABASE_URL_ENV = Deno.env.get('SUPABASE_URL') ?? '';
@@ -605,33 +606,42 @@ async function generateRecipeImage(title: string, ingredients: string[], familyI
   if (!GEMINI_KEY || !SUPABASE_URL_ENV || !SERVICE_KEY) return null;
   try {
     const topIngredients = ingredients.slice(0, 4).join(', ') || 'fresh ingredients';
-    const imagePrompt = `A beautiful, appetising food photograph of "${title}". ` +
+    const imagePrompt = `Generate a beautiful, appetising food photograph of "${title}". ` +
       `Made with ${topIngredients}. ` +
-      `Plated elegantly on a wooden table with natural side lighting. ` +
-      `Professional food photography style, warm tones, shallow depth of field, no text.`;
+      `Plated on a wooden table with natural side lighting. ` +
+      `Professional food photography style, warm tones, shallow depth of field, no text, no watermarks.`;
 
-    const res = await fetch(`${IMAGEN_URL}?key=${GEMINI_KEY}`, {
+    // gemini-2.0-flash-exp supports inline image output with AI Studio keys
+    const res = await fetch(`${GEMINI_IMAGE_URL}?key=${GEMINI_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        instances: [{ prompt: imagePrompt }],
-        parameters: { sampleCount: 1, aspectRatio: '4:3' },
+        contents: [{ parts: [{ text: imagePrompt }] }],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
       }),
     });
     if (!res.ok) {
-      console.warn('[refine_recipe] Imagen failed:', res.status, await res.text());
+      console.warn('[refine_recipe] Gemini image failed:', res.status, await res.text());
       return null;
     }
     const data = await res.json();
-    const b64 = data?.predictions?.[0]?.bytesBase64Encoded as string | undefined;
-    if (!b64) return null;
+    // Find the inline image part
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imagePart) {
+      console.warn('[refine_recipe] No image part in Gemini response');
+      return null;
+    }
+    const b64: string = imagePart.inlineData.data;
+    const mime: string = imagePart.inlineData.mimeType ?? 'image/png';
+    const ext = mime.includes('png') ? 'png' : 'jpg';
 
     // Upload to Supabase Storage — bucket: recipe-images (public)
     const sb = createClient(SUPABASE_URL_ENV, SERVICE_KEY);
-    const fileName = `${familyId}/${Date.now()}.jpg`;
+    const fileName = `${familyId}/${Date.now()}.${ext}`;
     const binary = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     const { error } = await sb.storage.from('recipe-images').upload(fileName, binary, {
-      contentType: 'image/jpeg', upsert: false,
+      contentType: mime, upsert: false,
     });
     if (error) {
       console.warn('[refine_recipe] Storage upload failed:', error.message);

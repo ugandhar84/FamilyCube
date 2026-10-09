@@ -10,10 +10,11 @@ import {
   TextInput, Platform, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2 } from 'lucide-react-native';
+import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2, Camera, ImagePlus, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import type { Meal } from './meals/types';
 import { DAYS, weekOf } from './meals/types';
 import RecipeModal from './meals/RecipeModal';
@@ -154,6 +155,13 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   const [pickerDay, setPickerDay]     = useState<string>('Mon');
   const [pickerType, setPickerType]   = useState<string>('Dinner');
   const [saving, setSaving]           = useState(false);
+
+  // Hide tab bar whenever any sub-overlay is open inside this page
+  useEffect(() => {
+    const anyOpen = showAddRecipe || !!addTarget || !!activeRecipe;
+    if (anyOpen) hideTabBar(); else showTabBar();
+    return () => showTabBar();
+  }, [showAddRecipe, addTarget, activeRecipe]);
 
   useEffect(() => {
     if (!familyId) { setLoading(false); return; }
@@ -423,6 +431,62 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             </Text>
           </View>
 
+          {/* ── Hero photo — full-bleed, Figma rhythm (no horizontal padding) ── */}
+          {newImageUrl ? (
+            <View style={{ position: 'relative' }}>
+              <Image
+                source={{ uri: newImageUrl }}
+                style={{ width: '100%', height: 240 }}
+                resizeMode="cover"
+              />
+              {/* Gradient-style overlay at bottom */}
+              <View style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+                paddingHorizontal: 14, paddingBottom: 12,
+              }}>
+                <View style={{ backgroundColor: 'rgba(0,0,0,0.48)', borderRadius: 8,
+                  paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>
+                    AI-generated · review before sharing
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setNewImageUrl(null)}
+                  style={{ backgroundColor: 'rgba(0,0,0,0.48)', borderRadius: 8,
+                    paddingHorizontal: 8, paddingVertical: 4,
+                    flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <RefreshCw size={11} color="#fff" strokeWidth={2.2} />
+                  <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>Remove</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            /* Empty photo slot — browse or AI banner */
+            <Pressable
+              onPress={() => showToast('Photo library coming soon')}
+              style={{
+                height: 180, marginHorizontal: 20, borderRadius: 18, marginTop: 4,
+                borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed',
+                backgroundColor: isDark ? colors.surface : colors.surface,
+                alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+              <Camera size={28} color={colors.textTertiary} strokeWidth={1.6} />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
+                Add a photo
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 28 }}>
+                Browse your library, or refine with Cube AI below to auto-generate one.
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: colors.primaryLight, borderRadius: 20,
+                paddingHorizontal: 16, paddingVertical: 8, marginTop: 4 }}>
+                <ImagePlus size={15} color={P} strokeWidth={2} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Browse library</Text>
+              </View>
+            </Pressable>
+          )}
+
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ padding: 20, gap: 22, paddingBottom: insets.bottom + 110 }}
             keyboardShouldPersistTaps="handled">
@@ -578,25 +642,6 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                 </Text>
               </View>
             </Pressable>
-
-            {/* AI-generated image — appears after refinement */}
-            {newImageUrl ? (
-              <View style={{ borderRadius: 18, overflow: 'hidden' }}>
-                <Image
-                  source={{ uri: newImageUrl }}
-                  style={{ width: '100%', height: 200 }}
-                  resizeMode="cover"
-                />
-                <View style={{ position: 'absolute', bottom: 8, right: 10 }}>
-                  <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 8,
-                    paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>
-                      AI-generated · review before sharing
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            ) : null}
 
             {/* AI tip — appears after refinement */}
             {aiTip ? (

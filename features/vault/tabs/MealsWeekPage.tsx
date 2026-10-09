@@ -50,7 +50,7 @@ export default function MealsWeekPage({
   const currentWeek = weekOf(weekOffset);
   const weekRange   = fmtWeekRange(currentWeek);
 
-  // AI trigger — wired from MealsTab via onAiReady, also passed up to parent
+  // AI trigger — wired from MealsTab via onAiReady
   const aiTriggerRef = useRef<(() => void) | null>(null);
   const handleAiReady = useCallback((fn: () => void) => {
     aiTriggerRef.current = fn;

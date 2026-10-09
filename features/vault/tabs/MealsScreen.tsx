@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Platform,
 } from 'react-native';
@@ -36,8 +36,6 @@ export default function MealsScreen() {
   const P = colors.primary;
 
   const [showWeekPlan, setShowWeekPlan] = useState(false);
-  const aiTriggerRef = useRef<(() => void) | null>(null);
-  const handleAiReady = useCallback((fn: () => void) => { aiTriggerRef.current = fn; }, []);
 
   // Fetch tonight's dinner to show in the hero card
   const [tonightMeal, setTonightMeal] = useState<Meal | null>(null);
@@ -82,11 +80,11 @@ export default function MealsScreen() {
     {
       key: 'ai',
       title: 'AI meal planner',
-      subtitle: 'Get personalised suggestions for open slots — review before adding',
+      subtitle: 'Open the week plan and tap the AI banner to get suggestions for open slots',
       icon: Sparkles,
       color: colors.pink,
       bg: colors.pinkLight,
-      onPress: () => { setShowWeekPlan(true); setTimeout(() => aiTriggerRef.current?.(), 400); },
+      onPress: () => setShowWeekPlan(true),
     },
     {
       key: 'grocery',
@@ -272,7 +270,6 @@ export default function MealsScreen() {
       >
         <MealsWeekPage
           onClose={() => setShowWeekPlan(false)}
-          onAiReady={handleAiReady}
         />
       </FullPageOverlay>
 

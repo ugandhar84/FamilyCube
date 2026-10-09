@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Platform,
+  View, Text, ScrollView, Pressable, StyleSheet, Platform, Alert, ActivityIndicator, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarDays, Sparkles, BookOpen, ChefHat } from 'lucide-react-native';
@@ -11,8 +11,10 @@ import { useFamilyStore } from '@/store/familyStore';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import MealsWeekPage from './MealsWeekPage';
 import FamilyRecipeBookPage from './FamilyRecipeBookPage';
+import AiSuggestionsPage from './meals/AiSuggestionsPage';
+import AiPlannerBanner from './meals/AiPlannerBanner';
 import { supabase } from '@/lib/supabase';
-import type { Meal } from './meals/types';
+import { type Meal, type AiDayOptions, type AiMealResult, weekOf, detectDays } from './meals/types';
 
 function todayDayAbbr(): string {
   const ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -36,10 +38,34 @@ export default function MealsScreen() {
   const familyId = (members[0] as any)?.familyId as string | undefined;
   const P = colors.primary;
 
-  const [showWeekPlan, setShowWeekPlan] = useState(false);
-  const [showRecipes, setShowRecipes]   = useState(false);
-  const [aiTriggerFn, setAiTriggerFn]   = useState<(() => void) | null>(null);
-  const [triggerAiOnOpen, setTriggerAiOnOpen] = useState(false);
+  const [showWeekPlan, setShowWeekPlan]     = useState(false);
+  const [showRecipes, setShowRecipes]       = useState(false);
+  const [showInspirationPage, setShowInspirationPage] = useState(false);
+
+  // AI planner state — lives here so AiSuggestionsPage is its own standalone page
+  const [aiPref, setAiPref]  = useState('Kid-friendly, high-protein, 30 min max');
+  const [aiOpen, setAiOpen]  = useState(true);
+  const pulseScale   = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.8)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 2.6, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0,   duration: 800, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
+      ]),
+      Animated.delay(400),
+    ])).start();
+  }, []);
+  const [aiLoading, setAiLoading]           = useState(false);
+  const [pendingOptions, setPendingOptions] = useState<AiDayOptions[] | null>(null);
+  const [selected, setSelected]             = useState<Record<string, number[]>>({});
+  const [tip, setTip]                       = useState<string | null>(null);
+  const [groceryList, setGroceryList]       = useState<string[]>([]);
+  const [savingPlan, setSavingPlan]         = useState(false);
 
   // Fetch tonight's dinner to show in the hero card
   const [tonightMeal, setTonightMeal] = useState<Meal | null>(null);
@@ -69,17 +95,78 @@ export default function MealsScreen() {
   }, []);
 
   useEffect(() => {
-    if (showWeekPlan || showRecipes) hideTabBar(); else showTabBar();
+    if (showWeekPlan || showRecipes || showInspirationPage) hideTabBar(); else showTabBar();
     return () => showTabBar();
-  }, [showWeekPlan, showRecipes]);
+  }, [showWeekPlan, showRecipes, showInspirationPage]);
 
-  // When week plan opens with AI mode, fire generate once the AI trigger is registered
-  useEffect(() => {
-    if (triggerAiOnOpen && aiTriggerFn) {
-      setTriggerAiOnOpen(false);
-      aiTriggerFn();
+  const generateMealPlan = async () => {
+    setAiLoading(true);
+    setPendingOptions(null);
+    setSelected({});
+    try {
+      const localeRegion = Intl.DateTimeFormat().resolvedOptions().locale?.split('-').pop()?.toUpperCase() ?? 'US';
+      const useMetric = !['US', 'LR', 'MM'].includes(localeRegion);
+      const dayNames = detectDays(aiPref);
+      const { data, error } = await supabase.functions.invoke('family-ai', {
+        body: {
+          action: 'meal_plan',
+          preferences: aiPref.trim() || 'Kid-friendly, balanced, under 35 min prep',
+          dayNames,
+          members: members.map(m => ({ name: (m as any).name, role: (m as any).role })),
+          useMetric, region: localeRegion,
+        },
+      });
+      if (error) throw new Error(error.message);
+      const result: AiMealResult = data?.result ?? data;
+      if (!result?.weeklyOptions?.length) throw new Error('No options returned');
+      const defaults: Record<string, number[]> = {};
+      result.weeklyOptions.forEach((d: AiDayOptions) => { defaults[d.day] = [0]; });
+      setPendingOptions(result.weeklyOptions);
+      setSelected(defaults);
+      setGroceryList(result.groceryAutoList ?? []);
+      setTip(result.nutritionCoachingTip ?? null);
+    } catch {
+      Alert.alert('CubeAI', 'Couldn\'t generate plan. Check connection and try again.');
+      setShowInspirationPage(false);
     }
-  }, [triggerAiOnOpen, aiTriggerFn]);
+    setAiLoading(false);
+  };
+
+  const confirmPlan = async () => {
+    if (!pendingOptions) return;
+    setSavingPlan(true);
+    const curWeek = weekOf();
+    const famId = familyId ?? 'family-1';
+    const MEAL_TYPE_LABELS = ['lunch', 'dinner'];
+    const upserts = pendingOptions.flatMap((dayOpt: AiDayOptions) => {
+      const indices = selected[dayOpt.day] ?? [0];
+      return indices.map((idx: number, slot: number) => {
+        const m = dayOpt.options[idx];
+        return {
+          id: `${famId}-${curWeek}-${dayOpt.day}-${slot}-${Date.now()}`,
+          family_id: famId, week_of: curWeek, day: dayOpt.day,
+          title: m.mealName, type: indices.length > 1 ? (MEAL_TYPE_LABELS[slot] ?? 'dinner') : 'dinner',
+          chef_id: null, ingredients: m.ingredientsList, emoji: m.emoji ?? null,
+          prep_minutes: m.prepMinutes, dietary_tags: m.dietaryTags,
+          kid_friendly_rating: m.kidFriendlyRating, prep_steps: m.prepSteps ?? [],
+          ai_generated: true,
+        };
+      });
+    });
+    try {
+      await supabase.from('family_meals').delete().eq('family_id', famId).eq('week_of', curWeek).eq('ai_generated', true);
+      const { data: inserted, error: insertErr } = await supabase.from('family_meals').insert(upserts).select();
+      if (insertErr) throw new Error(insertErr.message);
+      Alert.alert('Plan Saved', `${inserted?.length ?? 0} meal${(inserted?.length ?? 0) !== 1 ? 's' : ''} added to your week.`);
+      setPendingOptions(null);
+      setSelected({});
+      setShowInspirationPage(false);
+    } catch (err: any) {
+      Alert.alert('Save Failed', err?.message ?? 'Something went wrong.');
+    } finally {
+      setSavingPlan(false);
+    }
+  };
 
   const canvas = isDark ? '#0E0C13' : '#FFFFFF';
   const cardBg = isDark ? colors.card : '#FFFFFF';
@@ -101,7 +188,7 @@ export default function MealsScreen() {
       icon: Sparkles,
       color: colors.pink,
       bg: colors.pinkLight,
-      onPress: () => { setTriggerAiOnOpen(true); setShowWeekPlan(true); },
+      onPress: () => { setAiOpen(true); setShowInspirationPage(true); },
     },
     {
       key: 'recipes',
@@ -287,7 +374,6 @@ export default function MealsScreen() {
       >
         <MealsWeekPage
           onClose={() => setShowWeekPlan(false)}
-          onAiReady={(fn) => setAiTriggerFn(() => fn)}
         />
       </FullPageOverlay>
 
@@ -298,6 +384,62 @@ export default function MealsScreen() {
         zIndex={50}
       >
         <FamilyRecipeBookPage onClose={() => setShowRecipes(false)} />
+      </FullPageOverlay>
+
+      {/* ── A little inspiration — standalone AI suggestions page ── */}
+      <FullPageOverlay
+        visible={showInspirationPage}
+        onDismiss={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setAiOpen(true); }}
+        zIndex={60}
+      >
+        {pendingOptions ? (
+          <AiSuggestionsPage
+            visible
+            pendingOptions={pendingOptions}
+            selected={selected}
+            setSelected={setSelected}
+            tip={tip}
+            savingPlan={savingPlan}
+            confirmPlan={confirmPlan}
+            existingMeals={[]}
+            weekRange={weekOf()}
+            onClose={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setAiOpen(true); }}
+            onViewMeal={() => {}}
+            colors={colors}
+            isDark={isDark}
+          />
+        ) : (
+          <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+            <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16 }}>
+              <Pressable onPress={() => { setShowInspirationPage(false); setAiOpen(true); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>← Meals</Text>
+              </Pressable>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5,
+                color: colors.textPrimary, marginTop: 8 }}>
+                A little inspiration
+              </Text>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
+              <AiPlannerBanner
+                colors={colors} isDark={isDark}
+                aiOpen={aiOpen} setAiOpen={setAiOpen}
+                pulseOpacity={pulseOpacity} pulseScale={pulseScale}
+                aiPref={aiPref} setAiPref={setAiPref}
+                aiLoading={aiLoading} aiError={null}
+                generateMealPlan={generateMealPlan}
+              />
+              {aiLoading && (
+                <View style={{ alignItems: 'center', gap: 12, marginTop: 40 }}>
+                  <ActivityIndicator size="large" color={colors.pink} />
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>
+                    CubeAI is crafting your week…
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        )}
       </FullPageOverlay>
 
     </View>

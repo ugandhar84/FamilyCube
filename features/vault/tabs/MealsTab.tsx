@@ -28,7 +28,7 @@ import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
-export default function MealsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+export default function MealsTab({ colors, isDark, weekOverride }: { colors: any; isDark: boolean; weekOverride?: string }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -42,7 +42,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   // RecipeModal's own Share) stays available to everyone — it was never
   // an edit action.
   const isKidOrTeen = (activeMember as any)?.role === 'kid' || (activeMember as any)?.role === 'teen';
-  const curWeek     = weekOf();
+  const curWeek     = weekOverride ?? weekOf();
   const addQuest    = useQuestStore().addQuest;
 
   const [meals, setMeals]       = useState<Meal[]>([]);

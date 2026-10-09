@@ -1,56 +1,141 @@
-/**
- * MealsScreen — standalone route wrapper around MealsTabComp, mirroring
- * GroceryScreen.tsx's own-header pattern (not AppHeader — this is a
- * secondary screen reached via router.push, not a primary tab). Previously
- * only reachable via VaultScreen's openFeature=meals overlay; now has its
- * own real route (app/(tabs)/meals.tsx) so the Hub's "Meals" quick-action
- * tile can link straight to it, matching how Grocery already works.
- */
-import { useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ChefHat } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { useUIStore } from '@/store/uiStore';
+import { useFamilyStore } from '@/store/familyStore';
 import MealsTabComp from './MealsTab';
+
+function fmtWeekRange(weekOf: string): string {
+  const d = new Date(weekOf + 'T00:00:00');
+  const end = new Date(d);
+  end.setDate(d.getDate() + 6);
+  const startStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+  const endStr   = end.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  return `${startStr}–${endStr}`;
+}
+
+function weekOf(offset = 0): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1 - day) + offset * 7;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
 
 export default function MealsScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { members, activeMemberId } = useFamilyStore();
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const familyName   = (members[0] as any)?.familyName ?? 'Family';
+  const P = colors.primary;
 
-  // Hides the shared Ask Cube FAB — same fullBleedScreenActive mechanism
-  // GpsTab.tsx/HealthRecordsScreen.tsx use for a pushed sub-route the tab
-  // layout's activeTabName-based hide logic can't otherwise detect.
+  const [weekOffset, setWeekOffset] = useState(0);
+  const currentWeek = weekOf(weekOffset);
+  const weekRange   = fmtWeekRange(currentWeek);
+
   useEffect(() => {
     useUIStore.getState().setFullBleedScreenActive(true);
     return () => useUIStore.getState().setFullBleedScreenActive(false);
   }, []);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
+    <View style={{ flex: 1, backgroundColor: colors.card }}>
+
+      {/* ── ReviewInbox-style header ── */}
       {!hideHeader && (
-        <View style={{ flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12,
-          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={{ marginRight: 12 }}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <View style={{ width: 34, height: 34, borderRadius: 10,
-            backgroundColor: colors.danger + '18', borderWidth: 1, borderColor: colors.danger + '30',
-            alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-            <ChefHat size={17} color={colors.danger} />
+        <View style={{
+          paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
+          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+          backgroundColor: colors.card, gap: 8,
+        }}>
+          {/* Family chrome */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              FAMILY CUBE / {familyName.toUpperCase()}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+              {(activeMember as any)?.name} · {(activeMember as any)?.role === 'parent' ? 'Parent / Admin' : 'Member'}
+            </Text>
           </View>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3, flex: 1 }}>
-            Meals
+
+          {/* Breadcrumb */}
+          <Pressable onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Lists</Text>
+          </Pressable>
+
+          {/* Title */}
+          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
+            A week at the table
           </Text>
         </View>
       )}
+
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
-        <MealsTabComp colors={colors} isDark={isDark} />
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
+
+        {/* ── Week navigator ── */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable onPress={() => setWeekOffset(w => w - 1)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 18, color: P }}>‹</Text>
+          </Pressable>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+            {weekRange}
+          </Text>
+          <Pressable onPress={() => setWeekOffset(w => w + 1)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 18, color: P }}>›</Text>
+          </Pressable>
+        </View>
+
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, paddingHorizontal: 20, marginBottom: 14 }}>
+          Shared with the five Parkers · tap any slot to edit. An open slot is an invitation, not a missed task.
+        </Text>
+
+        {/* ── AI suggestions card (lavender) ── */}
+        <View style={{ marginHorizontal: 20, marginBottom: 16, backgroundColor: colors.pinkLight, borderRadius: 22, padding: 20, gap: 6 }}>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary }}>
+            Want a few meal ideas?
+          </Text>
+          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textSecondary, lineHeight: 20 }}>
+            Optional suggestions that fit the week. Review before adding anything.
+          </Text>
+          <Pressable style={{ marginTop: 4 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink }}>
+              Preview AI meal plan →
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* ── Add meal button ── */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+          <Pressable
+            style={({ pressed }) => ({
+              borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+              backgroundColor: pressed ? P + 'CC' : P,
+            })}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Add meal</Text>
+          </Pressable>
+        </View>
+
+        {/* ── Day cards from MealsTab ── */}
+        <View style={{ paddingHorizontal: 20 }}>
+          <MealsTabComp colors={colors} isDark={isDark} weekOverride={currentWeek} />
+        </View>
+
+        {/* ── Open shared groceries link ── */}
+        <Pressable onPress={() => router.push('/(tabs)/grocery' as any)}
+          style={{ alignItems: 'center', paddingVertical: 20, marginTop: 8 }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>
+            Open shared groceries →
+          </Text>
+        </Pressable>
+
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

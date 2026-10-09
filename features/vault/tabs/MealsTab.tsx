@@ -23,8 +23,6 @@ import FlatSectionHeader from './meals/FlatSectionHeader';
 import RecipeModal from './meals/RecipeModal';
 import DayCard from './meals/DayCard';
 import AiPlannerBanner from './meals/AiPlannerBanner';
-import MealSelectionPhase from './meals/MealSelectionPhase';
-import AiSuggestionsPage from './meals/AiSuggestionsPage';
 import MealFormSheet from './meals/MealFormSheet';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
@@ -79,7 +77,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   const [pendingOptions, setPendingOptions] = useState<AiDayOptions[] | null>(null);
   const [selected, setSelected]             = useState<Record<string, number[]>>({}); // day → [indices]
   const [savingPlan, setSavingPlan]         = useState(false);
-  const [showAiPage, setShowAiPage]         = useState(false); // full-page AI suggestions overlay
 
   // Modals
   const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
@@ -181,7 +178,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
       setGroceryList(result.groceryAutoList ?? []);
       setTip(result.nutritionCoachingTip ?? null);
       setAiOpen(false);
-      setShowAiPage(true); // open full-page suggestions overlay
+      // AI options now surface inline in DayCard — no separate page needed
     } catch {
       setAiError('Couldn\'t generate plan. Check connection and try again.');
     }
@@ -233,7 +230,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         setMeals(prev => [...prev.filter(m => !m.ai_generated), ...(inserted as Meal[])]);
         setPendingOptions(null);
         setSelected({});
-        setShowAiPage(false);
         Alert.alert('Plan Saved', `${inserted.length} meal${inserted.length > 1 ? 's' : ''} added to your week.`);
       } else {
         Alert.alert('Nothing Saved', 'No meals were inserted. Try selecting at least one meal per day.');
@@ -468,17 +464,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         )}
       </View>
 
-      {/* ── Meal Selection Phase (flat) ─────────────────────────── */}
-      {pendingOptions && (
-        <MealSelectionPhase
-          colors={colors} isDark={isDark}
-          pendingOptions={pendingOptions} setPendingOptions={setPendingOptions}
-          selected={selected} setSelected={setSelected}
-          tip={tip} savingPlan={savingPlan} confirmPlan={confirmPlan}
-        />
-      )}
-
-      {/* ── Weekly Plan Grid (flat) ─────────────────────────────── */}
+      {/* ── Weekly Plan Grid ─────────────────────────────── */}
       {aiLoading && (
         <View style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <ActivityIndicator color={colors.accent} size="small" />
@@ -500,11 +486,57 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
           </View>
         )}
 
+        {/* AI confirm banner — appears above day cards when suggestions are loaded */}
+        {pendingOptions && (
+          <View style={{ borderRadius: 16, backgroundColor: colors.accent + '15',
+            borderWidth: 1.5, borderColor: colors.accent + '40',
+            padding: 16, marginBottom: 16, gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 20 }}>✦</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                  AI suggestions ready
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                  Tap any option below to select it, then add to your week.
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={confirmPlan} disabled={savingPlan}
+                style={{ flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center',
+                  backgroundColor: savingPlan ? colors.accent + '60' : colors.accent }}>
+                {savingPlan
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>
+                      Add selected to week
+                    </Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setPendingOptions(null); setSelected({}); }}
+                style={{ borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+                  backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+            {tip && (
+              <Text style={{ fontSize: 12, color: colors.teal, fontWeight: '600', lineHeight: 17 }}>
+                💡 {tip}
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Day cards */}
         <View>
           {DAYS.map(day => (
             <DayCard key={day} day={day} meals={mealsByDay[day] ?? []}
               members={members as any}
+              aiOptions={pendingOptions?.find(o => o.day === day)}
+              aiSelected={selected[day]}
+              onAiToggle={(d, idx) => setSelected(prev => {
+                const cur = prev[d] ?? [];
+                return { ...prev, [d]: cur.includes(idx) ? cur.filter(i => i !== idx) : [...cur, idx] };
+              })}
               colors={colors} isDark={isDark}
               onRecipe={m => setActiveRecipe(m)}
               onEdit={isKidOrTeen ? undefined : m => setEditMeal(m)}
@@ -562,31 +594,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         hideAddToGrocery={isKidOrTeen}
         colors={colors} isDark={isDark} />
 
-      {/* ── AI Suggestions — full-page overlay ────── */}
-      {!!pendingOptions && (
-        <AiSuggestionsPage
-          visible={showAiPage}
-          pendingOptions={pendingOptions}
-          selected={selected} setSelected={setSelected}
-          tip={tip} savingPlan={savingPlan} confirmPlan={confirmPlan}
-          existingMeals={meals} weekRange={curWeek}
-          onClose={() => setShowAiPage(false)}
-          onViewMeal={(preview) => {
-            // Convert preview → Meal-like object for RecipeModal
-            setActiveRecipe({
-              id: 'preview', day: preview.day, title: preview.title,
-              type: 'dinner', week_of: curWeek,
-              emoji: preview.emoji ?? null,
-              prep_minutes: preview.prepMinutes,
-              ingredients: preview.ingredients,
-              prep_steps: preview.prepSteps ?? [],
-              dietary_tags: preview.dietaryTags,
-              chef_id: null, ai_generated: true,
-            });
-          }}
-          colors={colors} isDark={isDark}
-        />
-      )}
     </View>
   );
 }

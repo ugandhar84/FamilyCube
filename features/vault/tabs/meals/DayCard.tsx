@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Meal } from './types';
+import type { Meal } from './types';
+import type { FamilyMember } from '@/store/familyStore';
 
 const MEAL_SLOTS = [
   { type: 'breakfast', label: 'Breakfast', icon: '🍳' },
@@ -8,7 +10,6 @@ const MEAL_SLOTS = [
 ] as const;
 
 function fmtDayHeading(day: string): string {
-  // day is 'Mon', 'Tue' etc. — convert to "Monday · 5 Oct" style
   const DAY_FULL: Record<string, string> = {
     Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday',
     Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday',
@@ -17,31 +18,44 @@ function fmtDayHeading(day: string): string {
     Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0,
   };
   const today = new Date();
-  const todayIdx = today.getDay();
-  const targetIdx = DAY_IDX[day] ?? 1;
-  const diff = ((targetIdx - (todayIdx === 0 ? 6 : todayIdx - 1) + 7) % 7);
-  const d = new Date(today);
-  d.setDate(today.getDate() + diff - (todayIdx === 0 ? 6 : todayIdx - 1) + (targetIdx === 0 ? 6 : targetIdx - 1));
-
-  // Simpler: find the date of this day in the current week (Mon=start)
   const monday = new Date(today);
-  const mDiff = (today.getDay() + 6) % 7; // days since monday
+  const mDiff = (today.getDay() + 6) % 7;
   monday.setDate(today.getDate() - mDiff);
   const dayOffset = DAY_IDX[day] === 0 ? 6 : (DAY_IDX[day] ?? 1) - 1;
   const date = new Date(monday);
   date.setDate(monday.getDate() + dayOffset);
-
   const dateStr = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
   return `${DAY_FULL[day] ?? day} · ${dateStr}`;
 }
 
-export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd, colors, isDark }: {
+function MemberAvatar({ member, size = 26, colors }: { member: FamilyMember; size?: number; colors: any }) {
+  const name = (member as any).name as string ?? '?';
+  const initials = name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+  const hue = name.charCodeAt(0) % 360;
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2,
+      backgroundColor: `hsl(${hue},60%,55%)`,
+      alignItems: 'center', justifyContent: 'center',
+      borderWidth: 1.5, borderColor: colors.teal + '60' }}>
+      <Text style={{ fontSize: size * 0.38, fontWeight: '900', color: '#fff' }}>{initials}</Text>
+    </View>
+  );
+}
+
+export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelete, onAdd, onChefSwap, colors, isDark }: {
   day: string; meals: Meal[];
-  onRecipe: (m: Meal) => void; onEdit?: (m: Meal) => void; onDelete?: (m: Meal) => void; onAdd?: () => void;
+  members?: FamilyMember[];
+  onRecipe: (m: Meal) => void;
+  onEdit?: (m: Meal) => void;
+  onDelete?: (m: Meal) => void;
+  onAdd?: () => void;
+  onChefSwap?: (mealId: string, newChefId: string | null) => void;
   colors: any; isDark: boolean;
 }) {
   const todayShort = new Date().toLocaleDateString('en-US', { weekday: 'short' });
   const isToday = todayShort === day;
+  // Track which meal's chef picker is open
+  const [chefPickerMealId, setChefPickerMealId] = useState<string | null>(null);
 
   return (
     <View style={{ marginBottom: 20 }}>
@@ -65,7 +79,9 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
       }}>
         {MEAL_SLOTS.map(({ type, label, icon }, idx) => {
           const meal = meals.find(m => m.type?.toLowerCase() === type);
-          const isLast = idx === MEAL_SLOTS.length - 1;
+          const chef = meal?.chef_id ? members?.find(m => m.id === meal.chef_id) : undefined;
+          const isPickerOpen = chefPickerMealId === meal?.id;
+
           return (
             <View key={type}>
               {idx > 0 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />}
@@ -83,22 +99,88 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
                 </View>
 
                 <View style={{ flex: 1, gap: 3 }}>
-                  {/* Slot label */}
                   <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
                     {label}
                   </Text>
 
                   {meal ? (
                     <>
-                      {/* Meal details */}
                       <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }} numberOfLines={1}>
-                        {[
-                          meal.title,
-                          meal.start_time,
-                          meal.chef_id ? '·' : null,
-                        ].filter(Boolean).join(' · ')}
+                        {meal.title}{meal.start_time ? ` · ${meal.start_time}` : ''}
                       </Text>
-                      {/* Action link */}
+
+                      {/* Chef row — avatar + name + swap button */}
+                      {onChefSwap && members && members.length > 0 && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          {chef ? (
+                            <>
+                              <MemberAvatar member={chef} size={22} colors={colors} />
+                              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.teal }}>
+                                {(chef as any).name.split(' ')[0]}
+                              </Text>
+                            </>
+                          ) : (
+                            <Text style={{ fontSize: 12, color: colors.textTertiary }}>No chef</Text>
+                          )}
+                          <Pressable
+                            onPress={(e) => { e.stopPropagation?.(); setChefPickerMealId(isPickerOpen ? null : meal.id); }}
+                            style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+                              backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>
+                              {chef ? 'Swap chef' : 'Assign chef'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      )}
+
+                      {/* Inline chef picker */}
+                      {isPickerOpen && members && (
+                        <View style={{ marginTop: 8, padding: 10, borderRadius: 12,
+                          backgroundColor: colors.surface, gap: 4 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.5,
+                            color: colors.textTertiary, marginBottom: 4 }}>
+                            WHO'S COOKING?
+                          </Text>
+                          {/* No chef option */}
+                          <Pressable
+                            onPress={(e) => { e.stopPropagation?.(); onChefSwap?.(meal.id, null); setChefPickerMealId(null); }}
+                            style={({ pressed }) => ({
+                              flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8,
+                              borderRadius: 10, backgroundColor: !chef ? colors.tealLight : (pressed ? colors.border : 'transparent'),
+                            })}>
+                            <View style={{ width: 22, height: 22, borderRadius: 11,
+                              backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 12 }}>👨‍👩‍👧</Text>
+                            </View>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Anyone</Text>
+                            {!chef && <Text style={{ fontSize: 11, color: colors.teal, marginLeft: 'auto' }}>✓</Text>}
+                          </Pressable>
+                          {members.map(m => {
+                            const isSelected = meal.chef_id === (m as any).id;
+                            return (
+                              <Pressable
+                                key={(m as any).id}
+                                onPress={(e) => { e.stopPropagation?.(); onChefSwap?.(meal.id, (m as any).id); setChefPickerMealId(null); }}
+                                style={({ pressed }) => ({
+                                  flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8,
+                                  borderRadius: 10, backgroundColor: isSelected ? colors.tealLight : (pressed ? colors.border : 'transparent'),
+                                })}>
+                                <MemberAvatar member={m} size={22} colors={colors} />
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+                                    {(m as any).name}
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                                    {(m as any).role === 'kid' ? 'With help' : (m as any).role}
+                                  </Text>
+                                </View>
+                                {isSelected && <Text style={{ fontSize: 11, color: colors.teal }}>✓</Text>}
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      )}
+
                       <Pressable onPress={() => onEdit ? onEdit(meal) : onRecipe(meal)}>
                         <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal, marginTop: 2 }}>
                           {onEdit ? `Edit ${label.toLowerCase()} →` : `Open recipe →`}

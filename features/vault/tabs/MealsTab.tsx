@@ -370,15 +370,15 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
     title: string; type: string; emoji: string; chef_id: string | null;
     prep_minutes: number | null; dietary_tags: string[]; ingredients: string[];
     prep_steps: string[]; start_time: string | null; timezone: string | null;
+    createReminder: boolean;
   }) => {
     if (editMeal) {
-      const prevChefId = editMeal.chef_id;
       const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...patch });
       const fullPatch = { ...patch, linked_event_id: linkedEventId };
       await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
       setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...fullPatch } : m));
       showToast('Meal updated');
-      if (patch.chef_id && patch.chef_id !== prevChefId) {
+      if (patch.createReminder && patch.chef_id) {
         createCookingQuest(patch.title, patch.chef_id, editMeal.day, patch.prep_minutes);
       }
       setEditMeal(null);
@@ -391,7 +391,9 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         ...patch, ai_generated: false, linked_event_id: linkedEventId,
       }).select().single();
       if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
-      if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+      if (patch.createReminder && patch.chef_id) {
+        createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+      }
       setAddDay(null);
     }
   });
@@ -502,11 +504,17 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         <View>
           {DAYS.map(day => (
             <DayCard key={day} day={day} meals={mealsByDay[day] ?? []}
+              members={members as any}
               colors={colors} isDark={isDark}
               onRecipe={m => setActiveRecipe(m)}
               onEdit={isKidOrTeen ? undefined : m => setEditMeal(m)}
               onDelete={isKidOrTeen ? undefined : m => deleteMeal(m.id)}
               onAdd={isKidOrTeen ? undefined : () => setAddDay(day)}
+              onChefSwap={isKidOrTeen ? undefined : async (mealId, newChefId) => {
+                await supabase.from('family_meals').update({ chef_id: newChefId }).eq('id', mealId);
+                setMeals(prev => prev.map(m => m.id === mealId ? { ...m, chef_id: newChefId } : m));
+                showToast(newChefId ? 'Chef updated' : 'Chef removed');
+              }}
             />
           ))}
         </View>

@@ -53,6 +53,7 @@ export interface MealFormPatch {
   dietary_tags: string[]; ingredients: string[]; prep_steps: string[];
   recipe_text: string | null;
   start_time: string | null; timezone: string | null;
+  createReminder: boolean;
 }
 
 type SuggestionItem = {
@@ -113,6 +114,7 @@ export default function MealFormSheet({
   const [recipeText, setRecipeText]   = useState('');
   const [note, setNote]               = useState('');
   const [startTime, setStartTime]     = useState<Date | null>(null);
+  const [createReminder, setCreateReminder] = useState(false);
 
   // Recipe suggestions from recipe book + history
   const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
@@ -172,7 +174,7 @@ export default function MealFormSheet({
       setTitle(''); setType('dinner'); setEmoji('🍽️'); setChefId('');
       setPrepMins(''); setServings(''); setDietTags([]); setIngredients('');
       setPrepSteps(''); setRecipeText(''); setNote('');
-      setStartTime(null);
+      setStartTime(null); setCreateReminder(false);
     }
   }, [visible, editingMeal]);
 
@@ -221,6 +223,7 @@ export default function MealFormSheet({
       recipe_text: recipeText.trim() || null,
       start_time: startTime ? fmtTimeLabel(startTime) : null,
       timezone: startTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
+      createReminder: createReminder && !!chefId,
     });
   };
 
@@ -472,6 +475,29 @@ export default function MealFormSheet({
                       );
                     })}
                   </View>
+
+                  {/* Cooking reminder toggle — only shown when a chef is picked */}
+                  {!!chefId && (
+                    <TouchableOpacity
+                      onPress={() => setCreateReminder(v => !v)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10,
+                        paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+                      <View style={{ width: 24, height: 24, borderRadius: 6, borderWidth: 2,
+                        borderColor: createReminder ? colors.teal : colors.border,
+                        backgroundColor: createReminder ? colors.teal : 'transparent',
+                        alignItems: 'center', justifyContent: 'center' }}>
+                        {createReminder && <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✓</Text>}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+                          Add a cooking reminder
+                        </Text>
+                        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 1 }}>
+                          Creates a task for {members.find(m => m.id === chefId)?.name?.split(' ')[0] ?? 'them'} to cook this meal
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </FieldCard>
 
                 {/* SERVINGS */}

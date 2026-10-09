@@ -579,11 +579,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
 
   useEffect(() => {
-    if (focusKey === 0) {
-      opacities.forEach(v => v.setValue(1));
-      translateYs.forEach(v => v.setValue(0));
-      return;
-    }
+    if (focusKey === 0) return; // not yet focused — stay invisible until first focus
     opacities.forEach(v => v.setValue(0));
     translateYs.forEach(v => v.setValue(18));
     const anims = opacities.map((op, i) =>

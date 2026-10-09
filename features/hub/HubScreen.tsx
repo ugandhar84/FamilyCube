@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFocusEffect, useNavigation, router } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -164,26 +164,13 @@ export default function HubScreen() {
   const describeFullFormRef = useRef<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>(null);
 
   // Drive ParentView's entrance animation from HubScreen's focus events —
-  // ParentView is a child inside HubScreen's ScrollView so its own
-  // useFocusEffect never fires; the key is passed as a prop and incremented
-  // here on each real tab-switch (subpage pops get key=0 = show-immediate).
-  const [hubFocusKey, setHubFocusKey] = useState(1);
-  const hubIsSubpage = useRef(false);
-  const hubNavigation = useNavigation();
-  useEffect(() => {
-    const unsub = (hubNavigation as any).addListener?.('blur', () => {
-      const state = (hubNavigation as any).getState?.();
-      if (state && state.index > 0) hubIsSubpage.current = true;
-    });
-    return () => unsub?.();
-  }, []);
+  // ParentView is a child inside HubScreen's ScrollView so useFocusEffect
+  // never fires there. HubScreen is at the tab level (no real stack pushes
+  // on its own navigator — full-page overlays are position:absolute Views,
+  // not router pushes), so we always play the animation on every tab focus.
+  const [hubFocusKey, setHubFocusKey] = useState(0);
   useFocusEffect(useCallback(() => {
-    if (hubIsSubpage.current) {
-      hubIsSubpage.current = false;
-      setHubFocusKey(0); // 0 = show immediately, no animation
-    } else {
-      setHubFocusKey(k => k === 0 ? 1 : k + 1);
-    }
+    setHubFocusKey(k => k + 1);
   }, []));
 
   useEffect(() => {

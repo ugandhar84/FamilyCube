@@ -143,7 +143,7 @@ export default function MealsScreen() {
           onPress={() => setShowWeekPlan(true)}
           style={({ pressed }) => ({
             borderRadius: 22, overflow: 'hidden',
-            backgroundColor: isDark ? colors.card : colors.primaryLight,
+            backgroundColor: isDark ? colors.card : '#FFFFFF',
             opacity: pressed ? 0.88 : 1,
             ...Platform.select({
               ios: {
@@ -156,30 +156,30 @@ export default function MealsScreen() {
             }),
           })}
         >
-          {/* Coloured top band */}
+          {/* Pastel top band */}
           <View style={{
-            backgroundColor: P,
-            paddingHorizontal: 18, paddingTop: 18, paddingBottom: 14,
-            flexDirection: 'row', alignItems: 'flex-end', gap: 14,
+            backgroundColor: colors.primaryLight,
+            paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16,
+            flexDirection: 'row', alignItems: 'center', gap: 14,
           }}>
-            {/* Emoji or chef icon */}
+            {/* Emoji bubble */}
             <View style={{
-              width: 72, height: 72, borderRadius: 18,
-              backgroundColor: 'rgba(255,255,255,0.22)',
+              width: 72, height: 72, borderRadius: 20,
+              backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.75)',
               alignItems: 'center', justifyContent: 'center',
             }}>
               {tonightMeal?.emoji ? (
                 <Text style={{ fontSize: 38 }}>{tonightMeal.emoji}</Text>
               ) : (
-                <ChefHat size={34} color="#FFFFFF" strokeWidth={1.6} />
+                <ChefHat size={32} color={colors.primary} strokeWidth={1.6} />
               )}
             </View>
 
-            <View style={{ flex: 1, gap: 3, paddingBottom: 2 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: 'rgba(255,255,255,0.75)' }}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, color: colors.primary }}>
                 TONIGHT'S DINNER
               </Text>
-              <Text style={{ fontSize: 21, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, lineHeight: 26 }}
+              <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3, lineHeight: 25 }}
                 numberOfLines={2}>
                 {tonightMeal?.title ?? 'No dinner planned yet'}
               </Text>
@@ -213,7 +213,7 @@ export default function MealsScreen() {
                 </Text>
               )}
             </View>
-            <Text style={{ fontSize: 22, color: P }}>›</Text>
+            <Text style={{ fontSize: 22, color: colors.primary }}>›</Text>
           </View>
         </Pressable>
 

@@ -29,7 +29,7 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   chat:     'chatbubbles-outline',
   profile:  'apps-outline',
   memories: 'images-outline',
-  gps:      'radio-outline',
+  gps:      'people-outline',
   store:    'gift-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -38,7 +38,7 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
   chat:     'chatbubbles',
   profile:  'apps',
   memories: 'images',
-  gps:      'radio',
+  gps:      'people',
   store:    'gift',
 };
 
@@ -65,7 +65,7 @@ const TABS_DEFAULT = [
   { name: 'tasks',    label: 'Tasks'    },
   { name: 'store',    label: 'Store'    },
   { name: 'chat',     label: 'Chat'     },
-  { name: 'gps',      label: 'FindFam'  },
+  { name: 'gps',      label: 'Family'   },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
@@ -515,6 +515,7 @@ export default function TabLayout() {
         <Tabs.Screen name="memories"             options={{ href: null }} />
         {/* Family Health & Records combined (one screen, segmented switch) */}
         <Tabs.Screen name="family-health"        options={{ href: null }} />
+        <Tabs.Screen name="findFam"              options={{ href: null }} />
       </Tabs>
 
       {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Store/

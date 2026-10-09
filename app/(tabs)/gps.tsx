@@ -1,1 +1,1 @@
-export { default } from '@/features/gps/FindFamScreen';
+export { default } from '@/features/family/FamilyScreen';

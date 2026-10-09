@@ -205,30 +205,33 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
   const saveMeal = guardSaveMeal(async (patch: {
     title: string; type: string; emoji: string; chef_id: string | null;
     prep_minutes: number | null; dietary_tags: string[]; ingredients: string[];
-    prep_steps: string[]; start_time: string | null; timezone: string | null;
+    prep_steps: string[]; recipe_text?: string | null;
+    start_time: string | null; timezone: string | null;
     createReminder: boolean;
   }) => {
+    // Strip fields not in family_meals schema before sending to Supabase
+    const { createReminder, recipe_text: _rt, timezone: _tz, ...dbPatch } = patch;
     if (editMeal) {
-      const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...patch });
-      const fullPatch = { ...patch, linked_event_id: linkedEventId };
+      const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...dbPatch });
+      const fullPatch = { ...dbPatch, linked_event_id: linkedEventId };
       await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
       setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...fullPatch } : m));
       showToast('Meal updated');
-      if (patch.createReminder && patch.chef_id) {
-        createCookingQuest(patch.title, patch.chef_id, editMeal.day, patch.prep_minutes);
+      if (createReminder && dbPatch.chef_id) {
+        createCookingQuest(dbPatch.title, dbPatch.chef_id, editMeal.day, dbPatch.prep_minutes);
       }
       setEditMeal(null);
     } else if (addDay) {
       const newId = `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`;
-      const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
+      const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: dbPatch.title, start_time: dbPatch.start_time, prep_minutes: dbPatch.prep_minutes, linked_event_id: null });
       const { data } = await supabase.from('family_meals').insert({
         id: newId,
         family_id: familyId, week_of: curWeek, day: addDay,
-        ...patch, ai_generated: false, linked_event_id: linkedEventId,
+        ...dbPatch, ai_generated: false, linked_event_id: linkedEventId,
       }).select().single();
       if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
-      if (patch.createReminder && patch.chef_id) {
-        createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+      if (createReminder && dbPatch.chef_id) {
+        createCookingQuest(dbPatch.title, dbPatch.chef_id, addDay, dbPatch.prep_minutes);
       }
       setAddDay(null);
     }

@@ -23,10 +23,13 @@ const json = (body: unknown, status = 200) =>
     status, headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 
-const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-const DEEPSEEK_KEY  = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
-const DEEPSEEK_URL  = 'https://api.deepseek.com/chat/completions';
+const GEMINI_KEY       = Deno.env.get('GEMINI_API_KEY') ?? '';
+const GEMINI_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const IMAGEN_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict';
+const DEEPSEEK_KEY     = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
+const DEEPSEEK_URL     = 'https://api.deepseek.com/chat/completions';
+const SUPABASE_URL_ENV = Deno.env.get('SUPABASE_URL') ?? '';
+const SERVICE_KEY      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 // ─── Model calls ──────────────────────────────────────────────────────────────
 
@@ -598,6 +601,98 @@ async function groceryAi(body: Record<string, unknown>) {
   return parseJson<{ items: unknown[]; summary: string }>(text, { items: [], summary: 'Could not generate list.' });
 }
 
+async function generateRecipeImage(title: string, ingredients: string[], familyId: string): Promise<string | null> {
+  if (!GEMINI_KEY || !SUPABASE_URL_ENV || !SERVICE_KEY) return null;
+  try {
+    const topIngredients = ingredients.slice(0, 4).join(', ') || 'fresh ingredients';
+    const imagePrompt = `A beautiful, appetising food photograph of "${title}". ` +
+      `Made with ${topIngredients}. ` +
+      `Plated elegantly on a wooden table with natural side lighting. ` +
+      `Professional food photography style, warm tones, shallow depth of field, no text.`;
+
+    const res = await fetch(`${IMAGEN_URL}?key=${GEMINI_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances: [{ prompt: imagePrompt }],
+        parameters: { sampleCount: 1, aspectRatio: '4:3' },
+      }),
+    });
+    if (!res.ok) {
+      console.warn('[refine_recipe] Imagen failed:', res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    const b64 = data?.predictions?.[0]?.bytesBase64Encoded as string | undefined;
+    if (!b64) return null;
+
+    // Upload to Supabase Storage — bucket: recipe-images (public)
+    const sb = createClient(SUPABASE_URL_ENV, SERVICE_KEY);
+    const fileName = `${familyId}/${Date.now()}.jpg`;
+    const binary = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const { error } = await sb.storage.from('recipe-images').upload(fileName, binary, {
+      contentType: 'image/jpeg', upsert: false,
+    });
+    if (error) {
+      console.warn('[refine_recipe] Storage upload failed:', error.message);
+      return null;
+    }
+    const { data: { publicUrl } } = sb.storage.from('recipe-images').getPublicUrl(fileName);
+    return publicUrl;
+  } catch (e) {
+    console.warn('[refine_recipe] Image generation error:', e);
+    return null;
+  }
+}
+
+async function refineRecipe(body: Record<string, unknown>) {
+  const { title, ingredients, steps, dietaryTags, prepMinutes, familyId } = body as {
+    title?: string; ingredients?: string[]; steps?: string[];
+    dietaryTags?: string[]; prepMinutes?: number; familyId?: string;
+  };
+  const prompt = `You are a helpful family cooking assistant for FamilyCube.
+A family member has drafted a recipe and wants you to clean it up and improve it.
+
+Recipe title: "${title ?? 'Untitled'}"
+Prep time: ${prepMinutes ? `${prepMinutes} minutes` : 'not set'}
+Ingredients: ${ingredients?.filter(Boolean).join(', ') || 'none listed'}
+Steps: ${steps?.filter(Boolean).map((s, i) => `${i + 1}. ${s}`).join(' | ') || 'none listed'}
+Dietary tags: ${dietaryTags?.join(', ') || 'none'}
+
+Improve this recipe by:
+- Cleaning up grammar and making steps clear and actionable
+- Adding missing quantities to ingredients if obvious (e.g. "2 cloves garlic")
+- Breaking run-on steps into distinct numbered steps
+- Suggesting up to 3 dietary tags (e.g. "gluten-free", "kid-friendly", "vegetarian", "high-protein", "dairy-free") if appropriate
+- Suggesting an emoji that represents this dish
+- Estimating prep time in minutes if not set
+
+Return JSON with exactly these keys:
+{
+  "title": string (cleaned up title, keep it close to original),
+  "emoji": string (single emoji),
+  "ingredients": string[] (cleaned, one per item),
+  "steps": string[] (clear, actionable steps),
+  "dietaryTags": string[] (up to 3 tags),
+  "prepMinutes": number,
+  "tip": string (one friendly sentence about this dish for the family)
+}`;
+
+  // Run text refinement and image generation in parallel
+  const [text, imageUrl] = await Promise.all([
+    callAI(prompt),
+    familyId ? generateRecipeImage(title ?? 'Recipe', ingredients ?? [], familyId) : Promise.resolve(null),
+  ]);
+
+  const refined = parseJson(text, {
+    title: title ?? '', emoji: '🍽️', ingredients: ingredients ?? [],
+    steps: steps ?? [], dietaryTags: dietaryTags ?? [],
+    prepMinutes: prepMinutes ?? 30, tip: '',
+  });
+
+  return { ...refined, imageUrl };
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 const ACTIONS: Record<string, (b: Record<string, unknown>) => Promise<unknown>> = {
@@ -615,6 +710,7 @@ const ACTIONS: Record<string, (b: Record<string, unknown>) => Promise<unknown>> 
   smart_chores:    smartChores,
   grocery_ai:      groceryAi,
   extract_responsibility: extractResponsibility,
+  refine_recipe:   refineRecipe,
 };
 
 serve(async (req) => {

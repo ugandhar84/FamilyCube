@@ -1,16 +1,13 @@
 /**
  * FamilyRecipeBookPage — "Family recipe book" full-page screen.
- * Shows family_meals that have recorded ingredients / steps / recipe_text.
- * Each recipe card has:
- *   - Tap → RecipeModal (detail, add to grocery, share)
- *   - "Add to week" → inline day + meal-type picker → saves to family_meals
- * Parents can also record new recipes (+ button, opens MealFormSheet).
- * "Refine with AI" tip card explains how AI refinement works from RecipeModal.
+ * Reads/writes from the dedicated `family_recipes` table (not family_meals).
+ * "Add to week" copies the recipe row into family_meals for a chosen day.
+ * The + button opens a full-page add-recipe form with mic + AI refine.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
-  TextInput, Platform,
+  TextInput, Platform, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2 } from 'lucide-react-native';
@@ -20,6 +17,22 @@ import { supabase } from '@/lib/supabase';
 import type { Meal } from './meals/types';
 import { DAYS, weekOf } from './meals/types';
 import RecipeModal from './meals/RecipeModal';
+
+type FamilyRecipe = {
+  id: string;
+  family_id: string;
+  title: string;
+  emoji?: string | null;
+  image_url?: string | null;
+  ingredients: string[];
+  prep_steps: string[];
+  dietary_tags: string[];
+  prep_minutes?: number | null;
+  servings?: number | null;
+  ai_refined?: boolean;
+  created_by?: string | null;
+  created_at?: string;
+};
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { useGroceryStore } from '@/store/groceryStore';
 import { showToast } from '@/components/AppToast';
@@ -41,24 +54,65 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   const isParent   = (activeMember as any)?.role === 'parent';
   const P = colors.primary;
 
-  const [recipes, setRecipes]         = useState<Meal[]>([]);
+  const [recipes, setRecipes]         = useState<FamilyRecipe[]>([]);
   const [loading, setLoading]         = useState(true);
   const [query, setQuery]             = useState('');
-  const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
+  const [activeRecipe, setActiveRecipe] = useState<FamilyRecipe | null>(null);
 
   // Add recipe form state
   const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [newTitle, setNewTitle]           = useState('');
   const [newEmoji, setNewEmoji]           = useState('');
   const [newIngredients, setNewIngredients] = useState<string[]>(['']);
-  const [newSteps, setNewSteps]           = useState<string[]>(['']);
+  // Steps as one big text block — user types/dictates; AI parses into array on refine
+  const [newStepsText, setNewStepsText]   = useState('');
   const [newPrepMins, setNewPrepMins]     = useState('');
   const [newTags, setNewTags]             = useState('');
+  const [newImageUrl, setNewImageUrl]     = useState<string | null>(null);
   const [savingRecipe, setSavingRecipe]   = useState(false);
+  const [refining, setRefining]           = useState(false);
+  const [aiTip, setAiTip]                = useState<string | null>(null);
 
   const resetAddRecipeForm = () => {
     setNewTitle(''); setNewEmoji(''); setNewIngredients(['']);
-    setNewSteps(['']); setNewPrepMins(''); setNewTags('');
+    setNewStepsText(''); setNewPrepMins(''); setNewTags('');
+    setAiTip(null); setNewImageUrl(null);
+  };
+
+  const refineWithAi = async () => {
+    if (!newTitle.trim() && !newStepsText.trim() && newIngredients.filter(Boolean).length === 0) {
+      showToast('Add a title or some ingredients first');
+      return;
+    }
+    setRefining(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('family-ai', {
+        body: {
+          action: 'refine_recipe',
+          title: newTitle.trim(),
+          ingredients: newIngredients.map(s => s.trim()).filter(Boolean),
+          steps: newStepsText.split('\n').map(s => s.trim()).filter(Boolean),
+          dietaryTags: newTags.split(',').map(s => s.trim()).filter(Boolean),
+          prepMinutes: newPrepMins ? parseInt(newPrepMins, 10) : undefined,
+          familyId: familyId ?? '',
+        },
+      });
+      if (error) throw error;
+      const r = (data as any)?.result ?? data;
+      if (r?.title) setNewTitle(r.title);
+      if (r?.emoji) setNewEmoji(r.emoji);
+      if (r?.ingredients?.length) setNewIngredients(r.ingredients);
+      if (r?.steps?.length) setNewStepsText(r.steps.join('\n'));
+      if (r?.dietaryTags?.length) setNewTags(r.dietaryTags.join(', '));
+      if (r?.prepMinutes) setNewPrepMins(String(r.prepMinutes));
+      if (r?.tip) setAiTip(r.tip);
+      if (r?.imageUrl) setNewImageUrl(r.imageUrl);
+      showToast('Recipe refined by Cube AI ✨');
+    } catch {
+      showToast('AI refinement failed — try again');
+    } finally {
+      setRefining(false);
+    }
   };
 
   const saveNewRecipe = async () => {
@@ -66,27 +120,22 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
     setSavingRecipe(true);
     try {
       const ingredients = newIngredients.map(s => s.trim()).filter(Boolean);
-      const prepSteps   = newSteps.map(s => s.trim()).filter(Boolean);
+      const prepSteps   = newStepsText.split('\n').map(s => s.trim()).filter(Boolean);
       const dietaryTags = newTags.split(',').map(s => s.trim()).filter(Boolean);
       const id = `${familyId}-recipe-${Date.now()}`;
-      const { data, error } = await supabase.from('family_meals').insert({
+      const { data, error } = await supabase.from('family_recipes').insert({
         id, family_id: familyId,
-        week_of: weekOf(),
-        day: 'Mon', type: 'dinner',
         title: newTitle.trim(),
         emoji: newEmoji.trim() || null,
+        image_url: newImageUrl ?? null,
         ingredients, prep_steps: prepSteps,
         dietary_tags: dietaryTags,
         prep_minutes: newPrepMins ? parseInt(newPrepMins, 10) : null,
-        chef_id: activeMember?.id ?? null,
-        ai_generated: false,
+        created_by: activeMember?.id ?? null,
+        ai_refined: false,
       }).select().single();
       if (!error && data) {
-        setRecipes(prev => {
-          const seen = new Set(prev.map(r => r.title.toLowerCase().trim()));
-          const m = data as Meal;
-          return seen.has(m.title.toLowerCase().trim()) ? prev : [m, ...prev];
-        });
+        setRecipes(prev => [data as FamilyRecipe, ...prev]);
         showToast(`${newTitle.trim()} added to recipe book`);
         resetAddRecipeForm();
         setShowAddRecipe(false);
@@ -101,7 +150,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   };
 
   // "Add to week" picker state
-  const [addTarget, setAddTarget]     = useState<Meal | null>(null);  // recipe being scheduled
+  const [addTarget, setAddTarget]     = useState<FamilyRecipe | null>(null);
   const [pickerDay, setPickerDay]     = useState<string>('Mon');
   const [pickerType, setPickerType]   = useState<string>('Dinner');
   const [saving, setSaving]           = useState(false);
@@ -109,24 +158,12 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   useEffect(() => {
     if (!familyId) { setLoading(false); return; }
     supabase
-      .from('family_meals')
+      .from('family_recipes')
       .select('*')
       .eq('family_id', familyId)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        if (data) {
-          const withRecipe = (data as Meal[]).filter(m =>
-            (m.ingredients && m.ingredients.length > 0) ||
-            (m.prep_steps && m.prep_steps.length > 0) ||
-            !!(m as any).recipe_text
-          );
-          const seen = new Set<string>();
-          setRecipes(withRecipe.filter(m => {
-            const key = m.title.toLowerCase().trim();
-            if (seen.has(key)) return false;
-            seen.add(key); return true;
-          }));
-        }
+        if (data) setRecipes(data as FamilyRecipe[]);
         setLoading(false);
       });
   }, [familyId]);
@@ -156,7 +193,8 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
         prep_steps: addTarget.prep_steps ?? [],
         dietary_tags: addTarget.dietary_tags ?? [],
         prep_minutes: addTarget.prep_minutes ?? null,
-        chef_id: null, ai_generated: false,
+        chef_id: null,
+        ai_generated: false,
       });
       showToast(`${addTarget.title} added to ${DAY_FULL[pickerDay]} ${pickerType.toLowerCase()}`);
       setAddTarget(null);
@@ -181,9 +219,9 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       )
     : recipes;
 
-  const chefLabel = (meal: Meal) => {
-    if (!meal.chef_id) return null;
-    const name = members.find(m => m.id === meal.chef_id)?.name?.split(' ')[0];
+  const chefLabel = (recipe: FamilyRecipe) => {
+    if (!recipe.created_by) return null;
+    const name = members.find(m => m.id === recipe.created_by)?.name?.split(' ')[0];
     return name ? `${name}'s recipe` : null;
   };
 
@@ -244,19 +282,32 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           />
         </View>
 
-        {/* AI refine tip */}
-        <View style={{ backgroundColor: colors.pinkLight, borderRadius: 16, padding: 16,
-          flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Sparkles size={20} color={colors.pink} strokeWidth={1.8} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>
-              Refine with Cube AI
-            </Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginTop: 2 }}>
-              Open any recipe and tap "Refine with AI" to improve steps, adjust servings, or add dietary notes.
-            </Text>
-          </View>
-        </View>
+        {/* Add a recipe CTA card */}
+        {isParent && (
+          <Pressable
+            onPress={() => { resetAddRecipeForm(); setShowAddRecipe(true); }}
+            style={({ pressed }) => ({
+              backgroundColor: colors.amberLight, borderRadius: 18, padding: 18,
+              flexDirection: 'row', alignItems: 'center', gap: 14,
+              opacity: pressed ? 0.85 : 1,
+              borderWidth: 1.5, borderColor: colors.amber + '30',
+            })}>
+            <View style={{ width: 48, height: 48, borderRadius: 14,
+              backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.7)',
+              alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Plus size={24} color={colors.amber} strokeWidth={2.2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                Add a family recipe
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 }}>
+                Record ingredients and steps — Cube AI can clean it up and generate a photo.
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, color: colors.amber }}>›</Text>
+          </Pressable>
+        )}
 
         {/* Recipe list */}
         {loading ? (
@@ -288,7 +339,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             }}>
               {/* Tap row → opens RecipeModal */}
               <Pressable
-                onPress={() => setActiveRecipe(recipe)}
+                onPress={() => setActiveRecipe(recipe as FamilyRecipe)}
                 style={({ pressed }) => ({
                   flexDirection: 'row', alignItems: 'center', gap: 14,
                   padding: 16, opacity: pressed ? 0.86 : 1,
@@ -398,13 +449,6 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                     paddingHorizontal: 14, fontSize: 16, fontWeight: '600',
                     color: colors.textPrimary }}
                 />
-                {/* Mic button — voice input for title */}
-                <Pressable
-                  onPress={() => showToast('Voice input coming soon')}
-                  style={{ width: 52, height: 52, borderRadius: 14,
-                    backgroundColor: colors.pinkLight, alignItems: 'center', justifyContent: 'center' }}>
-                  <Mic size={22} color={colors.pink} strokeWidth={1.8} />
-                </Pressable>
               </View>
             </View>
 
@@ -461,45 +505,34 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
               </Pressable>
             </View>
 
-            {/* Steps */}
+            {/* Steps — one big text block, mic to dictate */}
             <View style={{ gap: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.pink }}>
-                STEPS
-              </Text>
-              {newSteps.map((val, idx) => (
-                <View key={idx} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-                  <View style={{ width: 26, height: 26, borderRadius: 13, marginTop: 9,
-                    backgroundColor: colors.pinkLight, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>{idx + 1}</Text>
-                  </View>
-                  <TextInput
-                    value={val}
-                    onChangeText={text => {
-                      const next = [...newSteps];
-                      next[idx] = text;
-                      setNewSteps(next);
-                    }}
-                    placeholder={`Step ${idx + 1}…`}
-                    placeholderTextColor={colors.textTertiary}
-                    multiline
-                    style={{ flex: 1, minHeight: 44, borderRadius: 12,
-                      backgroundColor: isDark ? colors.surface : colors.surface,
-                      paddingHorizontal: 12, paddingVertical: 10,
-                      fontSize: 15, color: colors.textPrimary }}
-                  />
-                  {newSteps.length > 1 && (
-                    <Pressable onPress={() => setNewSteps(prev => prev.filter((_, i) => i !== idx))}
-                      style={{ marginTop: 12 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Trash2 size={16} color={colors.textTertiary} strokeWidth={1.8} />
-                    </Pressable>
-                  )}
-                </View>
-              ))}
-              <Pressable onPress={() => setNewSteps(prev => [...prev, ''])}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
-                <Plus size={15} color={colors.pink} strokeWidth={2.2} />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink }}>Add step</Text>
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.pink }}>
+                  HOW TO MAKE IT
+                </Text>
+                {/* Mic button — dictate the procedure */}
+                <Pressable
+                  onPress={() => showToast('Voice dictation coming soon')}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: colors.pinkLight, borderRadius: 20,
+                    paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Mic size={14} color={colors.pink} strokeWidth={2} />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Dictate</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                value={newStepsText}
+                onChangeText={setNewStepsText}
+                placeholder={"Describe how to make it — one step per line, or just write naturally.\n\nAI can help clean this up when you tap Refine."}
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                textAlignVertical="top"
+                style={{ minHeight: 140, borderRadius: 14,
+                  backgroundColor: isDark ? colors.surface : colors.surface,
+                  paddingHorizontal: 14, paddingVertical: 12,
+                  fontSize: 15, color: colors.textPrimary, lineHeight: 22 }}
+              />
             </View>
 
             {/* Dietary tags */}
@@ -520,23 +553,61 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
 
             {/* Refine with AI card */}
             <Pressable
-              onPress={() => showToast('AI recipe refinement coming soon')}
-              style={{ backgroundColor: colors.pinkLight, borderRadius: 16, padding: 16,
-                flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              onPress={refineWithAi}
+              disabled={refining}
+              style={({ pressed }) => ({
+                backgroundColor: colors.pinkLight, borderRadius: 16, padding: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+                opacity: pressed ? 0.82 : 1,
+              })}>
               <View style={{ width: 40, height: 40, borderRadius: 12,
                 backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.6)',
                 alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Wand2 size={20} color={colors.pink} strokeWidth={1.8} />
+                {refining
+                  ? <ActivityIndicator size="small" color={colors.pink} />
+                  : <Wand2 size={20} color={colors.pink} strokeWidth={1.8} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
-                  Refine with Cube AI
+                  {refining ? 'Cube AI is refining…' : 'Refine with Cube AI'}
                 </Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 }}>
-                  Tap to let AI clean up your steps, suggest servings, and add dietary notes automatically.
+                  {refining
+                    ? 'Cleaning up steps, quantities, and tags…'
+                    : 'Tap to let AI clean up your steps, suggest quantities, emoji, and dietary notes.'}
                 </Text>
               </View>
             </Pressable>
+
+            {/* AI-generated image — appears after refinement */}
+            {newImageUrl ? (
+              <View style={{ borderRadius: 18, overflow: 'hidden' }}>
+                <Image
+                  source={{ uri: newImageUrl }}
+                  style={{ width: '100%', height: 200 }}
+                  resizeMode="cover"
+                />
+                <View style={{ position: 'absolute', bottom: 8, right: 10 }}>
+                  <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 8,
+                    paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>
+                      AI-generated · review before sharing
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            {/* AI tip — appears after refinement */}
+            {aiTip ? (
+              <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 14,
+                flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                <Sparkles size={16} color={colors.teal} strokeWidth={1.8} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+                  {aiTip}
+                </Text>
+              </View>
+            ) : null}
 
           </ScrollView>
 
@@ -697,7 +768,20 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       {/* ── Recipe detail overlay ── */}
       <FullPageOverlay visible={!!activeRecipe} onDismiss={() => setActiveRecipe(null)} zIndex={70}>
         <RecipeModal
-          meal={activeRecipe}
+          meal={activeRecipe ? {
+            id: activeRecipe.id,
+            family_id: activeRecipe.family_id,
+            week_of: '', day: 'Mon', type: 'dinner',
+            title: activeRecipe.title,
+            emoji: activeRecipe.emoji ?? undefined,
+            ingredients: activeRecipe.ingredients,
+            prep_steps: activeRecipe.prep_steps,
+            dietary_tags: activeRecipe.dietary_tags,
+            prep_minutes: activeRecipe.prep_minutes ?? undefined,
+            chef_id: activeRecipe.created_by ?? undefined,
+            ai_generated: false,
+            start_time: undefined,
+          } as Meal : null}
           visible={!!activeRecipe}
           onClose={() => setActiveRecipe(null)}
           onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}

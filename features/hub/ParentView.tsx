@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { View, Animated } from 'react-native';
-import { useStaggeredEntrance } from '@/lib/hooks/useStaggeredEntrance';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Animated, Easing } from 'react-native';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
@@ -42,7 +41,8 @@ import { useParentStores } from './parent/hooks/useParentStores';
 import { useParentEventClassification } from './parent/hooks/useParentEventClassification';
 import { useParentModals } from './parent/hooks/useParentModals';
 
-export function ParentView({ active, members, colors, isDark, onScanFlyer, onDescribeTask, onDescribeEvent, describeFullFormRef, onReviewOpen, onRidesOpen, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
+export function ParentView({ focusKey = 1, active, members, colors, isDark, onScanFlyer, onDescribeTask, onDescribeEvent, describeFullFormRef, onReviewOpen, onRidesOpen, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
+  focusKey?: number;
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onScanFlyer: () => void;
@@ -568,9 +568,34 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDes
 
   const pad = { paddingHorizontal: 16 };
 
-  // Staggered entrance — 7 sections (FamilyPulse, ProfileSwitcher, NeedsYou,
-  // NextUp, TodayActionGrid, RidesStatus, TonightMeal)
-  const cardAnims = useStaggeredEntrance(7, { delay: 60, stagger: 55, duration: 280, slideFrom: 18 });
+  // Staggered entrance — 7 sections, driven by focusKey from HubScreen.
+  // focusKey=0 means "subpage pop — show immediately"; any other value plays
+  // the full animation. The hook pattern can't be used here because ParentView
+  // is a child inside HubScreen's ScrollView and useFocusEffect never fires.
+  const CARD_COUNT = 7;
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0))).current;
+  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(18))).current;
+
+  const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
+
+  useEffect(() => {
+    if (focusKey === 0) {
+      opacities.forEach(v => v.setValue(1));
+      translateYs.forEach(v => v.setValue(0));
+      return;
+    }
+    opacities.forEach(v => v.setValue(0));
+    translateYs.forEach(v => v.setValue(18));
+    const anims = opacities.map((op, i) =>
+      Animated.parallel([
+        Animated.timing(op, { toValue: 1, duration: 280, delay: 60 + i * 55,
+          easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(translateYs[i], { toValue: 0, duration: 300, delay: 60 + i * 55,
+          easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ])
+    );
+    Animated.parallel(anims).start();
+  }, [focusKey]);
 
   // Parent Hub is now a pixel-faithful rebuild of the Figma Make
   // "Scrollable Content Design" prototype's HomePage (design/Scrollable

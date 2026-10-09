@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View } from 'react-native';
+import { View, Animated } from 'react-native';
+import { useStaggeredEntrance } from '@/lib/hooks/useStaggeredEntrance';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
@@ -567,6 +568,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDes
 
   const pad = { paddingHorizontal: 16 };
 
+  // Staggered entrance — 7 sections (FamilyPulse, ProfileSwitcher, NeedsYou,
+  // NextUp, TodayActionGrid, RidesStatus, TonightMeal)
+  const cardAnims = useStaggeredEntrance(7, { delay: 60, stagger: 55, duration: 280, slideFrom: 18 });
+
   // Parent Hub is now a pixel-faithful rebuild of the Figma Make
   // "Scrollable Content Design" prototype's HomePage (design/Scrollable
   // Content Design/src/App.tsx — see that folder's own CSS for every exact
@@ -591,15 +596,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDes
     <>
       {showTrialNag && <TrialNagBanner colors={colors} isDark={isDark} />}
 
-      <FamilyPulseCard colors={colors} isDark={isDark} members={members} hasUrgentItem={!!needsYouItem} familyName={familyName || undefined} />
+      <Animated.View style={{ opacity: cardAnims[0].opacity, transform: [{ translateY: cardAnims[0].translateY }] }}>
+        <FamilyPulseCard colors={colors} isDark={isDark} members={members} hasUrgentItem={!!needsYouItem} familyName={familyName || undefined} />
+      </Animated.View>
 
       {/* "Viewing as" card — matches the Figma prototype's own
           .profile-switcher position exactly (between Family Pulse and
           Needs You). Opens the real PersonaSwitcherDropdown, same
           mechanism AppHeader's compact mode already uses. */}
-      <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
+      <Animated.View style={{ opacity: cardAnims[1].opacity, transform: [{ translateY: cardAnims[1].translateY }] }}>
+        <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
+      </Animated.View>
 
       {needsYouItem && (
+        <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
         <NeedsYouCard item={needsYouItem} onReview={() => {
           if (needsYouItem.kind === 'conflict') setReviewModalOpen(true);
           else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) {
@@ -616,6 +626,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDes
           // callback no longer needs to route for it.
           else onReviewOpen();
         }} />
+        </Animated.View>
       )}
       {backlogTaskDetailId && (() => {
         const fullQuest = quests.find(q => q.id === backlogTaskDetailId);
@@ -632,26 +643,30 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDes
 
       {/* "NEXT UP" — up to 3 upcoming events today, matching the Figma
           prototype's own multi-row timeline exactly (not a single event). */}
-      <NextUpTimeline
-        colors={colors} isDark={isDark}
-        events={upcomingTodayEvents}
-        conflictReasons={conflictReasons}
-      />
+      <Animated.View style={{ opacity: cardAnims[3].opacity, transform: [{ translateY: cardAnims[3].translateY }] }}>
+        <NextUpTimeline
+          colors={colors} isDark={isDark}
+          events={upcomingTodayEvents}
+          conflictReasons={conflictReasons}
+        />
+      </Animated.View>
 
-      <TodayActionGrid
-        colors={colors} isDark={isDark}
-        groceryCount={groceryItems.length}
-        reviewCount={pendingReviewCount}
-        tasksPendingCount={tasksPendingCount}
-        tasksInProgressCount={tasksInProgressCount}
-        tasksUnassignedCount={tasksUnassignedCount}
-        tasksCompletedCount={tasksCompletedCount}
-        todayEventsCount={todayEvents.length}
-        pendingRidesCount={pendingRideRequiredEvents.length}
-        onCapture={onDescribeTask}
-        onCreateEvent={onDescribeEvent}
-        onReview={onReviewOpen}
-      />
+      <Animated.View style={{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }}>
+        <TodayActionGrid
+          colors={colors} isDark={isDark}
+          groceryCount={groceryItems.length}
+          reviewCount={pendingReviewCount}
+          tasksPendingCount={tasksPendingCount}
+          tasksInProgressCount={tasksInProgressCount}
+          tasksUnassignedCount={tasksUnassignedCount}
+          tasksCompletedCount={tasksCompletedCount}
+          todayEventsCount={todayEvents.length}
+          pendingRidesCount={pendingRideRequiredEvents.length}
+          onCapture={onDescribeTask}
+          onCreateEvent={onDescribeEvent}
+          onReview={onReviewOpen}
+        />
+      </Animated.View>
 
       {/* Rides status — live-requested Hub-home entry point into
           RidesControlRoomScreen (already built, was unreachable from
@@ -661,40 +676,44 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDes
           see HubScreen.tsx) so this card's progress bar matches
           RidesControlRoomScreen's own PHASE_STAGES exactly instead of
           guessing a stage from elapsed time. */}
-      {(() => {
-        // Live-reported bug (still present after fixing RidesStatusCard's
-        // OWN idle-return): this wrapping IIFE had its own separate
-        // `if (!headlineTrip && !headlineRideEvent) return null` — even
-        // once the component itself was made to always render when
-        // called, this outer check meant it was never CALLED at all
-        // whenever there was no active trip and no pending ride. "I
-        // asked you to add the full width card ... I still didn't see it
-        // home" — this was why. Removed; RidesStatusCard now always
-        // mounts and handles its own idle state.
-        const allActiveTrips = [...(activeTrip ? [activeTrip] : []), ...(otherActiveTrips ?? [])];
-        const headlineTrip = allActiveTrips[0];
-        const headlineRideEvent = !headlineTrip ? pendingRideEvent : undefined;
-        const label = headlineTrip
-          ? `${headlineTrip.driverName.split(' ')[0]} driving ${headlineTrip.kidName.split(' ')[0]}`
-          : headlineRideEvent?.title;
-        const otherCount = (allActiveTrips.length + pendingRideRequiredEvents.length)
-          - (headlineTrip ? 1 : 0) - (headlineRideEvent ? 1 : 0);
-        return (
-          <RidesStatusCard
-            colors={colors} isDark={isDark}
-            pendingCount={Math.max(0, otherCount)}
-            withoutDriverCount={pendingRideRequiredEvents.length}
-            ongoingCount={allActiveTrips.length}
-            activeTripLabel={label}
-            activePhase={headlineTrip?.phase}
-            onPress={onRidesOpen}
-          />
-        );
-      })()}
+      <Animated.View style={{ opacity: cardAnims[5].opacity, transform: [{ translateY: cardAnims[5].translateY }] }}>
+        {(() => {
+          // Live-reported bug (still present after fixing RidesStatusCard's
+          // OWN idle-return): this wrapping IIFE had its own separate
+          // `if (!headlineTrip && !headlineRideEvent) return null` — even
+          // once the component itself was made to always render when
+          // called, this outer check meant it was never CALLED at all
+          // whenever there was no active trip and no pending ride. "I
+          // asked you to add the full width card ... I still didn't see it
+          // home" — this was why. Removed; RidesStatusCard now always
+          // mounts and handles its own idle state.
+          const allActiveTrips = [...(activeTrip ? [activeTrip] : []), ...(otherActiveTrips ?? [])];
+          const headlineTrip = allActiveTrips[0];
+          const headlineRideEvent = !headlineTrip ? pendingRideEvent : undefined;
+          const label = headlineTrip
+            ? `${headlineTrip.driverName.split(' ')[0]} driving ${headlineTrip.kidName.split(' ')[0]}`
+            : headlineRideEvent?.title;
+          const otherCount = (allActiveTrips.length + pendingRideRequiredEvents.length)
+            - (headlineTrip ? 1 : 0) - (headlineRideEvent ? 1 : 0);
+          return (
+            <RidesStatusCard
+              colors={colors} isDark={isDark}
+              pendingCount={Math.max(0, otherCount)}
+              withoutDriverCount={pendingRideRequiredEvents.length}
+              ongoingCount={allActiveTrips.length}
+              activeTripLabel={label}
+              activePhase={headlineTrip?.phase}
+              onPress={onRidesOpen}
+            />
+          );
+        })()}
+      </Animated.View>
 
       {/* "TONIGHT" — dinner preview, matching the Figma prototype's own
           .evening card. Renders nothing when there's no dinner planned. */}
-      <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
+      <Animated.View style={{ opacity: cardAnims[6].opacity, transform: [{ translateY: cardAnims[6].translateY }] }}>
+        <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
+      </Animated.View>
 
       {/* AlertBanner stays — it carries real action buttons
           (Dismiss/Assign/Dispatch) for scheduling conflicts and

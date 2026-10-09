@@ -38,6 +38,8 @@ export default function MealsScreen() {
 
   const [showWeekPlan, setShowWeekPlan] = useState(false);
   const [showRecipes, setShowRecipes]   = useState(false);
+  const [aiTriggerFn, setAiTriggerFn]   = useState<(() => void) | null>(null);
+  const [triggerAiOnOpen, setTriggerAiOnOpen] = useState(false);
 
   // Fetch tonight's dinner to show in the hero card
   const [tonightMeal, setTonightMeal] = useState<Meal | null>(null);
@@ -71,6 +73,14 @@ export default function MealsScreen() {
     return () => showTabBar();
   }, [showWeekPlan, showRecipes]);
 
+  // When week plan opens with AI mode, fire generate once the AI trigger is registered
+  useEffect(() => {
+    if (triggerAiOnOpen && aiTriggerFn) {
+      setTriggerAiOnOpen(false);
+      aiTriggerFn();
+    }
+  }, [triggerAiOnOpen, aiTriggerFn]);
+
   const canvas = isDark ? '#0E0C13' : '#FFFFFF';
   const cardBg = isDark ? colors.card : '#FFFFFF';
 
@@ -86,12 +96,12 @@ export default function MealsScreen() {
     },
     {
       key: 'ai',
-      title: 'AI meal planner',
-      subtitle: 'Open the week plan and tap the AI banner to get suggestions for open slots',
+      title: 'A little inspiration',
+      subtitle: 'CubeAI suggests meals for the week — pick your favourites and add them in one tap',
       icon: Sparkles,
       color: colors.pink,
       bg: colors.pinkLight,
-      onPress: () => setShowWeekPlan(true),
+      onPress: () => { setTriggerAiOnOpen(true); setShowWeekPlan(true); },
     },
     {
       key: 'recipes',
@@ -277,6 +287,7 @@ export default function MealsScreen() {
       >
         <MealsWeekPage
           onClose={() => setShowWeekPlan(false)}
+          onAiReady={(fn) => setAiTriggerFn(() => fn)}
         />
       </FullPageOverlay>
 

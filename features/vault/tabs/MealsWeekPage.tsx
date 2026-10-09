@@ -139,6 +139,7 @@ export default function MealsWeekPage({
           isDark={isDark}
           weekOverride={currentWeek}
           onFormStateChange={setFormState}
+          onAiReady={onAiReady}
           showAddButton
         />
       </View>

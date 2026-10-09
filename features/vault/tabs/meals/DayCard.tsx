@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
-import type { Meal, AiDayOptions } from './types';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import type { Meal } from './types';
 import type { FamilyMember } from '@/store/familyStore';
 
 const MEAL_SLOTS = [
@@ -42,12 +42,9 @@ function MemberAvatar({ member, size = 26, colors }: { member: FamilyMember; siz
   );
 }
 
-export default function DayCard({ day, meals, members, aiOptions, aiSelected, onAiToggle, onRecipe, onEdit, onDelete, onAdd, onChefSwap, colors, isDark }: {
+export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelete, onAdd, onChefSwap, colors, isDark }: {
   day: string; meals: Meal[];
   members?: FamilyMember[];
-  aiOptions?: AiDayOptions;
-  aiSelected?: number[];
-  onAiToggle?: (day: string, idx: number) => void;
   onRecipe: (m: Meal) => void;
   onEdit?: (m: Meal) => void;
   onDelete?: (m: Meal) => void;
@@ -202,52 +199,6 @@ export default function DayCard({ day, meals, members, aiOptions, aiSelected, on
           );
         })}
 
-        {/* ── AI Suggestions inline ── */}
-        {aiOptions && aiOptions.options.length > 0 && (
-          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-            padding: 14, gap: 8 }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.7, color: colors.accent }}>
-              ✦ AI SUGGESTIONS
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-              {aiOptions.options.map((opt, idx) => {
-                const isSel = aiSelected?.includes(idx);
-                return (
-                  <Pressable
-                    key={idx}
-                    onPress={() => onAiToggle?.(day, idx)}
-                    style={({ pressed }) => ({
-                      width: 160, borderRadius: 14, padding: 12,
-                      backgroundColor: isSel ? colors.accent + '18' : colors.surface,
-                      borderWidth: 1.5,
-                      borderColor: isSel ? colors.accent : colors.border,
-                      opacity: pressed ? 0.8 : 1,
-                    })}>
-                    <Text style={{ fontSize: 22, marginBottom: 4 }}>{opt.emoji ?? '🍽️'}</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary, lineHeight: 17 }}
-                      numberOfLines={2}>
-                      {opt.mealName}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 3 }}>
-                      {opt.prepMinutes} min
-                      {opt.kidFriendlyRating >= 4 ? ' · Kid ⭐' : ''}
-                    </Text>
-                    {isSel && (
-                      <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: colors.accent,
-                          alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ fontSize: 10, color: '#fff', fontWeight: '900' }}>✓</Text>
-                        </View>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent }}>Selected</Text>
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
       </View>
     </View>
   );

@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import {
-  View, Text, StyleSheet, ActivityIndicator, Animated, Alert, ScrollView,
+  View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
-import { ChefHat, RefreshCw, MessageSquare, Check, ShoppingBag, Lock } from 'lucide-react-native';
+import { ChefHat, RefreshCw, MessageSquare, Check, ShoppingBag } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TouchableOpacity } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -22,7 +22,7 @@ import {
 import FlatSectionHeader from './meals/FlatSectionHeader';
 import RecipeModal from './meals/RecipeModal';
 import DayCard from './meals/DayCard';
-import AiPlannerBanner from './meals/AiPlannerBanner';
+import AiSuggestionsPage from './meals/AiSuggestionsPage';
 import MealFormSheet from './meals/MealFormSheet';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
@@ -64,9 +64,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   const [meals, setMeals]       = useState<Meal[]>([]);
   const [loading, setLoading]   = useState(true);
 
-  // AI state — collapsed by default for everyone [live-requested: "the ai
-  // strip card always show as collapse by default for parent or kids"].
-  const [aiOpen, setAiOpen]       = useState(false);
   const [aiPref, setAiPref]       = useState('Kid-friendly, high-protein, 30 min max');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError]     = useState<string | null>(null);
@@ -77,6 +74,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   const [pendingOptions, setPendingOptions] = useState<AiDayOptions[] | null>(null);
   const [selected, setSelected]             = useState<Record<string, number[]>>({}); // day → [indices]
   const [savingPlan, setSavingPlan]         = useState(false);
+  const [showAiPage, setShowAiPage]         = useState(false);
 
   // Modals
   const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
@@ -105,22 +103,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDay, editMeal, savingMeal]);
 
-  // Pulse animation for the AI dot
-  const pulseScale   = useRef(new Animated.Value(1)).current;
-  const pulseOpacity = useRef(new Animated.Value(0.8)).current;
-  useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.parallel([
-        Animated.timing(pulseScale,   { toValue: 2.6, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseOpacity, { toValue: 0,   duration: 800, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(pulseScale,   { toValue: 1, duration: 0, useNativeDriver: true }),
-        Animated.timing(pulseOpacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
-      ]),
-      Animated.delay(400),
-    ])).start();
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,8 +159,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
       setSelected(defaults);
       setGroceryList(result.groceryAutoList ?? []);
       setTip(result.nutritionCoachingTip ?? null);
-      setAiOpen(false);
-      // AI options now surface inline in DayCard — no separate page needed
+      setShowAiPage(true);
     } catch {
       setAiError('Couldn\'t generate plan. Check connection and try again.');
     }
@@ -417,6 +398,27 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
     </View>
   );
 
+  // AI Suggestions full page — early-return so it covers the week grid
+  if (showAiPage && pendingOptions) {
+    return (
+      <AiSuggestionsPage
+        visible
+        pendingOptions={pendingOptions}
+        selected={selected}
+        setSelected={setSelected}
+        tip={tip}
+        savingPlan={savingPlan}
+        confirmPlan={async () => { await confirmPlan(); setShowAiPage(false); }}
+        existingMeals={meals}
+        weekRange={curWeek}
+        onClose={() => { setPendingOptions(null); setSelected({}); setShowAiPage(false); }}
+        onViewMeal={() => {}}
+        colors={colors}
+        isDark={isDark}
+      />
+    );
+  }
+
   return (
     <View style={{ flex: 1 }}>
     <ScrollView
@@ -434,36 +436,6 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
         </TouchableOpacity>
       )}
 
-      {/* ── CubeAI Planner Banner (flat) ─────────────────────────────── */}
-      {/* Parent-only action, but kid/teen still SEE the banner — a
-          translucent "Parents only" overlay rather than hidden outright
-          [live-requested: "kube ai we can blur and show the overleay
-          parents ony access? / even mobile should do same"]. Content
-          stays legible underneath (a teaser, not a blackout) — same rule
-          kiosk's own overlay follows: "ai whatever you show banner is
-          fully dark not like a teaser". */}
-      <View style={{ position: 'relative' }}>
-        <View pointerEvents={isKidOrTeen ? 'none' : 'auto'} style={isKidOrTeen ? { opacity: 0.55 } : undefined}>
-          <AiPlannerBanner
-            colors={colors} isDark={isDark}
-            aiOpen={aiOpen} setAiOpen={setAiOpen}
-            pulseOpacity={pulseOpacity} pulseScale={pulseScale}
-            aiPref={aiPref} setAiPref={setAiPref}
-            aiLoading={aiLoading} aiError={aiError}
-            generateMealPlan={generateMealPlan}
-          />
-        </View>
-        {isKidOrTeen && (
-          <View pointerEvents="none" style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16,
-            alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#00000066',
-          }}>
-            <Lock size={18} color="#fff" />
-            <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Parents only</Text>
-          </View>
-        )}
-      </View>
-
       {/* ── Weekly Plan Grid ─────────────────────────────── */}
       {aiLoading && (
         <View style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -475,7 +447,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
       <View>
         <FlatSectionHeader
           Icon={ChefHat} title="Week Plan" accent={colors.danger} colors={colors}
-          badge={`Wk of ${curWeek}`}
+          badge={`Wk of ${new Date(curWeek + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
           onAction={load} actionIcon={<RefreshCw size={14} color={colors.danger} />}
         />
 
@@ -486,57 +458,11 @@ export default function MealsTab({ colors, isDark, weekOverride, onAiReady, onAd
           </View>
         )}
 
-        {/* AI confirm banner — appears above day cards when suggestions are loaded */}
-        {pendingOptions && (
-          <View style={{ borderRadius: 16, backgroundColor: colors.accent + '15',
-            borderWidth: 1.5, borderColor: colors.accent + '40',
-            padding: 16, marginBottom: 16, gap: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 20 }}>✦</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
-                  AI suggestions ready
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  Tap any option below to select it, then add to your week.
-                </Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity onPress={confirmPlan} disabled={savingPlan}
-                style={{ flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center',
-                  backgroundColor: savingPlan ? colors.accent + '60' : colors.accent }}>
-                {savingPlan
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>
-                      Add selected to week
-                    </Text>}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setPendingOptions(null); setSelected({}); }}
-                style={{ borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
-                  backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Dismiss</Text>
-              </TouchableOpacity>
-            </View>
-            {tip && (
-              <Text style={{ fontSize: 12, color: colors.teal, fontWeight: '600', lineHeight: 17 }}>
-                💡 {tip}
-              </Text>
-            )}
-          </View>
-        )}
-
         {/* Day cards */}
         <View>
           {DAYS.map(day => (
             <DayCard key={day} day={day} meals={mealsByDay[day] ?? []}
               members={members as any}
-              aiOptions={pendingOptions?.find(o => o.day === day)}
-              aiSelected={selected[day]}
-              onAiToggle={(d, idx) => setSelected(prev => {
-                const cur = prev[d] ?? [];
-                return { ...prev, [d]: cur.includes(idx) ? cur.filter(i => i !== idx) : [...cur, idx] };
-              })}
               colors={colors} isDark={isDark}
               onRecipe={m => setActiveRecipe(m)}
               onEdit={isKidOrTeen ? undefined : m => setEditMeal(m)}

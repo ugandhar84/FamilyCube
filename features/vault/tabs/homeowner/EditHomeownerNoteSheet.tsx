@@ -1,35 +1,138 @@
-/**
- * EditHomeownerNoteSheet — edit an existing maintenance note/reminder.
- * Free-text title/notes throughout, native date picker for due date, same
- * visual language as AddHomeownerNoteSheet's custom-entry form.
- */
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { ChevronLeft, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { ScanDateField } from '../health/ScanDateField';
 import { CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
-import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory, type HomeownerNotePriority } from '@/store/homeownerNotesStore';
+import {
+  useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory,
+  type HomeownerNotePriority, type ReminderLeadDays,
+} from '@/store/homeownerNotesStore';
 import { showAlert } from '@/components/AppAlert';
+import { useFamilyStore } from '@/store/familyStore';
 
-const CATEGORIES: HomeownerNoteCategory[] = ['general', 'hvac', 'plumbing', 'electrical', 'appliance', 'exterior', 'safety', 'warranty'];
+const CANVAS = '#FFFFFF';
+const TITLE_CLR = '#172337';
+const BODY_CLR = '#657185';
+const BLUE = '#345DE3';
+const LINK_BLUE = '#294FC7';
+const BORDER = '#E8EBF0';
+const CARD_BG = '#FFFFFF';
+const SURFACE = '#F5F7FB';
+
+const ALL_CATEGORIES: HomeownerNoteCategory[] = [
+  'hvac', 'plumbing', 'electrical', 'appliance', 'exterior', 'safety', 'warranty', 'general',
+];
 const PRIORITIES: HomeownerNotePriority[] = ['low', 'normal', 'high'];
 const PRIORITY_LABEL: Record<HomeownerNotePriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
+
+type ReminderOption = { days: ReminderLeadDays; label: string };
+const REMINDER_OPTIONS: ReminderOption[] = [
+  { days: 1, label: '1 day before' },
+  { days: 2, label: '2 days before' },
+  { days: 7, label: '1 week before' },
+  { days: 15, label: '15 days before' },
+  { days: 30, label: '1 month before' },
+];
+
+function parseLocalDateStr(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return y && m && d ? new Date(y, m - 1, d) : new Date();
+}
+function fmtDisplay(s: string) {
+  return parseLocalDateStr(s).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+function addDays(iso: string, days: number): string {
+  const d = parseLocalDateStr(iso);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function intervalLabel(days: number): string {
+  if (days === 7) return 'every week';
+  if (days === 14) return 'every 2 weeks';
+  if (days === 30) return 'every month';
+  if (days === 90) return 'every 3 months';
+  if (days === 180) return 'every 6 months';
+  if (days === 365) return 'every year';
+  return `every ${days} days`;
+}
+
+function FieldRow({ label, value, onChangeText, placeholder, multiline, keyboardType, colors, isDark }: {
+  label: string; value: string; onChangeText: (v: string) => void;
+  placeholder?: string; multiline?: boolean; keyboardType?: any; colors: any; isDark: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  return (
+    <View style={{ borderWidth: 1, borderColor: focused ? BLUE : border, borderRadius: 14,
+      backgroundColor: cardBg, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder ?? ''}
+        placeholderTextColor="#C0C7D4"
+        multiline={multiline}
+        keyboardType={keyboardType}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{ fontSize: 15, color: titleC, padding: 0, minHeight: multiline ? 60 : undefined }}
+      />
+    </View>
+  );
+}
+
+function DropRow({ label, value, options, onSelect, isDark, colors }: {
+  label: string; value: string; options: { key: string; label: string }[];
+  onSelect: (k: string) => void; isDark: boolean; colors: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  return (
+    <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg }}>
+      <TouchableOpacity onPress={() => setOpen(o => !o)} style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+        <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontSize: 15, color: titleC }}>{options.find(o => o.key === value)?.label ?? value} ▾</Text>
+      </TouchableOpacity>
+      {open && (
+        <View style={{ borderTopWidth: 1, borderTopColor: border }}>
+          {options.map(opt => (
+            <TouchableOpacity key={opt.key} onPress={() => { onSelect(opt.key); setOpen(false); }}
+              style={{ paddingHorizontal: 16, paddingVertical: 10,
+                backgroundColor: opt.key === value ? (isDark ? colors.surface : SURFACE) : cardBg }}>
+              <Text style={{ fontSize: 14, color: opt.key === value ? BLUE : titleC,
+                fontWeight: opt.key === value ? '600' : '400' }}>{opt.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
 
 export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose, zIndex = 60 }: {
   visible: boolean; note: HomeownerNote; colors: any; isDark: boolean; onClose: () => void; zIndex?: number;
 }) {
   const { updateNote } = useHomeownerNotesStore();
+  const { members, activeMemberId } = useFamilyStore();
+  const activeMember = members.find(m => m.id === activeMemberId);
   const insets = useSafeAreaInsets();
+
   const [title, setTitle] = useState(note.title);
-  const [notes, setNotes] = useState(note.notes ?? '');
+  const [noteText, setNoteText] = useState(note.notes ?? '');
   const [category, setCategory] = useState<HomeownerNoteCategory>(note.category);
-  const [dueDate, setDueDate] = useState<string | null>(note.dueDate ?? null);
   const [recurDays, setRecurDays] = useState(note.recurEveryDays ? String(note.recurEveryDays) : '');
+  const [startDate, setStartDate] = useState<string | null>(note.dueDate ?? null);
+  const [reminderDays, setReminderDays] = useState<ReminderLeadDays | null>(note.reminderDaysBefore ?? null);
   const [priority, setPriority] = useState<HomeownerNotePriority>(note.priority ?? 'normal');
   const [room, setRoom] = useState(note.room ?? '');
-  const [saving, setSaving] = useState(false);
 
   const [showMore, setShowMore] = useState(false);
   const [serialNumber, setSerialNumber] = useState(note.serialNumber ?? '');
@@ -38,26 +141,47 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
   const [vendorName, setVendorName] = useState(note.vendorName ?? '');
   const [vendorPhone, setVendorPhone] = useState(note.vendorPhone ?? '');
   const [vendorNotes, setVendorNotes] = useState(note.vendorNotes ?? '');
-  const [cost, setCost] = useState(note.costCents != null ? (note.costCents / 100).toFixed(2) : '');
+  const [cost, setCost] = useState(note.costCents ? (note.costCents / 100).toFixed(2) : '');
+  const [assignedTo, setAssignedTo] = useState<string>(note.assignedTo ?? note.createdBy);
+
+  const [saving, setSaving] = useState(false);
+
+  const canvas = isDark ? colors.background : CANVAS;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+
+  // Infer next due from start date + interval
+  const nextDueInferred = startDate && recurDays
+    ? addDays(startDate, parseInt(recurDays, 10))
+    : null;
+
+  const otherNames = members.filter(m => m.id !== activeMemberId).map(m => m.name.split(' ')[0]);
+  const visibilityLine = otherNames.length
+    ? `${activeMember?.name?.split(' ')[0] ?? 'You'}, ${otherNames.join(' & ')} · permitted view`
+    : 'Only you';
 
   const save = async () => {
     if (!title.trim()) return;
     setSaving(true);
     const { error } = await updateNote(note.id, {
       title: title.trim(),
-      notes: notes.trim() || undefined,
+      notes: noteText.trim() || undefined,
       category,
-      dueDate: dueDate ?? undefined,
+      dueDate: startDate || undefined,
       recurEveryDays: recurDays ? parseInt(recurDays, 10) : undefined,
+      reminderDaysBefore: reminderDays ?? undefined,
       priority,
       room: room.trim() || undefined,
       serialNumber: serialNumber.trim() || undefined,
-      purchaseDate: purchaseDate ?? undefined,
-      warrantyExpiresDate: warrantyExpiresDate ?? undefined,
+      purchaseDate: purchaseDate || undefined,
+      warrantyExpiresDate: warrantyExpiresDate || undefined,
       vendorName: vendorName.trim() || undefined,
       vendorPhone: vendorPhone.trim() || undefined,
       vendorNotes: vendorNotes.trim() || undefined,
       costCents: cost ? Math.round(parseFloat(cost) * 100) : undefined,
+      assignedTo: assignedTo || undefined,
     });
     setSaving(false);
     if (error) showAlert('Could not save', error);
@@ -66,232 +190,213 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
 
   return (
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={zIndex}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-          paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: 14,
-          borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <TouchableOpacity onPress={onClose} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <ChevronLeft size={20} color={colors.teal} strokeWidth={2.5} />
-            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>Home Care</Text>
+      <View style={{ flex: 1, backgroundColor: canvas }}>
+        {/* Header */}
+        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6, backgroundColor: canvas }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Home care</Text>
           </TouchableOpacity>
-          <Text style={{ flex: 1, fontSize: 17, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>Edit reminder</Text>
-          <View style={{ width: 70 }} />
+          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
+            Edit {note.title.length > 24 ? note.title.slice(0, 24) + '…' : note.title}
+          </Text>
+          <View style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
+            borderRadius: 8, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
+            <Text style={{ fontSize: 12, color: isDark ? BLUE : LINK_BLUE, fontWeight: '600' }}>Admin edit · unsaved changes</Text>
+          </View>
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48, gap: 14 }}>
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>TITLE</Text>
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 48, gap: 12 }}>
+
+            <DropRow
+              label="Category"
+              value={category}
+              options={ALL_CATEGORIES.map(c => ({ key: c, label: `${CATEGORY_EMOJI[c]} ${CATEGORY_LABEL[c]}` }))}
+              onSelect={v => setCategory(v as HomeownerNoteCategory)}
+              isDark={isDark} colors={colors}
+            />
+
+            <FieldRow label="Title" value={title} onChangeText={setTitle}
+              placeholder="e.g. Replace kitchen filter" colors={colors} isDark={isDark} />
+
+            <FieldRow label="Homeowner note" value={noteText} onChangeText={setNoteText}
+              placeholder="Spare filter under the sink. Confirm the model in its booklet." multiline
+              colors={colors} isDark={isDark} />
+
+            {/* Repeat interval */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Repeat interval (days)</Text>
               <TextInput
-                value={title}
-                onChangeText={setTitle}
-                placeholderTextColor={colors.textTertiary}
-                style={{
-                  borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                  paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                  backgroundColor: colors.card,
-                }}
+                value={recurDays}
+                onChangeText={v => setRecurDays(v.replace(/[^\d]/g, ''))}
+                placeholder="e.g. 90 = every 3 months"
+                placeholderTextColor="#C0C7D4"
+                keyboardType="numeric"
+                style={{ fontSize: 15, color: titleC, padding: 0 }}
               />
+              {recurDays ? (
+                <Text style={{ fontSize: 11, color: bodyC, marginTop: 4 }}>
+                  {intervalLabel(parseInt(recurDays, 10))} · editable suggestion
+                </Text>
+              ) : null}
             </View>
 
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 6, letterSpacing: 0.4 }}>CATEGORY</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {CATEGORIES.map(cat => {
-                  const isActive = category === cat;
+            {/* Start date — native picker */}
+            <ScanDateField label="Start date" value={startDate} onChange={setStartDate}
+              colors={colors} isDark={isDark} accent={BLUE} />
+
+            {/* Reminder — call alert */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 14 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 2 }}>Reminder · call alert</Text>
+              <Text style={{ fontSize: 11, color: bodyC, marginBottom: 10, lineHeight: 15 }}>
+                Send a call-style reminder before the due date.
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {REMINDER_OPTIONS.map(opt => {
+                  const active = reminderDays === opt.days;
                   return (
-                    <TouchableOpacity
-                      key={cat}
-                      onPress={() => setCategory(cat)}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 6,
-                        borderRadius: 99, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                        borderColor: isActive ? colors.primary : colors.border,
-                        backgroundColor: isActive ? colors.primary + '18' : colors.card,
-                      }}
-                    >
-                      <Text style={{ fontSize: 14 }}>{CATEGORY_EMOJI[cat]}</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: isActive ? colors.primary : colors.textSecondary }}>
-                        {CATEGORY_LABEL[cat]}
-                      </Text>
+                    <TouchableOpacity key={opt.days}
+                      onPress={() => setReminderDays(active ? null : opt.days)}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                        borderWidth: 1.5,
+                        borderColor: active ? BLUE : border,
+                        backgroundColor: active ? (isDark ? colors.surface : '#EEF3FB') : cardBg }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: active ? BLUE : bodyC }}>{opt.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
-              </ScrollView>
+                <TouchableOpacity onPress={() => setReminderDays(null)}
+                  style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                    borderWidth: 1.5, borderColor: border,
+                    backgroundColor: reminderDays === null ? (isDark ? colors.surface : SURFACE) : cardBg }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC }}>No reminder</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            <ScanDateField label="Due date" value={dueDate} onChange={setDueDate} colors={colors} isDark={isDark} accent={colors.primary} />
-
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>REPEAT EVERY (DAYS, OPTIONAL)</Text>
-              <TextInput
-                value={recurDays}
-                onChangeText={setRecurDays}
-                keyboardType="number-pad"
-                placeholderTextColor={colors.textTertiary}
-                style={{
-                  borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                  paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                  backgroundColor: colors.card,
-                }}
-              />
+            {/* Last done — read-only */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Last done</Text>
+              <Text style={{ fontSize: 15, color: note.completedAt ? titleC : bodyC }}>
+                {note.completedAt ? fmtDisplay(note.completedAt.slice(0, 10)) : 'Not recorded yet'}
+              </Text>
             </View>
 
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 6, letterSpacing: 0.4 }}>PRIORITY</Text>
+            {/* Next due inferred */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Next due · inferred</Text>
+              <Text style={{ fontSize: 15, color: nextDueInferred ? titleC : bodyC }}>
+                {nextDueInferred
+                  ? `${fmtDisplay(nextDueInferred)} · last done + ${intervalLabel(parseInt(recurDays, 10))}`
+                  : 'Set start date and interval above'}
+              </Text>
+            </View>
+
+            {/* Room */}
+            <FieldRow label="Room / area (optional)" value={room} onChangeText={setRoom}
+              placeholder="e.g. Kitchen, Hall cupboard" colors={colors} isDark={isDark} />
+
+            {/* Priority */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 8 }}>Priority</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {PRIORITIES.map(p => {
-                  const isActive = priority === p;
+                  const active = priority === p;
                   return (
-                    <TouchableOpacity
-                      key={p}
-                      onPress={() => setPriority(p)}
-                      style={{
-                        flex: 1, alignItems: 'center', borderRadius: 10, borderWidth: 1.5, paddingVertical: 8,
-                        borderColor: isActive ? colors.primary : colors.border,
-                        backgroundColor: isActive ? colors.primary + '18' : colors.card,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: isActive ? colors.primary : colors.textSecondary }}>
-                        {PRIORITY_LABEL[p]}
-                      </Text>
+                    <TouchableOpacity key={p} onPress={() => setPriority(p)}
+                      style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
+                        borderWidth: 1.5,
+                        borderColor: active ? BLUE : border,
+                        backgroundColor: active ? (isDark ? colors.surface : '#EEF3FB') : cardBg }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: active ? BLUE : bodyC }}>{PRIORITY_LABEL[p]}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
             </View>
 
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>ROOM / AREA (OPTIONAL)</Text>
-              <TextInput
-                value={room}
-                onChangeText={setRoom}
-                placeholderTextColor={colors.textTertiary}
-                style={{
-                  borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                  paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                  backgroundColor: colors.card,
-                }}
-              />
-            </View>
-
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>NOTES (OPTIONAL)</Text>
-              <TextInput
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-                placeholderTextColor={colors.textTertiary}
-                style={{
-                  borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                  paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                  backgroundColor: colors.card, minHeight: 80, textAlignVertical: 'top',
-                }}
-              />
-            </View>
-
-            <TouchableOpacity
-              onPress={() => setShowMore(v => !v)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-            >
-              {showMore ? <ChevronUp size={16} color={colors.primary} /> : <ChevronDown size={16} color={colors.primary} />}
-              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>
-                {showMore ? 'Hide' : 'Show'} serial number, warranty, contractor info
+            {/* Advanced toggle */}
+            <TouchableOpacity onPress={() => setShowMore(v => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
+              {showMore ? <ChevronUp size={16} color={BLUE} /> : <ChevronDown size={16} color={BLUE} />}
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE }}>
+                {showMore ? 'Hide' : 'Show'} serial number, warranty & contractor details
               </Text>
             </TouchableOpacity>
 
             {showMore && (
               <>
-                <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>SERIAL / MODEL NUMBER</Text>
-                  <TextInput
-                    value={serialNumber}
-                    onChangeText={setSerialNumber}
-                    placeholderTextColor={colors.textTertiary}
-                    style={{
-                      borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                      paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                      backgroundColor: colors.card,
-                    }}
-                  />
-                </View>
+                <FieldRow label="Serial / model number" value={serialNumber} onChangeText={setSerialNumber}
+                  placeholder="Optional" colors={colors} isDark={isDark} />
 
-                <ScanDateField label="Purchase / install date" value={purchaseDate} onChange={setPurchaseDate} colors={colors} isDark={isDark} accent={colors.primary} />
-                <ScanDateField label="Warranty expires" value={warrantyExpiresDate} onChange={setWarrantyExpiresDate} colors={colors} isDark={isDark} accent={colors.primary} />
+                <ScanDateField label="Purchase / install date" value={purchaseDate}
+                  onChange={setPurchaseDate} colors={colors} isDark={isDark} accent={BLUE} />
 
-                <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>COST</Text>
-                  <TextInput
-                    value={cost}
-                    onChangeText={setCost}
-                    keyboardType="decimal-pad"
-                    placeholderTextColor={colors.textTertiary}
-                    style={{
-                      borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                      paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                      backgroundColor: colors.card,
-                    }}
-                  />
-                </View>
+                <ScanDateField label="Warranty expires" value={warrantyExpiresDate}
+                  onChange={setWarrantyExpiresDate} colors={colors} isDark={isDark} accent={BLUE} />
 
-                <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>CONTRACTOR / COMPANY NAME</Text>
-                  <TextInput
-                    value={vendorName}
-                    onChangeText={setVendorName}
-                    placeholderTextColor={colors.textTertiary}
-                    style={{
-                      borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                      paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                      backgroundColor: colors.card,
-                    }}
-                  />
-                </View>
+                <FieldRow label="Cost ($)" value={cost} onChangeText={setCost}
+                  placeholder="0.00" keyboardType="decimal-pad" colors={colors} isDark={isDark} />
 
-                <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>CONTRACTOR PHONE</Text>
-                  <TextInput
-                    value={vendorPhone}
-                    onChangeText={setVendorPhone}
-                    keyboardType="phone-pad"
-                    placeholderTextColor={colors.textTertiary}
-                    style={{
-                      borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                      paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                      backgroundColor: colors.card,
-                    }}
-                  />
-                </View>
+                <FieldRow label="Contractor / company name" value={vendorName} onChangeText={setVendorName}
+                  placeholder="e.g. ABC HVAC" colors={colors} isDark={isDark} />
 
-                <View>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 4, letterSpacing: 0.4 }}>CONTRACTOR NOTES</Text>
-                  <TextInput
-                    value={vendorNotes}
-                    onChangeText={setVendorNotes}
-                    multiline
-                    numberOfLines={2}
-                    placeholderTextColor={colors.textTertiary}
-                    style={{
-                      borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-                      paddingHorizontal: 14, paddingVertical: 11, color: colors.textPrimary, fontSize: 15,
-                      backgroundColor: colors.card, minHeight: 60, textAlignVertical: 'top',
-                    }}
-                  />
-                </View>
+                <FieldRow label="Contractor phone" value={vendorPhone} onChangeText={setVendorPhone}
+                  placeholder="Optional" keyboardType="phone-pad" colors={colors} isDark={isDark} />
+
+                <FieldRow label="Contractor notes" value={vendorNotes} onChangeText={setVendorNotes}
+                  placeholder="e.g. Ask for Mike, does our AC every year" multiline
+                  colors={colors} isDark={isDark} />
               </>
             )}
 
-            <TouchableOpacity
-              onPress={save}
-              disabled={!title.trim() || saving}
-              style={{
-                backgroundColor: !title.trim() ? colors.border : colors.primary,
-                borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 6,
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
-                {saving ? 'Saving…' : 'Save changes'}
+            {/* Assigned to */}
+            <DropRow label="Assigned to" value={assignedTo}
+              options={members.map(m => ({
+                key: m.id,
+                label: m.id === activeMemberId ? `${m.name} (you)` : m.name,
+              }))}
+              onSelect={setAssignedTo}
+              isDark={isDark} colors={colors} />
+
+            {/* Visibility */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Visibility</Text>
+              <Text style={{ fontSize: 15, color: titleC }}>{visibilityLine}</Text>
+            </View>
+
+            {/* Editing authority */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 14, gap: 6 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Editing authority</Text>
+              <Text style={{ fontSize: 13, color: bodyC, lineHeight: 18 }}>
+                {activeMember?.name?.split(' ')[0] ?? 'You'} is the house admin.{' '}
+                {otherNames.length ? `${otherNames.join(' and ')} may view this note; their task assignments do not grant admin editing.` : ''}
+              </Text>
+            </View>
+
+            {/* Save */}
+            <TouchableOpacity onPress={save} disabled={saving || !title.trim()}
+              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: title.trim() ? BLUE : (isDark ? colors.surface : SURFACE) }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: title.trim() ? '#FFFFFF' : bodyC }}>
+                {saving ? 'Saving…' : 'Save note changes'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={onClose}
+              style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? BLUE : LINK_BLUE }}>
+                Cancel · back to home care
               </Text>
             </TouchableOpacity>
           </ScrollView>

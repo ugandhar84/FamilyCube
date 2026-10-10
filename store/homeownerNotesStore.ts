@@ -19,7 +19,7 @@ export type HomeownerNotePriority = 'low' | 'normal' | 'high';
 // minutes-before-due windows, but this is a coarser day-granularity lead
 // time [live-requested: "I see reminder setting call alert for 1d, 2d,
 // 1wk setting on the create and edit"].
-export type ReminderLeadDays = 1 | 2 | 7;
+export type ReminderLeadDays = 1 | 2 | 7 | 15 | 30;
 
 export interface HomeownerNote {
   id: string;
@@ -54,6 +54,11 @@ export interface HomeownerNote {
   room?: string;
   tags: string[];
   createdBy: string;
+  // Who this task/note is assigned to — defaults to createdBy but
+  // reassignable to any family member via the Add/Edit forms' "Assigned
+  // to" dropdown [live-requested: "should be able to assign to the
+  // persons, show dropdown of these persons"].
+  assignedTo?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,12 +73,13 @@ interface HomeownerNotesState {
     purchaseDate?: string; warrantyExpiresDate?: string;
     vendorName?: string; vendorPhone?: string; vendorNotes?: string;
     costCents?: number; priority?: HomeownerNotePriority; room?: string; tags?: string[];
+    assignedTo?: string;
     createdBy: string;
   }) => Promise<{ error?: string }>;
   updateNote: (id: string, patch: Partial<Pick<HomeownerNote,
     'title' | 'notes' | 'category' | 'dueDate' | 'recurEveryDays' | 'reminderDaysBefore' | 'serialNumber' |
     'purchaseDate' | 'warrantyExpiresDate' | 'vendorName' | 'vendorPhone' | 'vendorNotes' |
-    'costCents' | 'priority' | 'room' | 'tags'
+    'costCents' | 'priority' | 'room' | 'tags' | 'assignedTo'
   >>) => Promise<{ error?: string }>;
   completeNote: (id: string, completionComment?: string) => Promise<{ error?: string }>;
   // True once the due date is within a week away or already past — the
@@ -110,6 +116,7 @@ function mapNote(row: any): HomeownerNote {
     room: row.room ?? undefined,
     tags: row.tags ?? [],
     createdBy: row.created_by,
+    assignedTo: row.assigned_to ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -135,7 +142,7 @@ export const useHomeownerNotesStore = create<HomeownerNotesState>((set, get) => 
   },
 
   addNote: async ({ familyId, title, notes, category, dueDate, recurEveryDays, reminderDaysBefore, serialNumber,
-    purchaseDate, warrantyExpiresDate, vendorName, vendorPhone, vendorNotes, costCents, priority, room, tags, createdBy }) => {
+    purchaseDate, warrantyExpiresDate, vendorName, vendorPhone, vendorNotes, costCents, priority, room, tags, assignedTo, createdBy }) => {
     const { data, error } = await supabase.from('homeowner_notes').insert({
       family_id: familyId, title, notes: notes ?? null, category,
       due_date: dueDate ?? null, recur_every_days: recurEveryDays ?? null,
@@ -144,7 +151,7 @@ export const useHomeownerNotesStore = create<HomeownerNotesState>((set, get) => 
       warranty_expires_date: warrantyExpiresDate ?? null,
       vendor_name: vendorName ?? null, vendor_phone: vendorPhone ?? null, vendor_notes: vendorNotes ?? null,
       cost_cents: costCents ?? null, priority: priority ?? 'normal', room: room ?? null,
-      tags: tags ?? [], created_by: createdBy,
+      tags: tags ?? [], created_by: createdBy, assigned_to: assignedTo ?? createdBy,
     }).select().single();
     if (error) return { error: error.message };
     set(s => ({ notes: [...s.notes, mapNote(data)] }));
@@ -177,6 +184,7 @@ export const useHomeownerNotesStore = create<HomeownerNotesState>((set, get) => 
     if (patch.priority !== undefined) dbPatch.priority = patch.priority;
     if (patch.room !== undefined) dbPatch.room = patch.room;
     if (patch.tags !== undefined) dbPatch.tags = patch.tags;
+    if (patch.assignedTo !== undefined) dbPatch.assigned_to = patch.assignedTo;
     const { data, error } = await supabase.from('homeowner_notes').update(dbPatch).eq('id', id).select().single();
     if (error) return { error: error.message };
     set(s => ({ notes: s.notes.map(n => n.id === id ? mapNote(data) : n) }));

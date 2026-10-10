@@ -1,33 +1,41 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Pressable } from 'react-native';
-import { Home, Plus, Check, Trash2, Pencil, LayoutList, LayoutGrid, AlertTriangle, Clock, RefreshCw, Wrench, Shield, Zap, Droplets, Package, TreePine } from 'lucide-react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Pressable } from 'react-native';
+import { Home, Wrench, Shield, Zap, Droplets, Package, TreePine, ChevronRight, Plus } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory } from '@/store/homeownerNotesStore';
-import { AddHomeownerNoteSheet } from './AddHomeownerNoteSheet';
-import { EditHomeownerNoteSheet } from './EditHomeownerNoteSheet';
-import { CompleteNoteSheet } from './CompleteNoteSheet';
-import { CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
-import { fmtDateDisplay } from '../health/types';
-import { showAlert } from '@/components/AppAlert';
+import { CATEGORY_LABEL } from './maintenancePresets';
 
-const PAGE_BG = '#F3F5F2';
-
-const CATEGORY_ORDER: HomeownerNoteCategory[] = ['hvac', 'plumbing', 'electrical', 'appliance', 'exterior', 'safety', 'warranty', 'general'];
+const CANVAS = '#FFFFFF';
+const TITLE_CLR = '#172337';
+const BODY_CLR = '#657185';
+const BLUE = '#345DE3';
+const BORDER = '#E8EBF0';
+const CARD_BG = '#FFFFFF';
+const SURFACE = '#F5F7FB';
 
 const CATEGORY_ICON: Record<HomeownerNoteCategory, any> = {
   hvac: Wrench, plumbing: Droplets, electrical: Zap, appliance: Package,
   exterior: TreePine, safety: Shield, warranty: Shield, general: Home,
 };
 
-const CATEGORY_COLOR: Record<string, string> = {
-  hvac: '#3D7A5A', plumbing: '#2C6FAC', electrical: '#D97706',
-  appliance: '#7B5EA7', exterior: '#3D7A5A', safety: '#C54A27',
-  warranty: '#6B5F52', general: '#DF613C',
-};
-
 function parseLocalDateStr(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
   return y && m && d ? new Date(y, m - 1, d) : new Date();
+}
+
+function fmtDisplay(s: string): string {
+  const d = parseLocalDateStr(s);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function intervalLabel(days: number): string {
+  if (days === 7) return 'every week';
+  if (days === 14) return 'every 2 weeks';
+  if (days === 30) return 'every month';
+  if (days === 90) return 'every 3 months';
+  if (days === 180) return 'every 6 months';
+  if (days === 365) return 'every year';
+  return `every ${days} days`;
 }
 
 function isOverdue(note: HomeownerNote): boolean {
@@ -42,156 +50,87 @@ function isDueSoon(note: HomeownerNote): boolean {
   return due >= now && due - now <= 7 * 24 * 3600_000;
 }
 
-function StatPill({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
-  return (
-    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 16, backgroundColor: bg, gap: 2 }}>
-      <Text style={{ fontSize: 22, fontWeight: '800', color, lineHeight: 26 }}>{value}</Text>
-      <Text style={{ fontSize: 11, fontWeight: '600', color, opacity: 0.75, textAlign: 'center' }}>{label}</Text>
-    </View>
-  );
+function isThisWeek(note: HomeownerNote): boolean {
+  if (!note.dueDate) return false;
+  const due = parseLocalDateStr(note.dueDate).getTime();
+  const now = Date.now();
+  return due >= now - 24 * 3600_000 && due <= now + 7 * 24 * 3600_000;
 }
 
-function NoteCard({ note, colors, isDark, groupByCategory, onComplete, onEdit, onDelete }: {
-  note: HomeownerNote; colors: any; isDark: boolean; groupByCategory: boolean;
-  onComplete: () => void; onEdit: () => void; onDelete: () => void;
+function NoteRow({ note, members, colors, isDark, onTap }: {
+  note: HomeownerNote; members: any[]; colors: any; isDark: boolean;
+  onTap: () => void;
 }) {
   const overdue = isOverdue(note);
   const dueSoon = isDueSoon(note);
-  const completable = !note.dueDate || dueSoon || overdue;
-  const catColor = CATEGORY_COLOR[note.category] ?? colors.teal;
+  const creator = members.find(m => m.id === note.createdBy);
   const CatIcon = CATEGORY_ICON[note.category] ?? Home;
 
   return (
-    <View style={{
-      backgroundColor: colors.card,
-      borderRadius: 18,
-      marginBottom: 10,
-      borderWidth: 1,
-      borderColor: overdue ? colors.danger + '40' : isDark ? colors.border : 'rgba(61,122,90,0.12)',
-      shadowColor: colors.navy,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: isDark ? 0 : 0.06,
-      shadowRadius: 10,
-      overflow: 'hidden',
-    }}>
-      {/* accent bar */}
-      <View style={{ height: 3, backgroundColor: overdue ? colors.danger : catColor }} />
-
-      <View style={{ padding: 14, gap: 10 }}>
-        {/* Header row */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-          {/* complete button */}
-          <TouchableOpacity
-            onPress={() => completable && onComplete()}
-            disabled={!completable}
-            hitSlop={8}
-            style={{ marginTop: 1, opacity: completable ? 1 : 0.3 }}
-          >
-            <View style={{
-              width: 26, height: 26, borderRadius: 13, borderWidth: 2,
-              borderColor: overdue ? colors.danger : colors.teal,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: overdue ? colors.danger + '12' : colors.tealLight,
-            }}>
-              <Check size={13} color={overdue ? colors.danger : colors.teal} strokeWidth={2.5} />
-            </View>
-          </TouchableOpacity>
-
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, lineHeight: 20 }}>{note.title}</Text>
-            {note.notes ? (
-              <Text numberOfLines={2} style={{ fontSize: 12, color: colors.textSecondary }}>{note.notes}</Text>
-            ) : null}
-          </View>
-
-          {/* action buttons */}
-          <TouchableOpacity onPress={onEdit} hitSlop={8} style={{ padding: 4 }}>
-            <Pencil size={15} color={colors.textTertiary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onDelete} hitSlop={8} style={{ padding: 4 }}>
-            <Trash2 size={15} color={colors.danger} />
-          </TouchableOpacity>
+    <View style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>
+      {/* Title row */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: isDark ? colors.surface : SURFACE,
+          alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 }}>
+          <CatIcon size={14} color={overdue ? colors.danger : colors.teal} strokeWidth={2} />
         </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR, lineHeight: 20 }}>
+            {note.title}
+            {note.category !== 'general' ? ` · ${CATEGORY_LABEL[note.category]}` : ''}
+          </Text>
 
-        {/* Tags row */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {!groupByCategory && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-              paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-              backgroundColor: catColor + '18' }}>
-              <CatIcon size={11} color={catColor} strokeWidth={2.5} />
-              <Text style={{ fontSize: 11, fontWeight: '700', color: catColor }}>{CATEGORY_LABEL[note.category]}</Text>
-            </View>
-          )}
-
+          {/* Sub-line: due date */}
           {note.dueDate && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-              paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-              backgroundColor: overdue ? colors.danger + '18' : dueSoon ? colors.amber + '18' : colors.surface }}>
-              {overdue ? <AlertTriangle size={11} color={colors.danger} strokeWidth={2.5} /> :
-               <Clock size={11} color={dueSoon ? colors.amber : colors.textTertiary} strokeWidth={2.5} />}
-              <Text style={{ fontSize: 11, fontWeight: '600',
-                color: overdue ? colors.danger : dueSoon ? colors.amber : colors.textTertiary }}>
-                {overdue ? `Overdue · ` : `Due `}{fmtDateDisplay(parseLocalDateStr(note.dueDate))}
+            <Text style={{ fontSize: 12, color: overdue ? colors.danger : dueSoon ? colors.amber : (isDark ? colors.textSecondary : BODY_CLR), marginTop: 2 }}>
+              {overdue ? `Overdue · ` : `Due `}{fmtDisplay(note.dueDate)}
+              {note.recurEveryDays ? ` · suggested ${intervalLabel(note.recurEveryDays)}` : ''}
+            </Text>
+          )}
+
+          {/* Notes preview */}
+          {note.notes ? (
+            <Text numberOfLines={1} style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 1 }}>
+              {note.notes}
+            </Text>
+          ) : null}
+
+          {/* Creator */}
+          {creator ? (
+            <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 1 }}>
+              {creator.name} attending
+            </Text>
+          ) : null}
+
+          {/* Action links */}
+          <View style={{ flexDirection: 'row', gap: 16, marginTop: 6 }}>
+            <TouchableOpacity onPress={onTap}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: BLUE }}>
+                {overdue || dueSoon ? 'View or mark done →' : 'Open note →'}
               </Text>
-            </View>
-          )}
-
-          {note.recurEveryDays && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-              paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.tealLight }}>
-              <RefreshCw size={11} color={colors.teal} strokeWidth={2.5} />
-              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>Every {note.recurEveryDays}d</Text>
-            </View>
-          )}
-
-          {note.priority === 'high' && (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.danger + '18' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>High priority</Text>
-            </View>
-          )}
-
-          {note.room && (
-            <Text style={{ fontSize: 11, color: colors.textTertiary }}>· {note.room}</Text>
-          )}
-        </View>
-
-        {/* Vendor/warranty footer */}
-        {(note.vendorName || note.serialNumber || note.warrantyExpiresDate) && (
-          <View style={{ paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border,
-            flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            {note.vendorName && (
-              <Text style={{ fontSize: 11, color: colors.textTertiary }}>
-                📞 {note.vendorName}{note.vendorPhone ? ` · ${note.vendorPhone}` : ''}
-              </Text>
-            )}
-            {note.serialNumber && (
-              <Text style={{ fontSize: 11, color: colors.textTertiary }}>S/N: {note.serialNumber}</Text>
-            )}
-            {note.warrantyExpiresDate && (
-              <Text style={{ fontSize: 11, color: colors.textTertiary }}>
-                Warranty until {fmtDateDisplay(parseLocalDateStr(note.warrantyExpiresDate))}
-              </Text>
-            )}
+            </TouchableOpacity>
           </View>
-        )}
+        </View>
       </View>
     </View>
   );
 }
 
-export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+type FilterTab = 'all' | 'due_soon' | 'notes';
+
+export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, onOpenDocuments }: {
+  colors: any; isDark: boolean;
+  onAdd: () => void;
+  onOpenNote: (note: HomeownerNote) => void;
+  onOpenDocuments: () => void;
+}) {
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = (activeMember as any)?.familyId ?? (members[0] as any)?.familyId ?? '';
   const isParent = activeMember?.role === 'parent';
 
-  const { notes, isLoading, loadNotes, addNote, completeNote, deleteNote } = useHomeownerNotesStore();
-  const [showAdd, setShowAdd] = useState(false);
-  const [editNote, setEditNote] = useState<HomeownerNote | null>(null);
-  const [completingNote, setCompletingNote] = useState<HomeownerNote | null>(null);
-  const [groupByCategory, setGroupByCategory] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<HomeownerNoteCategory | 'all'>('all');
+  const { notes, isLoading, loadNotes } = useHomeownerNotesStore();
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
 
   useEffect(() => {
     if (familyId) loadNotes(familyId);
@@ -202,76 +141,73 @@ export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isD
     if (!b.dueDate) return -1;
     return a.dueDate.localeCompare(b.dueDate);
   }), [notes]);
-  const done = notes.filter(n => n.completedAt && !n.recurEveryDays);
 
-  const overdueCount = active.filter(isOverdue).length;
-  const dueSoonCount = active.filter(isDueSoon).length;
-  const highPriorityCount = active.filter(n => n.priority === 'high').length;
+  const freeNotes = useMemo(() => notes.filter(n => !n.completedAt && !n.dueDate), [notes]);
 
-  const categoriesWithItems = useMemo(() =>
-    CATEGORY_ORDER.filter(cat => active.some(n => n.category === cat)), [active]);
+  const thisWeek = useMemo(() => active.filter(isThisWeek), [active]);
+  const dueSoon = useMemo(() => active.filter(isDueSoon), [active]);
 
-  const filtered = useMemo(() => {
-    const base = activeCategory === 'all' ? active : active.filter(n => n.category === activeCategory);
-    return base;
-  }, [active, activeCategory]);
+  const displayed = useMemo(() => {
+    if (filterTab === 'due_soon') return dueSoon;
+    if (filterTab === 'notes') return freeNotes;
+    return active;
+  }, [filterTab, active, dueSoon, freeNotes]);
 
-  const grouped = useMemo(() => CATEGORY_ORDER
-    .map(cat => ({ category: cat, items: filtered.filter(n => n.category === cat) }))
-    .filter(g => g.items.length > 0), [filtered]);
+  const canvas = isDark ? colors.background : CANVAS;
 
   if (!isParent) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 }}>
-        <View style={{ width: 56, height: 56, borderRadius: 20, backgroundColor: colors.tealLight,
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12, backgroundColor: canvas }}>
+        <View style={{ width: 56, height: 56, borderRadius: 20, backgroundColor: isDark ? colors.surface : SURFACE,
           alignItems: 'center', justifyContent: 'center' }}>
           <Home size={28} color={colors.teal} strokeWidth={2} />
         </View>
-        <Text style={{ fontSize: 15, color: colors.textSecondary, textAlign: 'center' }}>
+        <Text style={{ fontSize: 15, color: isDark ? colors.textSecondary : BODY_CLR, textAlign: 'center' }}>
           Home maintenance is managed by a parent.
         </Text>
       </View>
     );
   }
 
-  const onDelete = (note: HomeownerNote) => {
-    showAlert('Delete this reminder?', note.title, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteNote(note.id) },
-    ]);
-  };
+  // Context line: today's date + who can view
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const viewerNames = members.filter(m => m.id !== activeMemberId).map(m => m.name.split(' ')[0]).join(' and ');
 
   return (
-    <View style={{ flex: 1, backgroundColor: PAGE_BG }}>
+    <View style={{ flex: 1, backgroundColor: canvas }}>
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, paddingTop: 4, gap: 16 }}>
+        contentContainerStyle={{ paddingBottom: 120 }}>
 
-        {/* ── Stats strip ── */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <StatPill label="Open" value={active.length} color={colors.teal} bg={colors.tealLight} />
-          <StatPill label="Overdue" value={overdueCount}
-            color={overdueCount > 0 ? colors.danger : colors.textTertiary}
-            bg={overdueCount > 0 ? colors.danger + '18' : colors.surface} />
-          <StatPill label="Due soon" value={dueSoonCount}
-            color={dueSoonCount > 0 ? colors.amber : colors.textTertiary}
-            bg={dueSoonCount > 0 ? colors.amberLight : colors.surface} />
-          <StatPill label="Done" value={done.length} color={colors.textTertiary} bg={colors.surface} />
+        {/* Context line */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12 }}>
+          <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, lineHeight: 18 }}>
+            {today}{viewerNames ? ` · ${viewerNames} can view permitted house notes. Only ${activeMember?.name?.split(' ')[0] ?? 'you'} edits homeowner instructions.` : ''}
+          </Text>
         </View>
 
-        {/* ── Add button ── */}
-        <Pressable onPress={() => setShowAdd(true)} style={({ pressed }) => ({
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-          gap: 8, paddingVertical: 14, borderRadius: 18,
-          backgroundColor: colors.teal,
-          opacity: pressed ? 0.85 : 1,
-          shadowColor: colors.teal,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.25,
-          shadowRadius: 12,
-        })}>
-          <Plus size={18} color="#fff" strokeWidth={2.5} />
-          <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>Add Maintenance Task</Text>
-        </Pressable>
+        {/* Filter tabs */}
+        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 16 }}>
+          {([['all', 'All'], ['due_soon', 'Due soon'], ['notes', 'Notes']] as [FilterTab, string][]).map(([key, label]) => (
+            <TouchableOpacity key={key} onPress={() => setFilterTab(key)}
+              style={{ paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+                backgroundColor: filterTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE),
+                borderWidth: filterTab === key ? 0 : 1,
+                borderColor: isDark ? colors.border : BORDER }}>
+              <Text style={{ fontSize: 13, fontWeight: '600',
+                color: filterTab === key ? '#FFFFFF' : (isDark ? colors.textSecondary : BODY_CLR) }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Add button */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
+          <TouchableOpacity onPress={onAdd}
+            style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: BLUE, flexDirection: 'row', gap: 8 }}>
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Add task or note</Text>
+          </TouchableOpacity>
+        </View>
 
         {isLoading && notes.length === 0 && (
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
@@ -279,159 +215,112 @@ export default function HomeownerNotesTab({ colors, isDark }: { colors: any; isD
           </View>
         )}
 
-        {!isLoading && active.length === 0 && (
-          <View style={{ alignItems: 'center', padding: 40, gap: 12 }}>
-            <View style={{ width: 56, height: 56, borderRadius: 20, backgroundColor: colors.tealLight,
-              alignItems: 'center', justifyContent: 'center' }}>
-              <Home size={28} color={colors.teal} strokeWidth={2} />
+        {/* This week section */}
+        {filterTab === 'all' && thisWeek.length > 0 && (
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR,
+              paddingHorizontal: 20, marginBottom: 4 }}>This week</Text>
+            <View style={{ paddingHorizontal: 20 }}>
+              {thisWeek.map(note => (
+                <NoteRow key={note.id} note={note} members={members} colors={colors} isDark={isDark}
+                  onTap={() => onOpenNote(note)} />
+              ))}
             </View>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>All caught up!</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+          </View>
+        )}
+
+        {/* Remaining / filtered list */}
+        {displayed.length > 0 && (
+          <View style={{ marginBottom: 24 }}>
+            {filterTab !== 'all' && (
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR,
+                paddingHorizontal: 20, marginBottom: 4 }}>
+                {filterTab === 'due_soon' ? 'Due soon' : 'Notes'}
+              </Text>
+            )}
+            <View style={{ paddingHorizontal: 20 }}>
+              {(filterTab === 'all' ? displayed.filter(n => !isThisWeek(n)) : displayed).map(note => (
+                <NoteRow key={note.id} note={note} members={members} colors={colors} isDark={isDark}
+                  onTap={() => onOpenNote(note)} />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {!isLoading && active.length === 0 && (
+          <View style={{ alignItems: 'center', paddingVertical: 48, paddingHorizontal: 32, gap: 10 }}>
+            <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: isDark ? colors.surface : SURFACE,
+              alignItems: 'center', justifyContent: 'center' }}>
+              <Home size={24} color={colors.teal} strokeWidth={2} />
+            </View>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>All caught up</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, textAlign: 'center' }}>
               No maintenance reminders yet — tap above to add your first one.
             </Text>
           </View>
         )}
 
-        {active.length > 0 && (
-          <View style={{ gap: 10 }}>
-            {/* Category filter pills */}
-            {categoriesWithItems.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingBottom: 2 }}>
-                <TouchableOpacity
-                  onPress={() => setActiveCategory('all')}
-                  style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                    backgroundColor: activeCategory === 'all' ? colors.teal : colors.card,
-                    borderWidth: 1, borderColor: activeCategory === 'all' ? colors.teal : colors.border }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700',
-                    color: activeCategory === 'all' ? '#fff' : colors.textSecondary }}>All</Text>
-                </TouchableOpacity>
-                {categoriesWithItems.map(cat => {
-                  const selected = activeCategory === cat;
-                  const catColor = CATEGORY_COLOR[cat] ?? colors.teal;
-                  return (
-                    <TouchableOpacity key={cat}
-                      onPress={() => setActiveCategory(cat)}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-                        paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-                        backgroundColor: selected ? catColor : colors.card,
-                        borderWidth: 1, borderColor: selected ? catColor : colors.border }}>
-                      <Text style={{ fontSize: 12 }}>{CATEGORY_EMOJI[cat]}</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '700',
-                        color: selected ? '#fff' : colors.textSecondary }}>{CATEGORY_LABEL[cat]}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            {/* Sort toggle */}
-            <TouchableOpacity
-              onPress={() => setGroupByCategory(v => !v)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
-              {groupByCategory
-                ? <LayoutList size={14} color={colors.teal} />
-                : <LayoutGrid size={14} color={colors.teal} />}
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>
-                {groupByCategory ? 'Sort by date' : 'Group by category'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Cards */}
-            {!groupByCategory && filtered.map(note => (
-              <NoteCard key={note.id} note={note} colors={colors} isDark={isDark}
-                groupByCategory={false}
-                onComplete={() => setCompletingNote(note)}
-                onEdit={() => setEditNote(note)}
-                onDelete={() => onDelete(note)} />
-            ))}
-
-            {groupByCategory && grouped.map(g => {
-              const catColor = CATEGORY_COLOR[g.category] ?? colors.teal;
-              return (
-                <View key={g.category}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                    <Text style={{ fontSize: 14 }}>{CATEGORY_EMOJI[g.category]}</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: catColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      {CATEGORY_LABEL[g.category]}
-                    </Text>
-                    <View style={{ height: 1, flex: 1, backgroundColor: catColor + '30' }} />
+        {/* Useful notes section — notes without due dates */}
+        {filterTab === 'all' && freeNotes.length > 0 && (
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR,
+              paddingHorizontal: 20, marginBottom: 4 }}>Useful notes</Text>
+            <View style={{ paddingHorizontal: 20 }}>
+              {freeNotes.map(note => (
+                <TouchableOpacity key={note.id} onPress={() => onOpenNote(note)}
+                  style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                    <View style={{ width: 28, height: 28, borderRadius: 8,
+                      backgroundColor: isDark ? colors.surface : SURFACE,
+                      alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Home size={14} color={colors.teal} strokeWidth={2} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textPrimary : TITLE_CLR }}>
+                        {note.title}
+                      </Text>
+                      {note.notes ? (
+                        <Text numberOfLines={1} style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 1 }}>
+                          {note.notes}
+                        </Text>
+                      ) : null}
+                      {note.updatedAt && (
+                        <Text style={{ fontSize: 12, color: isDark ? colors.textTertiary : BODY_CLR, marginTop: 1 }}>
+                          Last updated {members.find(m => m.id === note.createdBy)?.name?.split(' ')[0] ?? ''} · {fmtDisplay(note.updatedAt.slice(0, 10))}
+                        </Text>
+                      )}
+                      <TouchableOpacity onPress={() => onOpenNote(note)} style={{ marginTop: 4 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: BLUE }}>View note →</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  {g.items.map(note => (
-                    <NoteCard key={note.id} note={note} colors={colors} isDark={isDark}
-                      groupByCategory
-                      onComplete={() => setCompletingNote(note)}
-                      onEdit={() => setEditNote(note)}
-                      onDelete={() => onDelete(note)} />
-                  ))}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* ── Completed ── */}
-        {done.length > 0 && (
-          <View style={{ gap: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textTertiary,
-              textTransform: 'uppercase', letterSpacing: 0.5 }}>Completed</Text>
-            {done.map(note => (
-              <View key={note.id} style={{
-                flexDirection: 'row', alignItems: 'center', gap: 10,
-                paddingHorizontal: 14, paddingVertical: 12,
-                backgroundColor: colors.card, borderRadius: 14,
-                borderWidth: 1, borderColor: colors.border,
-              }}>
-                <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: colors.tealLight,
-                  alignItems: 'center', justifyContent: 'center' }}>
-                  <Check size={13} color={colors.teal} strokeWidth={2.5} />
-                </View>
-                <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary, textDecorationLine: 'line-through' }}>
-                  {note.title}
-                </Text>
-                <TouchableOpacity onPress={() => onDelete(note)} hitSlop={8}>
-                  <Trash2 size={15} color={colors.danger} />
                 </TouchableOpacity>
-              </View>
-            ))}
+              ))}
+            </View>
           </View>
         )}
+
+        {/* House documents link */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+          <TouchableOpacity onPress={onOpenDocuments}
+            style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textPrimary : TITLE_CLR }}>House documents</Text>
+            <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 1 }}>
+              Insurance, deeds, manuals and warranty cards
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: BLUE, marginTop: 4 }}>Open house documents →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Disclaimer */}
+        <View style={{ marginHorizontal: 20, marginBottom: 24, padding: 14, borderRadius: 14,
+          backgroundColor: isDark ? colors.surface : '#EEF3E8' }}>
+          <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : '#4A6741', lineHeight: 17 }}>
+            Preset intervals are suggestions, not safety instructions. Adapt every reminder to the manufacturer's requirements and qualified professional advice.
+          </Text>
+        </View>
+
       </ScrollView>
-
-      <AddHomeownerNoteSheet
-        visible={showAdd}
-        colors={colors}
-        isDark={isDark}
-        onClose={() => setShowAdd(false)}
-        onSave={async (params) => {
-          if (!activeMemberId) return;
-          const { error } = await addNote({ familyId, createdBy: activeMemberId, ...params });
-          if (error) showAlert('Could not save', error);
-        }}
-      />
-
-      {editNote && (
-        <EditHomeownerNoteSheet
-          visible
-          note={editNote}
-          colors={colors}
-          isDark={isDark}
-          onClose={() => setEditNote(null)}
-        />
-      )}
-
-      <CompleteNoteSheet
-        visible={!!completingNote}
-        note={completingNote}
-        colors={colors}
-        onClose={() => setCompletingNote(null)}
-        onConfirm={async (comment) => {
-          if (!completingNote) return;
-          const { error } = await completeNote(completingNote.id, comment);
-          setCompletingNote(null);
-          if (error) showAlert('Could not complete', error);
-        }}
-      />
     </View>
   );
 }

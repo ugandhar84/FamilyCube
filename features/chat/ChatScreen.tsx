@@ -67,6 +67,7 @@ import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/c
 import { Pin, PinOff, Trash2 } from 'lucide-react-native';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -871,7 +872,7 @@ export default function ChatScreen() {
 
   // ── Inbox list view ────────────────────────────────────────────────────────
   if (!threadOpen) {
-    const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+    const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: canvas }} edges={['top']}>
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
@@ -903,7 +904,7 @@ export default function ChatScreen() {
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : '#707688', fontWeight: '500' }}>
+            <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '500' }}>
               {members.length} people active today
             </Text>
           </View>
@@ -912,7 +913,7 @@ export default function ChatScreen() {
         {/* Channel / DM list */}
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
           {/* Group channels section */}
-          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.7,
+          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, letterSpacing: 0.7,
             paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 }}>CHANNELS</Text>
           <View style={{ paddingHorizontal: 16, gap: 10 }}>
           {allChannels.filter(ch => !(ch as any).isDM).map(ch => {
@@ -994,7 +995,7 @@ export default function ChatScreen() {
 
           {/* DMs section */}
           {allChannels.some(ch => (ch as any).isDM) && (
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.7,
+            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, letterSpacing: 0.7,
               paddingHorizontal: 20, paddingTop: 24, paddingBottom: 10 }}>DIRECT MESSAGES</Text>
           )}
           <View style={{ paddingHorizontal: 16, gap: 10 }}>
@@ -1060,7 +1061,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top']}>
       <View>
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
         {/* Breadcrumb back to inbox */}

@@ -27,7 +27,7 @@
  */
 import { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput, ActivityIndicator, Share, ScrollView,
+  View, Text, TouchableOpacity, TextInput, ActivityIndicator, Share, ScrollView, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
@@ -348,7 +348,30 @@ export function MemberDetailBody({ member, siblings, allMembers, isParentViewer,
             ? `${member.name.split(' ')[0]} owns their own health records. Parents may review, not edit.`
             : 'As a parent, full household visibility — kids/teens/seniors keep their own health records.',
         ]} colors={colors} isDark={isDark} />
-        <InfoRow title="Driving permission" lines={[drivingLine]} colors={colors} isDark={isDark} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <InfoRow title="Driving permission" lines={[drivingLine]} colors={colors} isDark={isDark} />
+          </View>
+          {/* Direct toggle — teen hasCar only, the one driving field with
+              a real save path (full onSave, every other current value
+              preserved). Senior/GP driving has no edit UI anywhere in
+              this app yet (own drive-window/cheerleader-mode fields,
+              not exposed by EditBody) — stays read-only text until that's
+              built [live-requested: "we can add the switch button direct
+              to this page for driving?"]. */}
+          {member.role === 'teen' && isParentViewer && onSave && (
+            <Switch
+              value={!!member.hasCar}
+              onValueChange={(v) => onSave(
+                member.id, member.name, member.role, v,
+                member.rideEarningsPerRun ?? 50, member.groceryEarningsPerRun ?? 30,
+                member.subRole, member.relationship, member.emoji, member.avatarUrl ?? undefined,
+              )}
+              trackColor={{ false: colors.border, true: colors.amber + '80' }}
+              thumbColor={member.hasCar ? colors.amber : colors.textTertiary}
+            />
+          )}
+        </View>
       </InfoCard>
 
       {/* PIN status — tapping expands PinBody in place (same page, no

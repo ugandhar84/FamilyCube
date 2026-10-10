@@ -917,15 +917,56 @@ export default function StoreScreen({
                         <Text style={{ fontSize: 13 }}>🪙</Text>
                       </View>
                       <TouchableOpacity
-                        onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}
+                        onPress={() => {
+                          if (grantTarget?.id === kid.id) { setGrantTarget(null); setGrantAmount(''); return; }
+                          setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name });
+                        }}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                           paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9,
-                          backgroundColor: colors.amberLight }}>
-                        <Ionicons name="gift-outline" size={12} color={colors.amber} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>Grant</Text>
+                          backgroundColor: grantTarget?.id === kid.id ? colors.amber : colors.amberLight }}>
+                        <Ionicons name="gift-outline" size={12} color={grantTarget?.id === kid.id ? '#fff' : colors.amber} />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: grantTarget?.id === kid.id ? '#fff' : colors.amber }}>Grant</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
+
+                  {/* ── Inline Grant Coins row — expands directly under this
+                      kid's own row when tapped, not a sheet/overlay panel
+                      [live-requested: "Grant coins should be inline edits
+                      not a bottom sheet"]. ── */}
+                  {grantTarget?.id === kid.id && (
+                    <View style={{ paddingHorizontal: 18, paddingBottom: 14, gap: 8 }}>
+                      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR }}>
+                        Give {kid.name.split(' ')[0]} a bonus, no chore required.
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TextInput
+                          value={grantAmount}
+                          onChangeText={setGrantAmount}
+                          keyboardType="numeric"
+                          placeholder="Coins to grant…"
+                          placeholderTextColor={colors.textTertiary}
+                          autoFocus
+                          style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+                            color: colors.textPrimary, backgroundColor: colors.surface,
+                            paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, fontWeight: '700' }}
+                        />
+                        <TouchableOpacity
+                          onPress={() => {
+                            const n = parseInt(grantAmount, 10);
+                            if (!n || n <= 0) { showToast('Enter a valid coin amount'); return; }
+                            awardCoins(kid.id, n, 'mainCoins');
+                            showToast(`🪙 ${n} coins granted to ${kid.name.split(' ')[0]}`);
+                            setGrantTarget(null);
+                            setGrantAmount('');
+                          }}
+                          style={{ paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: colors.amber }}>
+                          <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Grant</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               );
             })}
@@ -1093,59 +1134,6 @@ export default function StoreScreen({
         }}
       />
 
-      {/* ── Inline Grant Coins form — slides in when a kid is picked ── */}
-      {grantTarget && (
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          backgroundColor: isDark ? colors.card : '#fff',
-          borderTopLeftRadius: 24, borderTopRightRadius: 24,
-          borderTopWidth: 1, borderColor: isDark ? colors.border : BORDER,
-          padding: 20, paddingBottom: insets.bottom + 20,
-          ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -4 } }, android: { elevation: 8 } }),
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <View>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary }}>
-                Grant Coins
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
-                Give {grantTarget.name.split(' ')[0]} a bonus, no chore required.
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => { setGrantTarget(null); setGrantAmount(''); }}
-              style={{ padding: 8, borderRadius: 10, backgroundColor: isDark ? colors.surface : '#F0F2F7' }}>
-              <Ionicons name="close" size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TextInput
-              value={grantAmount}
-              onChangeText={setGrantAmount}
-              keyboardType="numeric"
-              placeholder="Coins to grant…"
-              placeholderTextColor={colors.textTertiary}
-              autoFocus
-              style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
-                color: colors.textPrimary, backgroundColor: colors.surface,
-                paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, fontWeight: '700' }}
-            />
-            <TouchableOpacity
-              onPress={() => {
-                const n = parseInt(grantAmount, 10);
-                if (!n || n <= 0) { showToast('Enter a valid coin amount'); return; }
-                awardCoins(grantTarget.id, n, 'mainCoins');
-                showToast(`🪙 ${n} coins granted to ${grantTarget.name.split(' ')[0]}`);
-                setGrantTarget(null);
-                setGrantAmount('');
-              }}
-              style={{ paddingHorizontal: 22, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: colors.amber,
-                ...Platform.select({ ios: { shadowColor: colors.amber, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, android: {} }) }}>
-              <Text style={{ fontSize: 15, fontWeight: '900', color: '#fff' }}>Grant</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

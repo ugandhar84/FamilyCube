@@ -19,14 +19,19 @@ import {
 import { useCalendarSync, PROVIDER_LABEL } from '@/lib/useCalendarSync';
 import type { CalendarProvider, CalendarPurpose } from '@/lib/calendarOAuth';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { GEMINI } from '@/constants/geminiRhythm';
 
-// ── Figma tokens (matches family-roster / InvitePage palette) ────────────────
-const PAGE_BG   = '#F3F5F2';
-const CARD_BG   = '#FFFFFF';
-const TITLE_CLR = '#172337';
-const BODY_CLR  = '#657185';
-const BLUE      = '#294FC7';
-const BORDER    = '#DFE5EF';
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, extended per
+// explicit request — see Home Care's own identical comment for the full
+// rationale) [live-requested: "how about tasks and home, chat, family"] —
+// was its own separate, older "Figma tokens" palette (matches family-
+// roster/InvitePage), now redirected to the shared module instead.
+const PAGE_BG   = GEMINI.canvas;
+const CARD_BG   = GEMINI.cardBg;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+const BLUE      = GEMINI.blue;
+const BORDER    = GEMINI.border;
 const GREEN     = '#3D7A5A';
 const RED       = '#C54A27';
 const AMBER     = '#D97706';

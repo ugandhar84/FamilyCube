@@ -22,6 +22,7 @@ import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
 import { InvitePage } from '@/features/vault/tabs/InvitePage';
 import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { showToast } from '@/components/AppToast';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function FamilyTreePage({ onClose }: { onClose: () => void }) {
   const { colors, isDark } = useTheme();
@@ -103,7 +104,13 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
 
   const resendInviteFor = async (targetMember: any): Promise<any> => ({ ok: false, error: 'Not available here.' });
 
-  const pageBg = '#F3F5F2';
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request) [live-requested: "how about tasks and home, chat,
+  // family"] — was the older, separate '#F3F5F2' Figma-palette cream.
+  const pageBg = isDark ? colors.background : GEMINI.canvas;
+  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const linkC  = isDark ? colors.primary : GEMINI.linkBlue;
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
@@ -112,13 +119,13 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>← Family</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: '#294FC7', marginTop: 12 }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: linkC, marginTop: 12 }}>
           {activeMember?.name ? `${activeMember.name} · ${activeMember.role === 'parent' ? 'Parent / Admin' : activeMember.role}` : 'Family'}
         </Text>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: '#172337', marginTop: 4, lineHeight: 36 }}>
+        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
           Our roots, our people
         </Text>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: '#657185', marginTop: 4, marginBottom: 4, lineHeight: 18 }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: 4, marginBottom: 4, lineHeight: 18 }}>
           A small tree with a long story. Tap a person's card to see their place in the family.
         </Text>
       </View>

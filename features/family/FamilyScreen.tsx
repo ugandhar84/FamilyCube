@@ -25,6 +25,14 @@ import { useFamilyStore } from '@/store/familyStore';
 import { PageHeading } from '@/components/PageHeading';
 import Reanimated, { Keyframe, Easing as REasing } from 'react-native-reanimated';
 import { useUIStore } from '@/store/uiStore';
+import { GEMINI } from '@/constants/geminiRhythm';
+
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, extended per
+// explicit request — see Home Care's own identical comment for the full
+// rationale) [live-requested: "how about tasks and home, chat, family"].
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
 
 // Tool card definition
 interface Tool {
@@ -241,10 +249,10 @@ export default function FamilyScreen() {
             <Icon size={18} color={accentFg} strokeWidth={2} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
               {tool.label}
             </Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 17 }}>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2, lineHeight: 17 }}>
               {tool.subtitle}
             </Text>
             <Text style={{ fontSize: 13, fontWeight: '600', color: accentFg, marginTop: 6 }}>
@@ -264,7 +272,7 @@ export default function FamilyScreen() {
         shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 8,
         shadowOffset: { width: 0, height: 2 }, elevation: isDark ? 0 : 1,
       }, style]}>
-        <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>
+        <Text style={{ fontSize: 17, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR, marginBottom: 6 }}>
           {title}
         </Text>
         {children}
@@ -273,7 +281,7 @@ export default function FamilyScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? colors.background : PAGE_BG }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
@@ -292,11 +300,11 @@ export default function FamilyScreen() {
                 onPress={() => setShowFamilyTree(true)}
                 style={({ pressed }) => ({
                   width: 40, height: 40, borderRadius: 20,
-                  backgroundColor: pressed ? colors.border : '#FFFFFF',
-                  borderWidth: 1, borderColor: colors.border,
+                  backgroundColor: pressed ? colors.border : (isDark ? colors.card : GEMINI.cardBg),
+                  borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
                   alignItems: 'center', justifyContent: 'center',
                 })}>
-                <Plus size={20} color={colors.textPrimary} strokeWidth={2} />
+                <Plus size={20} color={isDark ? colors.textPrimary : TITLE_CLR} strokeWidth={2} />
               </Pressable>
             }
           />
@@ -305,10 +313,10 @@ export default function FamilyScreen() {
         {/* ── Family card ── */}
         <AnimatedCard index={1} style={{ marginHorizontal: 20, marginBottom: 20 }}>
         <View style={{
-          backgroundColor: colors.surface, borderRadius: 20, padding: 20,
-          shadowColor: isDark ? 'transparent' : '#172337',
-          shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 8,
-          shadowOffset: { width: 0, height: 2 }, elevation: isDark ? 0 : 1,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 20, padding: 20,
+          shadowColor: isDark ? 'transparent' : '#102347',
+          shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 20,
+          shadowOffset: { width: 0, height: 6 }, elevation: isDark ? 0 : 3,
         }}>
           {/* Stacked avatars */}
           <View style={{ flexDirection: 'row', marginBottom: 16 }}>
@@ -322,10 +330,10 @@ export default function FamilyScreen() {
           {/* Family name + subtitle + link */}
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>
+              <Text style={{ fontSize: 20, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
                 The {familyName}s
               </Text>
-              <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 3 }}>
+              <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 3 }}>
                 {countLabel} · one calm family space
               </Text>
             </View>
@@ -364,8 +372,8 @@ export default function FamilyScreen() {
                   <Users size={18} color={colors.pink} strokeWidth={2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Generations</Text>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 17 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>Generations</Text>
+                  <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2, lineHeight: 17 }}>
                     Our family tree · your place in the story
                   </Text>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink, marginTop: 6 }}>
@@ -387,8 +395,8 @@ export default function FamilyScreen() {
                 <MapPin size={20} color={colors.teal} strokeWidth={2} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Find my family</Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, lineHeight: 16 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>Find my family</Text>
+                <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2, lineHeight: 16 }}>
                   Recent shared locations · freshness & privacy shown
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal, marginTop: 6 }}>
@@ -410,7 +418,7 @@ export default function FamilyScreen() {
               the page [live-requested: "end should be settings"]. ── */}
           <AnimatedCard index={12}>
             <AnimatedPressable onPress={() => router.push('/profile-settings' as any)}
-              style={{ borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
+              style={{ borderRadius: 16, borderWidth: 1.5, borderColor: isDark ? colors.border : GEMINI.border,
                 paddingVertical: 14, alignItems: 'center' }}>
               <Text style={{ fontSize: 14, fontWeight: '700', color: P }}>
                 Family settings & permissions →
@@ -418,7 +426,7 @@ export default function FamilyScreen() {
             </AnimatedPressable>
           </AnimatedCard>
 
-          <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center',
+          <Text style={{ fontSize: 12, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, textAlign: 'center',
             lineHeight: 17, paddingHorizontal: 8 }}>
             Kids own their own health records; parents may review. Membership never replaces personal consent.
           </Text>

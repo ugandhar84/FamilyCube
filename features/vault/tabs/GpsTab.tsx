@@ -78,6 +78,24 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Matches a live lat/lng against the family's pinned Places (Home/School/
+// Work/Other) within each place's own radius — shows "At Home"/"At
+// School" etc. instead of the raw reverse-geocoded address when someone
+// is genuinely inside a pinned place [live-requested: "We also need to
+// show the pinned place location if the current location address matches
+// to that at Home at school etc"]. Picks the CLOSEST matching place when
+// radii overlap (e.g. a small "Other" pin inside a large Home radius),
+// not just the first one found.
+function matchPinnedPlace(lat: number, lng: number, places: FamilyPlace[]): FamilyPlace | null {
+  let best: FamilyPlace | null = null;
+  let bestDist = Infinity;
+  for (const p of places) {
+    const d = haversineMeters(lat, lng, p.latitude, p.longitude);
+    if (d <= p.radiusM && d < bestDist) { best = p; bestDist = d; }
+  }
+  return best;
+}
+
 const statusColors = (colors: any): Record<LocStatus, string> => ({
   at_home:     colors.teal,
   at_school:   colors.info,
@@ -1157,6 +1175,17 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
           const sharingOff = loc.share_location_enabled === false;
           const isExpanded = expandedId === loc.member_id;
 
+          // "At Home"/"At School"/etc when this fix falls inside a pinned
+          // Place's radius — takes priority over the raw reverse-geocoded
+          // address, same as how Life360/Find My itself labels a geofenced
+          // location instead of a street address.
+          const matchedPlace = isLive && loc.lat != null && loc.lng != null
+            ? matchPinnedPlace(loc.lat, loc.lng, places)
+            : null;
+          const placeLabel = matchedPlace
+            ? `At ${placeKindMeta(matchedPlace.kind, colors).label}${matchedPlace.kind === 'other' ? ` · ${matchedPlace.name}` : ''}`
+            : null;
+
           return (
             <TouchableOpacity key={loc.member_id} activeOpacity={0.6}
               onPress={() => {
@@ -1182,8 +1211,9 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
-                  {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
+                <Text style={{ fontSize: 12, color: placeLabel ? colors.teal : colors.textSecondary,
+                  fontWeight: placeLabel ? '700' : '400', marginTop: 2 }} numberOfLines={1}>
+                  {placeLabel ?? (loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status]))}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
                   {isLive && isFreshFix && (() => {

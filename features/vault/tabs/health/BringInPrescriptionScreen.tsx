@@ -156,8 +156,14 @@ export default function BringInPrescriptionScreen({
               <Text style={{ fontSize: 12, color: bodyC, marginTop: 1 }}>Keep the page clear, flat and in frame.</Text>
             </View>
           </View>
+          {/* Primary CTA — shared BLUE, matching every other Health form's
+              Save button (AddMedModal/AddVaxModal/ScanReviewSheet), not the
+              per-mode accent used for icon chips/badges on this page
+              [live-requested: "scan vax/prescription should take cta/font
+              and other gemini rhythm" — this button was still
+              colors.accent/colors.teal]. */}
           <TouchableOpacity onPress={onPickCamera}
-            style={{ backgroundColor: accent, borderRadius: 14, paddingVertical: 13, alignItems: 'center' }}>
+            style={{ backgroundColor: BLUE, borderRadius: 14, paddingVertical: 13, alignItems: 'center' }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>
               {isRx ? 'Scan prescription' : 'Scan vaccine record'}
             </Text>

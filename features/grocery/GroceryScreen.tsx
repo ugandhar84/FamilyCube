@@ -55,6 +55,9 @@ import { showToast } from '@/components/AppToast';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
+import { ShoppingCart } from 'lucide-react-native';
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -332,10 +335,15 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
     };
   }, []));
 
-  const bg       = isDark ? '#0E0C13' : '#FFFFFF';
-  const card     = colors.card;
-  const border   = colors.border;
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care's own identical comment for the full
+  // rationale) [live-requested: "lets pickup the groceries - make the
+  // rythm of the home care.. including the header styles"].
+  const bg       = isDark ? colors.background : GEMINI.canvas;
+  const card     = isDark ? colors.card : GEMINI.cardBg;
+  const border   = isDark ? colors.border : GEMINI.border;
   const P        = colors.primary;
+  const pendingCountForHeader = items.filter(i => !i.isBought).length;
 
   const handleBuyItem = (item: GroceryItem) => {
     Alert.alert('Mark as bought?', `"${item.name}"`, [
@@ -480,44 +488,24 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
 
-      {/* ── Header — ReviewInbox pattern ── */}
-      <View style={{
-        paddingHorizontal: 20,
-        paddingTop: hideHeader ? 8 : insets.top + 12,
-        paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-        backgroundColor: isDark ? colors.surface : '#FFFFFF',
-        gap: 8,
-      }}>
-        {!hideHeader && (
-          <>
-            {/* Chrome row */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary, lineHeight: 15 }}>
-                {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-              </Text>
-              {activeMember && (
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P, lineHeight: 18 }}>
-                  {activeMember.name}
-                </Text>
-              )}
-            </View>
-
-            {/* Title + add button */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-              <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
-                Groceries
-              </Text>
-              <Pressable onPress={() => setShowAddItem(true)}
-                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface,
-                  alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-                <Ionicons name="add" size={20} color={P} />
-              </Pressable>
-            </View>
-          </>
-        )}
-      </View>
+      {/* ── Header — same PageHeading shell as Home Care (eyebrow + title +
+          subtitle + pastel icon badge), replacing the old custom
+          "ReviewInbox pattern" chrome row, per explicit request to match
+          Home Care's rhythm "including the header styles". ── */}
+      {!hideHeader && (
+        <View style={{ backgroundColor: bg }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · GROCERIES"
+            title="Groceries"
+            subtitle={pendingCountForHeader > 0
+              ? `${pendingCountForHeader} item${pendingCountForHeader !== 1 ? 's' : ''} to buy`
+              : 'List is clear'}
+            accent="primary"
+            Icon={ShoppingCart}
+            topInset={insets.top}
+          />
+        </View>
+      )}
 
       {/* ── Landing cards ── */}
       <ScrollView
@@ -541,8 +529,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               <Ionicons name="cart" size={22} color={colors.teal} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>Shopping now</Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 2 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Shopping now</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
                 {activeRuns[0].store} · Tap to open →
               </Text>
             </View>
@@ -567,7 +555,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             backgroundColor: colors.primaryLight, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Ionicons name="pricetag-outline" size={14} color={P} />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
                 Estimated total · {items.filter(i => !i.isBought).length} items
               </Text>
             </View>
@@ -575,7 +563,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           </View>
         )}
 
-        {/* Category landing cards — ReviewInbox style */}
+        {/* Category landing cards — same pastel card rhythm as Home Care's
+            task rows, per explicit request. */}
         {landingCards.map(card => (
           <Pressable
             key={card.key}
@@ -591,8 +580,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               <Ionicons name={card.iconName as any} size={22} color={card.color} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{card.title}</Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 2 }}>{card.subtitle}</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{card.title}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>{card.subtitle}</Text>
             </View>
             {card.count > 0 && (
               <View style={{ minWidth: 26, height: 26, borderRadius: 13, paddingHorizontal: 7,
@@ -609,28 +598,29 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 
       {/* List sub-screen */}
       <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
-        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 10 }}>
+            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
+            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 10 }}>
             {/* Family chrome */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            {/* Breadcrumb + title */}
-            <View style={{ gap: 4 }}>
-              <Pressable onPress={() => setTab(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-              </Pressable>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            {/* Title — tapping it goes back to the Groceries landing page
+                directly, no separate "‹ Groceries" breadcrumb link above it
+                [live-requested: "lets add the click on the name go to
+                back - we didn't need the back mention on module
+                landing"]. */}
+            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Shared groceries
               </Text>
-            </View>
+            </Pressable>
             {/* Figma subtitle */}
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
               Shared with all {members.length} {familyName ? familyName.split(' ')[0] + 's' : 'members'} · updated {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
             </Text>
             {/* Figma: Add item + AI suggestions pill buttons */}
@@ -648,7 +638,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             </View>
             {/* Figma: estimated total summary */}
             {cartTotal > 0 && (
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 18 }}>
                 {pendingCount} approved item{pendingCount !== 1 ? 's' : ''} · estimated ${cartTotal.toFixed(2)}
               </Text>
             )}
@@ -736,24 +726,21 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 
       {/* Runs sub-screen */}
       <FullPageOverlay visible={tab === 'runs'} onDismiss={() => setTab(null)} zIndex={41}>
-        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
+            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
+            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            <View style={{ gap: 4 }}>
-              <Pressable onPress={() => setTab(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-              </Pressable>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Shopping Trips
               </Text>
-            </View>
+            </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
@@ -769,24 +756,21 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 
       {/* History sub-screen */}
       <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
-        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
+            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
+            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            <View style={{ gap: 4 }}>
-              <Pressable onPress={() => setTab(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-              </Pressable>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Purchase History
               </Text>
-            </View>
+            </Pressable>
           </View>
           <HistoryTab familyId={familyId} memberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
         </View>
@@ -794,24 +778,21 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 
       {/* Insights sub-screen */}
       <FullPageOverlay visible={tab === 'insights'} onDismiss={() => setTab(null)} zIndex={43}>
-        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
+            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
+            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                 {(familyName ?? 'FAMILY SPACE').toUpperCase()}
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            <View style={{ gap: 4 }}>
-              <Pressable onPress={() => setTab(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-              </Pressable>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Insights
               </Text>
-            </View>
+            </Pressable>
           </View>
           <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
         </View>
@@ -978,13 +959,16 @@ function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideH
   };
 
   return (
-    <View style={[s.root, { backgroundColor: colors.background }]}>
+    <View style={[s.root, { backgroundColor: isDark ? colors.background : GEMINI.canvas }]}>
       {!hideHeader && (
-        <View style={{ backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, paddingTop: insets.top + 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
-            <Ionicons name="cart" size={22} color={colors.primary} />
-            <Text style={[s.headerTitle, { color: colors.textPrimary, flex: 1 }]}>My Requested Groceries</Text>
-          </View>
+        <View style={{ backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · GROCERIES"
+            title="My Requested Groceries"
+            accent="primary"
+            Icon={ShoppingCart}
+            topInset={insets.top}
+          />
         </View>
       )}
       <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} showsVerticalScrollIndicator={false}>

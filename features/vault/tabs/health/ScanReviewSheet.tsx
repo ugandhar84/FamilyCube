@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Alert, Animated, Easing,
+  TextInput, ScrollView, KeyboardAvoidingView, Platform, Alert, Animated, Easing,
   Image,
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
@@ -9,15 +9,30 @@ import { AlertCircle, X, Syringe, ScanLine } from 'lucide-react-native';
 import Svg, { Path, Circle, Rect, Polyline } from 'react-native-svg';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '../../usePrescriptionScanner';
+import BringInPrescriptionScreen from './BringInPrescriptionScreen';
 import AiConsentSheet from '@/components/AiConsentGate';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { ScanDateField } from './ScanDateField';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import FullPageOverlay from '@/components/FullPageOverlay';
 
 export interface ScanReviewSheetHandle {
   open: (mode: 'rx' | 'vaccine') => void;
 }
+
+// Flat Figma tokens — same values established across every other converted
+// module this session (HomeownerNotesScreen/SchoolScreen/HealthRecordsScreen/
+// AddVaxModal). Only used for the "normal mode" (source-picker + review)
+// chrome below, which was previously a bottom-sheet card; the redact
+// full-screen mode keeps its own intentionally-neutral camera/photo-review
+// palette (see the existing NOTE comment further down this file) untouched.
+const PAGE_BG   = '#F5F7FB';
+const TITLE_CLR = '#172337';
+const BODY_CLR  = '#657185';
+const BLUE      = '#345DE3';
+const LINK_BLUE = '#294FC7';
+const BORDER    = '#DFE5EF';
+const CARD_BG   = '#FFFFFF';
 
 export default function ScanReviewSheet({
   visible, scanMode, activeMemberId, members, colors, isDark,
@@ -35,7 +50,6 @@ export default function ScanReviewSheet({
   onScanningChange?: (scanning: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
 
   // Prescription scanner
   const {
@@ -263,8 +277,16 @@ export default function ScanReviewSheet({
   };
 
   return (
-    /* ── Scan Rx / Vaccine — 2-page bottom sheet (full-screen during redact) ── */
-    /* NOTE on hardcoded hex below (redact screen + scan-source picker sheet):
+    /* ── Scan Rx / Vaccine — full-page overlay (was a bottom-sheet Modal;
+        converted to FullPageOverlay per the standing "no bottom sheets"
+        app-wide rule, same conversion AddVaxModal.tsx already got). The
+        redact step stays its own full-bleed camera/photo-review screen
+        (unchanged, see NOTE below); only the "normal mode" source-picker +
+        review chrome was reskinned from a sliding-up rounded card into a
+        proper pinned-header full page. Every handler, gesture (redactGesture
+        above), ref (viewShotRef, animation refs) and the AI scan/save flow
+        itself is completely untouched — this is a chrome-only conversion. ── */
+    /* NOTE on hardcoded hex below (redact screen only):
         this is a deliberate camera/photo-review UI with its own fixed
         near-black/near-white neutral scale ('#000'/'#111'/'#1E1E2E'/'#333'/
         '#ddd'/'#fff' etc.), not the app's warm Kinfolk palette — matching a
@@ -274,7 +296,7 @@ export default function ScanReviewSheet({
         warm-toned app palette here would visibly clash with the intentionally
         neutral-gray photo/redact chrome). Left as documented hardcoded
         swatches rather than guessing a wrong mapping. */
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={closeScanSheet}>
+    <FullPageOverlay visible={visible} onDismiss={closeScanSheet} zIndex={65}>
       <AiConsentSheet {...aiConsent} colors={colors} isDark={isDark} />
       {/* ── REDACT MODE: full-screen layout ── */}
       {pendingImages.length > 0 && !scanning && (() => {
@@ -440,213 +462,81 @@ export default function ScanReviewSheet({
         );
       })()}
 
-      {/* ── NORMAL MODE: bottom sheet ── */}
+      {/* ── NORMAL MODE: full page (was a bottom-sheet card sliding up over
+          a dim backdrop — now a real full page matching the rest of this
+          session's Figma conversions: pinned eyebrow/back-link/title
+          header, flat body below). Page 1/Page 2 content trees below are
+          completely unchanged. ── */}
       {(pendingImages.length === 0 || scanning) && (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeScanSheet} />
-          <View style={{
-            backgroundColor: isDark ? '#13131F' : '#F8F8FC',
-            borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '92%',
-            paddingBottom: insets.bottom || 16,
-          }}>
-            {/* ── Progress bar (2 steps) ── */}
-            <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 }}>
-              {[1, 2].map(s => (
-                <View key={s} style={{
-                  flex: 1, height: 3, borderRadius: 2,
-                  backgroundColor: scanPage >= s
-                    ? (scanMode === 'vaccine' ? colors.teal : colors.accent)
-                    : (isDark ? '#333' : '#E5E7EB'),
-                }} />
-              ))}
-            </View>
-
-            {/* ── Handle + header ── */}
-            <View style={{ alignItems: 'center', paddingTop: 6 }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? '#444' : '#DDD' }} />
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {/* Back on page 2 only when not scanning */}
-                {scanPage === 2 && !scanning && !rxSaving && (
-                  <TouchableOpacity onPress={() => { setScanPage(1); clearScan(); }}
-                    style={{ marginRight: 4, padding: 4 }}>
-                    <Svg width={20} height={20} viewBox="0 0 24 24">
-                      <Path d="M19 12H5M12 19l-7-7 7-7" stroke={isDark ? '#aaa' : '#555'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    </Svg>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: isDark ? colors.background : PAGE_BG }}>
+        <View style={{ flex: 1 }}>
+            {/* Header + progress bar only shown on page 2 —
+                page 1 uses BringInPrescriptionScreen's own header */}
+            {scanPage === 2 && (
+              <>
+                <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
+                  <TouchableOpacity
+                    onPress={!scanning && !rxSaving ? () => { setScanPage(1); clearScan(); } : closeScanSheet}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>
+                      {!scanning && !rxSaving ? '‹ Back' : '‹ Health records'}
+                    </Text>
                   </TouchableOpacity>
-                )}
-                <View style={{
-                  width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: scanMode === 'vaccine' ? colors.teal + '20' : colors.accent + '20',
-                }}>
-                  {scanMode === 'vaccine'
-                    ? <Syringe size={16} color={colors.teal} />
-                    : <ScanLine size={16} color={colors.accent} />}
-                </View>
-                <View>
-                  <Text style={{ fontSize: 15, fontWeight: '900', color: isDark ? '#fff' : '#111' }}>
-                    {scanMode === 'vaccine' ? 'Scan Vaccine Record' : 'Scan Prescription'}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: isDark ? '#888' : '#999', marginTop: 1 }}>
-                    Step {scanPage} of 2 · {scanPage === 1 ? 'Choose source' : 'Review & assign'}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={closeScanSheet} style={{ padding: 4 }}>
-                <X size={22} color={isDark ? '#aaa' : '#666'} />
-              </TouchableOpacity>
-            </View>
-
-            {/* ══════════════════════════════════════════════════════════
-                PAGE 1 — Source picker + animated scan area
-            ══════════════════════════════════════════════════════════ */}
-            {scanPage === 1 && (
-              <View style={{ paddingHorizontal: 20, paddingBottom: 24, gap: 20 }}>
-                {/* Animated scan preview box */}
-                <View style={{
-                  height: 160, borderRadius: 20, overflow: 'hidden',
-                  backgroundColor: isDark ? '#0D1424' : '#F0F4FF',
-                  borderWidth: 1.5, borderColor: scanMode === 'vaccine' ? colors.teal + '40' : colors.accent + '40',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {scanning ? (
-                    <>
-                      {/* Corner brackets */}
-                      {[
-                        { top: 10, left: 10, rotate: '0deg' },
-                        { top: 10, right: 10, rotate: '90deg' },
-                        { bottom: 10, right: 10, rotate: '180deg' },
-                        { bottom: 10, left: 10, rotate: '270deg' },
-                      ].map((pos, i) => (
-                        <View key={i} style={{ position: 'absolute', ...pos as any, width: 24, height: 24 }}>
-                          <Svg width={24} height={24} viewBox="0 0 24 24" style={{ transform: [{ rotate: pos.rotate }] }}>
-                            <Path d="M2 8V2h6" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={2.5} strokeLinecap="round" fill="none" />
-                          </Svg>
-                        </View>
-                      ))}
-                      {/* Scanning beam */}
-                      <Animated.View style={{
-                        position: 'absolute', left: 12, right: 12, height: 2, borderRadius: 1,
-                        backgroundColor: scanMode === 'vaccine' ? colors.teal : colors.accent,
-                        opacity: 0.85,
-                        transform: [{
-                          translateY: scanBeamY.interpolate({ inputRange: [0, 1], outputRange: [-68, 68] }),
-                        }],
-                      }} />
-                      {/* Pulsing icon */}
-                      <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
-                        <View style={{
-                          width: 56, height: 56, borderRadius: 28,
-                          backgroundColor: (scanMode === 'vaccine' ? colors.teal : colors.accent) + '25',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          {scanMode === 'vaccine'
-                            ? <Syringe size={24} color={colors.teal} />
-                            : <ScanLine size={24} color={colors.accent} />}
-                        </View>
-                      </Animated.View>
-                      {/* Dot loader */}
-                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
-                        {dotOpacity.map((op, i) => (
-                          <Animated.View key={i} style={{
-                            width: 7, height: 7, borderRadius: 4,
-                            backgroundColor: scanMode === 'vaccine' ? colors.teal : colors.accent,
-                            opacity: op,
-                          }} />
-                        ))}
-                      </View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#aaa' : '#666', marginTop: 10 }}>
-                        AI is reading your document…
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                    <View style={{
+                      width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: scanMode === 'vaccine' ? colors.teal + '20' : colors.accent + '20',
+                    }}>
+                      {scanMode === 'vaccine'
+                        ? <Syringe size={16} color={colors.teal} />
+                        : <ScanLine size={16} color={colors.accent} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 22, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR, lineHeight: 28 }}>
+                        {scanMode === 'vaccine' ? 'Scan vaccine record' : 'Scan prescription'}
                       </Text>
-                    </>
-                  ) : (
-                    <View style={{ alignItems: 'center', gap: 8 }}>
-                      <Svg width={48} height={48} viewBox="0 0 24 24">
-                        <Rect x={3} y={2} width={14} height={18} rx={2} stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" />
-                        <Path d="M7 7h6M7 10h6M7 13h4" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-                        <Path d="M17 8l4 4-4 4" stroke={isDark ? '#555' : '#ccc'} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-                      </Svg>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#666' : '#aaa' }}>
-                        Choose how to add your document
+                      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 1 }}>
+                        Step 2 of 2 · Review & assign
                       </Text>
                     </View>
-                  )}
-                </View>
-
-                {/* Error banner */}
-                {scanError && (
-                  <View style={{
-                    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-                    backgroundColor: colors.danger + '12', borderRadius: 12, padding: 12,
-                    borderWidth: 1, borderColor: colors.danger + '40',
-                  }}>
-                    <AlertCircle size={14} color={colors.danger} style={{ marginTop: 1 }} />
-                    <Text style={{ fontSize: 12, color: colors.danger, flex: 1, fontWeight: '600' }}>{scanError}</Text>
+                    <TouchableOpacity onPress={closeScanSheet} style={{ padding: 4 }}>
+                      <X size={20} color={isDark ? colors.textSecondary : BODY_CLR} />
+                    </TouchableOpacity>
                   </View>
-                )}
-
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  {/* Camera */}
-                  <TouchableOpacity
-                    disabled={scanning}
-                    onPress={() => pickImage('camera')}
-                    style={withAndroidShadowFix({
-                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
-                      backgroundColor: isDark ? '#1E1E2E' : '#fff',
-                      borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
-                      gap: 10, opacity: scanning ? 0.5 : 1,
-                      shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-                    })}>
-                    <Svg width={36} height={36} viewBox="0 0 24 24">
-                      <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-                      <Circle cx={12} cy={13} r={4} stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" />
-                    </Svg>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#ddd' : '#333' }}>Camera</Text>
-                  </TouchableOpacity>
-
-                  {/* Photo Library */}
-                  <TouchableOpacity
-                    disabled={scanning}
-                    onPress={() => pickImage('library')}
-                    style={withAndroidShadowFix({
-                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
-                      backgroundColor: isDark ? '#1E1E2E' : '#fff',
-                      borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
-                      gap: 10, opacity: scanning ? 0.5 : 1,
-                      shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-                    })}>
-                    <Svg width={36} height={36} viewBox="0 0 24 24">
-                      <Rect x={3} y={3} width={18} height={18} rx={2} stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" />
-                      <Circle cx={8.5} cy={8.5} r={1.5} fill={scanMode === 'vaccine' ? colors.teal : colors.accent} />
-                      <Path d="M21 15l-5-5L5 21" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    </Svg>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#ddd' : '#333' }}>Photo Library</Text>
-                  </TouchableOpacity>
-
-                  {/* PDF */}
-                  <TouchableOpacity
-                    disabled={scanning}
-                    onPress={() => pickAndScan('document')}
-                    style={withAndroidShadowFix({
-                      flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
-                      backgroundColor: isDark ? '#1E1E2E' : '#fff',
-                      borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
-                      gap: 10, opacity: scanning ? 0.5 : 1,
-                      shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-                    })}>
-                    <Svg width={36} height={36} viewBox="0 0 24 24">
-                      <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-                      <Polyline points="14 2 14 8 20 8" stroke={scanMode === 'vaccine' ? colors.teal : colors.accent} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-                      <Text style={{ fontSize: 7, fontWeight: '900', color: scanMode === 'vaccine' ? colors.teal : colors.accent }}>{/* PDF label below icon */}</Text>
-                    </Svg>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#ddd' : '#333' }}>PDF</Text>
-                    <Text style={{ fontSize: 9, fontWeight: '600', color: isDark ? '#666' : '#aaa', marginTop: -6 }}>max 3 pages</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
+                <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 24, paddingTop: 14, paddingBottom: 4 }}>
+                  {[1, 2].map(s => (
+                    <View key={s} style={{
+                      flex: 1, height: 3, borderRadius: 2,
+                      backgroundColor: s <= 2
+                        ? (scanMode === 'vaccine' ? colors.teal : colors.accent)
+                        : (isDark ? colors.border : BORDER),
+                    }} />
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════
+                PAGE 1 — BringInPrescriptionScreen (same shell as
+                BringInDocumentScreen — camera/library/PDF source picker
+                + who-is-this-for member picker + privacy card).
+                All scan/redact logic still runs in this file's page-2+.
+            ══════════════════════════════════════════════════════════ */}
+            {scanPage === 1 && (
+              <BringInPrescriptionScreen
+                colors={colors}
+                isDark={isDark}
+                scanMode={scanMode}
+                members={members}
+                activeMemberId={activeMemberId}
+                onClose={closeScanSheet}
+                onPickCamera={() => { if (!scanning) pickImage('camera'); }}
+                onPickLibrary={() => { if (!scanning) pickImage('library'); }}
+                onPickPdf={() => { if (!scanning) pickAndScan('document'); }}
+                ownerMemberId={reviewMemberId || activeMemberId}
+                setOwnerMemberId={setReviewMemberId}
+              />
             )}
 
             {/* ══════════════════════════════════════════════════════════
@@ -939,11 +829,10 @@ export default function ScanReviewSheet({
                 </View>
               </ScrollView>
             )}
-          </View>
         </View>
       </KeyboardAvoidingView>
       )}
 
-    </Modal>
+    </FullPageOverlay>
   );
 }

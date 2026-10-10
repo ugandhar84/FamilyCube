@@ -31,10 +31,10 @@ const CATEGORY_ICON: Record<HomeownerNoteCategory, any> = {
   exterior: TreePine, safety: ShieldAlert, warranty: ScrollText, general: Home,
 };
 
-// Per-category pastel tint for the icon chip background — matches the
-// mockup's colored-chip-per-task-type look instead of one flat teal tint
-// for every row regardless of category.
-const CATEGORY_TINT: Record<HomeownerNoteCategory, { bg: string; bgDark: string; fg: string }> = {
+type Tint = { bg: string; bgDark: string; fg: string };
+
+// Per-category pastel tint — fallback when no task-keyword rule matches.
+const CATEGORY_TINT: Record<HomeownerNoteCategory, Tint> = {
   hvac:       { bg: '#FBE4D8', bgDark: '#3A2A20', fg: '#B5560C' },
   plumbing:   { bg: '#DDEBF5', bgDark: '#1E2E3A', fg: '#2B6CA3' },
   electrical: { bg: '#F5EBD0', bgDark: '#3A3420', fg: '#9A7A0C' },
@@ -45,30 +45,33 @@ const CATEGORY_TINT: Record<HomeownerNoteCategory, { bg: string; bgDark: string;
   general:    { bg: '#DCEEE0', bgDark: '#1E3324', fg: '#3D7A52' },
 };
 
-// Keyword-matched icon per TASK (not just category) — a task's title
-// often implies something more specific than its broad category bucket
-// (e.g. "Rotate/replace mattress" is Appliance-ish but really means
-// "rotate," "Test smoke detector" is Safety but really means "alert
-// test") [live-requested: "i was asking the icon based on the task"].
-// Falls back to CATEGORY_ICON when no keyword matches.
-const TASK_ICON_RULES: [RegExp, any][] = [
-  [/rotate|replace.*filter|filter.*replace/i, RotateCw],
-  [/clean|declutter|dust|wash|vacuum/i, Sparkles],
-  [/gutter|downspout|drain/i, Wind],
-  [/smoke|alarm|detector|fire extinguisher|carbon monoxide/i, AlertTriangle],
-  [/pest|termite|rodent|bug/i, Bug],
-  [/paint|stain|caulk|seal/i, Paintbrush],
-  [/trash|garbage|dispose|declutter/i, Trash2],
-  [/water filter|air filter|hvac filter/i, Filter],
-  [/fireplace|chimney/i, Flame],
-  [/fix|repair|tighten|loose/i, Wrench],
+// Keyword-matched icon AND chip tint per TASK (not just category) — a
+// task's title often implies something more specific than its broad
+// category bucket (e.g. "Rotate/replace mattress" and "Deep clean
+// gutters" are both Appliance/Exterior-ish but mean very different
+// things), and two tasks in the same category were rendering with the
+// identical chip color [live-reported: "icon chip is getting same
+// color"]. Each rule carries its own distinct tint so same-category
+// tasks still look visually different. Falls back to CATEGORY_TINT/
+// CATEGORY_ICON when no keyword matches.
+const TASK_ICON_RULES: [RegExp, any, Tint][] = [
+  [/rotate|replace.*filter|filter.*replace/i, RotateCw, { bg: '#E0ECFB', bgDark: '#1E2A3A', fg: '#2F5FA8' }],
+  [/clean|declutter|dust|wash|vacuum/i, Sparkles, { bg: '#F7E8D4', bgDark: '#3A3020', fg: '#B07A1E' }],
+  [/gutter|downspout|drain/i, Wind, { bg: '#DDEBF5', bgDark: '#1E2E3A', fg: '#2B6CA3' }],
+  [/smoke|alarm|detector|fire extinguisher|carbon monoxide/i, AlertTriangle, { bg: '#FBE0DC', bgDark: '#3A2220', fg: '#B5402C' }],
+  [/pest|termite|rodent|bug/i, Bug, { bg: '#EDE8D8', bgDark: '#302C1E', fg: '#7A6A2E' }],
+  [/paint|stain|caulk|seal/i, Paintbrush, { bg: '#F0E0EC', bgDark: '#321E2E', fg: '#9A4A7C' }],
+  [/trash|garbage|dispose/i, Trash2, { bg: '#E8E4DC', bgDark: '#2C2A24', fg: '#6A6252' }],
+  [/water filter|air filter|hvac filter/i, Filter, { bg: '#DCE8F0', bgDark: '#1E2C34', fg: '#2E6888' }],
+  [/fireplace|chimney/i, Flame, { bg: '#FBE4D4', bgDark: '#3A2A1E', fg: '#B5601C' }],
+  [/fix|repair|tighten|loose/i, Wrench, { bg: '#E4E8EC', bgDark: '#262A2E', fg: '#52606E' }],
 ];
 
-function taskIconFor(note: HomeownerNote): any {
-  for (const [pattern, Icon] of TASK_ICON_RULES) {
-    if (pattern.test(note.title)) return Icon;
+function taskRuleFor(note: HomeownerNote): { Icon: any; tint: Tint } {
+  for (const [pattern, Icon, tint] of TASK_ICON_RULES) {
+    if (pattern.test(note.title)) return { Icon, tint };
   }
-  return CATEGORY_ICON[note.category] ?? Home;
+  return { Icon: CATEGORY_ICON[note.category] ?? Home, tint: CATEGORY_TINT[note.category] ?? CATEGORY_TINT.general };
 }
 
 function parseLocalDateStr(s: string): Date {
@@ -117,8 +120,7 @@ function NoteRow({ note, members, colors, isDark, onTap }: {
   const overdue = isOverdue(note);
   const dueSoon = isDueSoon(note);
   const creator = members.find(m => m.id === note.createdBy);
-  const TaskIcon = taskIconFor(note);
-  const tint = CATEGORY_TINT[note.category] ?? CATEGORY_TINT.general;
+  const { Icon: TaskIcon, tint } = taskRuleFor(note);
 
   return (
     <View style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>
@@ -336,8 +338,7 @@ export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, o
               paddingHorizontal: 20, marginBottom: 4 }}>Useful notes</Text>
             <View style={{ paddingHorizontal: 20 }}>
               {freeNotes.map(note => {
-                const FreeNoteIcon = taskIconFor(note);
-                const freeTint = CATEGORY_TINT[note.category] ?? CATEGORY_TINT.general;
+                const { Icon: FreeNoteIcon, tint: freeTint } = taskRuleFor(note);
                 return (
                 <TouchableOpacity key={note.id} onPress={() => onOpenNote(note)}
                   style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>

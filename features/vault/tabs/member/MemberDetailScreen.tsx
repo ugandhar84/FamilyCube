@@ -141,34 +141,32 @@ export function MemberDetailScreen({
 }) {
   const insets = useSafeAreaInsets();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const [showEdit, setShowEdit] = useState(initialSection === 'edit');
-  const [showPin, setShowPin] = useState(initialSection === 'pin');
 
   // Re-sync when the caller's intent changes while already open — same
-  // pattern MemberProfileSheet's own section re-sync used (a new
-  // initialSection, a different member, or re-opening visible=true).
+  // pattern MemberProfileSheet's own section re-sync used.
   useEffect(() => {
     if (!visible) return;
-    setShowEdit(initialSection === 'edit');
-    setShowPin(initialSection === 'pin');
     setConfirmingRemove(false);
-  }, [visible, initialSection, member.id]);
+  }, [visible, member.id]);
 
   const roleLabel = member.role === 'senior' ? 'Grandparent' : member.role.charAt(0).toUpperCase() + member.role.slice(1);
   const subtitle = member.relationship ?? roleLabel;
 
-  const close = () => { setConfirmingRemove(false); setShowEdit(false); setShowPin(false); onClose(); };
+  const close = () => { setConfirmingRemove(false); onClose(); };
   const canvas = isDark ? colors.background : GEMINI.canvas;
   const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
   const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
   const linkC  = isDark ? GEMINI.blue : GEMINI.linkBlue;
 
-  const screenTitle = confirmingRemove ? 'Remove Member'
-    : showEdit ? 'Edit basic details'
-    : showPin ? (member.pin ? 'Change PIN' : 'Set PIN')
-    : member.name;
-  const backLabel = (confirmingRemove || showEdit || showPin) ? `‹ ${member.name.split(' ')[0]}` : `‹ People / ${member.name.split(' ')[0]}`;
-  const backAction = showEdit ? () => setShowEdit(false) : showPin ? () => setShowPin(false) : confirmingRemove ? () => setConfirmingRemove(false) : close;
+  // Header stays fixed to the member's own name/back-link at all times —
+  // Edit/PIN no longer swap the whole screen title, they expand as a
+  // section within the same scrollable body below
+  // [live-reported: "still new page not inline at all" — swapping the
+  // header/title on every section change read exactly like navigating to
+  // a new screen even though no new FullPageOverlay was mounted].
+  const screenTitle = confirmingRemove ? 'Remove Member' : member.name;
+  const backLabel = confirmingRemove ? `‹ ${member.name.split(' ')[0]}` : `‹ People / ${member.name.split(' ')[0]}`;
+  const backAction = confirmingRemove ? () => setConfirmingRemove(false) : close;
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
@@ -191,21 +189,13 @@ export function MemberDetailScreen({
               onConfirm={async (id) => { await onDelete!(id); close(); }}
               colors={colors} isDark={isDark}
             />
-          ) : showEdit && onSave ? (
-            <EditBody member={member} allMembers={allMembers ?? []} onCancel={() => setShowEdit(false)}
-              onSave={async (...args: any[]) => { await (onSave as any)(...args); setShowEdit(false); }}
-              onLinkParent={onLinkParent} restrictToRelationship={restrictToRelationship}
-              colors={colors} isDark={isDark} />
-          ) : showPin && onSavePin ? (
-            <PinBody member={member} onCancel={() => setShowPin(false)}
-              onSave={async (id, pin) => { await onSavePin(id, pin); setShowPin(false); }}
-              colors={colors} isDark={isDark} />
           ) : (
             <MemberDetailBody
-              member={member} siblings={siblings} isParentViewer={isParentViewer} canChangePin={canChangePin}
+              member={member} siblings={siblings} allMembers={allMembers} isParentViewer={isParentViewer} canChangePin={canChangePin}
               onDelete={onDelete} onResetPin={onResetPin} onResendInvite={onResendInvite} onGenerateRecoveryCode={onGenerateRecoveryCode}
-              onEdit={onSave ? () => setShowEdit(true) : onEdit ?? (() => {})}
-              onChangePin={onSavePin ? () => setShowPin(true) : onChangePin ?? (() => {})}
+              onSave={onSave} onSavePin={onSavePin} onLinkParent={onLinkParent} restrictToRelationship={restrictToRelationship}
+              initialSection={initialSection}
+              onEdit={onEdit} onChangePin={onChangePin}
               onRequestRemove={() => setConfirmingRemove(true)}
               colors={colors} isDark={isDark}
             />
@@ -221,14 +211,32 @@ export function MemberDetailScreen({
 // MemberProfileSheet.tsx's kiosk renderShell path can reuse the exact same
 // implementation instead of duplicating it. ─────────────────────────────────
 
-export function MemberDetailBody({ member, siblings, isParentViewer, canChangePin, onDelete, onResetPin, onResendInvite, onGenerateRecoveryCode, onEdit, onChangePin, onRequestRemove, colors, isDark }: {
+export function MemberDetailBody({ member, siblings, allMembers, isParentViewer, canChangePin, onDelete, onResetPin, onResendInvite, onGenerateRecoveryCode, onSave, onSavePin, onLinkParent, restrictToRelationship, initialSection, onEdit, onChangePin, onRequestRemove, colors, isDark }: {
   member: FamilyMember; siblings: string[];
+  /** Full roster — needed for inline Edit's "whose parent?" picker. */
+  allMembers?: any[];
   isParentViewer?: boolean; canChangePin?: boolean;
   onDelete?: (memberId: string) => Promise<void>;
   onResetPin?: (member: FamilyMember) => void;
   onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }>;
   onGenerateRecoveryCode?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
-  onEdit: () => void; onChangePin: () => void; onRequestRemove: () => void;
+  /** When provided, "Edit basic details" expands EditBody in place below
+   * the Profile details card instead of calling onEdit (navigate-away) —
+   * same for onSavePin/"Change PIN" expanding PinBody
+   * [live-requested: "pin change details edit we can do inline" ->
+   * "still new page not inline at all" — the header/title must NOT
+   * change when this happens, only this body's own content grows]. */
+  onSave?: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => Promise<void>;
+  onSavePin?: (memberId: string, pin: string) => Promise<void>;
+  onLinkParent?: (memberId: string, parentId: string) => void;
+  restrictToRelationship?: boolean;
+  /** Opens with the inline Edit or PIN section already expanded — e.g. a
+   * "Reset PIN" row elsewhere in the app. */
+  initialSection?: 'view' | 'edit' | 'pin';
+  /** Legacy navigate-away callbacks — used when onSave/onSavePin aren't
+   * provided (kiosk's renderShell path still navigates its own drawer
+   * section this way). */
+  onEdit?: () => void; onChangePin?: () => void; onRequestRemove: () => void;
   colors: any; isDark: boolean;
 }) {
   const rc = roleColor(member.role, colors);
@@ -240,6 +248,13 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
   const [recoveryResult, setRecoveryResult] = useState<{ code: string } | { error: string } | null>(null);
   const [generatingRecovery, setGeneratingRecovery] = useState(false);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
+  const [showEdit, setShowEdit] = useState(initialSection === 'edit');
+  const [showPin, setShowPin] = useState(initialSection === 'pin');
+
+  useEffect(() => {
+    setShowEdit(initialSection === 'edit');
+    setShowPin(initialSection === 'pin');
+  }, [initialSection, member.id]);
 
   const handleResendInvite = async () => {
     if (!onResendInvite || resending) return;
@@ -336,11 +351,14 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
         <InfoRow title="Driving permission" lines={[drivingLine]} colors={colors} isDark={isDark} />
       </InfoCard>
 
-      {/* PIN status — tapping opens Change/Set PIN when the viewer has
-          rights; otherwise a plain status line. */}
+      {/* PIN status — tapping expands PinBody in place (same page, no
+          navigation) when the viewer has rights; otherwise a plain status
+          line. */}
       <InfoCard colors={colors} isDark={isDark}>
         {canChangePin ? (
-          <TouchableOpacity onPress={onChangePin} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => (onSavePin ? setShowPin(v => !v) : onChangePin?.())}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Lock size={14} color={member.pin ? colors.success : colors.textTertiary} />
             <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: titleC }}>
               {member.pin ? 'PIN set' : 'No PIN set'}
@@ -348,7 +366,7 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
             <Text style={{ fontSize: 13, fontWeight: '700', color: linkC }}>
               {member.pin ? 'Change' : 'Set PIN'}
             </Text>
-            <ChevronRight size={14} color={colors.textTertiary} />
+            <ChevronRight size={14} color={colors.textTertiary} style={{ transform: [{ rotate: showPin ? '90deg' : '0deg' }] }} />
           </TouchableOpacity>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -358,11 +376,32 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
             </Text>
           </View>
         )}
+        {showPin && onSavePin && (
+          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: isDark ? colors.border : GEMINI.border }}>
+            <PinBody member={member} onCancel={() => setShowPin(false)}
+              onSave={async (id, pin) => { await onSavePin(id, pin); setShowPin(false); }}
+              colors={colors} isDark={isDark} />
+          </View>
+        )}
       </InfoCard>
 
-      {/* Edit — primary action row. */}
+      {/* Edit — primary action row, expands EditBody in place below it
+          when tapped (same page, no navigation). */}
       {isParentViewer && (
-        <ActionRow label="Edit basic details" onPress={onEdit} primary colors={colors} isDark={isDark} />
+        <View>
+          <ActionRow label={showEdit ? 'Hide edit form' : 'Edit basic details'}
+            onPress={() => (onSave ? setShowEdit(v => !v) : onEdit?.())} primary colors={colors} isDark={isDark} />
+          {showEdit && onSave && (
+            <View style={{ marginTop: 12 }}>
+              <InfoCard colors={colors} isDark={isDark}>
+                <EditBody member={member} allMembers={allMembers ?? []} onCancel={() => setShowEdit(false)}
+                  onSave={async (...args: any[]) => { await (onSave as any)(...args); setShowEdit(false); }}
+                  onLinkParent={onLinkParent} restrictToRelationship={restrictToRelationship}
+                  colors={colors} isDark={isDark} />
+              </InfoCard>
+            </View>
+          )}
+        </View>
       )}
 
       {/* Reset PIN / recovery — one row each, matching the mockup's

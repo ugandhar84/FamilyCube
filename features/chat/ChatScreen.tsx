@@ -882,7 +882,7 @@ export default function ChatScreen() {
           title="Messages"
           subtitle={`${members.length} people · tap a name to start a thread`}
           accent="pink"
-          topInset={insets.top}
+          topInset={0}
         />
 
         {/* Presence card — Figma: pinkLight rounded card with family faces */}

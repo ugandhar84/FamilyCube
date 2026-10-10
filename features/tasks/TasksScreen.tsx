@@ -385,7 +385,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
         subtitle={isSchedule ? scheduleSubtitle : tasksSubtitle}
         accent={isSchedule ? 'teal' : 'pink'}
         Icon={isSchedule ? CalendarDays : ListChecks}
-        topInset={insets.top}
+        topInset={0}
       />
       {!lockedSegment && <View style={{
         flexDirection: 'row', gap: 4, marginHorizontal: 20,

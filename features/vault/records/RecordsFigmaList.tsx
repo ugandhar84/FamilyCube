@@ -33,16 +33,6 @@ const LINK_BLUE = GEMINI.linkBlue;
 const BORDER    = GEMINI.border;
 const CARD_BG   = GEMINI.cardBg;
 
-function contentGroupStyle(cardBg: string, isDark: boolean, border: string) {
-  return isDark
-    ? { backgroundColor: cardBg, borderRadius: 22, borderWidth: 1, borderColor: border, padding: 16, gap: 12 as const }
-    : {
-        backgroundColor: cardBg, borderRadius: 22, padding: 16, gap: 12 as const,
-        shadowColor: '#102347', shadowOpacity: 0.05, shadowRadius: 20, shadowOffset: { width: 0, height: 6 },
-        elevation: 3,
-      };
-}
-
 export default function RecordsFigmaList({
   colors, isDark,
   records, filtered,
@@ -329,8 +319,13 @@ export default function RecordsFigmaList({
         </View>
       )}
 
-      {/* Current records card */}
-      <View style={contentGroupStyle(cardBg, isDark, border)}>
+      {/* Current records — flat on the canvas, same rhythm as Home Care's
+          task list (plain section label + hairline-divided rows directly
+          on the page, no extra white card wrapping them)
+          [live-requested: "this is home care tasks .. i want similar way
+          for records" / "then why this is still like this" — the earlier
+          fix only matched the row style, not the outer card chrome]. ── */}
+      <View style={{ gap: 4 }}>
         <Text style={{ fontSize: 15, fontWeight: '700', color: titleC, marginBottom: 4 }}>
           Current records · {filtered.length}
         </Text>

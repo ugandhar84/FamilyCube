@@ -68,6 +68,16 @@ import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
+import { GEMINI } from '@/constants/geminiRhythm';
+
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, extended to Calendar/
+// Tasks per explicit request — see School/Home Care/Health's own identical
+// comment for the full rationale) [live-requested: "did you take the same
+// rythim in all other modules like calender, meal and grocery?" -> "go
+// ahead" -> "header also change the same color so that i will flow along"].
+const PAGE_BG = GEMINI.canvas;
+const CARD_BG = GEMINI.cardBg;
+const BORDER  = GEMINI.border;
 
 type Segment = 'schedule' | 'chores' | 'queue';
 
@@ -378,7 +388,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   // Fixed header — title + tab switcher, never scrolls
   const isSchedule = segment === 'schedule' || lockedSegment === 'schedule';
   const fixedHeader = (
-    <View style={{ backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', paddingBottom: 8 }}>
+    <View style={{ backgroundColor: isDark ? '#0E0C13' : PAGE_BG, paddingBottom: 8 }}>
       <PageHeading
         eyebrow={`FAMILY CUBE · ${isSchedule ? 'SCHEDULE' : 'TASKS'}`}
         title={isSchedule ? 'Schedule' : 'Tasks'}
@@ -390,7 +400,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
       {!lockedSegment && <View style={{
         flexDirection: 'row', gap: 4, marginHorizontal: 20,
         padding: 4, borderRadius: 14,
-        backgroundColor: isDark ? colors.surface : '#EEEDF3',
+        backgroundColor: isDark ? colors.surface : '#F0EDE6',
       }}>
         {([
           { key: 'schedule' as const, label: 'Schedule' },
@@ -406,13 +416,13 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
               style={{
                 flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center',
                 borderRadius: 10, flexDirection: 'row', gap: 5,
-                backgroundColor: active ? colors.card : 'transparent',
+                backgroundColor: active ? (isDark ? colors.card : CARD_BG) : 'transparent',
                 shadowColor: active ? 'rgba(44,39,34,0.10)' : 'transparent',
                 shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 6,
               }}
             >
               <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500',
-                color: active ? colors.pink : colors.textSecondary }}>
+                color: active ? colors.pink : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                 {label}
               </Text>
               {needsAttention && (
@@ -562,7 +572,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : PAGE_BG }} edges={['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
       {fixedHeader}
 

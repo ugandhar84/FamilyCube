@@ -60,6 +60,18 @@ import { eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
 import { useUIStore } from '@/store/uiStore';
 import JustDescribeItEventScreen from './components/JustDescribeItEventScreen';
 import EventDetailScreen from './components/EventDetailScreen';
+import { GEMINI } from '@/constants/geminiRhythm';
+
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, extended to Calendar
+// per explicit request — see School/Home Care/Store/Health's own identical
+// comment for the full rationale) [live-requested: "did you take the same
+// rythim in all other modules like calender, meal and grocery?" -> "go
+// ahead"]. Imported from the shared module, not redeclared locally.
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+const BORDER    = GEMINI.border;
+const CARD_BG   = GEMINI.cardBg;
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 // Minutes until a today-dated event starts; Infinity for other days / no time set
@@ -1090,8 +1102,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   const selectedDateLabel = fmtDate(selectedDate);
 
   const familyName = useFamilyStore(s => s.familyName);
-  const cardBg   = colors.card;
-  const cardBord = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const cardBg   = isDark ? colors.card : CARD_BG;
+  const cardBord = isDark ? colors.border : BORDER;
 
   // Hide shared FAB when JustDescribeItEventScreen is open
   useEffect(() => {
@@ -1128,7 +1140,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={hideHeader ? [] : ['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : PAGE_BG }} edges={hideHeader ? [] : ['top']}>
       {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
 
       {/* ── Main Scroll: title + AI + member filter + timeline ──
@@ -1161,11 +1173,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   </TouchableOpacity>
                 )}
                 {/* Figma .topbar h1 */}
-                <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 32 }}>
+                <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -0.5, color: isDark ? colors.textPrimary : TITLE_CLR, lineHeight: 32 }}>
                   {isKid ? 'My schedule' : 'The family plan'}
                 </Text>
                 {/* Date subtitle */}
-                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2 }}>
                   {selectedDateLabel}
                 </Text>
               </View>
@@ -1227,19 +1239,19 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingTop: 8 }}>
               <TouchableOpacity
-                style={[sc.pill, !filterMember ? { backgroundColor: colors.teal, borderColor: colors.teal } : { backgroundColor: isDark ? colors.surface : colors.surface, borderColor: isDark ? colors.border : colors.teal + '30' }]}
+                style={[sc.pill, !filterMember ? { backgroundColor: colors.teal, borderColor: colors.teal } : { backgroundColor: isDark ? colors.surface : CARD_BG, borderColor: isDark ? colors.border : BORDER }]}
                 onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "All Family" for "member filter" [features/calendar/CalendarScreen.tsx:1063]`); setFilterMember(null); }}>
-                <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Family</Text>
+                <Text style={[sc.pillText, { color: !filterMember ? '#fff' : (isDark ? colors.textSecondary : BODY_CLR) }]}>All Family</Text>
               </TouchableOpacity>
               {members.map(m => {
                 const rs = assigneeStyle(m, colors, isDark);
                 const isSel = filterMember === m.id;
                 return (
                   <TouchableOpacity key={m.id}
-                    style={[sc.pill, isSel ? { backgroundColor: colors.pink, borderColor: colors.pink } : { backgroundColor: isDark ? colors.surface : colors.surface, borderColor: isDark ? colors.border : 'rgba(123,94,167,0.2)' }]}
+                    style={[sc.pill, isSel ? { backgroundColor: colors.pink, borderColor: colors.pink } : { backgroundColor: isDark ? colors.surface : CARD_BG, borderColor: isDark ? colors.border : BORDER }]}
                     onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${m.name}" (id=${m.id}) for "member filter" newValue=${isSel ? 'cleared' : m.id} [features/calendar/CalendarScreen.tsx:1072]`); setFilterMember(isSel ? null : m.id); }}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isSel ? '#fff' : rs.dot }} />
-                    <Text style={[sc.pillText, { color: isSel ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
+                    <Text style={[sc.pillText, { color: isSel ? '#fff' : (isDark ? colors.textSecondary : BODY_CLR) }]}>{m.name.split(' ')[0]}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -1251,7 +1263,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               suppresses the AppHeader/title (e.g. embedded in TasksScreen) */}
           {canUseFullCalendarToolbar && (
             <View style={{ marginHorizontal: 20, marginTop: 10, marginBottom: 2 }}>
-              <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#EEEDF3', borderRadius: 14, padding: 4 }}>
+              <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#F0EDE6', borderRadius: 14, padding: 4 }}>
                 {([
                   { key: 'day'   as const, label: 'Day'   },
                   { key: 'week'  as const, label: 'Week'  },
@@ -1261,13 +1273,13 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                     onPress={() => { setViewMode(v.key); setShowMonthPicker(false); }}
                     style={withAndroidShadowFix({
                       flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-                      backgroundColor: viewMode === v.key ? colors.card : 'transparent',
+                      backgroundColor: viewMode === v.key ? (isDark ? colors.card : CARD_BG) : 'transparent',
                       shadowColor: colors.navy,
                       shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0,
                       shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
                     })}>
                     <Text style={{ fontSize: 13, fontWeight: viewMode === v.key ? '700' : '500',
-                      color: viewMode === v.key ? colors.primary : colors.textSecondary }}>
+                      color: viewMode === v.key ? colors.primary : (isDark ? colors.textSecondary : BODY_CLR) }}>
                       {v.label}
                     </Text>
                   </TouchableOpacity>
@@ -1284,14 +1296,14 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         {(viewMode === 'day' || isKid) && !isParent && (
           <View style={{ backgroundColor: 'transparent' }}>
             <View style={{ flexDirection: 'row', marginHorizontal: 20, marginTop: 10, marginBottom: 6,
-              backgroundColor: isDark ? colors.surface : '#EEEDF3', borderRadius: 12, padding: 3 }}>
+              backgroundColor: isDark ? colors.surface : '#F0EDE6', borderRadius: 12, padding: 3 }}>
               {([{ key: 'mine', label: 'My Schedule' }, { key: 'all', label: 'All' }] as const).map(t => (
                 <TouchableOpacity key={t.key}
                   onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${t.label}" for "schedule scope" [features/calendar/CalendarScreen.tsx:1129]`); setScheduleFilter(t.key); if (t.key === 'mine') setFilterMember(null); }}
                   style={{ flex: 1, borderRadius: 9, paddingVertical: 8, alignItems: 'center',
-                    backgroundColor: scheduleFilter === t.key ? colors.card : 'transparent' }}>
+                    backgroundColor: scheduleFilter === t.key ? (isDark ? colors.card : CARD_BG) : 'transparent' }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700',
-                    color: scheduleFilter === t.key ? colors.pink : colors.textSecondary }}>{t.label}</Text>
+                    color: scheduleFilter === t.key ? colors.pink : (isDark ? colors.textSecondary : BODY_CLR) }}>{t.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1403,24 +1415,24 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             <Animated.View pointerEvents={dayDockedVisible ? 'auto' : 'none'} style={{
               position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
               paddingTop: 8, paddingBottom: 8,
-              backgroundColor: isDark ? '#0E0C13' : '#FFFFFF',
+              backgroundColor: isDark ? '#0E0C13' : PAGE_BG,
               opacity: dayDockAnim,
               transform: [{ translateY: dayDockAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
             }}>
-              <View style={withAndroidShadowFix({ marginHorizontal: 20, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
-                backgroundColor: colors.card, paddingVertical: 8, paddingHorizontal: 14,
+              <View style={withAndroidShadowFix({ marginHorizontal: 20, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : BORDER,
+                backgroundColor: isDark ? colors.card : CARD_BG, paddingVertical: 8, paddingHorizontal: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } })}>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
-                  <I.ChevronLeft c={colors.textSecondary} size={15} />
+                  <I.ChevronLeft c={isDark ? colors.textSecondary : BODY_CLR} size={15} />
                 </TouchableOpacity>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR }}>
                   {selectedDateLabel}
                 </Text>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
-                  <I.ChevronRight c={colors.textSecondary} size={15} />
+                  <I.ChevronRight c={isDark ? colors.textSecondary : BODY_CLR} size={15} />
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -1448,7 +1460,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   </TouchableOpacity>
 
                   <TouchableOpacity onPress={goToToday} style={{ alignItems: 'center', flex: 1, paddingHorizontal: 8 }}>
-                    <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>
+                    <Text style={{ fontSize: 22, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR, letterSpacing: -0.5 }}>
                       {selectedDateLabel}
                     </Text>
                     {selectedDate === todayStr && (
@@ -1509,8 +1521,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
                 {/* Section title */}
                 <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
-                  borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.2 }}>
+                  borderTopWidth: 1, borderTopColor: isDark ? colors.border : BORDER }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.textSecondary : BODY_CLR, letterSpacing: 0.2 }}>
                     Timeline
                   </Text>
                 </View>
@@ -1549,7 +1561,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         ) : dayEvents.length === 0 ? (
           <View style={[sc.emptyBox, { backgroundColor: cardBg, borderColor: cardBord }]}>
             <Text style={{ fontSize: 32, marginBottom: 8 }}>📅</Text>
-            <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 4 }}>
+            <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR, marginBottom: 4 }}>
               No events scheduled
             </Text>
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
@@ -1623,7 +1635,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                       {isUrgent && <UrgentPulse />}
                       {/* Row 1: title + category */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={{ flex: 1, fontSize: TYPO.heading - 2, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                        <Text style={{ flex: 1, fontSize: TYPO.heading - 2, fontWeight: '900', color: isDark ? colors.textPrimary : TITLE_CLR }} numberOfLines={1}>
                           {ev.title}
                         </Text>
                         {isConf && <I.AlertTriangle c="#F59E0B" size={15} />}
@@ -1793,8 +1805,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             {hasMore && (
               <TouchableOpacity
                 style={{ marginHorizontal: 20, marginTop: 4, paddingVertical: 12, borderRadius: 16,
-                  backgroundColor: colors.surface, alignItems: 'center',
-                  borderWidth: 1, borderColor: colors.border }}
+                  backgroundColor: isDark ? colors.surface : '#F0EDE6', alignItems: 'center',
+                  borderWidth: 1, borderColor: isDark ? colors.border : BORDER }}
                 onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Load more events" for date=${selectedDate} [features/calendar/CalendarScreen.tsx:1583]`); loadMoreDay(); }}
                 disabled={dayLoading}
               >

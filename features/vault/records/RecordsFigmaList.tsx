@@ -43,24 +43,6 @@ function contentGroupStyle(cardBg: string, isDark: boolean, border: string) {
       };
 }
 
-// Per-category pastel tint for each record card — reuses the app's own
-// *Light brand tokens (never a new hardcoded hex, per CLAUDE.md rule 1)
-// instead of TAG_MAP's raw BRAND.* hex, so Lab/Discharge/Prescription/etc.
-// each read as a distinct soft-colored card rather than one flat white
-// strip [live-requested: "health ducuments cards give nice pastel color"].
-function tagPastel(colors: any, tag: string): string {
-  switch (tag) {
-    case 'lab':             return colors.tealLight;
-    case 'discharge':       return colors.pinkLight;
-    case 'prescription':    return colors.pinkLight;
-    case 'imaging':         return colors.primaryLight;
-    case 'insurance':       return colors.amberLight;
-    case 'vaccination':     return colors.tealLight;
-    case 'visit_recording': return colors.pinkLight;
-    default:                return colors.amberLight;
-  }
-}
-
 export default function RecordsFigmaList({
   colors, isDark,
   records, filtered,
@@ -104,7 +86,6 @@ export default function RecordsFigmaList({
 
   function RecordRow({ rec, isLast }: { rec: MedRecord; isLast: boolean }) {
     const tag = TAG_MAP[rec.tag] ?? TAG_MAP.other;
-    const pastelBg = isDark ? colors.card : tagPastel(colors, rec.tag);
     const mColor = memberColor(memberIndex(rec.member_id));
     const hasPending = !!pending[rec.id];
     const urgency = (rec.ai_analysis_json as any)?.urgency ?? 'routine';
@@ -130,7 +111,7 @@ export default function RecordsFigmaList({
     };
 
     return (
-      <View style={{ backgroundColor: pastelBg, borderRadius: 16, padding: 12, marginTop: isLast ? 0 : 10 }}>
+      <View style={{ borderTopWidth: isLast ? 0 : 1, borderTopColor: border, paddingTop: isLast ? 0 : 12, marginTop: isLast ? 0 : 12 }}>
         <TouchableOpacity
           onPress={() => selectable ? onToggleSelect(rec.id) : onRowTap()}
           onLongPress={() => onToggleSelect(rec.id)}
@@ -142,7 +123,7 @@ export default function RecordsFigmaList({
                 {isSelected ? <CheckSquare size={18} color={BLUE} /> : <Square size={18} color={bodyC} />}
               </View>
             ) : (
-              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? tag.color + '18' : '#FFFFFF',
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: tag.color + '18',
                 alignItems: 'center', justifyContent: 'center' }}>
                 <tag.Icon size={15} color={tag.color} />
               </View>

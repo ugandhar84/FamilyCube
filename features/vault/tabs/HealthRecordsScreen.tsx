@@ -247,14 +247,20 @@ export default function HealthRecordsScreen({ hideHeader = false, onClose, initi
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>
 
-        {/* ── Health documents banner ── */}
+        {/* ── Health documents banner — pastel card, matching the stat-tile
+            pastel rhythm just below it on this same screen, instead of a
+            flat white strip with only the icon chip tinted
+            [live-requested: "health ducuments cards give nice pastel
+            color"]. ── */}
         {!kidView && (
           <TouchableOpacity onPress={() => setShowDocuments(true)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-              backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor: border, padding: 16 }}>
-            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: BLUE + '15',
+              backgroundColor: isDark ? cardBg : colors.pinkLight,
+              borderRadius: 16, borderWidth: isDark ? 1 : 0, borderColor: border, padding: 16 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 14,
+              backgroundColor: isDark ? BLUE + '15' : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center' }}>
-              <FolderOpen size={22} color={BLUE} />
+              <FolderOpen size={22} color={isDark ? BLUE : colors.pink} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Health documents</Text>

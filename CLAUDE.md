@@ -158,8 +158,10 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 If UI change: start dev server, verify, share screenshot.
 If type/logic only: run `npx tsc --noEmit`.
 
-### 6. Screen canvas — pure white in light mode, no warm tints
+### 6. Screen canvas — pure white in light mode, no warm tints (default rule)
 Every screen's root background (ScrollView, SafeAreaView, modal container) in light mode uses **`#FFFFFF`** (clean white — user hates warm-tinted backgrounds). Dark mode uses `#0E0C13`. `colors.background` is now itself pure white in light mode, so it is safe to use for screen roots. Cards and form fields use `colors.card` to lift off the white canvas.
+
+**Exception — the "Gemini rhythm" screens (2026-10-10):** School, Home Care, Rewards/Store, and member-profile screens (the ones rebuilt to the Figma field-card rhythm this session: `features/vault/tabs/SchoolHomeScreen.tsx` + `features/vault/tabs/school/*`, `features/vault/tabs/HomeownerNotesScreen.tsx` + `features/vault/tabs/homeowner/*`, `features/store/StoreScreen.tsx`, `features/store/RewardsDashboardScreen.tsx`, `features/vault/tabs/member/*`) intentionally deviate: canvas is `#ECE6DE` (warm cream paper), cards are bright `#FFFFFF` with a real shadow (not flat 1px borders), body/label text uses deep forest-slate (`#3D4D47`/`#4E5C56`) instead of gray, and supporting text uses semibold/extrabold weights, not regular — explicitly requested after comparing against a Gemini-generated mockup, overriding the "no warm tints" default for THESE screens only. Every other screen in the app (Hub, Tasks, Chat, GPS/Find Fam's own chrome outside these files, etc.) keeps the pure-white default above — do not propagate the warm-cream treatment past this named set without a fresh explicit instruction.
 
 ### 7. Cards float on the canvas — use `colors.card` for elevated surfaces
 TextInput fields, picker pills, coin buttons, and preview cards use `colors.card` (white/dark) so they pop off the cashmere `colors.background`. Surface-level groupings (tip areas, info callouts) use `colors.surface` or `colors.tealLight`/`colors.pinkLight`/`colors.amberLight`/`colors.primaryLight` for section pastel tints.

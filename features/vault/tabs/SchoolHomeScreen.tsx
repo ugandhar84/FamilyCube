@@ -32,14 +32,20 @@ import { BuildPeriodsScreen } from './school/BuildPeriodsScreen';
 import { HolidaysScreen } from './school/HolidaysScreen';
 import { SchoolDayScreen } from './school/SchoolDayScreen';
 
-const CANVAS = '#FFFFFF';
-const TITLE_CLR = '#172337';
-const BODY_CLR = '#657185';
-const BLUE = '#345DE3';
-const LINK_BLUE = '#294FC7';
-const BORDER = '#E8EBF0';
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — warm
+// cream canvas + bright white shadowed cards + deep forest-slate text,
+// not the app's default pure-white/flat-border rhythm. Scoped to this
+// screen and its siblings only (see CLAUDE.md).
+const CANVAS = '#ECE6DE';
+const TITLE_CLR = '#0D1210';
+const BODY_CLR = '#3D4D47';
+const BODY_CLR_LIGHT = '#4E5C56';
+const BLUE = '#3B5FE4';
+const LINK_BLUE = '#23352B';
+const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
-const SURFACE = '#F5F7FB';
+const SURFACE = '#F0EDE6';
+const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
@@ -77,21 +83,22 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
   const lastPeriod = todayPeriods[todayPeriods.length - 1];
 
   return (
-    <View style={{ borderWidth: 1, borderColor: border, borderRadius: 16, backgroundColor: cardBg, overflow: 'hidden' }}>
+    <View style={[{ borderWidth: isDark ? 1 : 0, borderColor: border, borderRadius: 18, backgroundColor: cardBg, overflow: 'hidden' },
+      !isDark && CARD_SHADOW]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 }}>
         <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} size={36} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: titleC }}>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: titleC }}>
             {kid.name.split(' ')[0]}{schedule?.gradeYear ? ` · ${schedule.gradeYear}` : ''}
           </Text>
-          <View style={{ flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
             {schedule?.school ? (
-              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, backgroundColor: isDark ? colors.surface : SURFACE }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC }}>{schedule.school}</Text>
+              <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: isDark ? colors.surface : SURFACE }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.3, color: isDark ? bodyC : BODY_CLR_LIGHT, textTransform: 'uppercase' }}>{schedule.school}</Text>
               </View>
             ) : null}
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, backgroundColor: isDark ? colors.surface : SURFACE }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC }}>
+            <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: isDark ? colors.surface : SURFACE }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.3, color: isDark ? bodyC : BODY_CLR_LIGHT, textTransform: 'uppercase' }}>
                 {isOwnScheduleOnly ? 'Own view' : 'Parent-managed'}
               </Text>
             </View>
@@ -100,11 +107,11 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
       </View>
 
       {!schedule ? (
-        <Text style={{ fontSize: 13, color: bodyC, paddingHorizontal: 16, paddingBottom: 14 }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, paddingHorizontal: 16, paddingBottom: 14 }}>
           No schedule set up yet.
         </Text>
       ) : todayPeriods.length === 0 ? (
-        <Text style={{ fontSize: 13, color: bodyC, paddingHorizontal: 16, paddingBottom: 14 }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, paddingHorizontal: 16, paddingBottom: 14 }}>
           No classes today.
         </Text>
       ) : (
@@ -112,14 +119,14 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
           {todayPeriods.map((p, i) => (
             <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
               paddingVertical: 7, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-              <Text style={{ fontSize: 13, color: bodyC, fontVariant: ['tabular-nums'] }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, fontVariant: ['tabular-nums'] }}>
                 {fmtTime12(p.startTime)}–{fmtTime12(p.endTime)}
               </Text>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>{p.subject}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>{p.subject}</Text>
             </View>
           ))}
           {lastPeriod && (
-            <Text style={{ fontSize: 12, color: bodyC, marginTop: 8 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, marginTop: 8 }}>
               Dismissal around {fmtTime12(lastPeriod.endTime)}
             </Text>
           )}
@@ -128,9 +135,10 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
 
       <TouchableOpacity
         onPress={schedule ? onOpenDay : onCreateSchedule}
-        style={{ paddingVertical: 11, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: border }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: BLUE }}>
-          {schedule ? 'Open full day →' : 'Create schedule →'}
+        style={{ paddingVertical: 13, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: border,
+          backgroundColor: isDark ? colors.surface : '#FCFBF9' }}>
+        <Text style={{ fontSize: 13, fontWeight: '800', color: titleC }}>
+          {schedule ? 'Open full day  →' : 'Create schedule  →'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -191,27 +199,27 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
         {/* Header */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: bodyC }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: isDark ? bodyC : BODY_CLR_LIGHT, textTransform: 'uppercase' }}>
               FAMILY CUBE / {(activeMember?.familyId ? 'FAMILY' : 'HOME').toUpperCase()}
             </Text>
             {!!parentLabel && (
-              <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{parentLabel}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: titleC }}>{parentLabel.toUpperCase()}</Text>
             )}
           </View>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE, marginTop: 10 }}>‹ Family</Text>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE, marginTop: 10 }}>‹ Family</Text>
+          <Text style={{ fontSize: 32, fontWeight: '800', color: titleC, marginTop: 8, lineHeight: 38, letterSpacing: -0.5 }}>
             School
           </Text>
-          <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>{subtitle}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: bodyC, marginTop: 4, lineHeight: 20 }}>{subtitle}</Text>
 
-          {/* Segmented tabs */}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+          {/* Segmented tabs — fully pill-shaped (half of row height), not
+              just rounded-rect, matching the Gemini rhythm's chip style. */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
             {([['today', 'Today'], ['week', 'Week'], ['schedules', 'Schedules']] as [MainTab, string][]).map(([key, label]) => (
               <TouchableOpacity key={key} onPress={() => setMainTab(key)}
-                style={{ paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
-                  backgroundColor: mainTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE),
-                  borderWidth: mainTab === key ? 0 : 1, borderColor: border }}>
-                <Text style={{ fontSize: 13, fontWeight: '600',
+                style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 999,
+                  backgroundColor: mainTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE) }}>
+                <Text style={{ fontSize: 13, fontWeight: '700',
                   color: mainTab === key ? '#FFFFFF' : bodyC }}>{label}</Text>
               </TouchableOpacity>
             ))}
@@ -241,30 +249,34 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
         {!isOwnScheduleOnly && (
           <View style={{ paddingHorizontal: 20, paddingTop: 20, gap: 10 }}>
             <TouchableOpacity onPress={() => setCreateOpen(true)}
-              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Create school schedule</Text>
+              style={[{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE },
+                !isDark && { shadowColor: BLUE, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }]}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF' }}>Create school schedule</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setFlyerOpen(true)}
-              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
-                borderWidth: 1.5, borderColor: BLUE, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
-              <Camera size={16} color={isDark ? BLUE : LINK_BLUE} />
-              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE }}>Scan a flyer</Text>
+              style={[{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+                borderWidth: isDark ? 1.5 : 0, borderColor: BLUE, backgroundColor: cardBg },
+                !isDark && CARD_SHADOW]}>
+              <Camera size={18} color={isDark ? BLUE : BLUE} />
+              <Text style={{ fontSize: 16, fontWeight: '800', color: titleC }}>Scan a flyer</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => kids[0] && setHolidaysMemberId(kids[0].id)}
               disabled={kids.length === 0}
-              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Holidays &amp; exceptions →</Text>
+              style={[{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
+                borderWidth: isDark ? 1 : 0, borderColor: border, backgroundColor: cardBg },
+                !isDark && CARD_SHADOW]}>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>Holidays &amp; exceptions</Text>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>→</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {/* Caption */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 18 }}>
-          <Text style={{ fontSize: 12, color: bodyC, lineHeight: 17 }}>
+        <View style={{ paddingHorizontal: 21, paddingTop: 18 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC, lineHeight: 16 }}>
             Minor accounts see only their own schedule, not health records or profile administration.
           </Text>
         </View>

@@ -1104,12 +1104,6 @@ export default function ChatScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top']}>
       <View>
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-        {/* Back to inbox — same rhythm as every other converted module's
-            "tap to go back" link. */}
-        <Pressable onPress={() => setThreadOpen(false)}
-          style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 2 }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹ Messages</Text>
-        </Pressable>
 
         {couplePinModal && (
           <CouplePinModal
@@ -1139,7 +1133,13 @@ export default function ChatScreen() {
           parent's zIndex alone doesn't guarantee ordering against a
           sibling subtree without matching zIndex/elevation of its own,
           especially on Android. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.card : GEMINI.cardBg), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.background : GEMINI.canvas), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
+        {/* Back to inbox — same rhythm as every other converted module's
+            "tap to go back" link, now sharing the channel-name row instead
+            of its own separate line above it. */}
+        <Pressable onPress={() => setThreadOpen(false)} hitSlop={8}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹</Text>
+        </Pressable>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <ShieldCheck size={12} color="#10b981" />
           <Text style={{ fontSize: 12, fontWeight: '800', color: openCoupleChannel ? (colors.pink ?? colors.accent) : colors.primary }} numberOfLines={1}>{channelLabel}</Text>
@@ -1162,7 +1162,7 @@ export default function ChatScreen() {
             ? [activeMember, memberMap[dmOtherId]].filter(Boolean)
             : currentChannelMemberIds.map(id => memberMap[id]).filter(Boolean)
           ).slice(0, 5).map((m: any, i: number) => {
-            const sep = isDark ? colors.card : GEMINI.cardBg;
+            const sep = isDark ? colors.background : GEMINI.canvas;
             return (
               <View key={m.id} style={{
                 marginLeft: i === 0 ? 0 : -10,
@@ -1190,7 +1190,7 @@ export default function ChatScreen() {
               width: 26, height: 26, borderRadius: 13,
               backgroundColor: isDark ? colors.surface : '#F0EDE6',
               alignItems: 'center', justifyContent: 'center',
-              borderWidth: 2, borderColor: isDark ? colors.card : GEMINI.cardBg,
+              borderWidth: 2, borderColor: isDark ? colors.background : GEMINI.canvas,
             }}>
               <Text style={{ fontSize: 8, fontWeight: '900', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
                 +{currentChannelMemberIds.length - 5}

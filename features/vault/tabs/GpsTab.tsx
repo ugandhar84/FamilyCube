@@ -1136,6 +1136,8 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
           </View>
         )}
 
+        <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14,
+          backgroundColor: isDark ? colors.card : '#fff', paddingHorizontal: 4, marginBottom: 16 }}>
         {roster.map((loc, i) => {
           const rc  = roleColor(loc.role);
           const m   = members.find(mb => mb.id === loc.member_id);
@@ -1275,6 +1277,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
             </TouchableOpacity>
           );
         })}
+        </View>
         </ScrollView>
       </Animated.View>
 
@@ -1488,7 +1491,7 @@ const g = StyleSheet.create({
   grabber:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#00000020', alignSelf: 'center', marginTop: 8, marginBottom: 12 },
   exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1,
                     paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
-  row:          { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12 },
+  row:          { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12, paddingHorizontal: 12 },
   rowExpanded:  { borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 10, marginVertical: 2, borderTopWidth: 1.5 },
   actionPill:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 16,
                   paddingHorizontal: 12, paddingVertical: 7 },

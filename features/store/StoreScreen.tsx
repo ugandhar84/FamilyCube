@@ -18,7 +18,6 @@ import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
 import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import { fmtDateShort } from '@/lib/dates';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import FullPageOverlay from '@/components/FullPageOverlay';
@@ -238,81 +237,108 @@ function PerkCard({ reward, index = 0, myCoins, myMaxAffordable, isKid, isParent
   );
 }
 
-// ─── Perk detail sheet — read-only, Edit opens the real form ──────────────────
+// ─── Perk detail screen — read-only, Edit opens the real form ─────────────────
 // Live-requested: a plain tap on a perk should show its details (including
 // who last changed it and when) without immediately dropping the viewer
 // into edit mode — Edit is a deliberate second step, not the only option.
-function PerkDetailSheet({ reward, allMembers, colors, isDark, isParent, onClose, onEdit }: {
+// Full-page (FullPageOverlay), not a bottom sheet — same detail-then-edit
+// rhythm as features/vault/tabs/homeowner/NoteDetailSheet.tsx
+// [live-requested: "Add edit details forms should be full pages"].
+function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClose, onEdit }: {
   reward: Reward | null; allMembers: FamilyMember[]; colors: any; isDark: boolean; isParent: boolean;
   onClose: () => void; onEdit: (r: Reward) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const updater = reward?.updatedById ? allMembers.find(m => m.id === reward.updatedById) : undefined;
   const creator = reward?.createdById ? allMembers.find(m => m.id === reward.createdById) : undefined;
+  const canvas = isDark ? colors.background : PAGE_BG;
+  const P = colors.primary;
+
   return (
-    <AppBottomSheet visible={!!reward} onClose={onClose} title={reward?.title ?? 'Perk'}
-      subtitle={reward?.category} minHeight="40%" maxHeight="70%"
-      footer={isParent && reward ? (
-        <Pressable onPress={() => onEdit(reward)}
-          style={{ backgroundColor: colors.teal, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Edit Perk</Text>
-        </Pressable>
-      ) : undefined}>
-      {reward && (
-        <View style={{ gap: 14 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: colors.amberLight,
-              alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 26 }}>{reward.emoji ?? '🎁'}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>{reward.title}</Text>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, marginTop: 2 }}>{reward.cost} Coins 🪙</Text>
-            </View>
-          </View>
-
-          {reward.description ? (
-            <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>{reward.description}</Text>
+    <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
+      <View style={{ flex: 1, backgroundColor: canvas }}>
+        <View style={{
+          paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+          backgroundColor: canvas, gap: 6,
+        }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Store</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
+            {reward?.title ?? 'Perk'}
+          </Text>
+          {reward?.category ? (
+            <Text style={{ fontSize: 14, color: colors.textSecondary }}>{reward.category}</Text>
           ) : null}
-
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: reward.available ? colors.success : colors.textTertiary }}>
-                {reward.available ? 'Available' : 'Unavailable'}
-              </Text>
-            </View>
-            {typeof reward.stock === 'number' && (
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>{reward.stock} in stock</Text>
-              </View>
-            )}
-            {reward.requiresApproval && (
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Needs approval</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Last-updated tracking — the actual ask: "when parent changes
-              the perk, we should have the last updated by and date/time on
-              that card." Falls back to created info when never edited. */}
-          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>
-            {reward.updatedAt ? (
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                Last updated by {updater?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.updatedAt.slice(0, 10))} at{' '}
-                {new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-              </Text>
-            ) : (
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>Not edited since it was created</Text>
-            )}
-            {reward.createdAt && (
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                Added by {creator?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.createdAt.slice(0, 10))}
-              </Text>
-            )}
-          </View>
         </View>
-      )}
-    </AppBottomSheet>
+
+        {reward && (
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: colors.amberLight,
+                alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 26 }}>{reward.emoji ?? '🎁'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>{reward.title}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, marginTop: 2 }}>{reward.cost} Coins 🪙</Text>
+              </View>
+            </View>
+
+            {reward.description ? (
+              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>{reward.description}</Text>
+            ) : null}
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: reward.available ? colors.success : colors.textTertiary }}>
+                  {reward.available ? 'Available' : 'Unavailable'}
+                </Text>
+              </View>
+              {typeof reward.stock === 'number' && (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>{reward.stock} in stock</Text>
+                </View>
+              )}
+              {reward.requiresApproval && (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Needs approval</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Last-updated tracking — the actual ask: "when parent changes
+                the perk, we should have the last updated by and date/time on
+                that card." Falls back to created info when never edited. */}
+            <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>
+              {reward.updatedAt ? (
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                  Last updated by {updater?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.updatedAt.slice(0, 10))} at{' '}
+                  {new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              ) : (
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>Not edited since it was created</Text>
+              )}
+              {reward.createdAt && (
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                  Added by {creator?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.createdAt.slice(0, 10))}
+                </Text>
+              )}
+            </View>
+
+            {isParent && (
+              <Pressable onPress={() => onEdit(reward)}
+                style={{ backgroundColor: colors.teal, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 }}>
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Edit Perk</Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        )}
+      </View>
+    </FullPageOverlay>
   );
 }
 
@@ -1025,7 +1051,7 @@ export default function StoreScreen({
         onDelete={r => { setShowCreate(false); setEditing(null); handleDelete(r); }}
       />
 
-      <PerkDetailSheet
+      <PerkDetailScreen
         reward={detailPerk}
         allMembers={members}
         colors={colors}

@@ -308,6 +308,7 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
           colors={colors} isDark={isDark}
           memberId={holidaysMember.id}
           memberName={holidaysMember.name}
+          kids={kids}
           onClose={() => setHolidaysMemberId(null)}
           zIndex={62}
         />

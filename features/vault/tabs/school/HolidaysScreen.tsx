@@ -8,13 +8,14 @@
  * here is implemented as populating the add-form, then on save doing
  * removeHoliday + addHoliday — never a new store action.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PartyPopper } from 'lucide-react-native';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { ScanDateField } from '../health/ScanDateField';
 import { useSchoolStore, type SchoolHoliday } from '@/store/schoolStore';
+import type { FamilyMember } from '@/store/familyStore';
 import { fmtDate } from '@/lib/dates';
 
 const CANVAS = '#FFFFFF';
@@ -54,15 +55,65 @@ function nextSchoolDay(endDate: string): string {
   return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
 }
 
-export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, onClose, zIndex = 61 }: {
+function DropRow({ label, value, options, onSelect, isDark, colors }: {
+  label: string; value: string; options: { key: string; label: string }[];
+  onSelect: (k: string) => void; isDark: boolean; colors: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  return (
+    <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, backgroundColor: cardBg }}>
+      <TouchableOpacity onPress={() => setOpen(o => !o)} style={{ paddingHorizontal: 14, paddingVertical: 10 }}>
+        <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontSize: 15, color: titleC }}>{options.find(o => o.key === value)?.label ?? value} ▾</Text>
+      </TouchableOpacity>
+      {open && (
+        <View style={{ borderTopWidth: 1, borderTopColor: border }}>
+          {options.map(opt => (
+            <TouchableOpacity key={opt.key} onPress={() => { onSelect(opt.key); setOpen(false); }}
+              style={{ paddingHorizontal: 14, paddingVertical: 10,
+                backgroundColor: opt.key === value ? (isDark ? colors.surface : SURFACE) : cardBg }}>
+              <Text style={{ fontSize: 14, color: opt.key === value ? BLUE : titleC,
+                fontWeight: opt.key === value ? '600' : '400' }}>{opt.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, kids, onClose, zIndex = 61 }: {
   visible: boolean; colors: any; isDark: boolean;
   memberId: string; memberName: string;
+  /** Full kid + teen roster — shown as a switchable dropdown so a parent
+   *  can manage any child's holidays from this one screen instead of
+   *  needing to reopen it per kid [live-requested: "In holiday exceptions
+   *  page we must have the children kids and teens drop down"]. Falls
+   *  back to the single memberId/memberName pair (no dropdown shown) if a
+   *  caller doesn't pass it, so this stays backward compatible. */
+  kids?: FamilyMember[];
   onClose: () => void;
   zIndex?: number;
 }) {
   const insets = useSafeAreaInsets();
   const { schedules, addHoliday, removeHoliday } = useSchoolStore();
-  const schedule = schedules.find(s => s.memberId === memberId);
+
+  const [activeMemberId, setActiveMemberId] = useState(memberId);
+  // Re-sync whenever the screen is (re)opened for a different starting
+  // member (e.g. tapped from a different kid's day view) — the dropdown
+  // should reset to that kid, not keep whichever kid was last selected.
+  useEffect(() => {
+    if (visible) setActiveMemberId(memberId);
+  }, [visible, memberId]);
+
+  const activeKid = kids?.find(k => k.id === activeMemberId);
+  const activeMemberName = activeKid?.name ?? memberName;
+
+  const schedule = schedules.find(s => s.memberId === activeMemberId);
   const holidays = schedule?.holidays ?? [];
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -95,9 +146,9 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
         // No update-in-place holiday action in schoolStore — remove then
         // re-add, which lets addHoliday's real retroactive-clear side
         // effect run correctly against the NEW range.
-        await removeHoliday(memberId, editingId);
+        await removeHoliday(activeMemberId, editingId);
       }
-      await addHoliday(memberId, { startDate: fromDate, endDate: toDate, reason: reason.trim() });
+      await addHoliday(activeMemberId, { startDate: fromDate, endDate: toDate, reason: reason.trim() });
       resetForm();
     } finally {
       setSaving(false);
@@ -118,13 +169,23 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
             A break in the timetable
           </Text>
           <Text style={{ fontSize: 14, color: bodyC, marginTop: 6, lineHeight: 20 }}>
-            {schedule?.school ? `${memberName.split(' ')[0]}'s schedule · ${schedule.school}` : `${memberName.split(' ')[0]}'s schedule`}
+            {schedule?.school ? `${activeMemberName.split(' ')[0]}'s schedule · ${schedule.school}` : `${activeMemberName.split(' ')[0]}'s schedule`}
           </Text>
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 48, gap: 12 }}>
+
+            {kids && kids.length > 1 && (
+              <DropRow
+                label="Child"
+                value={activeMemberId}
+                options={kids.map(k => ({ key: k.id, label: `${k.name}${k.role === 'teen' ? ' · Teen' : ' · Kid'}` }))}
+                onSelect={id => { setActiveMemberId(id); resetForm(); }}
+                isDark={isDark} colors={colors}
+              />
+            )}
 
             {holidays.length > 0 && holidays.map(h => {
               const resumeDate = nextSchoolDay(h.endDate);
@@ -140,7 +201,7 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
                       <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>{h.reason}</Text>
                       <Text style={{ fontSize: 13, color: bodyC, marginTop: 2 }}>{fmtRange(h.startDate, h.endDate)}</Text>
                       <Text style={{ fontSize: 13, color: bodyC, marginTop: 2 }}>
-                        Applies to {memberName.split(' ')[0]} · recurring school periods skipped
+                        Applies to {activeMemberName.split(' ')[0]} · recurring school periods skipped
                       </Text>
                       <Text style={{ fontSize: 13, color: bodyC, marginTop: 2 }}>
                         Classes resume {resumeDate} →
@@ -174,7 +235,7 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
 
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
                 <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>School / member</Text>
-                <Text style={{ fontSize: 15, color: titleC }}>{memberName}{schedule?.school ? ` · ${schedule.school}` : ''}</Text>
+                <Text style={{ fontSize: 15, color: titleC }}>{activeMemberName}{schedule?.school ? ` · ${schedule.school}` : ''}</Text>
               </View>
 
               <ScanDateField label="From" value={fromDate} onChange={setFromDate} colors={colors} isDark={isDark} accent={BLUE} />
@@ -192,7 +253,7 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
                   Pause school periods on these days
                 </Text>
                 <Text style={{ fontSize: 12, color: bodyC, lineHeight: 17 }}>
-                  Every recurring class period on {memberName.split(' ')[0]}'s schedule is skipped for this date range,
+                  Every recurring class period on {activeMemberName.split(' ')[0]}'s schedule is skipped for this date range,
                   including occurrences already on the calendar.
                 </Text>
               </View>

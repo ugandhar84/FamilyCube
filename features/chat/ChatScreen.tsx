@@ -45,6 +45,7 @@ import { useNotifStore } from '@/store/notifStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useChatStore, ChatMessage, dmChannelId, coupleChannelId } from '@/store/chatStore';
 import { useUIStore } from '@/store/uiStore';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useCoupleChannelStore } from '@/store/coupleChannelStore';
 import CouplePinModal from '@/components/CouplePinModal';
 import { useFeatureFlag } from '@/lib/featureFlags';
@@ -863,6 +864,15 @@ export default function ChatScreen() {
     setThreadOpen(true);
   };
 
+  // A thread is a dedicated full-page conversation, not a tab destination —
+  // hide the bottom nav bar while one is open, same as every other
+  // FullPageOverlay screen (FamilyTreePage, GroceryScreen, MealsScreen).
+  useEffect(() => {
+    if (!threadOpen) return;
+    hideTabBar();
+    return () => showTabBar();
+  }, [threadOpen]);
+
   const pendingChatChannelId = useUIStore(st => st.pendingChatChannelId);
   useEffect(() => {
     if (!pendingChatChannelId) return;
@@ -1094,10 +1104,11 @@ export default function ChatScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top']}>
       <View>
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-        {/* Breadcrumb back to inbox */}
+        {/* Back to inbox — same rhythm as every other converted module's
+            "tap to go back" link. */}
         <Pressable onPress={() => setThreadOpen(false)}
           style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 2 }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal }}>← Messages</Text>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹ Messages</Text>
         </Pressable>
 
         {couplePinModal && (
@@ -1119,61 +1130,6 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* ── Channel strip ──
-            Was a per-scroll-event Animated.Value collapse (see the removed-
-            feature comment above) — that's what kept glitching. This reuses
-            showScrollBtn instead: the SAME plain boolean, flipped once at a
-            fixed 200px threshold (see onScroll below), already used for the
-            scroll-to-bottom button. Hiding the strip while it's true reclaims
-            reading space the moment the user has scrolled away from the
-            latest message, with no separate collapse state, no animation,
-            and no way to get stuck — it can only ever be exactly in sync
-            with whatever showScrollBtn already is. */}
-        {!showScrollBtn && (
-        <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
-          <View style={[s.strip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2, alignItems: 'center' }}>
-              {allChannels.map(ch => {
-                if ((ch as any).lock && !isParent) return null;
-                const act = channelId === ch.id;
-                const pinned = !(ch as any).isDM && pinnedChannels.includes(ch.id);
-                const unread = act ? 0 : (unreadCounts[ch.id] ?? 0);
-                return (
-                  <Pressable key={ch.id} onPress={() => switchChannel(ch.id)}
-                    style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                      {(ch as any).isDM && (
-                        <View style={{ width: 16, height: 16 }}>
-                          <FamilyAvatar
-                            name={memberMap[(ch as any).otherId]?.name ?? ch.label}
-                            emoji={memberMap[(ch as any).otherId]?.emoji}
-                            avatarUrl={memberMap[(ch as any).otherId]?.avatarUrl}
-                            siblings={[]}
-                            size={16}
-                            ringColor={accentColor((ch as any).otherId)}
-                            ringWidth={0}
-                            bgColor={accentColor((ch as any).otherId) + '44'}
-                          />
-                        </View>
-                      )}
-                      {pinned && <Pin size={10} color={act ? '#fff' : colors.textTertiary} fill={act ? '#fff' : colors.textTertiary} />}
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
-                        {ch.label}
-                      </Text>
-                      {unread > 0 && (
-                        <View style={{ minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4,
-                          backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-        )}
       </View>
 
       {/* ── Channel sub-header: label + member avatars ──
@@ -1183,7 +1139,7 @@ export default function ChatScreen() {
           parent's zIndex alone doesn't guarantee ordering against a
           sibling subtree without matching zIndex/elevation of its own,
           especially on Android. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : colors.border, zIndex: 0, elevation: 0 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.card : GEMINI.cardBg), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <ShieldCheck size={12} color="#10b981" />
           <Text style={{ fontSize: 12, fontWeight: '800', color: openCoupleChannel ? (colors.pink ?? colors.accent) : colors.primary }} numberOfLines={1}>{channelLabel}</Text>
@@ -1197,7 +1153,7 @@ export default function ChatScreen() {
               currentChannelMemberIds is empty, which flashed "· 0 members"
               for a moment on a fresh app open before settling to the real
               count. */}
-          {!dmOtherId && loaded && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {currentChannelMemberIds.length} members</Text>}
+          {!dmOtherId && loaded && <Text style={{ fontSize: 10, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>· {currentChannelMemberIds.length} members</Text>}
         </View>
 
         {/* Avatar cluster — solid separator border so no ring bleed */}
@@ -1206,7 +1162,7 @@ export default function ChatScreen() {
             ? [activeMember, memberMap[dmOtherId]].filter(Boolean)
             : currentChannelMemberIds.map(id => memberMap[id]).filter(Boolean)
           ).slice(0, 5).map((m: any, i: number) => {
-            const sep = colors.card;
+            const sep = isDark ? colors.card : GEMINI.cardBg;
             return (
               <View key={m.id} style={{
                 marginLeft: i === 0 ? 0 : -10,
@@ -1232,11 +1188,11 @@ export default function ChatScreen() {
             <View style={{
               marginLeft: -10, zIndex: 0,
               width: 26, height: 26, borderRadius: 13,
-              backgroundColor: colors.surface,
+              backgroundColor: isDark ? colors.surface : '#F0EDE6',
               alignItems: 'center', justifyContent: 'center',
-              borderWidth: 2, borderColor: colors.card,
+              borderWidth: 2, borderColor: isDark ? colors.card : GEMINI.cardBg,
             }}>
-              <Text style={{ fontSize: 8, fontWeight: '900', color: colors.textSecondary }}>
+              <Text style={{ fontSize: 8, fontWeight: '900', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
                 +{currentChannelMemberIds.length - 5}
               </Text>
             </View>
@@ -1245,8 +1201,8 @@ export default function ChatScreen() {
 
         {groupChannels.some(ch => ch.id === channelId) && (
           <Pressable onPress={togglePin}
-            style={[s.iconBtn, { backgroundColor: isPinned ? colors.primaryLight : colors.surface, borderColor: isPinned ? colors.primary : colors.border }]}>
-            {isPinned ? <PinOff size={15} color={colors.primary} /> : <Pin size={15} color={colors.textSecondary} />}
+            style={[s.iconBtn, { backgroundColor: isPinned ? colors.primaryLight : (isDark ? colors.surface : '#F0EDE6'), borderColor: isPinned ? colors.primary : (isDark ? colors.border : GEMINI.border) }]}>
+            {isPinned ? <PinOff size={15} color={colors.primary} /> : <Pin size={15} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />}
           </Pressable>
         )}
 
@@ -1277,27 +1233,27 @@ export default function ChatScreen() {
                 },
               ],
             )}
-            style={[s.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            style={[s.iconBtn, { backgroundColor: isDark ? colors.surface : '#F0EDE6', borderColor: isDark ? colors.border : GEMINI.border }]}>
             <Trash2 size={15} color={colors.danger} />
           </Pressable>
         )}
 
         <Pressable onPress={() => setSearchOpen(v => !v)}
-          style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : colors.surface, borderColor: searchOpen ? colors.primary : colors.border }]}>
-          {searchOpen ? <X size={15} color={colors.primary} /> : <Search size={15} color={colors.textSecondary} />}
+          style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : (isDark ? colors.surface : '#F0EDE6'), borderColor: searchOpen ? colors.primary : (isDark ? colors.border : GEMINI.border) }]}>
+          {searchOpen ? <X size={15} color={colors.primary} /> : <Search size={15} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />}
         </Pressable>
       </View>
 
       {/* ── Search bar ── */}
       <Animated.View style={{ height: searchHeight, overflow: 'hidden', paddingHorizontal: 14 }}>
-        <View style={[s.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Search size={14} color={colors.textTertiary} />
+        <View style={[s.searchWrap, { backgroundColor: isDark ? colors.surface : GEMINI.cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Search size={14} color={isDark ? colors.textTertiary : GEMINI.bodyColorLight} />
           <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder="Search messages…"
             placeholderTextColor={colors.placeholder} autoFocus={searchOpen}
-            style={{ flex: 1, fontSize: 13, color: colors.textPrimary, paddingVertical: 0 }} />
+            style={{ flex: 1, fontSize: 13, color: isDark ? colors.textPrimary : GEMINI.titleColor, paddingVertical: 0 }} />
           {searchQuery.length > 0 && msgs.length > 0 && (
             <>
-              <Text style={{ fontSize: 11, color: colors.textTertiary, marginHorizontal: 4 }}>
+              <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginHorizontal: 4 }}>
                 {searchMatchIdx + 1}/{msgs.length}
               </Text>
               <Pressable onPress={() => {
@@ -1312,7 +1268,7 @@ export default function ChatScreen() {
                 const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                 if (idx >= 0) flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
               }}><ChevronDown size={18} color={colors.primary} /></Pressable>
-              <Pressable onPress={() => setSearchQuery('')}><XCircle size={16} color={colors.textTertiary} /></Pressable>
+              <Pressable onPress={() => setSearchQuery('')}><XCircle size={16} color={isDark ? colors.textTertiary : GEMINI.bodyColorLight} /></Pressable>
             </>
           )}
         </View>
@@ -1324,16 +1280,16 @@ export default function ChatScreen() {
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.amberLight, borderWidth: 2, borderColor: colors.amber, alignItems: 'center', justifyContent: 'center' }}>
               <Lock size={30} color={colors.amber} />
             </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>🔒 Parents Vault</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>🔒 Parents Vault</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
           </View>
         ) : coupleChannelLocked ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: (colors.pink ?? colors.accent) + '22', borderWidth: 2, borderColor: colors.pink ?? colors.accent, alignItems: 'center', justifyContent: 'center' }}>
               <Lock size={30} color={colors.pink ?? colors.accent} />
             </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>💕 Just Us</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Enter the PIN to open this channel.</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>💕 Just Us</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, textAlign: 'center', lineHeight: 20 }}>Enter the PIN to open this channel.</Text>
             {/* The auto-open useEffect only fires once, when the lock
                 first flips true — if that modal was cancelled/dismissed,
                 nothing re-opens it without this — [live-reported: "it
@@ -1370,11 +1326,11 @@ export default function ChatScreen() {
             {channelLoading && reversedItems.length > 0 && (
               <View pointerEvents="none" style={withAndroidShadowFix({ position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5,
                 flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
-                borderWidth: 1, borderColor: colors.border,
+                backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+                borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
                 shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 })}>
                 <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>Syncing…</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>Syncing…</Text>
               </View>
             )}
             <FlatList
@@ -1387,7 +1343,7 @@ export default function ChatScreen() {
               // background — a deliberately different feel from the
               // businesslike family chat, per request ("it is going to
               // be romantic"). Purely cosmetic — no behavior change.
-              style={{ backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '08' : colors.background }}
+              style={{ backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '08' : (isDark ? colors.background : GEMINI.canvas) }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               // No tuning at all previously — FlatList's defaults render
@@ -1443,9 +1399,9 @@ export default function ChatScreen() {
                 if (item.type === 'day') {
                   return (
                     <View style={[s.dayRow, { marginHorizontal: 20 }]}>
-                      <View style={[s.dayLine, { backgroundColor: colors.border }]} />
-                      <Text style={[s.dayLabel, { color: colors.textTertiary, backgroundColor: isDark ? colors.background : '#f5f7ff' }]}>{item.label}</Text>
-                      <View style={[s.dayLine, { backgroundColor: colors.border }]} />
+                      <View style={[s.dayLine, { backgroundColor: isDark ? colors.border : GEMINI.border }]} />
+                      <Text style={[s.dayLabel, { color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, backgroundColor: isDark ? colors.background : GEMINI.canvas }]}>{item.label}</Text>
+                      <View style={[s.dayLine, { backgroundColor: isDark ? colors.border : GEMINI.border }]} />
                     </View>
                   );
                 }

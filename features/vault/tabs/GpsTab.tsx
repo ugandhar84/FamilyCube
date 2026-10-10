@@ -25,6 +25,11 @@ import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill } from './shared';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { PlacesPage } from '@/features/gps/PlacesPage';
+import { PlaceEditorPage } from '@/features/gps/PlaceEditorPage';
+import { usePlacesStore, type FamilyPlace, type PlaceKind } from '@/store/placesStore';
+import { placeKindMeta } from '@/features/gps/placeKinds';
 
 type LocStatus = 'at_home' | 'at_school' | 'at_work' | 'in_transit' | 'at_activity';
 
@@ -277,6 +282,24 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId;
+
+  // Places (Home/School/Work/Other pins + real device geofencing) — the
+  // whole feature (PlacesPage/PlaceEditorPage/placesStore/
+  // lib/placeGeofencing.ts) already existed fully built but had NO entry
+  // point anywhere in the app; PlacesPage's own header comment said
+  // "Opened from the full-width Places card on the map sheet" but that
+  // card was never actually added here [live-requested: "Find fam we
+  // decided to have the pin location of the family members work school
+  // home (common), other places for geo fencing" — confirmed not reachable
+  // in the UI].
+  const { places, load: loadPlaces } = usePlacesStore();
+  const [showPlaces, setShowPlaces] = useState(false);
+  const [editingPlace, setEditingPlace] = useState<FamilyPlace | null | 'new'>(null);
+  const [newPlaceKind, setNewPlaceKind] = useState<PlaceKind>('home');
+
+  useEffect(() => {
+    if (familyId && activeMemberId) loadPlaces(familyId, activeMemberId);
+  }, [familyId, activeMemberId]);
 
   // load() is called on first mount AND on every realtime location ping /
   // 5-min poll from ANY family member — it used to setLoading(true) every
@@ -987,6 +1010,31 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 90 }}
           showsVerticalScrollIndicator={false}>
+
+        {/* Places — Home/School/Work/Other pins with real device
+            geofencing (lib/placeGeofencing.ts). Full-width card, same
+            pattern as PlacesPage's own header comment describes, just
+            actually wired up now. */}
+        <TouchableOpacity onPress={() => setShowPlaces(true)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+            borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+            backgroundColor: isDark ? colors.card : '#fff',
+            paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 13,
+            backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' }}>
+            <MapPin size={20} color={colors.teal} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Places</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+              {places.length === 0
+                ? 'Pin Home, school, work for arrival check-ins'
+                : `${places.length} place${places.length === 1 ? '' : 's'} pinned`}
+            </Text>
+          </View>
+          <ChevronDown size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '-90deg' }] }} />
+        </TouchableOpacity>
+
         <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
           Family ({roster.length})
         </Text>
@@ -1365,6 +1413,31 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         </View>
       </Modal>
+
+      {/* Places — Home/School/Work/Other pins + real device geofencing,
+          previously fully built but unreachable from anywhere in the app. */}
+      <FullPageOverlay visible={showPlaces} onDismiss={() => setShowPlaces(false)} zIndex={55}>
+        <PlacesPage
+          onClose={() => setShowPlaces(false)}
+          onAdd={(kind) => { setNewPlaceKind(kind); setEditingPlace('new'); }}
+          onEdit={(place) => setEditingPlace(place)}
+          onShow={(place) => {
+            setShowPlaces(false);
+            mapRef.current?.animateToRegion({
+              latitude: place.latitude, longitude: place.longitude,
+              latitudeDelta: 0.01, longitudeDelta: 0.01,
+            }, 650);
+          }}
+        />
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={!!editingPlace} onDismiss={() => setEditingPlace(null)} zIndex={56}>
+        {editingPlace === 'new' ? (
+          <PlaceEditorPage defaultKind={newPlaceKind} onClose={() => setEditingPlace(null)} />
+        ) : editingPlace ? (
+          <PlaceEditorPage place={editingPlace} onClose={() => setEditingPlace(null)} />
+        ) : null}
+      </FullPageOverlay>
     </View>
   );
 }

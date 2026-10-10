@@ -107,11 +107,9 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
           const tint = { bg: colors.amberLight, fg: colors.amber };
           return (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-              backgroundColor: tint.bg, borderRadius: 16, padding: 16 }}>
-              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: cardBg,
-                alignItems: 'center', justifyContent: 'center' }}>
-                <HeartPulse size={22} color={tint.fg} />
-              </View>
+              backgroundColor: tint.bg, borderRadius: 16, padding: 16,
+              borderWidth: 1, borderColor: isDark ? colors.border : BORDER }}>
+              <HeartPulse size={30} color={tint.fg} strokeWidth={2.5} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>
                   {allClear ? 'Everyone is up to date' : 'A few things need attention'}

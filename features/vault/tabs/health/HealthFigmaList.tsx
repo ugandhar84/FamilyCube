@@ -25,6 +25,7 @@ import {
   History, X, XCircle, Square, CheckSquare, Share2, SlidersHorizontal, ChevronRight, Shield,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { MemberAvatar } from '../shared';
 import {
   Medication, Vaccine, FREQ_LABELS, getCatColors, today, encodeTakenEntry, formatDoseTime,
@@ -35,21 +36,20 @@ import { showAlert } from '@/components/AppAlert';
 import { shareVaccineRecordsPdf } from './vaxPdfExport';
 import FullPageOverlay from '@/components/FullPageOverlay';
 
-// ── Flat Figma tokens — matches HomeownerNotesScreen.tsx/SchoolScreen.tsx/
-// ConnectCalendarPage.tsx/InvitePage.tsx exactly. Dark mode falls back to
-// the real theme colors (these tokens have no dark variant of their own).
-const PAGE_BG   = '#F3F5F2';
-const TITLE_CLR = '#172337';
-const BODY_CLR  = '#657185';
-// Two distinct blues per the exact Figma export — see HealthRecordsScreen.
-// tsx's identical comment. BLUE = real primary/action color (selected
-// states, "Mark taken" pill, Select-mode checkbox check); LINK_BLUE = link-
-// style text only ("View medication →", "Filters", "Select", "Open full
-// filters →"). Previously both were the single '#294FC7' token.
-const BLUE      = '#345DE3';
-const LINK_BLUE = '#294FC7';
-const BORDER    = '#DFE5EF';
-const CARD_BG   = '#FFFFFF';
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception) — imported from the
+// shared module instead of redeclared locally
+// [live-requested: "make modularize for simplicity"].
+// Two distinct blues: BLUE = real primary/action color (selected states,
+// "Mark taken" pill, Select-mode checkbox check); LINK_BLUE = link-style
+// text only ("View medication →", "Filters", "Select", "Open full
+// filters →").
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+const BLUE      = GEMINI.blue;
+const LINK_BLUE = GEMINI.linkBlue;
+const BORDER    = GEMINI.border;
+const CARD_BG   = GEMINI.cardBg;
 
 // "Content group" card per the exact Figma export — white bg, radius 22
 // (was 16 here — a real mismatch against the spec), soft shadow (was a

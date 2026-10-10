@@ -1133,16 +1133,16 @@ export default function ChatScreen() {
           parent's zIndex alone doesn't guarantee ordering against a
           sibling subtree without matching zIndex/elevation of its own,
           especially on Android. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.background : GEMINI.canvas), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.background : GEMINI.canvas), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
         {/* Back to inbox — same rhythm as every other converted module's
             "tap to go back" link, now sharing the channel-name row instead
             of its own separate line above it. */}
         <Pressable onPress={() => setThreadOpen(false)} hitSlop={8}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹</Text>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹</Text>
         </Pressable>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <ShieldCheck size={12} color="#10b981" />
-          <Text style={{ fontSize: 12, fontWeight: '800', color: openCoupleChannel ? (colors.pink ?? colors.accent) : colors.primary }} numberOfLines={1}>{channelLabel}</Text>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <ShieldCheck size={13} color="#10b981" />
+          <Text style={{ fontSize: 17, fontWeight: '800', letterSpacing: -0.2, color: openCoupleChannel ? (colors.pink ?? colors.accent) : (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>{channelLabel}</Text>
           {/* A DM's participant count/avatars must be scoped to the 2
               people actually in it, not the whole family — this
               previously showed members.length/members unconditionally,
@@ -1647,15 +1647,15 @@ export default function ChatScreen() {
 
             {/* ── Input bar ── */}
             {!reviewing && !recording && (
-              <View style={[s.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+              <View style={[s.inputBar, { backgroundColor: isDark ? colors.background : GEMINI.canvas, borderTopColor: isDark ? colors.border : GEMINI.border }]}>
                 {/* Attach */}
-                <Pressable onPress={handleAttach} style={s.bareIconBtn}>
-                  <Paperclip size={20} color={colors.textSecondary} />
+                <Pressable onPress={handleAttach} style={[s.bareIconBtn, { backgroundColor: isDark ? colors.pinkLight : (colors.pink ?? colors.accent) + '1A', borderRadius: 999 }]}>
+                  <Paperclip size={18} color={colors.pink ?? colors.accent} />
                 </Pressable>
 
                 {/* Text input */}
-                <View style={[s.inputBubble, { backgroundColor: isDark ? colors.surface : '#FFFFFF',
-                  borderColor: dictation.state === 'listening' ? colors.teal : (isDark ? colors.borderMed : '#dddfea') }]}>
+                <View style={[s.inputBubble, { backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
+                  borderColor: dictation.state === 'listening' ? colors.teal : (isDark ? colors.borderMed : GEMINI.border) }]}>
                   <TextInput
                     ref={inputRef}
                     value={dictation.state === 'listening' ? (preDictationText.current + dictation.liveTranscript) : text}
@@ -1666,7 +1666,7 @@ export default function ChatScreen() {
                     maxLength={1000}
                     scrollEnabled
                     editable={dictation.state !== 'listening'}
-                    style={[s.input, { color: colors.textPrimary }]}
+                    style={[s.input, { color: isDark ? colors.textPrimary : GEMINI.titleColor }]}
                   />
                   {/* Dictation — transcribes into the text field itself, distinct
                       from the outer Mic (records a separate voice-note attachment).
@@ -1700,8 +1700,8 @@ export default function ChatScreen() {
                     <Send size={17} color="#fff" />
                   </Pressable>
                 ) : (
-                  <Pressable onPress={startRecording} style={s.bareIconBtn}>
-                    <Mic size={22} color={colors.textSecondary} />
+                  <Pressable onPress={startRecording} style={[s.bareIconBtn, { backgroundColor: isDark ? colors.tealLight : (colors.teal + '1A'), borderRadius: 999 }]}>
+                    <Mic size={20} color={colors.teal} />
                   </Pressable>
                 )}
               </View>

@@ -74,8 +74,18 @@ const BORDER    = GEMINI.border;
 const CARD_BG   = GEMINI.cardBg;
 const CARD_SHADOW = GEMINI.cardShadow;
 
-export default function HealthRecordsScreen({ hideHeader = false, onClose, initialMemberId }: {
+export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffect = false, onClose, initialMemberId }: {
   hideHeader?: boolean;
+  // Set when a parent screen already owns hideTabBar()/showTabBar() for
+  // this whole flow (HealthPeoplePage.tsx, for its per-member drill-in) —
+  // skips this component's own identical effect so the tab bar isn't
+  // hidden-then-shown twice, and isn't prematurely re-shown by this
+  // screen's unmount while the parent is still open
+  // [live-requested: "let whoes records page handle the hide bottom nav,
+  // not its child pages"]. Independent of hideHeader: the per-member
+  // screen still renders its own header/back-link, just doesn't also
+  // touch the tab bar.
+  skipTabBarEffect?: boolean;
   // Present when reached via FamilyScreen's own FullPageOverlay — falls
   // back to router.back() for the legacy app/(tabs)/family-health.tsx
   // route, which has no FullPageOverlay ancestor of its own.
@@ -142,14 +152,14 @@ export default function HealthRecordsScreen({ hideHeader = false, onClose, initi
   const handleClose = () => { onClose ? onClose() : router.back(); };
 
   useEffect(() => {
-    if (hideHeader) return;
+    if (hideHeader || skipTabBarEffect) return;
     hideTabBar();
     useUIStore.getState().setFullBleedScreenActive(true);
     return () => {
       showTabBar();
       useUIStore.getState().setFullBleedScreenActive(false);
     };
-  }, [hideHeader]);
+  }, [hideHeader, skipTabBarEffect]);
 
   useEffect(() => {
     useUIStore.getState().setHealthRecordsActiveSegment(

@@ -26,7 +26,7 @@
  * white cards, pastel accent per card (cycling through the brand's real
  * *Light tokens, same pattern FamilyScreen.tsx's own section cards use).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -38,6 +38,8 @@ import HealthRecordsScreen from '../HealthRecordsScreen';
 import { useHealthRecords } from './useHealthRecords';
 import { medicationAdherenceHistory, formatDoseTime, today } from './types';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import FamilyAvatar from '@/components/FamilyAvatar';
 
 // "Gemini rhythm" tokens (CLAUDE.md rule 6 exception) — imported from
 // the shared module instead of redeclared locally
@@ -70,6 +72,17 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
   const linkC  = isDark ? colors.primary : LINK_BLUE;
 
   const handleClose = () => { onClose ? onClose() : router.back(); };
+
+  // Own the tab-bar hide/show for this whole flow — was previously only
+  // hidden once a member card was tapped (HealthRecordsScreen's own
+  // effect), so the tab bar stayed visible under this landing page itself
+  // [live-requested: "let whoes records page handle the hide bottom nav,
+  // not its child pages"]. HealthRecordsScreen is passed hideHeader below
+  // so its own identical effect doesn't also fire (duplicate hide/show).
+  useEffect(() => {
+    hideTabBar();
+    return () => showTabBar();
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
@@ -183,11 +196,20 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
               <TouchableOpacity key={m.id} onPress={() => setOpenMemberId(m.id)} activeOpacity={0.7}
                 style={{ paddingVertical: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                  <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: roleAccent.bg,
-                    alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '900', color: roleAccent.fg }}>
-                      {m.name.charAt(0).toUpperCase()}
-                    </Text>
+                  {/* Real photo/emoji avatar (FamilyAvatar's own tiers),
+                      kept in the previous rounded-square shape via
+                      shape="square" rather than FamilyAvatar's own default
+                      circle [live-requested: "bring the real avatars" then
+                      "i want to retain the shape of the avatar" / "you
+                      changed to the round i need the previous avatar
+                      shape"]. */}
+                  <View style={{ marginTop: 1, flexShrink: 0 }}>
+                    <FamilyAvatar
+                      name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+                      siblings={members.map(mm => mm.name)}
+                      size={38} ringColor={roleAccent.fg} bgColor={roleAccent.bg} ringWidth={0}
+                      shape="square"
+                    />
                   </View>
 
                   <View style={{ flex: 1 }}>
@@ -265,7 +287,7 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
           module this session). */}
       <FullPageOverlay visible={!!openMemberId} onDismiss={() => setOpenMemberId(null)} zIndex={55}>
         {openMemberId && (
-          <HealthRecordsScreen onClose={() => setOpenMemberId(null)} initialMemberId={openMemberId} />
+          <HealthRecordsScreen onClose={() => setOpenMemberId(null)} initialMemberId={openMemberId} skipTabBarEffect />
         )}
       </FullPageOverlay>
     </View>

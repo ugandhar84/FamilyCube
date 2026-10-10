@@ -23,6 +23,11 @@ interface AvatarProps {
   ringWidth?: number;
   /** Background color behind initials. Defaults to ringColor + '22'. */
   bgColor?: string;
+  /** 'square' (default, app-wide as of this change) or 'circle' — kept as
+   * an override for any spot that still wants a true circle.
+   * [live-requested: "lets change it globally - i like that" after seeing
+   * the rounded-square shape on HealthPeoplePage.tsx's member rows]. */
+  shape?: 'circle' | 'square';
 }
 
 // ─── Initials logic ───────────────────────────────────────────────────────────
@@ -58,10 +63,11 @@ export default function FamilyAvatar({
   ringColor = '#DF613C',
   ringWidth = 2,
   bgColor,
+  shape = 'square',
 }: AvatarProps) {
   const [imgError, setImgError] = useState(false);
   const bg = bgColor ?? ringColor + '25';
-  const radius = size / 2;
+  const radius = shape === 'square' ? size * 0.34 : size / 2;
   const fontScale = size < 36 ? 0.45 : 0.48;
 
   const containerStyle = {

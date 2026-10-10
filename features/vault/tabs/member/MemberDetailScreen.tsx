@@ -27,7 +27,7 @@
  */
 import { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput, ActivityIndicator, Share,
+  View, Text, TouchableOpacity, TextInput, ActivityIndicator, Share, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
@@ -182,7 +182,8 @@ export function MemberDetailScreen({
           </Text>
         </View>
 
-        <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24 }}>
+        <ScrollView showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24 }}>
           {confirmingRemove ? (
             <ConfirmRemoveBody
               member={member}
@@ -209,7 +210,7 @@ export function MemberDetailScreen({
               colors={colors} isDark={isDark}
             />
           )}
-        </View>
+        </ScrollView>
       </View>
     </FullPageOverlay>
   );

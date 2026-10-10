@@ -916,7 +916,23 @@ export default function ChatScreen() {
           <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, letterSpacing: 0.7,
             paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 }}>CHANNELS</Text>
           <View style={{ paddingHorizontal: 16, gap: 10 }}>
-          {allChannels.filter(ch => !(ch as any).isDM).map(ch => {
+          {(() => {
+            // Distinct pastel per row, cycling through the full brand set
+            // instead of bucketing by category — "seniors"-prefixed ids
+            // (Grandparents Grands, #the-grand-squad) previously all fell
+            // into the same `startsWith('seniors')` amber branch and
+            // rendered as identical cards [live-reported: "give distinct
+            // color cards"]. Special-cased channels (couple/all/parents)
+            // keep their meaningful color; everything else cycles by index
+            // so no two rows in a row share a tint.
+            const CYCLE = [
+              { fg: colors.teal, bg: colors.tealLight },
+              { fg: colors.amber, bg: colors.amberLight },
+              { fg: colors.pink, bg: colors.pinkLight },
+              { fg: colors.primary, bg: colors.primaryLight },
+            ];
+            let cycleIdx = 0;
+            return allChannels.filter(ch => !(ch as any).isDM).map(ch => {
             const chAny = ch as any;
             if (chAny.lock && !isParent) return null;
             const unread = unreadCounts[ch.id] ?? 0;
@@ -931,16 +947,14 @@ export default function ChatScreen() {
             const lastTime = lastActivity[ch.id]
               ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
               : null;
-            const chAccent = chAny.isCoupleChannel ? colors.pink
-              : ch.id === 'all' ? colors.teal
-              : ch.id.startsWith('seniors') ? colors.amber
-              : ch.id === 'parents' ? colors.primary
-              : colors.teal;
-            const chAccentLight = chAny.isCoupleChannel ? colors.pinkLight
-              : ch.id === 'all' ? colors.tealLight
-              : ch.id.startsWith('seniors') ? colors.amberLight
-              : ch.id === 'parents' ? colors.primaryLight
-              : colors.tealLight;
+            const isSpecial = chAny.isCoupleChannel || ch.id === 'all' || ch.id === 'parents';
+            const special = chAny.isCoupleChannel ? { fg: colors.pink, bg: colors.pinkLight }
+              : ch.id === 'all' ? { fg: colors.teal, bg: colors.tealLight }
+              : { fg: colors.primary, bg: colors.primaryLight }; // parents
+            const cycled = CYCLE[cycleIdx % CYCLE.length];
+            if (!isSpecial) cycleIdx++;
+            const chAccent = isSpecial ? special.fg : cycled.fg;
+            const chAccentLight = isSpecial ? special.bg : cycled.bg;
 
             return (
               <Pressable key={ch.id} onPress={() => openChannel(ch.id)}
@@ -990,7 +1004,8 @@ export default function ChatScreen() {
                 </View>
               </Pressable>
             );
-          })}
+          });
+          })()}
           </View>
 
           {/* DMs section */}
@@ -999,7 +1014,19 @@ export default function ChatScreen() {
               paddingHorizontal: 20, paddingTop: 24, paddingBottom: 10 }}>DIRECT MESSAGES</Text>
           )}
           <View style={{ paddingHorizontal: 16, gap: 10 }}>
-          {allChannels.filter(ch => (ch as any).isDM).map(ch => {
+          {(() => {
+            // Same distinct-per-row cycling as the Channels section above
+            // — was only 2 colors (teal for a parent, amber for everyone
+            // else), so 2+ DMs with the same role rendered identically
+            // [live-reported: "give distinct color cards"].
+            const DM_CYCLE = [
+              { fg: colors.teal, bg: colors.tealLight },
+              { fg: colors.amber, bg: colors.amberLight },
+              { fg: colors.pink, bg: colors.pinkLight },
+              { fg: colors.primary, bg: colors.primaryLight },
+            ];
+            let dmCycleIdx = 0;
+            return allChannels.filter(ch => (ch as any).isDM).map(ch => {
             const chAny = ch as any;
             const other = memberMap[chAny.otherId];
             const unread = unreadCounts[ch.id] ?? 0;
@@ -1012,8 +1039,10 @@ export default function ChatScreen() {
             const lastTime = lastActivity[ch.id]
               ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
               : null;
-            const dmAccent = other?.role === 'parent' ? colors.teal : colors.amber;
-            const dmLight = other?.role === 'parent' ? colors.tealLight : colors.amberLight;
+            const dmTint = DM_CYCLE[dmCycleIdx % DM_CYCLE.length];
+            dmCycleIdx++;
+            const dmAccent = dmTint.fg;
+            const dmLight = dmTint.bg;
 
             return (
               <Pressable key={ch.id} onPress={() => openChannel(ch.id)}
@@ -1053,7 +1082,8 @@ export default function ChatScreen() {
                 </View>
               </Pressable>
             );
-          })}
+          });
+          })()}
           </View>
         </ScrollView>
       </SafeAreaView>

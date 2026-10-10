@@ -25,7 +25,7 @@
  * screen's own inline confirm step (same type-to-confirm pattern
  * ProfileSettingsScreen.tsx's danger zone uses) rather than a second Modal.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ActivityIndicator, Share,
 } from 'react-native';
@@ -38,6 +38,8 @@ import { fmtTime } from '@/lib/dates';
 import { roleColor } from '../MemberCard';
 import type { FamilyMember } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { EditBody } from './MemberEditScreen';
+import { PinBody } from './MemberPinScreen';
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -101,16 +103,34 @@ function ActionRow({ label, onPress, primary, danger, disabled, colors, isDark }
 }
 
 export function MemberDetailScreen({
-  visible, member, siblings, onClose, onEdit, onChangePin,
+  visible, member, siblings, allMembers, onClose, onEdit, onChangePin, onSave, onSavePin, onLinkParent, restrictToRelationship, initialSection,
   isParentViewer, canChangePin, onDelete, onResetPin, onResendInvite, onGenerateRecoveryCode,
   colors, isDark, zIndex = 50,
 }: {
   visible: boolean;
   member: FamilyMember;
   siblings: string[];
+  /** Full roster — needed for inline Edit's "whose parent?" picker. */
+  allMembers?: any[];
   onClose: () => void;
-  onEdit: () => void;
-  onChangePin: () => void;
+  /** Legacy navigate-away callbacks — kept for any caller that still
+   * wants separate screens (e.g. kiosk's own renderShell path). Mobile's
+   * own Edit/Change-PIN rows now expand inline instead of calling these,
+   * when onSave/onSavePin are provided [live-requested: "pin change
+   * details edit we can do inline"]. */
+  onEdit?: () => void;
+  onChangePin?: () => void;
+  /** Persists the full edit form inline. When provided, "Edit basic
+   * details" expands EditBody in place instead of navigating away. */
+  onSave?: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => Promise<void>;
+  /** Persists a new PIN inline. When provided, "Change/Set PIN" expands
+   * PinBody in place instead of navigating away. */
+  onSavePin?: (memberId: string, pin: string) => Promise<void>;
+  onLinkParent?: (memberId: string, parentId: string) => void;
+  restrictToRelationship?: boolean;
+  /** Opens straight into the inline Edit or PIN form instead of the
+   * read-only view — e.g. a "Reset PIN" row elsewhere in the app. */
+  initialSection?: 'view' | 'edit' | 'pin';
   isParentViewer?: boolean;
   canChangePin?: boolean;
   onDelete?: (memberId: string) => Promise<void>;
@@ -121,25 +141,44 @@ export function MemberDetailScreen({
 }) {
   const insets = useSafeAreaInsets();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [showEdit, setShowEdit] = useState(initialSection === 'edit');
+  const [showPin, setShowPin] = useState(initialSection === 'pin');
+
+  // Re-sync when the caller's intent changes while already open — same
+  // pattern MemberProfileSheet's own section re-sync used (a new
+  // initialSection, a different member, or re-opening visible=true).
+  useEffect(() => {
+    if (!visible) return;
+    setShowEdit(initialSection === 'edit');
+    setShowPin(initialSection === 'pin');
+    setConfirmingRemove(false);
+  }, [visible, initialSection, member.id]);
 
   const roleLabel = member.role === 'senior' ? 'Grandparent' : member.role.charAt(0).toUpperCase() + member.role.slice(1);
   const subtitle = member.relationship ?? roleLabel;
 
-  const close = () => { setConfirmingRemove(false); onClose(); };
+  const close = () => { setConfirmingRemove(false); setShowEdit(false); setShowPin(false); onClose(); };
   const canvas = isDark ? colors.background : GEMINI.canvas;
   const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
   const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
   const linkC  = isDark ? GEMINI.blue : GEMINI.linkBlue;
 
+  const screenTitle = confirmingRemove ? 'Remove Member'
+    : showEdit ? 'Edit basic details'
+    : showPin ? (member.pin ? 'Change PIN' : 'Set PIN')
+    : member.name;
+  const backLabel = (confirmingRemove || showEdit || showPin) ? `‹ ${member.name.split(' ')[0]}` : `‹ People / ${member.name.split(' ')[0]}`;
+  const backAction = showEdit ? () => setShowEdit(false) : showPin ? () => setShowPin(false) : confirmingRemove ? () => setConfirmingRemove(false) : close;
+
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>‹ People{!confirmingRemove ? ` / ${member.name.split(' ')[0]}` : ''}</Text>
+          <TouchableOpacity onPress={backAction} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>{backLabel}</Text>
           </TouchableOpacity>
           <Text style={{ fontSize: 26, fontWeight: '800', color: titleC, marginTop: 8 }}>
-            {confirmingRemove ? 'Remove Member' : member.name}
+            {screenTitle}
           </Text>
         </View>
 
@@ -151,11 +190,21 @@ export function MemberDetailScreen({
               onConfirm={async (id) => { await onDelete!(id); close(); }}
               colors={colors} isDark={isDark}
             />
+          ) : showEdit && onSave ? (
+            <EditBody member={member} allMembers={allMembers ?? []} onCancel={() => setShowEdit(false)}
+              onSave={async (...args: any[]) => { await (onSave as any)(...args); setShowEdit(false); }}
+              onLinkParent={onLinkParent} restrictToRelationship={restrictToRelationship}
+              colors={colors} isDark={isDark} />
+          ) : showPin && onSavePin ? (
+            <PinBody member={member} onCancel={() => setShowPin(false)}
+              onSave={async (id, pin) => { await onSavePin(id, pin); setShowPin(false); }}
+              colors={colors} isDark={isDark} />
           ) : (
             <MemberDetailBody
               member={member} siblings={siblings} isParentViewer={isParentViewer} canChangePin={canChangePin}
               onDelete={onDelete} onResetPin={onResetPin} onResendInvite={onResendInvite} onGenerateRecoveryCode={onGenerateRecoveryCode}
-              onEdit={onEdit} onChangePin={onChangePin}
+              onEdit={onSave ? () => setShowEdit(true) : onEdit ?? (() => {})}
+              onChangePin={onSavePin ? () => setShowPin(true) : onChangePin ?? (() => {})}
               onRequestRemove={() => setConfirmingRemove(true)}
               colors={colors} isDark={isDark}
             />

@@ -112,37 +112,23 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
     return <>{renderShell(visible, close, title, subtitle, body)}</>;
   }
 
-  // ── Mobile path: 3 separate full-page screens ───────────────────────────
+  // ── Mobile path: one full-page screen — Edit/Change-PIN now expand
+  // inline inside MemberDetailScreen itself instead of navigating to
+  // separate MemberEditScreen/MemberPinScreen overlays
+  // [live-requested: "pin change details edit we can do inline"]. Those
+  // two files are kept for kiosk's renderShell path above, which still
+  // swaps its own drawer per section. initialSection is still honored —
+  // a caller requesting 'edit' or 'pin' directly (e.g. "Reset PIN" from
+  // elsewhere) opens MemberDetailScreen straight into that inline form.
   return (
-    <>
-      <MemberDetailScreen
-        visible={visible && section === 'view'}
-        member={member} siblings={siblings} onClose={close}
-        onEdit={() => setSection('edit')} onChangePin={() => setSection('pin')}
-        isParentViewer={isParentViewer} canChangePin={canChangePin}
-        onDelete={onDelete} onResetPin={onResetPin} onResendInvite={onResendInvite} onGenerateRecoveryCode={onGenerateRecoveryCode}
-        colors={colors} isDark={isDark} zIndex={50}
-      />
-      {onSave && (
-        <MemberEditScreen
-          visible={visible && section === 'edit'}
-          member={member} allMembers={allMembers ?? []}
-          onClose={() => setSection('view')}
-          onSave={async (...args: any[]) => { await (onSave as any)(...args); close(); }}
-          onLinkParent={onLinkParent}
-          restrictToRelationship={isSenior}
-          colors={colors} isDark={isDark} zIndex={51}
-        />
-      )}
-      {onSavePin && (
-        <MemberPinScreen
-          visible={visible && section === 'pin'}
-          member={member}
-          onClose={() => setSection('view')}
-          onSave={async (id, pin) => { await onSavePin(id, pin); close(); }}
-          colors={colors} isDark={isDark} zIndex={51}
-        />
-      )}
-    </>
+    <MemberDetailScreen
+      visible={visible}
+      member={member} siblings={siblings} allMembers={allMembers} onClose={close}
+      onSave={onSave as any} onSavePin={onSavePin} onLinkParent={onLinkParent} restrictToRelationship={isSenior}
+      initialSection={section === 'edit' || section === 'pin' ? section : 'view'}
+      isParentViewer={isParentViewer} canChangePin={canChangePin}
+      onDelete={onDelete} onResetPin={onResetPin} onResendInvite={onResendInvite} onGenerateRecoveryCode={onGenerateRecoveryCode}
+      colors={colors} isDark={isDark} zIndex={50}
+    />
   );
 }

@@ -251,9 +251,10 @@ export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
 export function RecordingBar({ elapsed, isDark, onStop }: {
   elapsed: number; isDark: boolean; onStop: () => void;
 }) {
-  // Same card/border rhythm as the attach sheet (s.attachMenu) instead of a
-  // separate red-tinted bar — the red accent lives only on the dot/timer/
-  // stop button now, not the whole container.
+  // Same sheet rhythm as the attach menu (s.attachMenu/attachIcon) — a
+  // taller card panel with a pastel icon chip, not a thin inline strip
+  // [live-requested: "may be use the same bar of the attach sheet?" /
+  // "waht to use this sheet for the mic"].
   const bg     = isDark ? '#1D1A24' : GEMINI.cardBg;
   const border = isDark ? 'rgba(238,128,88,0.15)' : GEMINI.border;
   const MAX    = 10;
@@ -272,30 +273,37 @@ export function RecordingBar({ elapsed, isDark, onStop }: {
   const showCountdown = remaining <= 3;
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
-      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
-      {/* Blinking REC dot */}
-      <Animated.View style={{ width: 10, height: 10, borderRadius: 5,
-        backgroundColor: '#EF4444', opacity: blinkAnim }} />
-      {/* Elapsed */}
-      <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444', minWidth: 38, fontVariant: ['tabular-nums'] }}>
-        {formatDuration(elapsed)}
-      </Text>
-      {/* Live sine waveform — red */}
-      <LiveWaveform active color='#EF4444' trackColor={isDark ? '#3a3440' : '#F0EDE6'} />
-      {/* Countdown warning */}
-      {showCountdown && (
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c', minWidth: 24 }}>
-          -{Math.ceil(remaining)}s
-        </Text>
-      )}
-      {/* Stop button */}
-      <Pressable onPress={onStop}
-        style={withAndroidShadowFix({ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 })}>
-        <Square size={16} color="#fff" fill="#fff" />
-      </Pressable>
+    <View style={{ paddingHorizontal: 14, paddingVertical: 12,
+      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {/* Pastel recording chip — same 52x52/radius-16 shape as attachIcon */}
+        <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: '#EF444422',
+          alignItems: 'center', justifyContent: 'center' }}>
+          <Animated.View style={{ width: 12, height: 12, borderRadius: 6,
+            backgroundColor: '#EF4444', opacity: blinkAnim }} />
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444', minWidth: 38, fontVariant: ['tabular-nums'] }}>
+              {formatDuration(elapsed)}
+            </Text>
+            {showCountdown && (
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c' }}>
+                -{Math.ceil(remaining)}s
+              </Text>
+            )}
+          </View>
+          {/* Live sine waveform — red */}
+          <LiveWaveform active color='#EF4444' trackColor={isDark ? '#3a3440' : '#F0EDE6'} />
+        </View>
+        {/* Stop button */}
+        <Pressable onPress={onStop}
+          style={withAndroidShadowFix({ width: 44, height: 44, borderRadius: 22, backgroundColor: '#EF4444',
+            alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 })}>
+          <Square size={17} color="#fff" fill="#fff" />
+        </Pressable>
+      </View>
     </View>
   );
 }

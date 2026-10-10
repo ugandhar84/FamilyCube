@@ -16,7 +16,7 @@ import { View } from 'react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import GpsTab from '@/features/vault/tabs/GpsTab';
 
-export default function FindFamScreen() {
+export default function FindFamScreen({ onClose }: { onClose?: () => void }) {
   const { colors, isDark } = useTheme();
 
   return (

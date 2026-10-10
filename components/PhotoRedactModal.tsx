@@ -20,7 +20,7 @@ export interface RedactableImage { base64: string; mimeType: string }
 type RedactBox = { x: number; y: number; w: number; h: number };
 
 export default function PhotoRedactModal({
-  visible, images, accentColor, title, subtitle, onDiscard, onConfirm, confirmLabel,
+  visible, images, accentColor, title, subtitle, onDiscard, onConfirm, confirmLabel, onBoxCountConfirmed,
 }: {
   visible: boolean;
   images: RedactableImage[];
@@ -28,12 +28,9 @@ export default function PhotoRedactModal({
   title?: string;
   subtitle?: string;
   onDiscard: () => void;
-  /** Called with the SAME images array, but the active page swapped for its
-   * flattened (redacted) version when a capture succeeds — falls back to
-   * the original unredacted image for that page if capture fails, same
-   * fallback behavior as the original ScanReviewSheet implementation. */
   onConfirm: (finalImages: RedactableImage[]) => void;
   confirmLabel?: string;
+  onBoxCountConfirmed?: (count: number) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [redactBoxesByImage, setRedactBoxesByImage] = useState<RedactBox[][]>([]);
@@ -117,11 +114,13 @@ export default function PhotoRedactModal({
       const finalImages = images.map((im, idx) =>
         (idx === activeIdx && capturedB64) ? { base64: capturedB64, mimeType: 'image/jpeg' } : im
       );
+      const totalBoxes = (redactBoxesByImage ?? []).reduce((sum, arr) => sum + (arr?.length ?? 0), 0);
+      onBoxCountConfirmed?.(totalBoxes);
       onConfirm(finalImages);
     } catch {
       onConfirm(images);
     }
-  }, [images, activeIdx, onConfirm]);
+  }, [images, activeIdx, onConfirm, onBoxCountConfirmed, redactBoxesByImage]);
 
   if (images.length === 0) return null;
   const img = images[activeIdx];

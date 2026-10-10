@@ -33,18 +33,12 @@ function parseLocalDateStr(s: string): Date {
   return y && m && d ? new Date(y, m - 1, d) : new Date();
 }
 
-export default function AddVaxModal({ visible, onClose, onSave, members, colors, isDark, editing }: {
+export default function AddVaxModal({ visible, onClose, onSave, members, colors, isDark, editing, lockedMemberId }: {
   visible: boolean; onClose: () => void;
-  // memberId + form as before for a new record; vaxId is passed through
-  // unchanged so the caller's onSave can tell a create from an update
-  // apart (undefined = create).
   onSave: (memberId: string, form: VaxForm, vaxId?: string) => Promise<void>;
   members: any[]; colors: any; isDark: boolean;
-  // Seeds the form from an existing saved vaccine (or a freshly-scanned,
-  // not-yet-saved one) instead of BLANK_VAX — [live-requested: "we should
-  // have vacc edit feature also once we add"], this same modal now does
-  // double duty as the edit-an-existing-vaccine screen, not just add.
   editing?: { vaxId?: string; memberId: string; form: VaxForm };
+  lockedMemberId?: string;
 }) {
   const [form, setForm]               = useState<VaxForm>(BLANK_VAX);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');

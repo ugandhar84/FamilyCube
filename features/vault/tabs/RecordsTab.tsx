@@ -630,7 +630,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         subtitle="Drag to draw black boxes over anything you don't want included"
         confirmLabel="Confirm redactions · review findings →"
         onDiscard={() => setPendingPhoto(null)}
-        onBoxCountConfirmed={(count) => { pendingBoxCount.current = count; }}
+        onBoxCountConfirmed={(count: number) => { pendingBoxCount.current = count; }}
         onConfirm={handleRedactConfirm}
       />
 

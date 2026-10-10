@@ -28,6 +28,7 @@ import * as DocPicker from 'expo-document-picker';
 import { showToast } from '@/components/AppToast';
 import { showAlert } from '@/components/AppAlert';
 import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── RecordsTab ───────────────────────────────────────────────────────────────
 
@@ -670,11 +671,15 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
 // kept as a tiny local component so RecordsTab's main render stays
 // readable; not exported, not reused elsewhere.
 function TouchableOpacityBringIn({ onPress, colors, isDark }: { onPress: () => void; colors: any; isDark: boolean }) {
-  const BLUE = '#345DE3';
-  const border = isDark ? colors.border : '#DFE5EF';
-  const cardBg = isDark ? colors.card : '#FFFFFF';
-  const titleC = isDark ? colors.textPrimary : '#172337';
-  const bodyC  = isDark ? colors.textSecondary : '#657185';
+  // "Gemini rhythm" tokens (CLAUDE.md rule 6 exception) — imported from
+  // the shared module [live-reported: "i still see text in the forms not
+  // converted" — this component had its own inline raw hex, missed by
+  // the earlier file-level sweep since it wasn't a top-of-file const block].
+  const BLUE = GEMINI.blue;
+  const border = isDark ? colors.border : GEMINI.border;
+  const cardBg = isDark ? colors.card : GEMINI.cardBg;
+  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
   return (
     <TouchableOpacity onPress={onPress}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12,

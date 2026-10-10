@@ -35,14 +35,18 @@ import {
   Camera, Upload, Shield, FileText, ChevronDown, Check,
 } from 'lucide-react-native';
 import { TAGS, RecordTag, memberColor } from './types';
+import { GEMINI } from '@/constants/geminiRhythm';
 
-const PAGE_BG   = '#F3F5F2';
-const TITLE_CLR = '#172337';
-const BODY_CLR  = '#657185';
-const BLUE      = '#345DE3';
-const LINK_BLUE = '#294FC7';
-const BORDER    = '#DFE5EF';
-const CARD_BG   = '#FFFFFF';
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception) — imported from
+// the shared module instead of redeclared locally
+// [live-requested: "make modularize for simplicity"].
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+const BLUE      = GEMINI.blue;
+const LINK_BLUE = GEMINI.linkBlue;
+const BORDER    = GEMINI.border;
+const CARD_BG   = GEMINI.cardBg;
 
 function contentGroupStyle(cardBg: string, isDark: boolean, border: string) {
   return isDark

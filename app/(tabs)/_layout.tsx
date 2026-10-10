@@ -21,7 +21,6 @@ import { useUIStore } from '@/store/uiStore';
 import { Sparkles, Plus, Home, ListChecks, MessageCircle, CalendarDays } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 import { useDeviceClass } from '@/lib/useDeviceClass';
-import { GEMINI } from '@/constants/geminiRhythm';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -153,10 +152,11 @@ function CustomTabBar({ state, navigation }: any) {
   // Store moved to Hub pills — badge was on the store tab, now unused here
   const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
-  // Nav bar is solid near-black (GEMINI.titleColor) now in both themes,
-  // so inactive-icon color must read against a dark pill regardless of
+  // Nav bar is a solid warm espresso-black now in both themes, so
+  // inactive-icon color must read against a dark pill regardless of
   // light/dark mode — was colors.textSecondary in light mode, a dark
   // warm-gray meant for a light background, nearly invisible here.
+  const NAV_BAR_BG    = '#211A13';
   const activeColor   = colors.primary;
   const inactiveColor = 'rgba(255,255,255,0.55)';
 
@@ -202,15 +202,15 @@ function CustomTabBar({ state, navigation }: any) {
       }}
     >
       {/* Solid near-black pill, both themes — was a frosted light-glass
-          blur. Uses the exact same near-black (GEMINI.titleColor,
-          #0D1210) already used as a selected-pill fill across Home
-          Care/School forms [live-requested: "can we make the bottom nav
-          near black like in the home care pill color?" -> "no see that
-          near black not pure black.. see in the pill color in the
-          homecare forms"]. */}
+          blur, then GEMINI.titleColor (#0D1210, a cool neutral near-
+          black) which read as a disconnected dark slab against the warm
+          cream canvas [live-reported: "does this combination look good
+          for the background and the nav color matching?" -> "make nice
+          combination color"]. Warmed to a dark espresso-brown with the
+          same warm undertone as the canvas (#ECE6DE) instead. */}
       <View
         style={[styles.bar, {
-          backgroundColor: GEMINI.titleColor,
+          backgroundColor: NAV_BAR_BG,
           overflow: 'hidden',
           shadowColor: '#000',
           shadowOpacity: 0.3,
@@ -259,7 +259,7 @@ function CustomTabBar({ state, navigation }: any) {
                   {name === 'tasks' && overdueCount > 0 && (
                     <Animated.View
                       accessibilityLabel={`${overdueCount} overdue`}
-                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: GEMINI.titleColor, transform: [{ scale: overduePulse }] }]}>
+                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: NAV_BAR_BG, transform: [{ scale: overduePulse }] }]}>
                       <Text style={styles.countBadgeText}>{overdueCount > 99 ? '99+' : overdueCount}</Text>
                     </Animated.View>
                   )}

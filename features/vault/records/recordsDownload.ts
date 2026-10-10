@@ -64,7 +64,7 @@ export async function downloadSingle(rec: MedRecord): Promise<void> {
   const result = await FileSystem.downloadAsync(url, uri);
   console.log('[recordsDownload] downloadAsync result — status:', result.status, 'uri:', result.uri);
   // Check actual file size
-  const info = await FileSystem.getInfoAsync(result.uri, { size: true });
+  const info = await FileSystem.getInfoAsync(result.uri);
   console.log('[recordsDownload] file info after download:', JSON.stringify(info));
   if (result.status !== 200) throw new Error(`Download failed: HTTP ${result.status}`);
 

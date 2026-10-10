@@ -56,6 +56,7 @@ export default function HomeownerNotesScreen({ hideHeader = false, onClose }: { 
             subtitle="Track maintenance, repairs, and home tasks"
             accent="teal"
             Icon={Home}
+            onTitlePress={onClose}
             topInset={insets.top}
           />
         </View>

@@ -455,6 +455,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
         isDark={isDark}
         hideHeader={hideHeader}
         insets={insets}
+        onClose={onClose}
       />
     );
   }
@@ -502,6 +503,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               : 'List is clear'}
             accent="primary"
             Icon={ShoppingCart}
+            onTitlePress={onClose}
             topInset={insets.top}
           />
         </View>
@@ -913,13 +915,14 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 // KioskMealsTab.tsx), kept in sync with that one deliberately.
 const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
 
-function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideHeader, insets }: {
+function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideHeader, insets, onClose }: {
   activeMemberId: string;
   members: any[];
   colors: any;
   isDark: boolean;
   hideHeader: boolean;
   insets: { top: number };
+  onClose?: () => void;
 }) {
   const familyId = (members.find(m => m.id === activeMemberId) as any)?.familyId ?? 'family-1';
   const groceryItems = useGroceryStore(s => s.items);
@@ -967,6 +970,7 @@ function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideH
             title="My Requested Groceries"
             accent="primary"
             Icon={ShoppingCart}
+            onTitlePress={onClose}
             topInset={insets.top}
           />
         </View>

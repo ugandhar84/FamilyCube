@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { PAGE } from '@/constants/theme';
@@ -22,6 +22,7 @@ const ACCENT: Record<PageAccent, { fg: 'primary' | 'teal' | 'amber' | 'pink' | '
  */
 export function PageHeading({
   eyebrow, title, subtitle, accent = 'primary', Icon, right, topInset = 0, paddingHorizontal = PAGE.contentPadding,
+  onTitlePress,
 }: {
   eyebrow?: string;
   title: string;
@@ -31,11 +32,21 @@ export function PageHeading({
   right?: ReactNode;
   topInset?: number;
   paddingHorizontal?: number;
+  // Optional — when set, the title text itself becomes the back/close tap
+  // target instead of a separate breadcrumb link above it (same "tap the
+  // heading to go back" pattern as Grocery's sub-screen titles)
+  // [live-requested: "if we click on the heading we should navigate
+  // back"]. Every existing caller that doesn't pass this keeps the plain,
+  // non-interactive title unchanged.
+  onTitlePress?: () => void;
 }) {
   const { colors } = useTheme();
   const a = ACCENT[accent];
   const fg = colors[a.fg];
   const bg = colors[a.bg];
+  const titleText = (
+    <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...PAGE.title, color: colors.textPrimary, lineHeight: 36 }}>{title}</Text>
+  );
   return (
     <View style={{ paddingHorizontal, paddingTop: topInset + PAGE.headerPaddingTop, paddingBottom: PAGE.headerPaddingBottom }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
@@ -46,7 +57,9 @@ export function PageHeading({
               <Text numberOfLines={1} style={{ ...PAGE.eyebrow, color: colors.textTertiary, textTransform: 'uppercase' }}>{eyebrow}</Text>
             </View>
           )}
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...PAGE.title, color: colors.textPrimary, lineHeight: 36 }}>{title}</Text>
+          {onTitlePress
+            ? <Pressable onPress={onTitlePress} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>{titleText}</Pressable>
+            : titleText}
           {!!subtitle && (
             <Text numberOfLines={2} style={{ ...PAGE.subtitle, color: colors.textSecondary, marginTop: PAGE.headerGap }}>{subtitle}</Text>
           )}

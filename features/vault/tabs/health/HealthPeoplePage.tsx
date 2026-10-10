@@ -101,9 +101,10 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
             return (due - Date.now()) < 30 * 24 * 3600_000;
           }).length;
           const allClear = totalOverdue === 0 && totalDueSoon === 0;
-          const tint = allClear
-            ? { bg: colors.tealLight, fg: colors.teal }
-            : { bg: colors.amberLight, fg: colors.amber };
+          // Always amber — was teal when all-clear, amber only when
+          // something needed attention; kept on amber in every state now
+          // [live-requested: "keep the banners on the amber color"].
+          const tint = { bg: colors.amberLight, fg: colors.amber };
           return (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
               backgroundColor: tint.bg, borderRadius: 16, padding: 16 }}>

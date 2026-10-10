@@ -49,6 +49,7 @@ import { EnRouteModal } from './hubComponents';
 import { fmtClock } from './hubUtils';
 import GlobalCelebration from '@/components/GlobalCelebration';
 import { AppsQuickAccessPills } from './AppsQuickAccessPills';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export default function HubScreen() {
   const { colors, isDark } = useTheme();
@@ -497,10 +498,18 @@ export default function HubScreen() {
   // scrolls up under the status bar/notch area on a real device instead of
   // staying clear of it. kid/teen/senior keep the existing SafeAreaView
   // top inset unchanged (this work hasn't touched those views).
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care's own identical comment for the full
+  // rationale) [live-requested: "how about tasks and home, chat, family"
+  // -> "proceed"]. Applies to every role (parent/kid/teen/senior) — the
+  // Figma Make parent reskin's own exact spec didn't specify a canvas
+  // color beyond the app's own background token, so this doesn't conflict
+  // with its pixel-faithful layout/spacing values, only the base fill.
+  const hubCanvas = isDark ? colors.background : GEMINI.canvas;
   const RootContainer = isParent ? View : SafeAreaView;
   const rootProps = isParent
-    ? { style: { flex: 1, backgroundColor: colors.background } }
-    : { style: { flex: 1, backgroundColor: colors.background }, edges: ['top'] as const };
+    ? { style: { flex: 1, backgroundColor: hubCanvas } }
+    : { style: { flex: 1, backgroundColor: hubCanvas }, edges: ['top'] as const };
 
   return (
     <RootContainer {...rootProps}>
@@ -531,7 +540,7 @@ export default function HubScreen() {
         // chip's onPress never fires. (CalendarScreen avoids it by rendering its
         // modals outside the ScrollView.)
         keyboardShouldPersistTaps="handled"
-        style={{ backgroundColor: colors.background }}
+        style={{ backgroundColor: hubCanvas }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         // The shared Ask Cube FAB (app/(tabs)/_layout.tsx) floats at
         // bottom: insets.bottom + 74, is 52px tall, and sits ABOVE this

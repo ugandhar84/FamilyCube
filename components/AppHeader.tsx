@@ -18,6 +18,7 @@ import { LETTER_SPACING } from '@/constants/theme';
 import { IconCubeMark, BRAND } from './FamilyCubeLogo';
 import PersonaSwitcherDropdown from './PersonaSwitcherDropdown';
 import FamilyAvatar from './FamilyAvatar';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -251,8 +252,13 @@ export default function AppHeader({
       <View style={{ position: 'relative', zIndex: 30 }}
         onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
         {/* Main row: avatar + greeting/name + actions */}
+        {/* Transparent instead of a hardcoded white/near-black fill — sits
+            directly on whatever canvas the caller's screen supplies (e.g.
+            Hub's warm Gemini-rhythm cream) rather than painting its own
+            seam over it [live-requested: "i think we can keep that on the
+            canvas directly"]. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, backgroundColor: 'transparent' }}>
           <TouchableOpacity
             onPress={handlePersonaPress} activeOpacity={0.75}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
@@ -263,21 +269,15 @@ export default function AppHeader({
               siblings={members.map(m => m.name)} size={42}
             />
             <View>
-              <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600', letterSpacing: 0.1 }} numberOfLines={1}>{greeting}</Text>
-              <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5, marginTop: 1 }} numberOfLines={1}>{firstName}</Text>
+              <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700', letterSpacing: 0.1 }} numberOfLines={1}>{greeting}</Text>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, letterSpacing: -0.5, marginTop: 1 }} numberOfLines={1}>{firstName}</Text>
             </View>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {onAddPress && (
-              <TouchableOpacity
-                onPress={onAddPress} activeOpacity={0.8}
-                style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: colors.card,
-                  shadowColor: '#2C3244', shadowOffset: { width: 0, height: 5 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 16 }}
-              >
-                <Text style={{ fontSize: 22, color: colors.primary, fontWeight: '300', lineHeight: 26 }}>+</Text>
-              </TouchableOpacity>
-            )}
+            {/* "+" quick-add button removed from the header per explicit
+                request ("remove + from the header wherever it is
+                present") — onAddPress is still accepted as a prop so
+                callers don't need changes, it's just no longer rendered. */}
             <TouchableOpacity
               style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
               onPress={onBellPress} activeOpacity={0.8}

@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, Pressable, StyleSheet, Animated,
   TextInput, Alert, Platform, Modal, KeyboardAvoidingView, Keyboard, TouchableOpacity,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
@@ -15,7 +13,6 @@ import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
@@ -23,6 +20,16 @@ import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { fmtDateShort } from '@/lib/dates';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import FullPageOverlay from '@/components/FullPageOverlay';
+
+// ─── Figma rhythm tokens ──────────────────────────────────────────────────────
+const PAGE_BG   = '#F4F6FA';
+const TITLE_CLR = '#172337';
+const BODY_CLR  = '#657185';
+const BORDER    = '#DFE5EF';
+const AMBER_TXT = '#B5720A';
+const BLUE_BTN  = '#345DE3';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always
@@ -314,16 +321,19 @@ function PerkDetailSheet({ reward, allMembers, colors, isDark, isParent, onClose
 const CATEGORIES = ['Treats', 'Experiences', 'Screen Time', 'Privileges', 'Special'];
 const EMOJIS = ['🎮','🎬','🍕','🎂','🏖️','🎪','📱','🛍️','🎁','⭐','🏆','🎵','🎨','🎯','🚀'];
 
-function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
-  visible: boolean; editing?: Reward | null; colors: any;
+function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete }: {
+  visible: boolean; editing?: Reward | null; colors: any; isDark: boolean;
   onClose: () => void; onSave: (data: any) => void; onDelete?: (r: Reward) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [name,  setName]  = useState('');
   const [desc,  setDesc]  = useState('');
   const [cost,  setCost]  = useState('50');
   const [emoji, setEmoji] = useState('🎁');
   const [cat,   setCat]   = useState('Special');
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+
+  const canvas = isDark ? colors.background : PAGE_BG;
+  const P = colors.primary;
 
   useEffect(() => {
     if (visible) {
@@ -336,116 +346,154 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
   }, [visible, editing]);
 
   const submit = () => {
-    if (!name.trim()) return;
+    if (!name.trim()) { showToast('Perk title is required'); return; }
     onSave({ title: name.trim(), description: desc.trim() || undefined,
       cost: parseInt(cost) || 50, emoji, category: cat });
     onClose();
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={70}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={withAndroidShadowFix({ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card,
-            borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 })}>
-
-            {/* Drag handle */}
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
-
-            {/* Fixed header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <Text style={{ flex: 1, fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-                {editing ? 'Edit Perk' : 'Create Custom Perk'}
-              </Text>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-            <Text style={[s.label, { color: colors.textSecondary }]}>PERK TITLE</Text>
-            <TextInput value={name} onChangeText={setName}
-              placeholder="e.g. Movie Night Choice"
-              placeholderTextColor={colors.textTertiary}
-              style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                backgroundColor: colors.surface }]} />
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.label, { color: colors.textSecondary }]}>COIN COST</Text>
-                <TextInput value={cost} onChangeText={setCost} keyboardType="number-pad"
-                  style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                    backgroundColor: colors.surface, marginBottom: 0 }]} />
-              </View>
-            </View>
-
-            <Text style={[s.label, { color: colors.textSecondary, marginTop: 10 }]}>CATEGORY</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {CATEGORIES.map(c => (
-                  <Pressable key={c} onPress={() => setCat(c)}
-                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1.5,
-                      backgroundColor: cat === c ? colors.primary + '20' : colors.surface,
-                      borderColor: cat === c ? colors.primary : colors.border }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700',
-                      color: cat === c ? colors.primary : colors.textSecondary }}>{c}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-
-            <Text style={[s.label, { color: colors.textSecondary }]}>DESCRIPTION (optional)</Text>
-            <TextInput value={desc} onChangeText={setDesc} placeholder="Brief description…"
-              placeholderTextColor={colors.textTertiary}
-              style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                backgroundColor: colors.surface }]} />
-
-            <Text style={[s.label, { color: colors.textSecondary }]}>EMOJI ICON</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {EMOJIS.map(e => (
-                  <Pressable key={e} onPress={() => setEmoji(e)}
-                    style={[s.emojiBtn, {
-                      backgroundColor: emoji === e ? colors.primary + '25' : colors.surface,
-                      borderColor: emoji === e ? colors.primary : colors.border,
-                    }]}>
-                    <Text style={{ fontSize: 20 }}>{e}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-            </ScrollView>
-
-            {/* Fixed footer */}
-            <View style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: 10 }}>
-              <Pressable onPress={submit}
-                style={[s.submitBtn, { backgroundColor: name.trim() ? colors.teal : colors.border }]}>
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
-                  {editing ? 'Save Changes' : 'Publish Perk to Family Store'}
-                </Text>
-              </Pressable>
-              {editing && onDelete && (
-                <Pressable onPress={() => onDelete(editing)}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>
-                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                  <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '700' }}>Delete Perk</Text>
-                </Pressable>
-              )}
-            </View>
+        <View style={{ flex: 1, backgroundColor: canvas }}>
+          {/* ReviewInbox-style header */}
+          <View style={{
+            paddingHorizontal: 20,
+            paddingTop: insets.top + 12,
+            paddingBottom: 16,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+            backgroundColor: canvas,
+            gap: 6,
+          }}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Store</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34,
+              letterSpacing: -0.5, color: colors.textPrimary }}>
+              {editing ? 'Edit Perk' : 'New Perk'}
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.textSecondary }}>
+              {editing ? 'Update perk details below.' : 'Build a new reward for your family.'}
+            </Text>
           </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="always"
+            onScrollBeginDrag={Keyboard.dismiss}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: insets.bottom + 48 }}
+            style={{ flex: 1, backgroundColor: canvas }}>
+
+            {/* Card: Title + Cost */}
+            <View style={{ borderRadius: 22, backgroundColor: isDark ? colors.card : '#fff', padding: 18,
+              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: P }} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: P, textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                  Details
+                </Text>
+              </View>
+              <Text style={[s.label, { color: colors.textSecondary }]}>PERK TITLE</Text>
+              <TextInput value={name} onChangeText={setName}
+                placeholder="e.g. Movie Night Choice"
+                placeholderTextColor={colors.textTertiary}
+                style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                  backgroundColor: colors.surface }]} />
+              <Text style={[s.label, { color: colors.textSecondary, marginTop: 6 }]}>COIN COST</Text>
+              <TextInput value={cost} onChangeText={setCost} keyboardType="number-pad"
+                style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                  backgroundColor: colors.surface }]} />
+              <Text style={[s.label, { color: colors.textSecondary, marginTop: 6 }]}>DESCRIPTION (optional)</Text>
+              <TextInput value={desc} onChangeText={setDesc} placeholder="Brief description…"
+                placeholderTextColor={colors.textTertiary} multiline numberOfLines={2}
+                style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                  backgroundColor: colors.surface, height: 68, textAlignVertical: 'top' }]} />
+            </View>
+
+            {/* Card: Category */}
+            <View style={{ borderRadius: 22, backgroundColor: isDark ? colors.card : '#fff', padding: 18,
+              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.teal }} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal, textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                  Category
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {CATEGORIES.map(c => (
+                  <TouchableOpacity key={c} onPress={() => setCat(c)}
+                    style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1.5,
+                      backgroundColor: cat === c ? colors.teal + '20' : colors.surface,
+                      borderColor: cat === c ? colors.teal : colors.border }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700',
+                      color: cat === c ? colors.teal : colors.textSecondary }}>
+                      {c}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Card: Emoji */}
+            <View style={{ borderRadius: 22, backgroundColor: isDark ? colors.card : '#fff', padding: 18,
+              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.amber }} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.amber, textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                  Icon
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {EMOJIS.map(e => (
+                  <TouchableOpacity key={e} onPress={() => setEmoji(e)}
+                    style={{ width: 48, height: 48, borderRadius: 14, borderWidth: 2,
+                      alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: emoji === e ? colors.primary + '18' : colors.surface,
+                      borderColor: emoji === e ? colors.primary : colors.border }}>
+                    <Text style={{ fontSize: 22 }}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Save */}
+            <TouchableOpacity onPress={submit}
+              style={{ borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+                backgroundColor: name.trim() ? BLUE_BTN : (isDark ? colors.surface : '#D0D5E0'),
+                ...Platform.select({ ios: { shadowColor: BLUE_BTN, shadowOpacity: name.trim() ? 0.3 : 0, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }, android: {} }) }}>
+              <Text style={{ fontSize: 16, fontWeight: '800',
+                color: name.trim() ? '#fff' : colors.textTertiary }}>
+                {editing ? 'Save Changes' : 'Publish to Family Store'}
+              </Text>
+            </TouchableOpacity>
+
+            {editing && onDelete && (
+              <TouchableOpacity onPress={() => onDelete(editing)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, paddingVertical: 12 }}>
+                <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Remove Perk</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </FullPageOverlay>
   );
 }
 
 // ─── StoreScreen ──────────────────────────────────────────────────────────────
 
-export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
+export default function StoreScreen({
+  hideHeader = false,
+  onClose,
+}: {
+  hideHeader?: boolean;
+  onClose?: () => void;
+}) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { members, activeMemberId, loaded, loadFromStorage, awardCoins } = useFamilyStore();
   const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
@@ -468,6 +516,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadRewards(); }, []);
+  useEffect(() => { hideTabBar(); return () => { showTabBar(); }; }, []);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
@@ -531,46 +580,35 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const redeemFrom = async (r: Reward, wallet: 'mainCoins' | 'gpCoins') => {
     if (!activeMember) return;
     const ok = await redeemReward(r.id, activeMember.id, wallet);
-    if (!ok) { Alert.alert('Unable to Redeem', 'This perk is no longer available.'); return; }
+    if (!ok) { showToast('This perk is no longer available'); return; }
     useFamilyStore.setState(s => ({
       members: s.members.map(m => m.id === activeMember.id ? { ...m, [wallet]: Math.max(0, (m[wallet] ?? 0) - r.cost) } : m),
     }));
-    Alert.alert('🎉 Redeemed!', `"${r.title}" redeemed for ${r.cost} 🪙 from your ${wallet === 'gpCoins' ? 'Grandparent Bonus jar' : 'Main Coins'}! Ask a parent for your reward.`);
+    showToast(r.requiresApproval
+      ? `${r.emoji} Requested — waiting for parent approval`
+      : `🎉 ${r.title} redeemed!`);
   };
 
   const handleRedeem = (r: Reward) => {
     if (myCoins < r.cost) {
-      Alert.alert('Insufficient Coins', `You need ${r.cost} 🪙 but only have ${myCoins} 🪙`);
+      showToast(`Need ${r.cost - myCoins} more coins for this perk`);
       return;
     }
-    // No real choice to make — redeem straight from whichever single jar
-    // covers it (prefer Main Coins first, matching how coins already read
-    // as "the" balance everywhere else in the app).
     if (myGpCoins === 0 || myMainCoins >= r.cost) {
-      Alert.alert('Redeem Perk?', `Redeem "${r.title}" for ${r.cost} 🪙?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redeem', onPress: () => redeemFrom(r, 'mainCoins') },
-      ]);
+      redeemFrom(r, 'mainCoins');
       return;
     }
     if (myMainCoins === 0) {
-      Alert.alert('Redeem Perk?', `Redeem "${r.title}" for ${r.cost} 🪙 from your Grandparent Bonus jar?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redeem', onPress: () => redeemFrom(r, 'gpCoins') },
-      ]);
+      redeemFrom(r, 'gpCoins');
       return;
     }
-    // Genuine choice — neither jar alone covers it OR both could, let the
-    // kid pick which one to spend from instead of silently pooling them.
+    // Genuine choice — show jar picker
     setJarPickerTarget(r);
   };
 
   const handleDelete = (r: Reward) => {
-    Alert.alert('Delete Perk?', `Remove "${r.title}" from the store?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive',
-        onPress: () => { deleteReward?.(r.id); showToast('Reward deleted'); } },
-    ]);
+    deleteReward?.(r.id);
+    showToast(`"${r.title}" removed from store`);
   };
 
   const handleAddAiSuggestion = (s: { title: string; category: string; cost: number; emoji: string; reason: string }) => {
@@ -600,396 +638,384 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
+  const canvas = isDark ? colors.background : PAGE_BG;
+  const familyName = (members[0] as any)?.familyName ?? 'Family';
+  const P = colors.primary;
+
+  // Pulsing dot for AI banner
+  const pulseScale   = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.8)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 2.4, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0,   duration: 900, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
+      ]),
+      Animated.delay(400),
+    ])).start();
+  }, []);
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <View style={{ flex: 1, backgroundColor: canvas }}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-      <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}>
-
-        {/* ── Page title row ── AI Perks/Add Perk moved down next to the
-            perks grid itself (below), so this top row stays a plain title +
-            balance and doesn't compete with Redemptions/Approvals/Piggy
-            Banks for attention right under the header. */}
-        <View style={[s.header, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-            Family Perks Store
-          </Text>
-          {canRedeemSelf && (
-            <View style={[s.coinBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
-                Balance: <Text style={{ color: colors.amber, fontWeight: '900' }}>{myCoins} 🪙</Text>
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* ── My Redemptions ── redeeming was fire-and-forget (a one-time
-            Alert, then nothing) — a kid/teen/senior who redeemed a perk had
-            no way to check whether it was still pending or already
-            fulfilled anywhere in the app (QA sweep, full-app per-role
-            audit, High). The parent-only "Kids' Piggy Banks" glance below
-            never substituted for this — that's a parent's view of OTHERS'
-            balances, not a self-view of one's own redemption history. */}
-        {canRedeemSelf && activeMember && (() => {
-          const mine = redemptions
-            .filter(r => r.memberId === activeMember.id)
-            .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt))
-            .slice(0, 5);
-          if (mine.length === 0) return null;
-          const statusMeta: Record<string, { label: string; color: string }> = {
-            pending:   { label: 'Pending',   color: colors.warning },
-            approved:  { label: 'Fulfilled', color: colors.success },
-            rejected:  { label: 'Declined',  color: colors.danger },
-            cancelled: { label: 'Cancelled', color: colors.textTertiary },
-          };
-          return (
-            <View style={{ paddingHorizontal: 12, marginBottom: 10 }}>
-              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 8 }}>
-                My Redemptions
-              </Text>
-              <View style={{ gap: 6 }}>
-                {mine.map(r => {
-                  const reward = rewards.find(rw => rw.id === r.rewardId);
-                  const meta = statusMeta[r.status] ?? statusMeta.pending;
-                  return (
-                    <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                      backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-                      paddingHorizontal: 10, paddingVertical: 8 }}>
-                      <Text style={{ fontSize: 16 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
-                        {reward?.title ?? 'Perk'}
-                      </Text>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary }}>{r.deductedCoins} 🪙</Text>
-                      <View style={{ backgroundColor: meta.color + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-                        <Text style={{ fontSize: 9, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })()}
-
-        {/* ── Pending Approvals ── a reward with requiresApproval:true
-            created a real, fully-implemented Redemption record (pending →
-            approved/rejected, with coin refund on reject) — approveRedemption/
-            rejectRedemption were both correct and DB-synced, but NO call site
-            anywhere in the app ever invoked either: a kid's "requires
-            approval" redemption was permanently stuck in Pending forever,
-            with zero UI for a parent, on either device, to actually decide
-            it (QA sweep, parent-role audit, Critical C1). */}
-        {isParent && (() => {
-          const pending = redemptions.filter(r => r.status === 'pending');
-          if (pending.length === 0) return null;
-          return (
-            <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-                Pending Approvals ({pending.length})
-              </Text>
-              <View style={{ gap: 8 }}>
-                {pending.map(rd => {
-                  const reward = rewards.find(r => r.id === rd.rewardId);
-                  const kid = members.find(m => m.id === rd.memberId);
-                  return (
-                    <View key={rd.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                      backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-                      paddingHorizontal: 12, paddingVertical: 10 }}>
-                      <Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-                          {reward?.title ?? 'Perk'}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
-                          {kid?.name.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
-                        </Text>
-                      </View>
-                      <Pressable onPress={() => { rejectRedemption(rd.id, activeMemberId ?? ''); showToast('Redemption rejected'); }}
-                        style={{ padding: 8, borderRadius: 10, backgroundColor: colors.danger + '18' }}>
-                        <Ionicons name="close" size={16} color={colors.danger} />
-                      </Pressable>
-                      <Pressable onPress={() => { approveRedemption(rd.id, activeMemberId ?? ''); showToast('Redemption approved'); }}
-                        style={{ padding: 8, borderRadius: 10, backgroundColor: colors.teal + '18' }}>
-                        <Ionicons name="checkmark" size={16} color={colors.teal} />
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })()}
-
-        {/* ── Redemption History ── logged QA gap: parents had no way to
-            see past redemptions at all once they left the pending queue —
-            only a transient list of what's still awaiting a decision.
-            Approved/rejected/cancelled redemptions vanished from view the
-            instant they were resolved, with no record. Newest first,
-            capped at 20 so this doesn't grow unbounded on a long-running
-            family. */}
-        {isParent && (() => {
-          const history = redemptions
-            .filter(r => r.status !== 'pending')
-            .sort((a, b) => (b.respondedAt ?? b.redeemedAt ?? '').localeCompare(a.respondedAt ?? a.redeemedAt ?? ''))
-            .slice(0, 20);
-          if (history.length === 0) return null;
-          const statusMeta: Record<string, { label: string; color: string }> = {
-            approved:  { label: 'Approved',  color: colors.teal },
-            rejected:  { label: 'Declined',  color: colors.danger },
-            cancelled: { label: 'Cancelled', color: colors.textTertiary },
-          };
-          return (
-            <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-                Redemption History
-              </Text>
-              <View style={{ gap: 8 }}>
-                {history.map(rd => {
-                  const reward = rewards.find(r => r.id === rd.rewardId);
-                  const kid = members.find(m => m.id === rd.memberId);
-                  const meta = statusMeta[rd.status] ?? { label: rd.status, color: colors.textTertiary };
-                  return (
-                    <View key={rd.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                      backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-                      paddingHorizontal: 12, paddingVertical: 10 }}>
-                      <Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-                          {reward?.title ?? rd.rewardTitle ?? 'Perk (removed)'}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
-                          {/* Logged QA gap, fixed: falls back to the DB's
-                              own member_name snapshot (taken at redemption
-                              time) once the redeemer is no longer in the
-                              live member list, instead of just showing
-                              "A kid" for a since-removed member's history. */}
-                          {kid?.name.split(' ')[0] ?? rd.memberName?.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
-                        </Text>
-                      </View>
-                      <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: meta.color + '18' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })()}
-
-        {/* ── Kids' Piggy Banks & Wishlists ── parent-only at-a-glance view
-            of every kid/teen's balance and their closest wishlist goal —
-            replaces the old standalone Ledger tab, which is now removed;
-            this is the one place a parent checks kids' coin balances. */}
-        {isParent && kids.length > 0 && (
-          <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-            <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-              textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-              Kids' Piggy Banks & Wishlists
+      {/* ── ReviewInbox-style header ── */}
+      {!hideHeader && (
+        <View style={{
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 12,
+          paddingBottom: 16,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+          backgroundColor: canvas,
+          gap: 6,
+        }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              FAMILY CUBE / {familyName.toUpperCase()}
             </Text>
-            {/* Fixed 3-column grid (was 2-up via minWidth:'46%') — card
-                Fixed 2-column grid (was full-width single column via
-                minWidth:'46%' with only 1 fitting per row at larger sizes;
-                also tried a denser 3-up pass, landed on 2x2 as the better
-                balance of legibility vs. density). */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-              {kids.map(kid => {
-                const kidMainCoins = (kid as any).mainCoins ?? 0;
-                const kidGpCoins = (kid as any).gpCoins ?? 0;
-                const kidCoins = kidMainCoins + kidGpCoins;
-                const dollars = (kidCoins * pointsToFiatRatio).toFixed(2);
-                const goal = goalForKid(kid.id, kidCoins);
-                // Logged QA gap, fixed: this used the pooled sum, so a
-                // parent could see a kid's goal shown as 100%+ funded even
-                // when neither jar alone actually covers the goal's cost —
-                // the one thing that matters for real redeemability, since
-                // a single redemption only ever spends from one jar.
-                const kidMaxAffordable = Math.max(kidMainCoins, kidGpCoins);
-                const pct = goal ? Math.min(kidMaxAffordable / goal.cost, 1) : 0;
-                const streak = (kid as any).streak ?? 0;
-                return (
-                  <View key={kid.id} style={withAndroidShadowFix({
-                    width: '48%', borderRadius: 18, padding: 14, alignItems: 'center',
-                    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.teal + (isDark ? '55' : '40'),
-                    shadowColor: colors.teal, shadowOpacity: 0.1, shadowRadius: 10,
-                    shadowOffset: { width: 0, height: 4 }, elevation: 3, overflow: 'hidden',
-                  })}>
-                    <LinearGradient
-                      colors={[colors.teal + '20', colors.teal + '00']}
-                      start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                      pointerEvents="none"
-                    />
-                    {Platform.OS === 'ios' ? (
-                      <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
-                    ) : (
-                      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
-                    )}
-                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
-                    <View style={{ width: 48, height: 48, borderRadius: 14, marginBottom: 8,
-                      backgroundColor: colors.teal + '25', borderWidth: 1, borderColor: colors.teal + '45',
-                      alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 24 }}>{kid.emoji ?? '🙂'}</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 5 }} numberOfLines={1}>
-                      {kid.name.split(' ')[0]}
-                    </Text>
-                    <Text style={{ fontSize: 20, fontWeight: '900', color: BRAND.teal, marginBottom: 7 }}>
-                      {currencySymbol}{dollars}
-                    </Text>
-                    {streak > 0 && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 11,
-                        paddingHorizontal: 9, paddingVertical: 4, marginBottom: 8,
-                        backgroundColor: colors.amberLight }}>
-                        <Flame size={11} color={colors.amber} />
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>
-                          {streak}-day streak
-                        </Text>
-                      </View>
-                    )}
-                    {goal && (
-                      <View style={{ width: '100%', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary, marginBottom: 5 }} numberOfLines={1}>
-                          Goal: {goal.title}
-                        </Text>
-                        <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surface, overflow: 'hidden' }}>
-                          <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 3, backgroundColor: BRAND.teal }} />
-                        </View>
-                        {/* % moved below the bar, right-aligned — was
-                            crammed into the same row as the goal title with
-                            no truncation guard on the title, so a longer
-                            goal name could crowd or push the percentage. */}
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary, textAlign: 'right', marginTop: 4 }}>
-                          {Math.round(pct * 100)}%
-                        </Text>
-                      </View>
-                    )}
-                    <Pressable onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10,
-                        borderRadius: 10, borderWidth: 1, borderColor: colors.amber + '60',
-                        backgroundColor: colors.amberLight, paddingHorizontal: 10, paddingVertical: 6 }}>
-                      <Ionicons name="gift-outline" size={12} color={colors.amber} />
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>Grant Coins</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
+            {canRedeemSelf && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99,
+                backgroundColor: isDark ? colors.card : '#FDF3D8' }}>
+                <Text style={{ fontSize: 13, fontWeight: '900',
+                  color: isDark ? colors.amber : AMBER_TXT }}>
+                  {myCoins}
+                </Text>
+                <Text style={{ fontSize: 13 }}>🪙</Text>
+              </View>
+            )}
+          </View>
+          {onClose && (
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Rewards</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34,
+            letterSpacing: -0.5, color: colors.textPrimary }}>
+            Perks Store
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+            {isParent
+              ? 'Manage your family perks catalog.'
+              : 'Browse and redeem perks with your coins.'}
+          </Text>
+        </View>
+      )}
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1, backgroundColor: canvas }}
+        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
+
+        {/* ── AI Perks banner (parent) ── */}
+        {isParent && (
+          <TouchableOpacity onPress={() => setShowAiPanel(v => !v)}
+            style={{ borderRadius: 18, overflow: 'hidden',
+              backgroundColor: isDark ? colors.card : '#fff',
+              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, android: { elevation: isDark ? 0 : 2 } }) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center',
+              paddingHorizontal: 18, paddingVertical: 16, gap: 14 }}>
+              {/* Animated sparkle icon */}
+              <View style={{ width: 48, height: 48 }}>
+                <View style={{ width: 48, height: 48, borderRadius: 14,
+                  backgroundColor: colors.accent + '18',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="sparkles" size={24} color={colors.accent} />
+                </View>
+                <View style={{ position: 'absolute', top: 0, right: 0, width: 14, height: 14,
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Animated.View style={{ position: 'absolute', width: 10, height: 10, borderRadius: 5,
+                    backgroundColor: colors.success, opacity: pulseOpacity,
+                    transform: [{ scale: pulseScale }] }} />
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success }} />
+                </View>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                  CubeAI Perk Ideas
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                  AI-suggested perks tailored for your family
+                </Text>
+              </View>
+              <Ionicons
+                name={showAiPanel ? 'chevron-up' : 'chevron-down'}
+                size={18} color={colors.textTertiary} />
             </View>
+            {/* Expanded suggestion cards */}
+            {showAiPanel && (
+              <View style={{ borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: isDark ? colors.border : BORDER }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ padding: 14, gap: 10 }}>
+                  {MOCK_SUGGESTIONS.map((s, i) => (
+                    <View key={i} style={{ width: 160, borderRadius: 16,
+                      backgroundColor: isDark ? colors.surface : '#F6F8FC',
+                      borderWidth: 1, borderColor: isDark ? colors.border : BORDER,
+                      padding: 14 }}>
+                      <Text style={{ fontSize: 26, marginBottom: 6 }}>{s.emoji}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
+                        {s.title}
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.amber : AMBER_TXT, marginBottom: 4 }}>
+                        {s.cost} 🪙
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginBottom: 10 }}>
+                        {s.reason}
+                      </Text>
+                      <TouchableOpacity onPress={() => { handleAddAiSuggestion(s); }}
+                        style={{ backgroundColor: BLUE_BTN, borderRadius: 10,
+                          paddingVertical: 8, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>+ Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* ── Add Perk button (parent) ── */}
+        {isParent && (
+          <TouchableOpacity onPress={() => { setEditing(null); setShowCreate(true); }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 8, paddingVertical: 15, borderRadius: 14,
+              backgroundColor: BLUE_BTN,
+              ...Platform.select({ ios: { shadowColor: BLUE_BTN, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }, android: { elevation: 4 } }) }}>
+            <Ionicons name="add-circle-outline" size={20} color="#fff" />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Add New Perk</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Kids' Piggy Banks (parent) ── */}
+        {isParent && kids.length > 0 && (
+          <View style={{ borderRadius: 22, overflow: 'hidden',
+            backgroundColor: isDark ? colors.card : '#fff',
+            ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+              paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
+              <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.teal }} />
+              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal,
+                textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                Kids' Piggy Banks
+              </Text>
+            </View>
+            {kids.map((kid, i) => {
+              const kidMainCoins = (kid as any).mainCoins ?? 0;
+              const kidGpCoins   = (kid as any).gpCoins   ?? 0;
+              const kidCoins     = kidMainCoins + kidGpCoins;
+              const dollars      = (kidCoins * pointsToFiatRatio).toFixed(2);
+              const goal         = goalForKid(kid.id, kidCoins);
+              const kidMaxAffordable = Math.max(kidMainCoins, kidGpCoins);
+              const pct          = goal ? Math.min(kidMaxAffordable / goal.cost, 1) : 0;
+              const streak       = (kid as any).streak ?? 0;
+              return (
+                <View key={kid.id}>
+                  {i > 0 && <View style={{ height: StyleSheet.hairlineWidth,
+                    backgroundColor: isDark ? colors.border : BORDER, marginHorizontal: 18 }} />}
+                  <View style={{ flexDirection: 'row', alignItems: 'center',
+                    paddingHorizontal: 18, paddingVertical: 14, gap: 14 }}>
+                    <View style={{ width: 50, height: 50, borderRadius: 15,
+                      backgroundColor: isDark ? colors.tealLight : '#D5EFE4',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 26 }}>{kid.emoji ?? '🙂'}</Text>
+                    </View>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textPrimary }}>
+                          {kid.name.split(' ')[0]}
+                        </Text>
+                        {streak > 0 && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
+                            borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
+                            backgroundColor: colors.amberLight }}>
+                            <Flame size={10} color={colors.amber} />
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>
+                              {streak}-day
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      {goal ? (
+                        <>
+                          <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>
+                            Goal: {goal.title}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <View style={{ flex: 1, height: 5, borderRadius: 3,
+                              backgroundColor: isDark ? colors.surface : '#DCF0E8', overflow: 'hidden' }}>
+                              <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 3,
+                                backgroundColor: colors.teal }} />
+                            </View>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.teal, minWidth: 32 }}>
+                              {Math.round(pct * 100)}%
+                            </Text>
+                          </View>
+                        </>
+                      ) : (
+                        <Text style={{ fontSize: 12, color: colors.textTertiary }}>No goal set</Text>
+                      )}
+                    </View>
+                    {/* Coin total + Grant */}
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
+                        <Text style={{ fontSize: 20, fontWeight: '900',
+                          color: isDark ? colors.amber : AMBER_TXT }}>
+                          {kidCoins}
+                        </Text>
+                        <Text style={{ fontSize: 13 }}>🪙</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                          paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9,
+                          backgroundColor: colors.amberLight }}>
+                        <Ionicons name="gift-outline" size={12} color={colors.amber} />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>Grant</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+            <View style={{ height: 8 }} />
           </View>
         )}
 
-        {/* Live-reported follow-up: "padding to the grid should be same to
-            the frame" — this section used a flat padding:12 while the
-            page's own title row above (s.header) uses paddingHorizontal:
-            16, so the perks grid sat narrower than the rest of the
-            screen's content instead of lining up with it. Matched to 16
-            (vertical padding kept at its own value via paddingVertical
-            instead of the removed padding:12 shorthand, since nothing
-            here needed that value tied to horizontal). */}
-        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-          {/* This row (AI Perks/Add Perk) and everything below it is the
-              actual perks catalog — previously had no heading at all, so
-              the buttons floated with no context for what section they
-              belonged to. */}
-          <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-            textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-            Available Perks
-          </Text>
-          {isParent && (
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-              <Pressable onPress={() => setShowAiPanel(v => !v)}
-                style={[s.createBtn, { backgroundColor: showAiPanel ? colors.accent : colors.accent + 'CC' }]}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ AI Perks</Text>
-              </Pressable>
-              <Pressable onPress={() => { setEditing(null); setShowCreate(true); }}
-                style={[s.createBtn, { backgroundColor: colors.teal }]}>
-                <Ionicons name="add" size={14} color="#fff" />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginLeft: 3 }}>Add Perk</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {isParent && showAiPanel && (
-            <AiPerksPanel
-              onAdd={handleAddAiSuggestion}
-              onClose={() => setShowAiPanel(false)}
-              colors={colors}
-              isDark={isDark}
-            />
-          )}
-
-          <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 16 }}>
-            Perks are redeemed from your Main Wallet. Grandparent Bonus coins are cashed out via parents.
-          </Text>
-
-          {rewards.length === 0 ? (
-            <View style={[s.emptyBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
-              <Text style={{ fontSize: 32, marginBottom: 8 }}>🎁</Text>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textTertiary }}>No perks yet</Text>
-              {isParent && (
-                <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4, textAlign: 'center' }}>
-                  Tap "+ Add Perk" or try "✨ AI Perks" for suggestions
+        {/* ── Perks catalog — full-width rows ── */}
+        {rewards.length === 0 ? (
+          <View style={{ borderRadius: 22, padding: 40, alignItems: 'center',
+            backgroundColor: isDark ? colors.card : '#fff',
+            ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 2 } }) }}>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>🎁</Text>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>
+              No perks yet
+            </Text>
+            {isParent && (
+              <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                Tap "+ Add Perk" above or try "✨ AI Perks" for ideas
+              </Text>
+            )}
+          </View>
+        ) : (
+          <View style={{ borderRadius: 22, overflow: 'hidden',
+            backgroundColor: isDark ? colors.card : '#fff',
+            ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+            {/* Section heading inside card */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.primary }} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary,
+                  textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                  Available Perks · {rewards.filter(r => r.available).length}
+                </Text>
+              </View>
+              {!isParent && (
+                <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR }}>
+                  Balance: <Text style={{ fontWeight: '800', color: isDark ? colors.amber : AMBER_TXT }}>{myCoins} 🪙</Text>
                 </Text>
               )}
             </View>
-          ) : (
-            // Live-reported: "i could see right side padding with panel for
-            // the cards are it high" — cards in the same row should match
-            // height, but flexWrap:'wrap' doesn't group wrapped items into
-            // per-row flex containers the way CSS Grid would, so React
-            // Native's own cross-axis stretch never applied between two
-            // side-by-side cards — a card with a "My Goal" line (extra
-            // content) just rendered taller than its shorter neighbor,
-            // leaving uneven space in the row instead of both stretching to
-            // match. Pairing rewards into explicit two-up rows (each a real
-            // flexDirection:'row' + alignItems:'stretch' container) fixes
-            // this the way flexWrap fundamentally can't.
-            <View style={{ gap: 10 }}>
-              {Array.from({ length: Math.ceil(rewards.length / 2) }, (_, rowIdx) => {
-                const pair = rewards.slice(rowIdx * 2, rowIdx * 2 + 2);
-                return (
-                  <View key={rowIdx} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 10 }}>
-                    {pair.map((r, colIdx) => {
-                      const i = rowIdx * 2 + colIdx;
-                      return (
-                        <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins} myMaxAffordable={myMaxAffordable}
-                          isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
-                          onRedeem={handleRedeem}
-                          onEdit={r => { setEditing(r); setShowCreate(true); }}
-                          onOpenDetail={r => setDetailPerk(r)}
-                          isGoal={isKid && activeMember?.goalRewardId === r.id}
-                          onToggleGoal={isKid ? (target) => {
-                            if (!activeMember) return;
-                            const nextGoalId = activeMember.goalRewardId === target.id ? undefined : target.id;
-                            useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId })
-                              .catch(e => console.warn('[StoreScreen] toggle goal failed', e));
-                          } : undefined}
-                        />
-                      );
-                    })}
-                    {/* Odd count on the final row — a lone card is now
-                        flex:1 (see s.perkCard), so without a same-flex
-                        sibling it would stretch to fill the whole row
-                        width instead of staying at its normal single-column
-                        share. */}
-                    {pair.length === 1 && <View style={{ flex: 1 }} />}
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
+
+            {rewards.map((r, i) => {
+              const accent = categoryAccent(r.category, colors, i);
+              const canAfford = canRedeemSelf && myMaxAffordable >= r.cost;
+              const isGoalReward = isKid && activeMember?.goalRewardId === r.id;
+
+              return (
+                <View key={r.id}>
+                  {i > 0 && <View style={{ height: StyleSheet.hairlineWidth,
+                    backgroundColor: isDark ? colors.border : BORDER,
+                    marginHorizontal: 18 }} />}
+                  <TouchableOpacity
+                    onPress={() => setDetailPerk(r)}
+                    onLongPress={isParent ? () => { setEditing(r); setShowCreate(true); } : undefined}
+                    delayLongPress={350}
+                    style={{ flexDirection: 'row', alignItems: 'center',
+                      paddingHorizontal: 18, paddingVertical: 14, gap: 14 }}>
+                    {/* Emoji chip */}
+                    <View style={{ width: 48, height: 48, borderRadius: 14,
+                      backgroundColor: accent + (isDark ? '30' : '22'),
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 24 }}>{r.emoji ?? '🎁'}</Text>
+                    </View>
+                    {/* Text */}
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700',
+                          color: colors.textPrimary, flex: 1 }} numberOfLines={1}>
+                          {r.title}
+                        </Text>
+                        {isGoalReward && (
+                          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+                            backgroundColor: colors.amberLight }}>
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>⭐ Goal</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800',
+                          color: isDark ? colors.amber : AMBER_TXT }}>
+                          {r.cost} 🪙
+                        </Text>
+                        {r.requiresApproval && (
+                          <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : BODY_CLR }}>
+                            · parent approval
+                          </Text>
+                        )}
+                        {typeof r.stock === 'number' && (
+                          <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : BODY_CLR }}>
+                            · {r.stock} left
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    {/* Right action */}
+                    {canRedeemSelf ? (
+                      <TouchableOpacity onPress={() => handleRedeem(r)}
+                        disabled={!canAfford}
+                        style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 11,
+                          backgroundColor: canAfford ? BLUE_BTN : (isDark ? colors.surface : '#EAEDF4'),
+                          opacity: canAfford ? 1 : 0.7 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800',
+                          color: canAfford ? '#fff' : (isDark ? colors.textTertiary : BODY_CLR) }}>
+                          {canAfford ? 'Redeem' : `−${r.cost - myMaxAffordable}`}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : isParent ? (
+                      <TouchableOpacity onPress={() => { setEditing(r); setShowCreate(true); }}
+                        style={{ padding: 8, borderRadius: 10,
+                          backgroundColor: isDark ? colors.surface : '#F0F2F7' }}>
+                        <Ionicons name="pencil-outline" size={16} color={isDark ? colors.textSecondary : BODY_CLR} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+            <View style={{ height: 8 }} />
+          </View>
+        )}
+
+        {/* Coin wallet info */}
+        <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', lineHeight: 18 }}>
+          Perks are redeemed from your Main Wallet.{'\n'}Grandparent Bonus coins are cashed out via parents.
+        </Text>
+
       </ScrollView>
 
       <PerkModal
         visible={showCreate}
         editing={editing}
         colors={colors}
+        isDark={isDark}
         onClose={() => { setShowCreate(false); setEditing(null); }}
         onSave={data => {
           if (editing) { updateReward?.(editing.id, data, activeMemberId ?? undefined); showToast('Reward updated'); }
@@ -1022,44 +1048,60 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         }}
       />
 
-      {/* Grant Coins — relocated from the removed standalone Ledger tab. */}
-      <Modal visible={!!grantTarget} transparent animationType="fade" onRequestClose={() => setGrantTarget(null)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
-          <View style={withAndroidShadowFix({ borderRadius: 18, padding: 20, backgroundColor: colors.card,
-            borderWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 })}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>
-              Grant Coins
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 14 }}>
-              Give {grantTarget?.name?.split(' ')[0]} a bonus, no chore required.
-            </Text>
-            <TextInput
-              value={grantAmount} onChangeText={setGrantAmount} keyboardType="numeric"
-              placeholder="e.g. 25" placeholderTextColor={colors.textTertiary}
-              style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, color: colors.textPrimary,
-                backgroundColor: colors.surface, paddingHorizontal: 13, paddingVertical: 10, fontSize: 15, fontWeight: '700', marginBottom: 16 }}
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={() => setGrantTarget(null)}
-                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  const n = parseInt(grantAmount, 10);
-                  if (!n || n <= 0 || !grantTarget) return;
-                  awardCoins(grantTarget.id, n, 'mainCoins');
-                  setGrantTarget(null);
-                }}
-                style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: colors.amber }}>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Grant</Text>
-              </Pressable>
+      {/* ── Inline Grant Coins form — slides in when a kid is picked ── */}
+      {grantTarget && (
+        <View style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderTopWidth: 1, borderColor: isDark ? colors.border : BORDER,
+          padding: 20, paddingBottom: insets.bottom + 20,
+          ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -4 } }, android: { elevation: 8 } }),
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <View>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary }}>
+                Grant Coins
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                Give {grantTarget.name.split(' ')[0]} a bonus, no chore required.
+              </Text>
             </View>
+            <TouchableOpacity onPress={() => { setGrantTarget(null); setGrantAmount(''); }}
+              style={{ padding: 8, borderRadius: 10, backgroundColor: isDark ? colors.surface : '#F0F2F7' }}>
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TextInput
+              value={grantAmount}
+              onChangeText={setGrantAmount}
+              keyboardType="numeric"
+              placeholder="Coins to grant…"
+              placeholderTextColor={colors.textTertiary}
+              autoFocus
+              style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+                color: colors.textPrimary, backgroundColor: colors.surface,
+                paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, fontWeight: '700' }}
+            />
+            <TouchableOpacity
+              onPress={() => {
+                const n = parseInt(grantAmount, 10);
+                if (!n || n <= 0) { showToast('Enter a valid coin amount'); return; }
+                awardCoins(grantTarget.id, n, 'mainCoins');
+                showToast(`🪙 ${n} coins granted to ${grantTarget.name.split(' ')[0]}`);
+                setGrantTarget(null);
+                setGrantAmount('');
+              }}
+              style={{ paddingHorizontal: 22, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: colors.amber,
+                ...Platform.select({ ios: { shadowColor: colors.amber, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, android: {} }) }}>
+              <Text style={{ fontSize: 15, fontWeight: '900', color: '#fff' }}>Grant</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-    </SafeAreaView>
+      )}
+    </View>
   );
 }
 

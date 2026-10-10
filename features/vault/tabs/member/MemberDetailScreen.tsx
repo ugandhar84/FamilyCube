@@ -1,11 +1,23 @@
 /**
  * MemberDetailScreen — full-page read-only member profile (replaces the old
  * MemberProfileSheet's 'view' + 'confirmRemove' AppBottomSheet sections).
- * Carried over verbatim from MemberProfileSheet.tsx's ViewSection/
- * ConfirmRemoveSection — same badge row / stat tiles / role chips / theme
- * colors, same actions (edit, delete, resend invite, generate recovery
- * code, reset PIN, change PIN) — just rendered as its own FullPageOverlay
- * screen with a header instead of swapping content inside a bottom sheet.
+ *
+ * Rebuilt to match a supplied "Ruth Parker" mockup: grouped white cards
+ * ("Profile details", "Sharing boundaries", "Driving permission",
+ * "Invitation status") instead of the previous stat-tile layout, with
+ * each action (Edit, Reset PIN, Generate recovery code, Remove) as its
+ * own full-width row button rather than small inline icon buttons
+ * [live-requested: "match 100% figma page" -> "i think we can remove
+ * this profile page directly we can use this" — the earlier in-progress
+ * "your place" relationship screen was dropped in favor of reskinning
+ * THIS screen, which tapping a tree card already opens directly].
+ *
+ * "Sharing boundaries" and "Driving permission" show this app's real
+ * rules/data (health ownership is CLAUDE.md's own documented policy —
+ * "Kids own their own health records; parents may review"; driving
+ * shows the real hasCar/GP drive-window fields already on FamilyMember)
+ * rather than the mockup's own fictional demo copy, since there's no
+ * backing field for invented per-member permission text in this schema.
  *
  * Opened from FamilyTreePage (and RosterTab/ProfileSettingsScreen's roster
  * cards) via a tap; "Edit" navigates to MemberEditScreen, "Change PIN"/
@@ -21,10 +33,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { Coins, Flame, Star, Car, Clock, Lock, Pencil, ChevronRight, Mail, RefreshCw, Trash2, KeyRound } from 'lucide-react-native';
+import { Coins, Flame, Star, Lock, ChevronRight } from 'lucide-react-native';
 import { fmtTime } from '@/lib/dates';
 import { roleColor } from '../MemberCard';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -36,6 +49,54 @@ function StatTile({ Icon, label, value, colors, accent }: { Icon: any; label: st
       <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>{value}</Text>
       <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase' }}>{label}</Text>
     </View>
+  );
+}
+
+function InfoCard({ title, children, colors, isDark }: { title?: string; children: React.ReactNode; colors: any; isDark: boolean }) {
+  return (
+    <View style={{
+      backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 18,
+      borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+      padding: 18, gap: 14,
+    }}>
+      {title && <Text style={{ fontSize: 18, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{title}</Text>}
+      {children}
+    </View>
+  );
+}
+
+function InfoRow({ title, lines, colors, isDark }: { title: string; lines: string[]; colors: any; isDark: boolean }) {
+  return (
+    <View style={{ gap: 2 }}>
+      <Text style={{ fontSize: 15, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{title}</Text>
+      {lines.map((l, i) => (
+        <Text key={i} style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>{l}</Text>
+      ))}
+    </View>
+  );
+}
+
+/** Full-width action row button, matching the mockup's "Edit basic
+ * details" / "Reset PIN" / "Generate recovery code" / "Review family
+ * removal" row style — plain bordered pill with centered link-blue text,
+ * or filled blue for the single primary action. */
+function ActionRow({ label, onPress, primary, danger, disabled, colors, isDark }: {
+  label: string; onPress: () => void; primary?: boolean; danger?: boolean; disabled?: boolean;
+  colors: any; isDark: boolean;
+}) {
+  const linkC = isDark ? GEMINI.blue : GEMINI.linkBlue;
+  return (
+    <TouchableOpacity onPress={onPress} disabled={disabled}
+      style={{
+        borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+        backgroundColor: primary ? GEMINI.blue : (isDark ? colors.card : GEMINI.cardBg),
+        borderWidth: primary ? 0 : 1, borderColor: isDark ? colors.border : GEMINI.border,
+        opacity: disabled ? 0.5 : 1,
+      }}>
+      <Text style={{ fontSize: 15, fontWeight: '600', color: primary ? '#FFFFFF' : (danger ? colors.danger : linkC) }}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -65,22 +126,21 @@ export function MemberDetailScreen({
   const subtitle = member.relationship ?? roleLabel;
 
   const close = () => { setConfirmingRemove(false); onClose(); };
+  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const linkC  = isDark ? GEMINI.blue : GEMINI.linkBlue;
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1, backgroundColor: canvas }}>
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
           <TouchableOpacity onPress={close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>‹ Family</Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>‹ People{!confirmingRemove ? ` / ${member.name.split(' ')[0]}` : ''}</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 26, fontWeight: '800', color: colors.textPrimary, marginTop: 8 }}>
+          <Text style={{ fontSize: 26, fontWeight: '800', color: titleC, marginTop: 8 }}>
             {confirmingRemove ? 'Remove Member' : member.name}
           </Text>
-          {!confirmingRemove && (
-            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginTop: 2 }}>
-              {subtitle}
-            </Text>
-          )}
         </View>
 
         <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24 }}>
@@ -167,124 +227,110 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
     } catch { /* user cancelled — no-op */ }
   };
 
+  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const linkC  = isDark ? GEMINI.blue : GEMINI.linkBlue;
+  const roleLabel = member.role === 'senior' ? 'Grandparent' : member.role.charAt(0).toUpperCase() + member.role.slice(1);
+
+  // Real driving-permission line, from the actual hasCar/GP drive-window
+  // fields already on FamilyMember — not invented copy.
+  const drivingLine = member.role === 'teen'
+    ? (member.hasCar ? 'ON · in the ride/pickup pool' : 'OFF · not in the ride/pickup pool')
+    : isSenior
+      ? (member.gpCheerleaderMode
+          ? 'OFF · cheerleader mode, not available to drive'
+          : `ON · available ${fmtTime(member.gpDriveWindowStart)}–${fmtTime(member.gpDriveWindowEnd)}${member.gpWeeklyRideCap ? ` · up to ${member.gpWeeklyRideCap}/week` : ''}`)
+      : 'Not applicable for this role';
+
   return (
-    <View>
-      <View style={{ alignItems: 'center', marginBottom: 16 }}>
-        <FamilyAvatar name={member.name} emoji={member.emoji} avatarUrl={member.avatarUrl}
-          siblings={siblings} size={72} ringColor={rc} ringWidth={2.5} />
-        {isParentViewer && (
-          <TouchableOpacity onPress={onEdit}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12,
-              paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: rc }}>
-            <Pencil size={13} color="#fff" />
-            <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Edit</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {isKidOrTeen && (
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-          <StatTile Icon={Coins} label="Coins" value={String(member.coins)} colors={colors} accent={colors.amber} />
-          <StatTile Icon={Star} label="Level" value={String(member.level)} colors={colors} accent={rc} />
-          <StatTile Icon={Flame} label="Streak" value={`${member.streak}d`} colors={colors} accent={colors.danger} />
-        </View>
-      )}
-
-      {member.role === 'teen' && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-          borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
-          padding: 12, marginBottom: 12 }}>
-          <Car size={16} color={member.hasCar ? colors.amber : colors.textTertiary} />
-          <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
-            {member.hasCar ? 'Can drive — in the ride/pickup pool' : 'Not driving yet'}
-          </Text>
-        </View>
-      )}
-
-      {isSenior && (
-        <View style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
-          padding: 12, marginBottom: 12, gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Clock size={14} color={colors.textSecondary} />
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>
-              {member.gpCheerleaderMode
-                ? 'Cheerleader mode — not available to drive'
-                : `Available ${fmtTime(member.gpDriveWindowStart)}–${fmtTime(member.gpDriveWindowEnd)}`}
+    <View style={{ gap: 16 }}>
+      <InfoCard colors={colors} isDark={isDark}>
+        <View style={{ alignItems: 'center' }}>
+          <FamilyAvatar name={member.name} emoji={member.emoji} avatarUrl={member.avatarUrl}
+            siblings={siblings} size={88} ringWidth={0} shape="circle" />
+          <View style={{ marginTop: 14, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5,
+            backgroundColor: isDark ? colors.accent + '26' : '#E4E8FB' }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.accent : GEMINI.blue }}>
+              {member.inviteStatus === 'pending' ? 'Pending' : 'Active'} · {roleLabel}
             </Text>
           </View>
-          {!member.gpCheerleaderMode && member.gpDriveWindowDays?.length ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginLeft: 22 }}>
-              {[...member.gpDriveWindowDays].sort((a, b) => a - b).map(d => (
-                <View key={d} style={{ borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-                  backgroundColor: rc + '14', borderWidth: 1, borderColor: rc + '30' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: rc }}>{DAY_SHORT[d]}</Text>
-                </View>
-              ))}
-              {member.gpWeeklyRideCap ? (
-                <Text style={{ fontSize: 11, color: colors.textSecondary, marginLeft: 2 }}>
-                  · up to {member.gpWeeklyRideCap}/week
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
         </View>
-      )}
 
-      {/* PIN status doubles as the "Change PIN" action when canChangePin is
-          set — one tap straight into MemberPinScreen, no Edit detour. Falls
-          back to a plain, non-interactive status row when the viewer has no
-          PIN rights. */}
-      {canChangePin ? (
-        <TouchableOpacity onPress={onChangePin}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-            borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
-            padding: 12 }}>
-          <Lock size={14} color={member.pin ? colors.success : colors.textTertiary} />
-          <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>
-            {member.pin ? 'PIN set' : 'No PIN set'}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: rc }}>
-            {member.pin ? 'Change' : 'Set PIN'}
-          </Text>
-          <ChevronRight size={14} color={colors.textTertiary} />
-        </TouchableOpacity>
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-          borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
-          padding: 12 }}>
-          <Lock size={14} color={member.pin ? colors.success : colors.textTertiary} />
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>
-            {member.pin ? 'PIN set' : 'No PIN set'}
-          </Text>
-        </View>
-      )}
+        {isKidOrTeen && (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <StatTile Icon={Coins} label="Coins" value={String(member.coins)} colors={colors} accent={colors.amber} />
+            <StatTile Icon={Star} label="Level" value={String(member.level)} colors={colors} accent={rc} />
+            <StatTile Icon={Flame} label="Streak" value={`${member.streak}d`} colors={colors} accent={colors.danger} />
+          </View>
+        )}
 
-      {member.inviteStatus === 'pending' && (
-        <View style={{ marginTop: 12, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
-          backgroundColor: colors.amber + '18', alignSelf: 'flex-start' }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>Invite pending</Text>
-        </View>
-      )}
+        {member.inviteStatus === 'pending' && (
+          <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+            backgroundColor: colors.amber + '18', alignSelf: 'flex-start' }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>Invite pending</Text>
+          </View>
+        )}
+      </InfoCard>
 
-      {/* "Lost this device?" — for a member who's already joined (has a PIN
-          and an existing session), not the pending-invite case above. */}
-      {onGenerateRecoveryCode && isParentViewer && member.inviteStatus !== 'pending' && !!member.pin && (
-        <View style={{ marginTop: 12, gap: 10 }}>
-          <TouchableOpacity onPress={handleGenerateRecoveryCode} disabled={generatingRecovery}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
-              borderWidth: 1.5, borderColor: colors.border, opacity: generatingRecovery ? 0.6 : 1 }}>
-            <KeyRound size={16} color={colors.accent} />
-            <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Lost this device?</Text>
-            {generatingRecovery ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <RefreshCw size={14} color={colors.textTertiary} />}
+      {/* Profile details / Sharing boundaries / Driving permission —
+          matches the mockup's grouped-card layout. */}
+      <InfoCard title="Profile details" colors={colors} isDark={isDark}>
+        <InfoRow title={member.name} lines={[
+          `Display name: ${member.name.split(' ')[0]} · ${member.relationship ?? roleLabel}`,
+        ]} colors={colors} isDark={isDark} />
+        <InfoRow title="Sharing boundaries" lines={[
+          isKidOrTeen || isSenior
+            ? `${member.name.split(' ')[0]} owns their own health records. Parents may review, not edit.`
+            : 'As a parent, full household visibility — kids/teens/seniors keep their own health records.',
+        ]} colors={colors} isDark={isDark} />
+        <InfoRow title="Driving permission" lines={[drivingLine]} colors={colors} isDark={isDark} />
+      </InfoCard>
+
+      {/* PIN status — tapping opens Change/Set PIN when the viewer has
+          rights; otherwise a plain status line. */}
+      <InfoCard colors={colors} isDark={isDark}>
+        {canChangePin ? (
+          <TouchableOpacity onPress={onChangePin} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Lock size={14} color={member.pin ? colors.success : colors.textTertiary} />
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: titleC }}>
+              {member.pin ? 'PIN set' : 'No PIN set'}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: linkC }}>
+              {member.pin ? 'Change' : 'Set PIN'}
+            </Text>
+            <ChevronRight size={14} color={colors.textTertiary} />
           </TouchableOpacity>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Lock size={14} color={member.pin ? colors.success : colors.textTertiary} />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>
+              {member.pin ? 'PIN set' : 'No PIN set'}
+            </Text>
+          </View>
+        )}
+      </InfoCard>
 
+      {/* Edit — primary action row. */}
+      {isParentViewer && (
+        <ActionRow label="Edit basic details" onPress={onEdit} primary colors={colors} isDark={isDark} />
+      )}
+
+      {/* Reset PIN / recovery — one row each, matching the mockup's
+          "Reset PIN · verification required" / "Generate recovery code ·
+          verify first" rows. */}
+      {isSenior && isParentViewer && onResetPin && (
+        <ActionRow label="Reset PIN · verification required" onPress={() => onResetPin(member)} colors={colors} isDark={isDark} />
+      )}
+      {onGenerateRecoveryCode && isParentViewer && member.inviteStatus !== 'pending' && !!member.pin && (
+        <View style={{ gap: 10 }}>
+          <ActionRow label="Generate recovery code · verify first" onPress={handleGenerateRecoveryCode} disabled={generatingRecovery} colors={colors} isDark={isDark} />
+          {generatingRecovery && <ActivityIndicator size="small" color={colors.textTertiary} />}
           {recoveryResult && 'code' in recoveryResult && (
-            <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: colors.accent + '50',
-              backgroundColor: colors.accent + '10', padding: 14, gap: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+            <InfoCard colors={colors} isDark={isDark}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: bodyC }}>
                 Recovery code for {member.name.split(' ')[0]} — expires in 1 hour
               </Text>
-              <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: colors.textPrimary }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: titleC }}>
                 {recoveryResult.code}
               </Text>
               <Text style={{ fontSize: 11, color: colors.textTertiary }}>
@@ -293,11 +339,11 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
               <TouchableOpacity onPress={() => copyRecoveryCode(recoveryResult.code)}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 10 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>
                   {recoveryCopied ? 'Copied!' : 'Copy code'}
                 </Text>
               </TouchableOpacity>
-            </View>
+            </InfoCard>
           )}
           {recoveryResult && 'error' in recoveryResult && (
             <Text style={{ fontSize: 12, color: colors.danger, fontWeight: '600' }}>{recoveryResult.error}</Text>
@@ -305,36 +351,24 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
         </View>
       )}
 
-      {/* Senior/GP — Reset PIN / Resend Invite are still direct one-tap
-          actions here (not folded into Edit). */}
+      {/* Invitation status — matches the mockup's own card, describing
+          the real resend-invite rule (pending accounts only). */}
       {isSenior && isParentViewer && (
-        <View style={{ marginTop: 12, gap: 10 }}>
-          {onResetPin && (
-            <TouchableOpacity onPress={() => onResetPin(member)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
-                borderWidth: 1.5, borderColor: colors.border }}>
-              <KeyRound size={16} color={colors.accent} />
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Reset PIN</Text>
-              <RefreshCw size={14} color={colors.textTertiary} />
-            </TouchableOpacity>
+        <InfoCard title="Invitation status" colors={colors} isDark={isDark}>
+          <Text style={{ fontSize: 13, color: bodyC, lineHeight: 18 }}>
+            {member.inviteStatus === 'pending'
+              ? `${member.name.split(' ')[0]}'s invite is pending. Resend it below to send a fresh code.`
+              : `${member.name.split(' ')[0]}'s account is active. Resend invite is only available for pending accounts.`}
+          </Text>
+          {onResendInvite && member.inviteStatus === 'pending' && (
+            <ActionRow label={resending ? 'Resending…' : 'Resend invite'} onPress={handleResendInvite} disabled={resending} colors={colors} isDark={isDark} />
           )}
-          {onResendInvite && (
-            <TouchableOpacity onPress={handleResendInvite} disabled={resending}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
-                borderWidth: 1.5, borderColor: colors.border, opacity: resending ? 0.6 : 1 }}>
-              <Mail size={16} color={colors.teal} />
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Resend Invite</Text>
-              {resending ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <RefreshCw size={14} color={colors.textTertiary} />}
-            </TouchableOpacity>
-          )}
-
           {inviteResult && 'code' in inviteResult && (
-            <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: colors.teal + '50',
-              backgroundColor: colors.teal + '10', padding: 14, gap: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: bodyC }}>
                 New code for {member.name.split(' ')[0]}
               </Text>
-              <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: colors.textPrimary }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: titleC }}>
                 {inviteResult.code}
               </Text>
               {inviteResult.emailSent && (
@@ -349,7 +383,7 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
                 <TouchableOpacity onPress={() => copyInviteCode(inviteResult.code)}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                     borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 10 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>
                     {copied ? 'Copied!' : 'Copy'}
                   </Text>
                 </TouchableOpacity>
@@ -364,16 +398,17 @@ export function MemberDetailBody({ member, siblings, isParentViewer, canChangePi
           {inviteResult && 'error' in inviteResult && (
             <Text style={{ fontSize: 12, color: colors.danger, fontWeight: '600' }}>{inviteResult.error}</Text>
           )}
-        </View>
+        </InfoCard>
       )}
 
       {onDelete && isParentViewer && (
-        <TouchableOpacity onPress={onRequestRemove}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 16, paddingVertical: 10 }}>
-          <Trash2 size={16} color={colors.danger} />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>Remove from Family</Text>
-        </TouchableOpacity>
+        <ActionRow label="Review family removal →" onPress={onRequestRemove} danger colors={colors} isDark={isDark} />
       )}
+
+      <Text style={{ fontSize: 12, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, textAlign: 'center', lineHeight: 17 }}>
+        Account help never bypasses {member.name.split(' ')[0]}'s own consent. Own-profile settings and record
+        permissions remain {member.name.split(' ')[0]}'s choices.
+      </Text>
     </View>
   );
 }

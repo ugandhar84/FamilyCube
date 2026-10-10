@@ -20,6 +20,8 @@ import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
 import { type Meal, type AiDayOptions, type AiMealResult, weekOf, detectDays } from './meals/types';
 import { localDateStr } from '@/lib/dates';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
 
 function todayDayAbbr(): string {
   const ABBRS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -304,8 +306,11 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
     }
   };
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
-  const cardBg = isDark ? colors.card : '#FFFFFF';
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care/Grocery's own identical comment for
+  // the full rationale) [live-requested: "pickup meals module now"].
+  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const cardBg = isDark ? colors.card : GEMINI.cardBg;
 
   // Track whether any sub-page overlay is open — used to block the root swipe
   const subPageOpen = useRef(false);
@@ -356,37 +361,19 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }} {...swipePan.panHandlers}>
 
-      {/* ── ReviewInbox-style header ── */}
-      <View style={{
-        paddingHorizontal: 20,
-        paddingTop: insets.top + 12,
-        paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-        backgroundColor: canvas,
-        gap: 6,
-      }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
-            FAMILY CUBE / {familyName.toUpperCase()}
-          </Text>
-          {activeMember && (
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-              {(activeMember as any).name} · {(activeMember as any).role === 'parent' ? 'Parent / Admin' : 'Member'}
-            </Text>
-          )}
-        </View>
-
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Hub</Text>
-        </TouchableOpacity>
-
-        <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-          Meals
-        </Text>
-        <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-          Plan the week, explore recipes, and keep the list stocked.
-        </Text>
+      {/* ── Header — same PageHeading shell as Home Care/Grocery (eyebrow +
+          title + subtitle + pastel icon badge). Tapping the title itself
+          goes back, same "no separate back link" pattern as Grocery. ── */}
+      <View style={{ backgroundColor: canvas }}>
+        <PageHeading
+          eyebrow={`FAMILY CUBE · ${familyName.toUpperCase()}`}
+          title="Meals"
+          subtitle="Plan the week, explore recipes, and keep the list stocked."
+          accent="primary"
+          Icon={ChefHat}
+          onTitlePress={onClose ?? (() => router.back())}
+          topInset={insets.top}
+        />
       </View>
 
       <ScrollView
@@ -435,7 +422,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
               <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, color: colors.primary }}>
                 {tonightLabel}
               </Text>
-              <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3, lineHeight: 25 }}
+              <Text style={{ fontSize: 20, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, letterSpacing: -0.3, lineHeight: 25 }}
                 numberOfLines={2}>
                 {tonightMeal?.title ?? 'No meal planned yet'}
               </Text>
@@ -449,21 +436,21 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
           }}>
             <View style={{ gap: 2 }}>
               {tonightMeal?.start_time ? (
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                   {tonightMeal.start_time}
                   {chefName ? ` · ${chefName} cooks` : ''}
                 </Text>
               ) : chefName ? (
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                   {chefName} cooks tonight
                 </Text>
               ) : (
-                <Text style={{ fontSize: 14, color: colors.textSecondary }}>
+                <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
                   Tap to plan the week
                 </Text>
               )}
               {tonightMeal?.prep_minutes != null && (
-                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
                   {tonightMeal.prep_minutes} min prep
                   {tonightMeal.dietary_tags?.length ? ' · ' + tonightMeal.dietary_tags.slice(0, 2).join(', ') : ''}
                 </Text>
@@ -505,10 +492,10 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
               </View>
 
               <View style={{ flex: 1, gap: 3 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                   {cat.title}
                 </Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>
+                <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 18 }}>
                   {cat.subtitle}
                 </Text>
               </View>

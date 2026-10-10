@@ -19,6 +19,7 @@ import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import { localDateStr } from '@/lib/dates';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 function weekOf(offset = 0): string {
   const d = new Date();
@@ -69,7 +70,10 @@ export default function MealsWeekPage({
   // Form state lifted from MealsTab — when set, render the form as a full page
   const [formState, setFormState] = useState<MealFormState | null>(null);
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care/Grocery/MealsScreen's own identical
+  // comment).
+  const canvas = isDark ? colors.background : GEMINI.canvas;
 
   // Early-return: show add/edit form as a full standalone page with swipe-back support
   if (formState) {
@@ -104,7 +108,7 @@ export default function MealsWeekPage({
       }}>
         {/* Family chrome */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
             FAMILY CUBE / {familyName.toUpperCase()}
           </Text>
           {activeMember && (
@@ -114,15 +118,13 @@ export default function MealsWeekPage({
           )}
         </View>
 
-        {/* Breadcrumb */}
-        <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Meals</Text>
+        {/* Title — tapping it goes back, no separate breadcrumb link above
+            it [live-requested pattern, same as Grocery's sub-screens]. */}
+        <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+            A week at the table
+          </Text>
         </Pressable>
-
-        {/* Title */}
-        <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-          A week at the table
-        </Text>
       </View>
 
       {/* Week navigator */}
@@ -136,7 +138,7 @@ export default function MealsWeekPage({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={{ fontSize: 20, color: P, fontWeight: '500' }}>‹</Text>
         </Pressable>
-        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor, flex: 1 }}>
           {weekRange}
         </Text>
         <Pressable allowRapidPress onPress={() => setWeekOffset(w => w + 1)}

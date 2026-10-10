@@ -37,6 +37,7 @@ type FamilyRecipe = {
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { useGroceryStore } from '@/store/groceryStore';
 import { showToast } from '@/components/AppToast';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -214,8 +215,11 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
     }
   };
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
-  const cardBg  = isDark ? colors.card : '#FFFFFF';
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care/Grocery/MealsScreen's own identical
+  // comment).
+  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const cardBg  = isDark ? colors.card : GEMINI.cardBg;
   const pillBg  = (active: boolean) =>
     active ? P : (isDark ? colors.surface : colors.surface);
   const pillText = (active: boolean) =>
@@ -245,7 +249,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
         backgroundColor: canvas, gap: 8,
       }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
             FAMILY CUBE / {familyName.toUpperCase()}
           </Text>
           <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
@@ -253,14 +257,14 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           </Text>
         </View>
 
-        <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Meals</Text>
-        </Pressable>
-
+        {/* Title — tapping it goes back, no separate breadcrumb link above
+            it [live-requested pattern, same as Grocery's sub-screens]. */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-            Family recipe book
-          </Text>
+          <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }} style={{ flex: 1 }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+              Family recipe book
+            </Text>
+          </Pressable>
           {isParent && (
             <Pressable
               onPress={() => { resetAddRecipeForm(); setShowAddRecipe(true); }}
@@ -271,7 +275,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           )}
         </View>
 
-        <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+        <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 20 }}>
           Recipes your family has made and loved. Add any recipe to this week's plan.
         </Text>
       </View>
@@ -418,19 +422,18 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             backgroundColor: canvas, gap: 8,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                 FAMILY CUBE / {familyName.toUpperCase()}
               </Text>
               <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
                 {(activeMember as any)?.name}
               </Text>
             </View>
-            <Pressable onPress={() => setShowAddRecipe(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Recipe book</Text>
+            <Pressable onPress={() => setShowAddRecipe(false)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+                New recipe
+              </Text>
             </Pressable>
-            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-              New recipe
-            </Text>
           </View>
 
           {/* ── Single scrollable body — photo + all form fields scroll together ── */}
@@ -721,19 +724,18 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             backgroundColor: canvas, gap: 8,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                 FAMILY CUBE / {familyName.toUpperCase()}
               </Text>
               <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
                 {(activeMember as any)?.name}
               </Text>
             </View>
-            <Pressable onPress={() => setAddTarget(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Recipe book</Text>
+            <Pressable onPress={() => setAddTarget(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+                Add to this week
+              </Text>
             </Pressable>
-            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-              Add to this week
-            </Text>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}
@@ -747,11 +749,11 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                   ? <Text style={{ fontSize: 32 }}>{addTarget.emoji}</Text>
                   : <ChefHat size={28} color={colors.amber} strokeWidth={1.6} />}
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary }} numberOfLines={2}>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={2}>
                     {addTarget.title}
                   </Text>
                   {addTarget.prep_minutes != null && (
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                    <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 3 }}>
                       {addTarget.prep_minutes} min prep · {addTarget.ingredients?.length ?? 0} ingredients
                     </Text>
                   )}

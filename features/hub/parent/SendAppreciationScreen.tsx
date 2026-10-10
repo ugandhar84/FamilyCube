@@ -14,6 +14,7 @@ import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 function memberInitial(m: FamilyMember): string {
   return (m.name[0] ?? '?').toUpperCase();
@@ -99,7 +100,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
       }}>
         {/* Household chrome */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary, lineHeight: 15 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 15 }}>
             {familyName?.toUpperCase() ?? 'FAMILY SPACE'}
           </Text>
           {activeMember && (
@@ -115,14 +116,14 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
             <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Hub</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Send appreciation
             </Text>
             <Pressable
               onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
             >
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -151,10 +152,10 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
                 </Text>
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 18 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
                   {selectedMember.name}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>
                   {roleLabel(selectedMember)}
                 </Text>
               </View>
@@ -169,7 +170,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
           ) : (
             // No member selected — show picker
             <View style={{ gap: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 Who are you appreciating?
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -187,7 +188,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
                     <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: bluePillBg, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 11, fontWeight: '700', color: bluePillText }}>{memberInitial(m)}</Text>
                     </View>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{m.name.split(' ')[0]}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -195,7 +196,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
           )}
 
           {/* Explanation under member row */}
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             A warm message goes directly to the family chat — every member sees it.
           </Text>
         </View>
@@ -211,7 +212,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
             onChangeText={t => setText(t)}
             multiline
             style={{
-              fontSize: 14, color: colors.textPrimary,
+              fontSize: 14, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
               lineHeight: 24, // 170%
               textAlignVertical: 'top', minHeight: 72,
             }}
@@ -231,7 +232,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
                     opacity: pressed ? 0.7 : 1,
                   })}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>{p}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{p}</Text>
                 </Pressable>
               ))}
             </View>
@@ -246,7 +247,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
             android: { elevation: 2 },
           }),
         }}>
-          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 28 }}>
             Preview
           </Text>
 
@@ -257,12 +258,12 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
             </Text>
           </View>
 
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             {text.trim() ? `"${text.trim()}"` : 'Your message will appear here once you write something.'}
           </Text>
 
           {selectedMember && text.trim().length > 0 && (
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
               Sending to {selectedMember.name} and the whole family.
             </Text>
           )}
@@ -300,7 +301,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
 
         {/* ── Mint info module ── */}
         <View style={{ backgroundColor: cardMintBg, borderRadius: 22, padding: 18, gap: 12 }}>
-          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 28 }}>
             Encouragement, not payment
           </Text>
 
@@ -311,18 +312,18 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
             </Text>
           </View>
 
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             This message appears in the family chat thread where everyone can read it. It is a moment of recognition, not a reward.
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             To award coins, use the Quests tab. Appreciation and coins work together — one is personal, one is motivational.
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>
             A kind word takes ten seconds and can make someone's whole day.
           </Text>
         </View>
 
-        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18, textAlign: 'center' }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18, textAlign: 'center' }}>
           Connect. Organize. Care. Grow.
         </Text>
       </ScrollView>

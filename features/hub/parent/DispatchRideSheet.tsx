@@ -25,6 +25,7 @@ import { useTripStore } from '@/store/tripStore';
 import { useEventStore } from '@/store/eventStore';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { PinStoreLocationSheet } from '@/features/grocery/components/PinStoreLocationSheet';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,9 +69,10 @@ interface MemberChipProps {
   roleColor: string;
   onPress: () => void;
   colors: ReturnType<typeof useTheme>['colors'];
+  isDark: boolean;
 }
 
-function MemberChip({ name, selected, roleColor, onPress, colors }: MemberChipProps) {
+function MemberChip({ name, selected, roleColor, onPress, colors, isDark }: MemberChipProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -95,7 +97,7 @@ function MemberChip({ name, selected, roleColor, onPress, colors }: MemberChipPr
       <Text
         style={[
           styles.memberChipName,
-          { color: selected ? roleColor : colors.textSecondary },
+          { color: selected ? roleColor : (isDark ? colors.textSecondary : GEMINI.bodyColor) },
         ]}
         numberOfLines={1}>
         {name.split(' ')[0]}
@@ -300,10 +302,10 @@ export function DispatchRideSheet({
               <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
                 <Text style={[styles.backLink, { color: colors.teal }]}>← Rides</Text>
               </TouchableOpacity>
-              <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>Arrange a ride</Text>
+              <Text style={[styles.pageTitle, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>Arrange a ride</Text>
             </View>
             <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surface }]}>
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -317,7 +319,7 @@ export function DispatchRideSheet({
 
       {/* ── Field 1: Who needs a ride? ── */}
       <View style={[cardStyle, { marginTop: 8 }]}>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+        <Text style={[styles.fieldLabel, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
           Who needs a ride?
         </Text>
         <ScrollView
@@ -335,6 +337,7 @@ export function DispatchRideSheet({
                 setSelectedChildId(prev => (prev === kid.id ? null : kid.id))
               }
               colors={colors}
+              isDark={isDark}
             />
           ))}
           {ridableKids.length === 0 && (
@@ -373,7 +376,7 @@ export function DispatchRideSheet({
 
       {/* ── Field 2: Where and when? ── */}
       <View style={[cardStyle, { marginTop: 12 }]}>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+        <Text style={[styles.fieldLabel, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
           Where and when?
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -384,7 +387,7 @@ export function DispatchRideSheet({
             placeholderTextColor={colors.textTertiary}
             style={[
               styles.locationInput,
-              { flex: 1, color: colors.textPrimary, borderColor: colors.border },
+              { flex: 1, color: (isDark ? colors.textPrimary : GEMINI.titleColor), borderColor: colors.border },
             ]}
           />
           {/* Optional exact-coordinates pin — enables real GPS auto-advance
@@ -417,7 +420,7 @@ export function DispatchRideSheet({
           placeholderTextColor={colors.textTertiary}
           style={[
             styles.locationInput,
-            { color: colors.textPrimary, borderColor: colors.border },
+            { color: (isDark ? colors.textPrimary : GEMINI.titleColor), borderColor: colors.border },
           ]}
         />
         <View style={styles.timeChipRow}>
@@ -426,7 +429,7 @@ export function DispatchRideSheet({
               styles.timeChip,
               { backgroundColor: colors.surface },
             ]}>
-            <Text style={[styles.timeChipText, { color: colors.textPrimary }]}>
+            <Text style={[styles.timeChipText, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>
               {formatDateChip(rideDate)}
             </Text>
           </View>
@@ -435,7 +438,7 @@ export function DispatchRideSheet({
               styles.timeChip,
               { backgroundColor: colors.surface },
             ]}>
-            <Text style={[styles.timeChipText, { color: colors.textPrimary }]}>
+            <Text style={[styles.timeChipText, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>
               {formatTimeChip(rideDate)}
             </Text>
           </View>
@@ -451,7 +454,7 @@ export function DispatchRideSheet({
             borderColor: cardBorder,
           },
         ]}>
-        <Text style={[styles.detailCardTitle, { color: colors.textPrimary }]}>
+        <Text style={[styles.detailCardTitle, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>
           Who can drive?
         </Text>
         {driverCandidates.map(parent => {
@@ -484,13 +487,13 @@ export function DispatchRideSheet({
                 </Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.driverName, { color: colors.textPrimary }]}>
+                <Text style={[styles.driverName, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>
                   {parent.name}
                 </Text>
                 <Text
                   style={[
                     styles.driverAvailText,
-                    { color: colors.textSecondary },
+                    { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) },
                   ]}>
                   Available · tap to select
                 </Text>
@@ -518,7 +521,7 @@ export function DispatchRideSheet({
 
       {/* ── Field 3: Helper ── */}
       <View style={[cardStyle, { marginTop: 12 }]}>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+        <Text style={[styles.fieldLabel, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
           Helper (optional)
         </Text>
         <ScrollView
@@ -536,6 +539,7 @@ export function DispatchRideSheet({
                 setSelectedHelperId(prev => (prev === m.id ? null : m.id))
               }
               colors={colors}
+              isDark={isDark}
             />
           ))}
           {helperCandidates.length === 0 && (
@@ -548,7 +552,7 @@ export function DispatchRideSheet({
 
       {/* ── Field 4: ETA & notes ── */}
       <View style={[cardStyle, { marginTop: 12 }]}>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+        <Text style={[styles.fieldLabel, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
           ETA &amp; notes
         </Text>
         <View style={styles.etaRow}>
@@ -561,13 +565,13 @@ export function DispatchRideSheet({
             style={[
               styles.etaInput,
               {
-                color: colors.textPrimary,
+                color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
               },
             ]}
           />
-          <Text style={[styles.etaLabel, { color: colors.textSecondary }]}>
+          <Text style={[styles.etaLabel, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
             mins
           </Text>
           <TextInput
@@ -578,7 +582,7 @@ export function DispatchRideSheet({
             style={[
               styles.notesInput,
               {
-                color: colors.textPrimary,
+                color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
               },
@@ -588,7 +592,7 @@ export function DispatchRideSheet({
       </View>
 
       {/* ── Explanation text ── */}
-      <Text style={[styles.explanationText, { color: colors.textSecondary }]}>
+      <Text style={[styles.explanationText, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
         Helper role does not grant driving eligibility. Check each person's
         availability before assigning.
       </Text>
@@ -599,20 +603,20 @@ export function DispatchRideSheet({
           styles.summaryCard,
           { backgroundColor: colors.tealLight, borderColor: cardBorder },
         ]}>
-        <Text style={[styles.summaryTitle, { color: colors.textPrimary }]}>
+        <Text style={[styles.summaryTitle, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>
           Dispatch summary
         </Text>
-        <Text style={[styles.summaryBody, { color: colors.textPrimary }]}>
+        <Text style={[styles.summaryBody, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>
           {`Once dispatched: assign ${driverName} as driver${helperName ? ` and ${helperName} as helper` : ''}. Notify ${childName} and the family.`}
         </Text>
-        <Text style={[styles.summaryFooter, { color: colors.textSecondary }]}>
+        <Text style={[styles.summaryFooter, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
           Driver confirmation starts the trip. Live progress is visible to
           everyone.
         </Text>
       </View>
 
       {/* ── Signature ── */}
-      <Text style={[styles.signature, { color: colors.textSecondary }]}>
+      <Text style={[styles.signature, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
         Connect. Organize. Care. Grow.
       </Text>
 

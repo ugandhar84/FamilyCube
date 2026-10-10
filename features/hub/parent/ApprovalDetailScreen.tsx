@@ -22,6 +22,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { dmChannelId } from '@/store/chatStore';
 import { parseDbTime } from '@/lib/dates';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 type Panel = 'none' | 'flag' | 'reverse' | 'cosign';
 type Note = { kind: 'success' | 'error'; text: string } | null;
@@ -63,7 +64,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
   if (!chore || !activeMemberId) {
     return (
       <View style={{ flex: 1, backgroundColor: canvas, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: colors.textSecondary }}>This approval is no longer available.</Text>
+        <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>This approval is no longer available.</Text>
       </View>
     );
   }
@@ -84,7 +85,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
     ok:      { bg: colors.tealLight,  fg: colors.teal },
     warn:    { bg: colors.amberLight, fg: colors.amber },
     danger:  { bg: isDark ? colors.danger + '22' : colors.danger + '14', fg: colors.danger },
-    neutral: { bg: colors.surface,    fg: colors.textSecondary },
+    neutral: { bg: colors.surface,    fg: (isDark ? colors.textSecondary : GEMINI.bodyColor) },
   }[badge.tone];
 
   const run = async (fn: () => Promise<DisputeResult>, okText: string, after?: () => void) => {
@@ -121,7 +122,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
   const Secondary = ({ label, onPress, icon }: { label: string; onPress: () => void; icon?: React.ReactNode }) => (
     <Pressable disabled={busy} onPress={onPress} style={{ ...btn(isDark ? colors.card : '#FFFFFF', colors.border), opacity: busy ? 0.55 : 1 }}>
       {icon}
-      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>{label}</Text>
+      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{label}</Text>
     </Pressable>
   );
   const DiscussBtn = () => (
@@ -133,14 +134,14 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
   const reasonPanel = (kind: 'flag' | 'reverse') => (
     <View style={{ gap: 10, borderRadius: 14, padding: 14, backgroundColor: kind === 'flag' ? colors.amberLight : (isDark ? colors.danger + '14' : colors.danger + '0D') }}>
-      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
+      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
         {kind === 'flag' ? `Why do you want to discuss this with ${approverName}? (optional)`
           : `This asks ${approverName} to co-sign reversing the ${coins}-coin payout. Nothing changes until they agree. Why? (optional)`}
       </Text>
       <TextInput
         value={text} onChangeText={setText} multiline maxLength={300} editable={!busy}
         placeholder="Add a reason" placeholderTextColor={colors.textTertiary}
-        style={{ minHeight: 72, borderRadius: 12, padding: 12, fontSize: TYPO.body, color: colors.textPrimary,
+        style={{ minHeight: 72, borderRadius: 12, padding: 12, fontSize: TYPO.body, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
           backgroundColor: isDark ? colors.surface : '#FFFFFF', borderWidth: 1, borderColor: colors.border, textAlignVertical: 'top' }}
       />
       <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -163,7 +164,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
         <Pressable onPress={onClose} hitSlop={8}>
           <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
         </Pressable>
-        <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -0.4, color: colors.textPrimary }} numberOfLines={2}>{chore.title}</Text>
+        <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -0.4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={2}>{chore.title}</Text>
         <View style={{ alignSelf: 'flex-start', borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10, backgroundColor: tone.bg }}>
           <Text style={{ fontSize: 12, fontWeight: '700', color: tone.fg }}>{badge.label}</Text>
         </View>
@@ -171,20 +172,20 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
         <View style={{ borderRadius: 16, padding: 16, gap: 6, backgroundColor: isDark ? colors.card : colors.surface }}>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: colors.textPrimary }}>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {approverName} approved this{approvedOn ? ` on ${approvedOn}` : ''}.
           </Text>
-          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+          <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
             {kidName} earned {coins} coins.
           </Text>
           {!!chore.disputeStatus && (
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
               {first(chore.disputedById)} {chore.disputeStatus === 'flagged' ? 'flagged it for discussion' : 'asked to reverse it'}
               {chore.disputeReason ? ` — "${chore.disputeReason}"` : ''}.
             </Text>
           )}
           {reversed && (
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
               Reversed{chore.reversedById ? ` by ${first(chore.reversedById)}` : ''}. {kidName}'s coins were taken back.
             </Text>
           )}
@@ -200,7 +201,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
         {!reversed && !chore.disputeStatus && !iAmApprover && panel === 'none' && (
           <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
               Disagree with {approverName}'s approval? Nothing changes for {kidName} unless {approverName} agrees.
             </Text>
             <Pressable onPress={() => { setNote(null); setPanel('flag'); }} style={btn(colors.amberLight, colors.amber + '50')}>
@@ -218,14 +219,14 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
         {!reversed && !chore.disputeStatus && iAmApprover && (
           <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>You approved this. Nobody has raised a concern.</Text>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>You approved this. Nobody has raised a concern.</Text>
             <Secondary label="Dismiss from list" onPress={async () => { await acknowledge(choreId, me); onClose(); }} />
           </View>
         )}
 
         {!reversed && chore.disputeStatus && iAmApprover && panel !== 'cosign' && (
           <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
               {chore.disputeStatus === 'flagged'
                 ? `No coins have moved. Talk it over with ${otherName}, or keep your approval as is.`
                 : `Nothing changes unless you co-sign. If you do, ${kidName} loses ${coins} coins and the chore is marked declined.`}
@@ -242,7 +243,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
           <View style={{ gap: 10, borderRadius: 14, padding: 14, backgroundColor: isDark ? colors.danger + '14' : colors.danger + '0D' }}>
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
               <ShieldCheck size={18} color={colors.danger} />
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 This removes {coins} coins from {kidName} and marks "{chore.title}" as declined. {kidName} will be told. This can't be undone.
               </Text>
             </View>
@@ -258,7 +259,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
         {!reversed && chore.disputeStatus && !iAmApprover && (
           <View style={{ gap: 10 }}>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
               Waiting on {approverName} to respond. {kidName} sees nothing unless {approverName} agrees.
             </Text>
             <DiscussBtn />

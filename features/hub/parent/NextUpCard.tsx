@@ -8,6 +8,7 @@ import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { fmtTime } from '../hubUtils';
 import { MapPin } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Opens the platform's own Maps app for an address — Apple Maps on iOS,
 // Google Maps (or whatever the device has registered) on Android.
@@ -94,7 +95,7 @@ export function NextUpTimeline({
             <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.pink, marginBottom: 6, opacity: 0.6 }} />
             <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>NEXT UP</Text>
           </View>
-          <Text style={{ color: colors.textPrimary, fontSize: 20, fontWeight: '400', letterSpacing: -0.5, marginTop: 4 }}>
+          <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 20, fontWeight: '400', letterSpacing: -0.5, marginTop: 4 }}>
             {todayLabel}
           </Text>
         </View>
@@ -166,10 +167,10 @@ export function NextUpTimeline({
                 (CLAUDE.md §9) — every other time display in the app uses
                 fmtTime; this card was the one outlier still showing "14:00"
                 style strings. */}
-            <Text style={{ width: 42, color: colors.textSecondary, fontSize: 11, marginTop: 2 }}>{fmtTime(ev.time)}</Text>
+            <Text style={{ width: 42, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11, marginTop: 2 }}>{fmtTime(ev.time)}</Text>
             <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: dotColors[i % 3], marginTop: 6 }} />
             <View style={{ flex: 1, gap: 3 }}>
-              <Text style={{ fontSize: 14, color: colors.textPrimary, fontWeight: '400' }} numberOfLines={1}>
+              <Text style={{ fontSize: 14, color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontWeight: '400' }} numberOfLines={1}>
                 {ev.title}
               </Text>
               {displayLocation && !conflictReasons?.get(ev.id) ? (
@@ -186,7 +187,7 @@ export function NextUpTimeline({
               ) : conflictReasons?.get(ev.id) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                   <MapPin size={11} color={colors.textTertiary} />
-                  <Text style={{ color: colors.textSecondary, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                  <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11, flex: 1 }} numberOfLines={1}>
                     {conflictReasons.get(ev.id)}
                   </Text>
                 </View>

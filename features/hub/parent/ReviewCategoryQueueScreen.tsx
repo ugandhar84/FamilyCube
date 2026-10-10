@@ -21,6 +21,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export interface QueueRow {
   id: string;
@@ -57,14 +58,14 @@ export function ReviewCategoryQueueScreen({
             <Text style={{ fontSize: 13, fontWeight: '500', color: accentColor, lineHeight: 18 }}>← Review inbox</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               {title}
             </Text>
             <Pressable
               onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
             >
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -83,7 +84,7 @@ export function ReviewCategoryQueueScreen({
           }),
         }}>
           {rows.length === 0 ? (
-            <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary, lineHeight: 25 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
               Nothing pending in this category right now.
             </Text>
           ) : (
@@ -93,10 +94,10 @@ export function ReviewCategoryQueueScreen({
                 onPress={() => onSelectRow(row.id)}
                 style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, gap: 4 })}
               >
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 21 }} numberOfLines={1}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 21 }} numberOfLines={1}>
                   {row.title}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>
                   {row.detail}
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: accentColor, lineHeight: 18 }}>

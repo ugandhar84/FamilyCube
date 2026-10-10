@@ -16,6 +16,7 @@ import { decryptLocationText } from '@/lib/locationCrypto';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 interface RadarRow {
   member_id: string;
@@ -112,10 +113,10 @@ export function FamilyRadarSection({ members, colors, isDark }: {
               <FamilyAvatar name={member.name} emoji={member.emoji} avatarUrl={member.avatarUrl}
                 siblings={members.map(m => m.name)} ringColor={rc} size={34} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {member.name.split(' ')[0]}
                 </Text>
-                <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
+                <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }} numberOfLines={1}>
                   {isLive ? (loc?.address ?? 'Location unavailable') : 'Not sharing location'}
                 </Text>
               </View>

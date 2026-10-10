@@ -12,6 +12,7 @@ function isHoliday(s: TodayPeriodStatus | HolidayStatus | null): s is HolidaySta
 }
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function SchoolTodaySection({ members, colors, isDark, activeName, activeMemberId }: {
   members: FamilyMember[]; colors: any; isDark: boolean;
@@ -86,7 +87,7 @@ export function SchoolTodaySection({ members, colors, isDark, activeName, active
                 }}>
                 <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={38} ringColor={colors.kid} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     {kid.name.split(' ')[0]}
                   </Text>
                   {holiday ? (
@@ -94,7 +95,7 @@ export function SchoolTodaySection({ members, colors, isDark, activeName, active
                       🎉 No school — {(status as HolidayStatus).reason}
                     </Text>
                   ) : periodStatus ? (
-                    <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 1 }}>
+                    <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>
                       {periodStatus.period.subject}{periodStatus.period.room ? ` · Rm ${periodStatus.period.room}` : ''} · {periodStatus.period.startTime}–{periodStatus.period.endTime}
                     </Text>
                   ) : (

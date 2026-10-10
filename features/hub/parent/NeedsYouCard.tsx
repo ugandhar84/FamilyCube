@@ -3,6 +3,7 @@ import { ClipboardCheck, ChevronRight, CalendarDays } from 'lucide-react-native'
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useTheme } from '@/lib/ThemeContext';
 import { fmtHumanDateShort, fmtTime } from '../hubUtils';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // dueDate/dueTime are optional, separate fields — NOT baked into the reason
 // string. Was previously the only way a date reached this card at all (e.g.
@@ -66,14 +67,14 @@ export function NeedsYouCard({
           <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.amber, marginBottom: 6, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>NEEDS YOU</Text>
         </View>
-        <Text style={{ color: colors.textPrimary, fontSize: 17, fontWeight: '700', marginTop: 5, marginBottom: 4 }} numberOfLines={2}>
+        <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 17, fontWeight: '700', marginTop: 5, marginBottom: 4 }} numberOfLines={2}>
           {item.title}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: dueLabel ? 4 : 0 }}>
           <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: statusColor + '20' }}>
             <Text style={{ fontSize: 11, fontWeight: '700', color: statusColor }}>{status.label}</Text>
           </View>
-          <Text style={{ color: colors.textSecondary, fontSize: 12, flex: 1 }} numberOfLines={1}>
+          <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 12, flex: 1 }} numberOfLines={1}>
             {item.reason}
           </Text>
         </View>

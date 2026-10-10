@@ -9,6 +9,7 @@ import { useTripStore, type Trip, type TripPhase } from '@/store/tripStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useLiveTripEta } from '@/lib/hooks/useLiveTripEta';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 type FilterKey = 'active' | 'upcoming' | 'history';
 
@@ -33,7 +34,7 @@ function memberInitial(id: string | undefined, members: FamilyMember[]): string 
 }
 
 function ProgressTrack({ phase }: { phase: TripPhase }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const current = phaseIndex(phase);
   return (
     <View style={{ gap: 4 }}>
@@ -49,7 +50,7 @@ function ProgressTrack({ phase }: { phase: TripPhase }) {
         {PHASE_STAGES.map((s, i) => (
           <Text key={s.phase} style={{
             flex: 1, textAlign: 'center', fontSize: 9, fontWeight: '400',
-            color: i <= current ? colors.textSecondary : colors.textTertiary,
+            color: i <= current ? (isDark ? colors.textSecondary : GEMINI.bodyColor) : colors.textTertiary,
           }}>
             {s.label}
           </Text>
@@ -120,18 +121,18 @@ function TripCard({ trip, members, onSelect }: {
           </Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {pickup ? `Picking up ${pickupFirst}` : 'Family pickup'}
           </Text>
           {trip.driverNotes ? (
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>"{trip.driverNotes}"</Text>
+            <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>"{trip.driverNotes}"</Text>
           ) : null}
         </View>
         <View style={{ backgroundColor: status.bg, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text style={{ fontSize: 11, fontWeight: '600', color: status.color }}>{status.label}</Text>
         </View>
       </View>
-      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+      <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
         {explanation}
       </Text>
       <ProgressTrack phase={trip.phase} />
@@ -175,13 +176,13 @@ function EventCard({ event, members, onDispatch }: {
           </Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{event.title}</Text>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{event.title}</Text>
         </View>
         <View style={{ backgroundColor: statusBg, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text style={{ fontSize: 11, fontWeight: '600', color: statusColor }}>{statusLabel}</Text>
         </View>
       </View>
-      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+      <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
         {explanation}
       </Text>
       {driverId && <ProgressTrack phase="assigned" />}
@@ -258,12 +259,12 @@ export function RidesControlRoomScreen({
             <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
               <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Family rides
             </Text>
           </View>
           <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
           </Pressable>
         </View>
       </View>
@@ -287,7 +288,7 @@ export function RidesControlRoomScreen({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primary }}>Active ride in progress</Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>
                   {members.find(m => m.id === firstLive.driverMemberId)?.name ?? 'Driver'} · {firstLive.etaMinutes} min ETA
                 </Text>
               </View>
@@ -314,7 +315,7 @@ export function RidesControlRoomScreen({
                 style={{ flex: 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
                   backgroundColor: isActive ? colors.card : 'transparent' }}
               >
-                <Text style={{ fontSize: 13, fontWeight: isActive ? '700' : '400', color: isActive ? colors.teal : colors.textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: isActive ? '700' : '400', color: isActive ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {p.label}{p.count > 0 ? ` · ${p.count}` : ''}
                 </Text>
               </Pressable>
@@ -326,7 +327,7 @@ export function RidesControlRoomScreen({
             block: a one-line description of what this filter actually
             shows right now, built from real counts/state, not a static
             caption. */}
-        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: -8 }}>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: -8 }}>
           {filter === 'active'
             ? (liveTrips.length > 0
                 ? `${liveTrips.length} ride${liveTrips.length === 1 ? '' : 's'} on the road right now.`
@@ -365,10 +366,10 @@ export function RidesControlRoomScreen({
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                         {members.find(m => m.id === trip.pickupMemberId)?.name ?? 'Family'} pickup
                       </Text>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                      <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>
                         With {members.find(m => m.id === trip.driverMemberId)?.name ?? '—'}
                       </Text>
                     </View>

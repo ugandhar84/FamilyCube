@@ -4,6 +4,7 @@ import { AnimatedPressable } from '@/components/AnimatedPressable';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import PersonaSwitcherDropdown from '@/components/PersonaSwitcherDropdown';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 /**
  * ProfileSwitcherCard — "Viewing as / Maya / Parent · household admin"
@@ -47,7 +48,7 @@ export function ProfileSwitcherCard({
         <FamilyAvatar name={active.name} emoji={active.emoji} avatarUrl={active.avatarUrl} size={42} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 9, color: colors.textTertiary }}>Viewing as</Text>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginTop: 1 }}>{active.name.split(' ')[0]}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginTop: 1 }}>{active.name.split(' ')[0]}</Text>
           <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2 }}>{roleLabel}</Text>
         </View>
         <Text style={{ fontSize: 12, color: colors.primary, textAlign: 'center' }}>↓</Text>

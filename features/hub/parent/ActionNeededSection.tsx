@@ -16,6 +16,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
 import { dedupeRideSeries } from '../lib/dedupeRideSeries';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "grocery request" accent, distinct from brand teal used
 // elsewhere for confirmed/assigned state. Not colors.success (which IS
@@ -74,7 +75,7 @@ function CheckinRow({ req, kidName, colors, isDark, active, approveRequest }: {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }}>{kidName}</Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>{req.detail}</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={2}>{req.detail}</Text>
       </View>
       <Pressable onPress={() => approveRequest(req.id, active.id)}
         style={{ backgroundColor: colors.parent, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>

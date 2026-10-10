@@ -10,6 +10,7 @@ import { PickupTimeStepper } from './PickupTimeStepper';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // This card deliberately uses two distinct hues for the two legs of a
 // both-ways ride — money-green for "drop-off" and indigo for "pickup" — so
@@ -142,7 +143,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
 
       {ev.notes && (
         <View style={{ backgroundColor: colors.amberLight, borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning }}>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic' }}>"{ev.notes}"</Text>
         </View>
       )}
 
@@ -152,7 +153,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
           backgroundColor: colors.surface,
           flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 6 }}>
           <Text style={{ fontSize: TYPO.body }}>🪙</Text>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, flex: 1 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), flex: 1 }}>
             Coins for teen driver
             {isBothWays && coinsVal ? ` (split ${splitCoins}+${splitCoins})` : ''}
           </Text>

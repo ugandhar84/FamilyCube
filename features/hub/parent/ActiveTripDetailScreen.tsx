@@ -8,6 +8,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useTripStore, type TripPhase } from '@/store/tripStore';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const STAGES: { phase: TripPhase; label: string }[] = [
   { phase: 'assigned',  label: 'Confirmed'  },
@@ -89,12 +90,12 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
             <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
               <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Family rides</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               {linkedEvent?.title ?? `Picking up ${pickupName}`}
             </Text>
           </View>
           <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
           </Pressable>
         </View>
       </View>
@@ -116,19 +117,19 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
           <View style={{ gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.teal }} />
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>Departure</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Departure</Text>
             </View>
             <View style={{ width: 2, height: 16, backgroundColor: `${colors.teal}50`, marginLeft: 4 }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: colors.primary }} />
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 {linkedEvent?.location ?? 'Destination'}
               </Text>
             </View>
           </View>
           <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Text style={{ fontSize: 22 }}>🕐</Text>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               ETA: {trip.etaMinutes} min{trip.etaMinutes === 1 ? '' : 's'}{trip.driverNotes ? ` · ${trip.driverNotes}` : ''}
             </Text>
           </View>
@@ -153,7 +154,7 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
             {STAGES.map((stage, i) => (
               <Text key={stage.phase} style={{
                 flex: 1, textAlign: 'center', fontSize: 10, fontWeight: i === activeIdx ? '700' : '400',
-                color: i <= activeIdx ? colors.textPrimary : colors.textTertiary,
+                color: i <= activeIdx ? (isDark ? colors.textPrimary : GEMINI.titleColor) : colors.textTertiary,
               }}>
                 {stage.label}
               </Text>
@@ -170,8 +171,8 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>{driverInitial}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{driverName}</Text>
-              <Text style={{ fontSize: 12, color: colors.textSecondary }}>Taking them</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{driverName}</Text>
+              <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Taking them</Text>
             </View>
             <View style={{ backgroundColor: colors.tealLight, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
               <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>Driver</Text>
@@ -186,8 +187,8 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>{(pickupMember.name[0] ?? '?').toUpperCase()}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{pickupMember.name}</Text>
-                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>Being picked up</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{pickupMember.name}</Text>
+                  <Text style={{ fontSize: 11, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Being picked up</Text>
                 </View>
                 <View style={{ backgroundColor: colors.amberLight, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
                   <Text style={{ fontSize: 11, fontWeight: '600', color: colors.amber }}>Passenger</Text>
@@ -207,7 +208,7 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
             placeholderTextColor={colors.textTertiary}
             style={{
               backgroundColor: colors.surface, borderRadius: 12, padding: 14,
-              fontSize: 15, color: colors.textPrimary,
+              fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
               borderWidth: 1, borderColor,
             }}
           />
@@ -240,7 +241,7 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
             style={[s.btnOutline, { backgroundColor: colors.surface, borderColor }]}
             activeOpacity={0.85}
           >
-            <Text style={[s.btnOutlineText, { color: colors.textSecondary }]}>Mark as complete</Text>
+            <Text style={[s.btnOutlineText, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>Mark as complete</Text>
           </TouchableOpacity>
         )}
 

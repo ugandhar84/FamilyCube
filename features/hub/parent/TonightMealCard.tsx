@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { weekOf, DAYS } from '@/features/vault/tabs/meals/types';
 import type { FamilyMember } from '@/store/familyStore';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 type TodayMeal = {
   id: string; title: string; emoji?: string | null;
@@ -128,7 +129,7 @@ export function TonightMealCard({
         {hasMeals ? (
           <>
             {/* Primary meal */}
-            <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary,
+            <Text style={{ fontSize: 17, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
               marginBottom: 3 }} numberOfLines={1}>
               {primary!.title}
             </Text>
@@ -162,13 +163,13 @@ export function TonightMealCard({
               </View>
             )}
             {!chef && primary?.prep_minutes ? (
-              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+              <Text style={{ fontSize: 11, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
                 ~{primary.prep_minutes} min
               </Text>
             ) : null}
           </>
         ) : (
-          <Text style={{ fontSize: 17, fontWeight: '400', color: colors.textPrimary,
+          <Text style={{ fontSize: 17, fontWeight: '400', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
             marginTop: 5, marginBottom: 5 }}>
             No meals planned yet
           </Text>

@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 /**
  * FamilyPulseCard — pixel-faithful rebuild of the Figma Make prototype's
@@ -73,10 +74,10 @@ export function FamilyPulseCard({
           <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.teal, marginBottom: 6, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>FAMILY PULSE</Text>
         </View>
-        <Text style={{ color: colors.textPrimary, fontSize: 21, fontWeight: '700', letterSpacing: -0.5, marginTop: 6, marginBottom: 6 }}>
+        <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 21, fontWeight: '700', letterSpacing: -0.5, marginTop: 6, marginBottom: 6 }}>
           {familyName ? `Welcome to ${familyName}` : "You’re on top of today"}
         </Text>
-        <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 19 }}>
+        <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 13, lineHeight: 19 }}>
           {hasUrgentItem
             ? 'Everyone is accounted for. One thing needs your decision.'
             : 'Everyone is accounted for.'}
@@ -88,7 +89,7 @@ export function FamilyPulseCard({
         borderWidth: 5, borderColor: 'rgba(82,125,109,0.18)', borderTopColor: colors.teal,
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Text style={{ fontSize: 17, fontWeight: '600', color: colors.textPrimary, textAlign: 'center' }}>
+        <Text style={{ fontSize: 17, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), textAlign: 'center' }}>
           {sharingCount}/{members.length}
         </Text>
         <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center' }}>
@@ -107,7 +108,7 @@ export function FamilyPulseCard({
           </View>
         ))}
         {mostRecent && (
-          <Text style={{ marginLeft: 8, color: colors.textSecondary, fontSize: 11 }}>
+          <Text style={{ marginLeft: 8, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11 }}>
             {mostRecent.name.split(' ')[0]} checked in
           </Text>
         )}

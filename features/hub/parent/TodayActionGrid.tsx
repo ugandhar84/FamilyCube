@@ -2,6 +2,7 @@ import { View, Text } from 'react-native';
 import { ClipboardCheck, ShoppingCart, Calendar, ListChecks } from 'lucide-react-native';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useUIStore } from '@/store/uiStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 /**
  * TodayActionGrid — originally a pixel-faithful rebuild of the Figma Make
@@ -103,7 +104,7 @@ export function TodayActionGrid({
           <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.primary, marginBottom: 6, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>QUICK ACTIONS</Text>
         </View>
-        <Text style={{ color: colors.textPrimary, fontSize: 20, fontWeight: '400', letterSpacing: -0.5, marginTop: 4 }}>
+        <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 20, fontWeight: '400', letterSpacing: -0.5, marginTop: 4 }}>
           Get it done
         </Text>
       </View>
@@ -133,12 +134,12 @@ export function TodayActionGrid({
               {taskStats.map(s => (
                 <View key={s.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text style={{ fontSize: 11, fontWeight: '800', color: s.color, minWidth: 13 }}>{s.value}</Text>
-                  <Text style={{ fontSize: 9, color: colors.textSecondary }} numberOfLines={1}>{s.label}</Text>
+                  <Text style={{ fontSize: 9, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>{s.label}</Text>
                 </View>
               ))}
             </View>
           </View>
-          <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
+          <Text style={{ fontSize: 16, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
             Add a task
           </Text>
         </AnimatedPressable>
@@ -178,10 +179,10 @@ export function TodayActionGrid({
                   </View>
                 )}
               </View>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary, marginTop: 15 }} numberOfLines={1}>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginTop: 15 }} numberOfLines={1}>
                 {t.title}
               </Text>
-              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 3 }} numberOfLines={1}>
+              <Text style={{ fontSize: 11, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 3 }} numberOfLines={1}>
                 {t.subtitle}
               </Text>
             </AnimatedPressable>

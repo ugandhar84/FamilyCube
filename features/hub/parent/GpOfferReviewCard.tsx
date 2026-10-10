@@ -3,6 +3,7 @@ import { CheckCircle2, Hand } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Scenario 1.6 — a grandparent/senior offered to handle an openToGP chore
 // ("I'll Handle It") and it's sitting in gp_offer_pending until a parent
@@ -33,14 +34,14 @@ export function GpOfferReviewCard({ c, members, colors, isDark, active, acceptGP
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Hand size={15} color={colors.teal} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
             {gp?.name?.split(' ')[0] ?? 'A grandparent'} offered to handle this
           </Text>
         </View>
       </View>
       {c.description ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 18 }}>{c.description}</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>{c.description}</Text>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable

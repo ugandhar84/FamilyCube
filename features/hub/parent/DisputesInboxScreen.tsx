@@ -22,6 +22,7 @@ import { X, MessageSquare, ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export type DisputeKind = 'redo' | 'reversal';
 
@@ -77,14 +78,14 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
             <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Review inbox</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               A fair second look
             </Text>
             <Pressable
               onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
             >
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -103,7 +104,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
                 style={{ flex: 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
                   backgroundColor: active ? cardWhiteBg : 'transparent' }}
               >
-                <Text style={{ fontSize: 13, fontWeight: active ? '700' : '400', color: active ? linkBlue : colors.textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: active ? '700' : '400', color: active ? linkBlue : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {seg.label}
                 </Text>
               </Pressable>
@@ -119,7 +120,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
       >
         {openCount === 0 && resolved.length === 0 && (
           <View style={{ backgroundColor: cardWhiteBg, borderRadius: RADIUS, padding: 16 }}>
-            <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary, lineHeight: 25 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
               No disputes right now.
             </Text>
           </View>
@@ -140,10 +141,10 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
                 <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                   <MessageSquare size={20} color={colors.danger} strokeWidth={1.8} style={{ marginTop: 2 }} />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                       {name(c.assignedToId)} · {c.title}
                     </Text>
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                    <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
                       {c.title} disputed — waiting on a second parent
                     </Text>
                   </View>
@@ -169,10 +170,10 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
                   <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                     <ShieldCheck size={20} color={colors.danger} strokeWidth={1.8} style={{ marginTop: 2 }} />
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                         {c.title} · +{(c.basePoints > 0 ? c.basePoints : c.coinsReward) ?? 0} approval
                       </Text>
-                      <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                      <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
                         {approver?.name?.split(' ')[0] ?? 'A parent'} approved · {requester?.name?.split(' ')[0] ?? 'Another parent'} requested reversal
                       </Text>
                     </View>
@@ -184,7 +185,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
                 </Pressable>
               );
             })}
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
               Completion and wallet stay unchanged until the original approver co-signs.
             </Text>
           </View>
@@ -196,10 +197,10 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
             <Text style={sectionLabel}>RECENT RESOLUTION</Text>
             {resolved.map((c, i) => (
               <View key={c.id} style={{ gap: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {c.title}
                 </Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {c.reversedById ? `Reversed — coins removed, ${name(c.assignedToId)} notified`
                     : c.status === 'approved' ? `Disputed redo settled — ${name(c.assignedToId)} paid`
                     : `Redo clarified — ${name(c.assignedToId)} notified, no coins awarded`}

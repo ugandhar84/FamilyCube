@@ -18,6 +18,7 @@ import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Car } from 'lucide-react-native';
 import type { TripPhase } from '@/store/tripStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const PHASE_STAGES: { phase: TripPhase; label: string }[] = [
   { phase: 'assigned',  label: 'Confirmed'  },
@@ -78,10 +79,10 @@ export function RidesStatusCard({
           <Car size={18} color={idle ? colors.sky : needsDriver ? colors.danger : colors.sky} strokeWidth={2} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
             {idle ? 'Rides' : activeTripLabel ?? 'Rides'}
           </Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+          <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>
             {idle
               ? 'No rides right now'
               : pendingCount > 0 ? `${pendingCount} more need${pendingCount === 1 ? 's' : ''} you` : ''}

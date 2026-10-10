@@ -9,6 +9,7 @@ import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function PushbackSheet({ target, onClose, respondToParentQuest }: {
   target: { assignmentId: string; choreTitle: string; assignedBy?: string; assignedTo?: string } | null;
@@ -59,7 +60,7 @@ export function PushbackSheet({ target, onClose, respondToParentQuest }: {
               borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: borderColor }}>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>RESPOND TO TASK</Text>
-                <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.3, color: colors.textPrimary }}>
+                <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.3, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {target?.choreTitle ?? ''}
                 </Text>
                 <Text style={{ fontSize: 12, fontWeight: '600', color: colors.amber, marginTop: 2 }}>
@@ -71,7 +72,7 @@ export function PushbackSheet({ target, onClose, respondToParentQuest }: {
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
                   backgroundColor: colors.surface, marginLeft: 12 }}>
-                <X size={16} color={colors.textSecondary} />
+                <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
               </TouchableOpacity>
             </View>
 
@@ -87,7 +88,7 @@ export function PushbackSheet({ target, onClose, respondToParentQuest }: {
                   style={{
                     borderRadius: 14, borderWidth: 1, borderColor,
                     backgroundColor: colors.surface,
-                    padding: 14, fontSize: TYPO.caption, color: colors.textPrimary,
+                    padding: 14, fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                     minHeight: 60,
                   }}
                   placeholder="Add context…"

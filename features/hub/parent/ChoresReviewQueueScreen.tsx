@@ -27,6 +27,7 @@ import { X, Camera, ImageOff, Sparkles, Heart, Briefcase, ClipboardCheck } from 
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 function relativeTime(iso?: string): string {
   if (!iso) return '';
@@ -82,14 +83,14 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
             <Text style={{ fontSize: 13, fontWeight: '500', color: accentColor, lineHeight: 18 }}>← Review inbox</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Chores & Quests
             </Text>
             <Pressable
               onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
             >
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -108,7 +109,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
               android: { elevation: 2 },
             }),
           }}>
-            <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary, lineHeight: 25 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
               Nothing pending right now.
             </Text>
           </View>
@@ -164,12 +165,12 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
                         {meta.label.toUpperCase()}
                       </Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                       {chore.title}
                     </Text>
                   </View>
 
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>
+                  <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>
                     {assignee?.name?.split(' ')[0] ?? 'Someone'} · {chore.coinsReward ?? 0} coins
                     {waitingLabel ? ` · ${waitingLabel}` : ''}
                   </Text>
@@ -181,7 +182,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
                   )}
 
                   {chore.submissionNote ? (
-                    <Text style={{ fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' }} numberOfLines={2}>
+                    <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic' }} numberOfLines={2}>
                       "{chore.submissionNote}"
                     </Text>
                   ) : null}

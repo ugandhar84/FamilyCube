@@ -12,6 +12,7 @@ import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 interface Props {
   redemptionId: string;
@@ -47,7 +48,7 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 15 }}>Redemption not found.</Text>
+          <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 15 }}>Redemption not found.</Text>
         </View>
       </SafeAreaView>
     );
@@ -79,12 +80,12 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
             <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
               <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Review inbox</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Reward request
             </Text>
           </View>
           <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
           </Pressable>
         </View>
       </View>
@@ -107,8 +108,8 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
               <Text style={s.avatarText}>{initial}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[s.memberName, { color: colors.textPrimary }]}>{member?.name ?? 'Unknown'}</Text>
-              <Text style={[s.memberSub, { color: colors.textSecondary }]}>wants to redeem a reward</Text>
+              <Text style={[s.memberName, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>{member?.name ?? 'Unknown'}</Text>
+              <Text style={[s.memberSub, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>wants to redeem a reward</Text>
             </View>
           </View>
         </View>
@@ -116,9 +117,9 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
         {/* Reward card */}
         <View style={[s.card, { backgroundColor: colors.amberLight, borderColor: 'transparent' }]}>
           <Text style={[s.overline, { color: colors.amber }]}>REWARD</Text>
-          <Text style={[s.rewardTitle, { color: colors.textPrimary }]}>{rewardTitle}</Text>
+          <Text style={[s.rewardTitle, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>{rewardTitle}</Text>
           {rewardDescription ? (
-            <Text style={[s.bodyText, { color: colors.textSecondary }]}>{rewardDescription}</Text>
+            <Text style={[s.bodyText, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>{rewardDescription}</Text>
           ) : null}
           <View style={[s.coinsBadge, { backgroundColor: colors.card, alignSelf: 'flex-start' }]}>
             <Text style={[s.coinsBadgeText, { color: colors.amber }]}>₵ {coinCost} coins · {categoryLabel}</Text>
@@ -127,8 +128,8 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
 
         {/* What happens next */}
         <View style={[s.card, { backgroundColor: colors.tealLight, borderColor: 'transparent' }]}>
-          <Text style={[s.cardTitle, { color: colors.textPrimary }]}>What happens on approval</Text>
-          <Text style={[s.bodyText, { color: colors.textSecondary }]}>
+          <Text style={[s.cardTitle, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>What happens on approval</Text>
+          <Text style={[s.bodyText, { color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }]}>
             {coinCost} coins are deducted from {firstName}'s balance. The redemption is marked fulfilled.
           </Text>
         </View>

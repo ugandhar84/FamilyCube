@@ -9,6 +9,7 @@ import { fmtTime } from '../hubUtils';
 import { useDriverLocation } from '@/lib/hooks/useDriverLocation';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const DEFAULT_ETA = 10;
 // A driver can't sanely be "en route" to something hours away — only let
@@ -132,7 +133,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
               <Text style={{ fontSize: 22 }}>{activeTrip!.driverEmoji ?? '🚗'}</Text>
               <Navigation size={14} color={activeColor} />
               <Text style={{ fontSize: 22 }}>{activeTrip!.kidEmoji ?? '🧒'}</Text>
-              <Text style={{ flex: 1, marginLeft: 2, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+              <Text style={{ flex: 1, marginLeft: 2, fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 {activeTrip!.driverName} picking up {activeTrip!.kidName}
               </Text>
             </View>
@@ -140,7 +141,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
             {driverAddress && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6 }}>
                 <MapPin size={11} color={activeColor} style={{ marginLeft: 1 }} />
-                <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+                <Text style={{ fontSize: TYPO.micro, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), flex: 1 }} numberOfLines={1}>
                   {activeTrip!.driverName} is near {driverAddress}
                 </Text>
               </View>
@@ -212,12 +213,12 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.success, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                 Up Next
               </Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginTop: 2 }}>
                 {nextRide.title} — {nextRide.kidName}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
                 {nextRide.time && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{fmtTime(nextRide.time)}</Text>
+                  <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{fmtTime(nextRide.time)}</Text>
                 )}
                 {nextRide.location && (
                   <>
@@ -230,7 +231,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
             {rideLocked ? (
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700' }}>Opens in</Text>
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontWeight: '800' }}>
+                <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontWeight: '800' }}>
                   {formatCountdown((nextRide.hoursUntil ?? DISPATCH_WINDOW_HOURS) - DISPATCH_WINDOW_HOURS)}
                 </Text>
               </View>
@@ -256,7 +257,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
           borderWidth: 1, borderColor: colors.border, padding: 12,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
               Who are you picking up?
             </Text>
             <TouchableOpacity onPress={() => setShowPicker(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -277,7 +278,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
                     style={{ alignItems: 'center', gap: 4, width: 52 }}>
                     <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
                       siblings={members.map(mb => mb.name)} ringColor={colors.success} size={40} />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                       {m.name.split(' ')[0]}
                     </Text>
                   </TouchableOpacity>

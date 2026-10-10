@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
 import { GROCERY_PREFIX, SUPPLIES_PREFIX, decodeGroceryRequest } from '../KidModals';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "item approved / added" accent, distinct from brand teal
 // used elsewhere in the hub. Not colors.success (which IS brand teal in
@@ -57,11 +58,11 @@ export function GroceryRequestCard({
         <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
           backgroundColor: isDark ? '#1e293b' : '#fff',
           borderLeftWidth: 3, borderLeftColor: accent }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {decodedGrocery.name}{decodedGrocery.qty ? ` × ${decodedGrocery.qty}` : ''}
           </Text>
           {decodedGrocery.notes ? (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>"{decodedGrocery.notes}"</Text>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>"{decodedGrocery.notes}"</Text>
           ) : null}
         </View>
       )}
@@ -69,7 +70,7 @@ export function GroceryRequestCard({
         <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
           backgroundColor: isDark ? '#1e293b' : '#fff',
           borderLeftWidth: 3, borderLeftColor: accent }}>
-          <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary }}>
+          <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             "{rawDetailText}"
           </Text>
         </View>
@@ -82,8 +83,8 @@ export function GroceryRequestCard({
               <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                 backgroundColor: colors.surface, borderRadius: 10, padding: 10 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
-                  {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{item.name}</Text>
+                  {item.qty ? <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Qty: {item.qty}</Text> : null}
                   {item.store ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>🏪 {item.store}</Text> : null}
                 </View>
                 {item.status === 'pending' ? (

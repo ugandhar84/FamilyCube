@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // GP Welcome toggle accent — deliberately distinct from brand pink/lavender
 // so the grandparent-facing toggle reads as its own state color.
@@ -114,7 +115,7 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
             placeholderTextColor={colors.textTertiary}
             multiline
             style={{
-              fontSize: TYPO.label, color: colors.textPrimary, minHeight: 44,
+              fontSize: TYPO.label, color: (isDark ? colors.textPrimary : GEMINI.titleColor), minHeight: 44,
               borderRadius: 14, borderWidth: 1, borderColor,
               backgroundColor: colors.surface,
               paddingHorizontal: 14, paddingVertical: 12,
@@ -148,7 +149,7 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
                   })}
                 >
                   <Text style={{ fontSize: 40 }}>{m.emoji || '👤'}</Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{m.name.split(' ')[0]}</Text>
                 </Pressable>
               ))
             }
@@ -168,7 +169,7 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
                 <Pressable onPress={() => setPendingTarget(null)}
                   style={{ flex: 1, height: 40, borderRadius: 10, borderWidth: 1, borderColor,
                     alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>Cancel</Text>
+                  <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Cancel</Text>
                 </Pressable>
                 <Pressable onPress={() => commitDelegate(pendingTarget)}
                   style={{ flex: 2, height: 40, borderRadius: 10, backgroundColor: colors.danger,
@@ -209,8 +210,8 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
               }
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>GP Welcome</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Grandparents can see and claim this task</Text>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>GP Welcome</Text>
+              <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Grandparents can see and claim this task</Text>
             </View>
           </Pressable>
         )}

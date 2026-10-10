@@ -29,6 +29,7 @@ import { X, RotateCcw } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function RedoDisputeReviewScreen({ choreId, onClose }: {
   choreId: string;
@@ -52,7 +53,7 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
   if (!chore) {
     return (
       <View style={{ flex: 1, backgroundColor: canvas, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: colors.textSecondary }}>This dispute is no longer available.</Text>
+        <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>This dispute is no longer available.</Text>
       </View>
     );
   }
@@ -88,14 +89,14 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
             <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Review inbox</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Second opinion
             </Text>
             <Pressable
               onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
             >
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
           <View style={{ alignSelf: 'flex-start', backgroundColor: statusBg, borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10 }}>
@@ -117,10 +118,10 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
             android: { elevation: 2 },
           }),
         }}>
-          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 28 }}>
             {chore.title}
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             {assignee?.name?.split(' ')[0] ?? 'Someone'} says the redo wasn't fair — they're asking a second parent to take a look before it goes back to them.
           </Text>
           {isOwnRedoCall && (
@@ -138,12 +139,12 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
             android: { elevation: 2 },
           }),
         }}>
-          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 28 }}>
             What they submitted
           </Text>
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
             <RotateCcw size={20} color={colors.danger} strokeWidth={1.8} style={{ marginTop: 2 }} />
-            <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 25 }}>
+            <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 25 }}>
               {chore.rejectionReason ? `Redo requested: "${chore.rejectionReason}"` : 'A redo was requested on this submission.'}
             </Text>
           </View>
@@ -151,7 +152,7 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
             borderWidth: 1, borderColor: isDark ? colors.border : '#DFE5EF', borderRadius: 14,
             padding: 14, minHeight: 88,
           }}>
-            <Text style={{ fontSize: 14, color: colors.textPrimary, lineHeight: 24 }}>
+            <Text style={{ fontSize: 14, color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 24 }}>
               {chore.submissionNote || 'No note was left with the submission.'}
             </Text>
           </View>
@@ -161,13 +162,13 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
         <View style={{
           backgroundColor: cardMintBg, borderRadius: 16, padding: 16, gap: 12,
         }}>
-          <Text style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, lineHeight: 28 }}>
+          <Text style={{ fontSize: 20, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 28 }}>
             Make the call
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             Approve & pay settles it in {assignee?.name?.split(' ')[0] ?? 'their'} favor — coins land immediately, same as any approval.
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary, lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
             Side with the redo sends it back to the queue — {assignee?.name?.split(' ')[0] ?? 'they'} will need to resubmit.
           </Text>
 

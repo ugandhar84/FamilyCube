@@ -5,6 +5,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import type { FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function ReviewConflictModal({
   visible, onClose,
@@ -55,12 +56,12 @@ export function ReviewConflictModal({
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textTertiary, marginBottom: 2 }}>Needs you before 16:00</Text>
-              <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, color: colors.textPrimary }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 One decision
               </Text>
             </View>
             <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -77,8 +78,8 @@ export function ReviewConflictModal({
               <View key={`${r.title}-${i}`}>
                 {i > 0 && <View style={{ height: 1, backgroundColor: isDark ? colors.border : 'rgba(44,39,34,0.06)' }} />}
                 <View style={{ paddingVertical: 14, gap: 4 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>{r.title}</Text>
-                  {r.detail ? <Text style={{ fontSize: 12, color: colors.textSecondary }}>{r.detail}</Text> : null}
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{r.title}</Text>
+                  {r.detail ? <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{r.detail}</Text> : null}
                   <View style={{ alignSelf: 'flex-start', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.primaryLight, marginTop: 2 }}>
                     <Text style={{ fontSize: 10, fontWeight: '600', color: colors.primary }}>{r.meta}</Text>
                   </View>
@@ -90,7 +91,7 @@ export function ReviewConflictModal({
           {/* Context card */}
           <View style={[s.card, { backgroundColor: colors.amberLight, borderColor: 'transparent' }]}>
             <Text style={[s.overline, { color: colors.amber }]}>WHY THIS MATTERS</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 20 }}>
+            <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
               These events overlap and need a decision before they can both happen. Approving the plan will lock in the arrangement shown.
             </Text>
           </View>
@@ -108,7 +109,7 @@ export function ReviewConflictModal({
             onPress={onClose}
             style={{ flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: colors.surface }}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>Not now</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Not now</Text>
           </AnimatedPressable>
           <AnimatedPressable
             onPress={() => { onApprove(); onClose(); }}

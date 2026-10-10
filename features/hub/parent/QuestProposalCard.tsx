@@ -10,6 +10,7 @@ import { localDateStr } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { KidRequest } from '@/store/kidRequestStore';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Scenario 1.4 — a Kid's suggested chore ("Can I wash the car for 15 coins?")
 // awaiting a parent's Approve-as-is / Approve-with-Changes / Decline
@@ -66,7 +67,7 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }} numberOfLines={1}>
               {kidName} suggested a chore
             </Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }} numberOfLines={2}>
               "{req.detail}"
             </Text>
           </View>
@@ -87,12 +88,12 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
             style={{
               borderWidth: 1.5, borderColor: colors.parent, borderRadius: 8,
               paddingHorizontal: 10, paddingVertical: 4, fontSize: TYPO.label, fontWeight: '800',
-              color: colors.textPrimary, width: 80,
+              color: (isDark ? colors.textPrimary : GEMINI.titleColor), width: 80,
             }}
           />
         ) : (
           <Pressable onPress={() => setEditing(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               {finalCoins} coins proposed{wasEdited ? ' (edited)' : ''}
             </Text>
             <PenLine size={12} color={colors.textTertiary} />

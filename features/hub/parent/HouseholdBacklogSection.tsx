@@ -17,6 +17,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function HouseholdBacklogSection({
   active, members, colors, isDark,
@@ -122,7 +123,7 @@ export function HouseholdBacklogSection({
 
             {othersAdultQuests.length > 0 && (
               <View style={{ gap: 6 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>Assigned to others</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 2 }}>Assigned to others</Text>
                 {othersAdultQuests.map(q => (
                   <OthersAdultQuestCard key={q.id} q={q} active={active} members={members} colors={colors} isDark={isDark} updateQuest={updateQuest} />
                 ))}
@@ -219,8 +220,8 @@ export function HouseholdBacklogSection({
             {coParentHelperEventsSafe.length > 0 && (
               <View style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                  <Users size={12} color={colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Co-parent's pending rides</Text>
+                  <Users size={12} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Co-parent's pending rides</Text>
                 </View>
                 {coParentHelperEventsSafe.map(ev => (
                   <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} updateEventScoped={updateEventScoped} />

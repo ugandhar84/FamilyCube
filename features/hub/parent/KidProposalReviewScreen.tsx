@@ -16,6 +16,7 @@ import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 function firstName(id: string | undefined, members: FamilyMember[]): string {
   if (!id) return 'Someone';
@@ -30,7 +31,7 @@ function isQuestCategory(t: ChoreTask): boolean {
 function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
   chore: ChoreTask; reviewerId: string; onDone: () => void; onCancel: () => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [coins, setCoins] = useState(String(chore.coinsReward ?? 10));
   const { approveKidProposedChore } = useChoreStore();
 
@@ -47,8 +48,8 @@ function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
         style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' }}
       >
         <View style={{ width: '85%', backgroundColor: colors.card, borderRadius: 22, padding: 24, gap: 16 }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>Set coin reward</Text>
-          <Text style={{ fontSize: 13, color: colors.textSecondary }}>"{chore.title}"</Text>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Set coin reward</Text>
+          <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>"{chore.title}"</Text>
           <View style={{ gap: 6 }}>
             <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>COINS FOR THIS CHORE</Text>
             <TextInput
@@ -57,7 +58,7 @@ function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
               keyboardType="number-pad"
               style={{
                 backgroundColor: colors.surface, borderRadius: 12, padding: 12,
-                fontSize: 15, color: colors.textPrimary,
+                fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                 borderWidth: 1, borderColor: 'rgba(223,97,60,0.15)',
               }}
               placeholderTextColor={colors.textTertiary}
@@ -72,7 +73,7 @@ function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
                 borderWidth: 1, borderColor: colors.border, alignItems: 'center', opacity: pressed ? 0.7 : 1,
               })}
             >
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Cancel</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Cancel</Text>
             </Pressable>
             <Pressable
               onPress={handleApprove}
@@ -93,7 +94,7 @@ function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
 function ProposalCard({ chore, members, activeMemberId, isQuest }: {
   chore: ChoreTask; members: FamilyMember[]; activeMemberId: string | null; isQuest: boolean;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { declineKidProposedChore } = useChoreStore();
   const [showApproveModal, setShowApproveModal] = useState(false);
 
@@ -118,8 +119,8 @@ function ProposalCard({ chore, members, activeMemberId, isQuest }: {
             <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>{proposerInitial}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{chore.title}</Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{chore.title}</Text>
+            <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>
               Proposed by {firstName(chore.createdById, members)} · {chore.coinsReward} coins
             </Text>
           </View>
@@ -145,7 +146,7 @@ function ProposalCard({ chore, members, activeMemberId, isQuest }: {
               borderWidth: 1, borderColor: colors.border, alignItems: 'center', opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Decline</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Decline</Text>
           </Pressable>
         </View>
       </View>
@@ -194,12 +195,12 @@ export function KidProposalReviewScreen({ onClose }: { onClose: () => void }) {
             <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
               <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: colors.textPrimary }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Kid proposals
             </Text>
           </View>
           <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+            <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
           </Pressable>
         </View>
       </View>
@@ -209,7 +210,7 @@ export function KidProposalReviewScreen({ onClose }: { onClose: () => void }) {
         contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary }}>
+        <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
           {total} {total === 1 ? 'item needs' : 'items need'} a decision
         </Text>
 

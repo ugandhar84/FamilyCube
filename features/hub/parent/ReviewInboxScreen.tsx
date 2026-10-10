@@ -27,6 +27,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export type ReviewCategory = 'chores' | 'redemptions' | 'requests' | 'disputes';
 
@@ -137,7 +138,7 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
         gap: 8,
       }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary, lineHeight: 15 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 15 }}>
             {familyName?.toUpperCase() ?? 'FAMILY SPACE'}
           </Text>
           {activeMember && (
@@ -152,14 +153,14 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
             <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Hub</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               Review inbox
             </Text>
             <Pressable
               onPress={onClose}
               style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
             >
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
+              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
             </Pressable>
           </View>
         </View>
@@ -179,7 +180,7 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
               android: { elevation: 2 },
             }),
           }}>
-            <Text style={{ fontSize: 15, fontWeight: '500', color: colors.textSecondary, lineHeight: 25 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
               Nothing pending right now. Check back when the family needs you!
             </Text>
             <Pressable onPress={() => { onClose?.(); router.push('/(tabs)/quests' as any); }} style={{ marginTop: 10 }}>
@@ -208,10 +209,10 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
                 <Icon size={22} color={cat.color} strokeWidth={2} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {cat.title}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 2 }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
                   {cat.subtitle}
                 </Text>
               </View>
@@ -244,10 +245,10 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
               const sl = statusLabel(chore.status);
               return (
                 <View key={chore.id} style={{ gap: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 25 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 25 }}>
                     {chore.title}
                   </Text>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>
                     {assignee} · {tl} · {sl}
                   </Text>
                   {i < decidedChores.length - 1 && (

@@ -12,6 +12,7 @@ import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // A non-Ride event (Sports/Study/Medical/etc) that separately flagged
 // "needs a ride" (rideRequired) — distinct from RideRequestCard, which only
@@ -193,7 +194,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
       }>
       {ev.notes && (
         <View style={{ backgroundColor: colors.amberLight, borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning, marginBottom: 8 }}>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic' }}>"{ev.notes}"</Text>
         </View>
       )}
 

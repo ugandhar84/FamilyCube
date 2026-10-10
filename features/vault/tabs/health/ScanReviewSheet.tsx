@@ -582,7 +582,7 @@ export default function ScanReviewSheet({
 
                 {/* ── Who is this for? ── */}
                 <View>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#888' : '#888', letterSpacing: 0.5, marginBottom: 10 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? colors.textTertiary : BODY_CLR_LIGHT, letterSpacing: 0.5, marginBottom: 10 }}>
                     WHO IS THIS FOR?
                   </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -594,19 +594,19 @@ export default function ScanReviewSheet({
                           style={{
                             flexDirection: 'row', alignItems: 'center', gap: 8,
                             paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16,
-                            backgroundColor: sel ? accent : (isDark ? '#1E1E2E' : '#F3F4F6'),
-                            borderWidth: 2, borderColor: sel ? accent : 'transparent',
+                            backgroundColor: sel ? accent : (isDark ? colors.card : CARD_BG),
+                            borderWidth: sel ? 2 : 1, borderColor: sel ? accent : (isDark ? colors.border : BORDER),
                           }}>
                           <View style={{
                             width: 28, height: 28, borderRadius: 14,
-                            backgroundColor: sel ? 'rgba(255,255,255,0.25)' : (isDark ? '#333' : '#E5E7EB'),
+                            backgroundColor: sel ? 'rgba(255,255,255,0.25)' : (isDark ? colors.surface : '#F0EDE6'),
                             alignItems: 'center', justifyContent: 'center',
                           }}>
-                            <Text style={{ fontSize: 13, fontWeight: '900', color: sel ? '#fff' : (isDark ? '#ccc' : '#555') }}>
+                            <Text style={{ fontSize: 13, fontWeight: '900', color: sel ? '#fff' : (isDark ? colors.textSecondary : BODY_CLR) }}>
                               {m.name.charAt(0).toUpperCase()}
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : (isDark ? '#ccc' : '#333') }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : (isDark ? colors.textPrimary : TITLE_CLR) }}>
                             {m.name}
                           </Text>
                           {sel && (
@@ -631,10 +631,11 @@ export default function ScanReviewSheet({
                           flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center',
                           backgroundColor: reviewDocType === t
                             ? (t === 'vaccine' ? colors.teal : colors.accent)
-                            : (isDark ? '#1E1E2E' : '#F3F4F6'),
+                            : (isDark ? colors.card : CARD_BG),
+                          borderWidth: reviewDocType === t ? 0 : 1, borderColor: isDark ? colors.border : BORDER,
                         }}>
                         <Text style={{ fontWeight: '800', fontSize: 12, textTransform: 'uppercase',
-                          color: reviewDocType === t ? '#fff' : (isDark ? '#888' : '#666') }}>
+                          color: reviewDocType === t ? '#fff' : (isDark ? colors.textSecondary : BODY_CLR) }}>
                           {t}
                         </Text>
                       </TouchableOpacity>
@@ -643,7 +644,7 @@ export default function ScanReviewSheet({
                 )}
 
                 {/* ── Divider ── */}
-                <View style={{ height: 1, backgroundColor: isDark ? '#222' : '#EBEBEB' }} />
+                <View style={{ height: 1, backgroundColor: isDark ? colors.border : BORDER }} />
 
                 {/* ── Medication cards — one per extracted item, was a
                     single reviewMed object (only the FIRST medication on a
@@ -656,8 +657,8 @@ export default function ScanReviewSheet({
                 {reviewDocType === 'medication' && reviewMeds.map((med, idx) => (
                   <View key={idx} style={{
                     borderRadius: 16, borderWidth: 1.5, padding: 14, gap: 12,
-                    borderColor: med.skip ? (isDark ? '#333' : '#E5E7EB') : colors.accent + '40',
-                    backgroundColor: isDark ? '#161622' : '#FAFAFF',
+                    borderColor: med.skip ? (isDark ? colors.border : BORDER) : colors.accent + '40',
+                    backgroundColor: isDark ? colors.card : CARD_BG,
                     opacity: med.skip ? 0.55 : 1,
                   }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -667,8 +668,8 @@ export default function ScanReviewSheet({
                       {reviewMeds.length > 1 && (
                         <TouchableOpacity
                           onPress={() => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, skip: !m.skip } : m))}
-                          style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: isDark ? '#222' : '#EEE' }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#aaa' : '#666' }}>
+                          style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: isDark ? colors.surface : '#F0EDE6' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textSecondary : BODY_CLR }}>
                             {med.skip ? 'Skipped — tap to include' : 'Skip this one'}
                           </Text>
                         </TouchableOpacity>
@@ -689,23 +690,23 @@ export default function ScanReviewSheet({
                     ] as [string, keyof ParsedMedication][]).map(([label, field]) => (
                       field === 'prescribed_date' ? null : (
                       <View key={field}>
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#666' : '#999', marginBottom: 4, letterSpacing: 0.4 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textSecondary : BODY_CLR, marginBottom: 4, letterSpacing: 0.4 }}>
                           {label.toUpperCase()}
                         </Text>
                         <TextInput
                           value={String(med[field] ?? '')}
                           onChangeText={v => setReviewMeds(prev => prev.map((m, i) => i === idx ? { ...m, [field]: v } : m))}
                           placeholder={`—`}
-                          placeholderTextColor={isDark ? '#444' : '#ccc'}
+                          placeholderTextColor={isDark ? colors.textTertiary : '#B8ADA0'}
                           style={{
                             borderWidth: 1.5,
                             borderColor: field === 'name' && !med.name
                               ? colors.danger + '80'
-                              : (isDark ? '#2A2A3E' : '#E5E7EB'),
+                              : (isDark ? colors.border : BORDER),
                             borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
-                            color: isDark ? '#fff' : '#111',
-                            backgroundColor: isDark ? '#1A1A2E' : '#fff',
-                            fontSize: 14, fontWeight: '500',
+                            color: isDark ? colors.textPrimary : TITLE_CLR,
+                            backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                            fontSize: 15, fontWeight: '600',
                           }}
                         />
                       </View>
@@ -726,8 +727,8 @@ export default function ScanReviewSheet({
                 {reviewDocType === 'vaccine' && reviewVaxes.map((vax, idx) => (
                   <View key={idx} style={{
                     borderRadius: 16, borderWidth: 1.5, padding: 14, gap: 12,
-                    borderColor: vax.skip ? (isDark ? '#333' : '#E5E7EB') : colors.teal + '40',
-                    backgroundColor: isDark ? '#0F1F1A' : '#F5FBF9',
+                    borderColor: vax.skip ? (isDark ? colors.border : BORDER) : colors.teal + '40',
+                    backgroundColor: isDark ? colors.card : CARD_BG,
                     opacity: vax.skip ? 0.55 : 1,
                   }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -737,8 +738,8 @@ export default function ScanReviewSheet({
                       {reviewVaxes.length > 1 && (
                         <TouchableOpacity
                           onPress={() => setReviewVaxes(prev => prev.map((v, i) => i === idx ? { ...v, skip: !v.skip } : v))}
-                          style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: isDark ? '#222' : '#EEE' }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#aaa' : '#666' }}>
+                          style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: isDark ? colors.surface : '#F0EDE6' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textSecondary : BODY_CLR }}>
                             {vax.skip ? 'Skipped — tap to include' : 'Skip this one'}
                           </Text>
                         </TouchableOpacity>
@@ -757,24 +758,24 @@ export default function ScanReviewSheet({
                       ['Site (e.g. Left arm)', 'site'],
                     ] as [string, keyof ParsedVaccine][]).map(([label, field]) => (
                       <View key={field}>
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#666' : '#999', marginBottom: 4, letterSpacing: 0.4 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textSecondary : BODY_CLR, marginBottom: 4, letterSpacing: 0.4 }}>
                           {label.toUpperCase()}
                         </Text>
                         <TextInput
                           value={vax[field] != null ? String(vax[field]) : ''}
                           onChangeText={v => setReviewVaxes(prev => prev.map((vv, i) => i === idx ? { ...vv, [field]: (v || null) as any } : vv))}
                           placeholder="—"
-                          placeholderTextColor={isDark ? '#444' : '#ccc'}
+                          placeholderTextColor={isDark ? colors.textTertiary : '#B8ADA0'}
                           keyboardType={['dose_number', 'total_doses'].includes(field as string) ? 'numeric' : 'default'}
                           style={{
                             borderWidth: 1.5,
                             borderColor: field === 'vaccine_name' && !vax.vaccine_name
                               ? colors.danger + '80'
-                              : (isDark ? '#2A2A3E' : '#E5E7EB'),
+                              : (isDark ? colors.border : BORDER),
                             borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
-                            color: isDark ? '#fff' : '#111',
-                            backgroundColor: isDark ? '#1A1A2E' : '#fff',
-                            fontSize: 14, fontWeight: '500',
+                            color: isDark ? colors.textPrimary : TITLE_CLR,
+                            backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                            fontSize: 15, fontWeight: '600',
                           }}
                         />
                       </View>
@@ -800,15 +801,20 @@ export default function ScanReviewSheet({
                   </View>
                 ))}
 
-                {/* ── Save / Discard ── */}
+                {/* ── Save / Discard — same BLUE CTA + neutral Discard rhythm
+                    as AddMedModal/AddVaxModal's own footer
+                    [live-requested: "scan vax/prescription should take
+                    cta/font and other gemini rhythm" / "i still see cta is
+                    different color" — this button was still colors.teal/
+                    colors.accent instead of the shared Gemini BLUE]. ── */}
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
                   <TouchableOpacity onPress={closeScanSheet}
                     style={{
                       flex: 1, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
-                      backgroundColor: isDark ? '#1E1E2E' : '#F3F4F6',
-                      borderWidth: 1, borderColor: isDark ? '#333' : '#E5E7EB',
+                      backgroundColor: isDark ? colors.card : CARD_BG,
+                      borderWidth: 1, borderColor: isDark ? colors.border : BORDER,
                     }}>
-                    <Text style={{ fontWeight: '800', fontSize: 14, color: isDark ? '#aaa' : '#666' }}>Discard</Text>
+                    <Text style={{ fontWeight: '700', fontSize: 14, color: isDark ? colors.textSecondary : BODY_CLR }}>Discard</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     disabled={rxSaving || !reviewMemberId}
@@ -819,14 +825,14 @@ export default function ScanReviewSheet({
                     style={{
                       flex: 2, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
                       backgroundColor: !reviewMemberId || rxSaving
-                        ? (isDark ? '#333' : '#E5E7EB')
-                        : (reviewDocType === 'vaccine' ? colors.teal : colors.accent),
+                        ? (isDark ? colors.border : BORDER)
+                        : BLUE,
                     }}>
                     {rxSaving
                       ? <ActivityIndicator color="#fff" size="small" />
                       : <Text style={{
-                          fontWeight: '900', fontSize: 14,
-                          color: !reviewMemberId ? (isDark ? '#666' : '#aaa') : '#fff',
+                          fontWeight: '700', fontSize: 15,
+                          color: !reviewMemberId ? (isDark ? colors.textTertiary : colors.textTertiary) : '#FFFFFF',
                         }}>
                           {(() => {
                             const items = reviewDocType === 'vaccine' ? reviewVaxes : reviewMeds;

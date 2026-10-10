@@ -261,7 +261,13 @@ export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, o
           {([['all', 'All'], ['due_soon', 'Due soon'], ['notes', 'Notes']] as [FilterTab, string][]).map(([key, label]) => (
             <TouchableOpacity key={key} onPress={() => setFilterTab(key)}
               style={{ paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
-                backgroundColor: filterTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE),
+                // Teal (Home Care's own brand accent, same as the section
+                // headings) instead of near-black TITLE_CLR — the black
+                // pill read as visually disconnected from the rest of the
+                // warm/teal palette [live-reported: "pill selection black
+                // color in the homecare right not sure how we can use
+                // here"].
+                backgroundColor: filterTab === key ? colors.teal : (isDark ? colors.surface : SURFACE),
                 borderWidth: filterTab === key ? 0 : 1,
                 borderColor: isDark ? colors.border : BORDER }}>
               <Text style={{ fontSize: 13, fontWeight: '600',

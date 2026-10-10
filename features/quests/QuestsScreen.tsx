@@ -71,6 +71,7 @@ import { SubmitQuestSheet } from './components/SubmitQuestSheet';
 import { DelegateQuestSheet } from './components/DelegateQuestSheet';
 import { KudosSheet } from './components/KudosSheet';
 import { showToast } from '@/components/AppToast';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Re-export AddQuestModal so existing external imports of
 // `import { AddQuestModal } from '@/features/quests/QuestsScreen'` keep working.
@@ -825,11 +826,11 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     setIsReopening(p => ({ ...p, [id]: false }));
   };
 
-  const cardBg   = colors.card;
-  const cardBord = colors.border;
+  const cardBg   = isDark ? colors.card : GEMINI.cardBg;
+  const cardBord = isDark ? colors.border : GEMINI.border;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={hideHeader ? [] : ['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : GEMINI.canvas }} edges={hideHeader ? [] : ['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {/* The shared Ask Cube FAB (app/(tabs)/_layout.tsx) is visible on
@@ -861,10 +862,10 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
             <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
               {/* h1 — compact AppHeader above already shows avatar+greeting+name */}
               <View style={{ marginBottom: 6 }}>
-                <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor, lineHeight: 34 }}>
                   {isKid ? 'My chores' : 'Tasks, shared'}
                 </Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 3 }}>
                   {stillOpen > 0
                     ? `${stillOpen} thing${stillOpen === 1 ? '' : 's'} left. Everyone can see what they own.`
                     : 'All done for now — great work!'}
@@ -888,24 +889,24 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               {/* 4-tile summary strip */}
               <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
                 <View style={{ flex: 1, minHeight: 72, borderRadius: 17, backgroundColor: colors.pinkLight, padding: 10, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{doneToday}</Text>
-                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 2 }}>done today</Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{doneToday}</Text>
+                  <Text style={{ fontSize: 9, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>done today</Text>
                 </View>
                 <View style={{ flex: 1, minHeight: 72, borderRadius: 17, backgroundColor: colors.primaryLight, padding: 10, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{stillOpen}</Text>
-                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 2 }}>pending</Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{stillOpen}</Text>
+                  <Text style={{ fontSize: 9, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>pending</Text>
                 </View>
                 <View style={{ flex: 1, minHeight: 72, borderRadius: 17, backgroundColor: colors.tealLight, padding: 10, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{inProgress}</Text>
-                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 2 }}>in progress</Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{inProgress}</Text>
+                  <Text style={{ fontSize: 9, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>in progress</Text>
                 </View>
                 <View style={{ flex: 1, minHeight: 72, borderRadius: 17,
-                  backgroundColor: overdueCount > 0 ? colors.danger + '18' : colors.surface,
+                  backgroundColor: overdueCount > 0 ? colors.danger + '18' : (isDark ? colors.surface : '#F0EDE6'),
                   padding: 10, justifyContent: 'center' }}>
                   <Text style={{ fontSize: 18, fontWeight: '700',
-                    color: overdueCount > 0 ? colors.danger : colors.textTertiary }}>{overdueCount}</Text>
+                    color: overdueCount > 0 ? colors.danger : (isDark ? colors.textTertiary : GEMINI.bodyColorLight) }}>{overdueCount}</Text>
                   <Text style={{ fontSize: 9, marginTop: 2, fontWeight: overdueCount > 0 ? '700' : '400',
-                    color: overdueCount > 0 ? colors.danger : colors.textTertiary }}>overdue</Text>
+                    color: overdueCount > 0 ? colors.danger : (isDark ? colors.textTertiary : GEMINI.bodyColorLight) }}>overdue</Text>
                 </View>
               </View>
             </View>

@@ -28,6 +28,7 @@ import {
   type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Edit Quest Modal (parent, unclaimed quests only) ────────────────────────
 export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, editMode = 'full' }: {
@@ -133,7 +134,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const pillBg  = isDark ? colors.surface : '#F1F5F9';
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
   const siblings = members.map(m => m.name);
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+  const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
 
   // Figma section card — floating white card with shadow
   const sectionCard = {

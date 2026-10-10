@@ -31,6 +31,7 @@ import SwipeableEventCard from './SwipeableEventCard';
 import { toDateStr, parseDate, isEventPast } from './calendarDateHelpers';
 import { showAlert } from '@/components/AppAlert';
 import { showToast } from '@/components/AppToast';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export default function AgendaView({
   events, members, colors, isDark, onSelectEvent, onLongPressEvent, isViewerParent = false, canDeleteEvent,
@@ -179,7 +180,7 @@ export default function AgendaView({
                     </Text>
                   </View>
                 ) : (
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                     {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   </Text>
                 )}
@@ -255,7 +256,7 @@ export default function AgendaView({
           backgroundColor: colors.card,
           borderTopWidth: 1, borderTopColor: colors.border,
         }}>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {selectedIds.size} selected
           </Text>
           <TouchableOpacity

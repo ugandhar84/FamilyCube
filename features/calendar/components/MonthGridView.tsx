@@ -17,6 +17,7 @@ import { eventAssignee } from '@/store/eventStore';
 // ─── Icons (chevron-left/right only — kept local to avoid pulling in
 // CalendarScreen's full icon set for two glyphs) ───────────────────────────
 import Svg, { Path } from 'react-native-svg';
+import { GEMINI } from '@/constants/geminiRhythm';
 const ChevronLeft = ({ c, size = 18 }: { c: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path d="M15 18l-6-6 6-6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -72,7 +73,7 @@ export function DayEventsSummaryCard({
         <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: colors.textTertiary, textTransform: 'uppercase' }}>
           {dateLabel.toUpperCase()}
         </Text>
-        <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.4, color: colors.textPrimary, marginTop: 4 }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.4, color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginTop: 4 }}>
           {loading ? '…' : countLabel}
         </Text>
       </View>
@@ -129,7 +130,7 @@ export function DayEventsSummaryCard({
 
                 {/* Content column */}
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                     {ev.title}
                   </Text>
                   {subtitle ? (
@@ -176,15 +177,15 @@ export default function MonthGridView({
         <TouchableOpacity onPress={() => onChangeMonth(-1)}
           style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
             borderWidth: 1, borderColor: colors.border }}>
-          <ChevronLeft c={colors.textSecondary} size={18} />
+          <ChevronLeft c={(isDark ? colors.textSecondary : GEMINI.bodyColor)} size={18} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: colors.textPrimary }}>
+        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
           {MONTH_LABELS[month]} {year}
         </Text>
         <TouchableOpacity onPress={() => onChangeMonth(1)}
           style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
             borderWidth: 1, borderColor: colors.border }}>
-          <ChevronRight c={colors.textSecondary} size={18} />
+          <ChevronRight c={(isDark ? colors.textSecondary : GEMINI.bodyColor)} size={18} />
         </TouchableOpacity>
       </View>
 
@@ -216,7 +217,7 @@ export default function MonthGridView({
                 }}>
                   <Text style={{
                     fontSize: 13, fontWeight: isToday || isSel ? '700' : '400',
-                    color: isSel ? (isDark ? '#102a6b' : '#fff') : isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textPrimary,
+                    color: isSel ? (isDark ? '#102a6b' : '#fff') : isToday ? (isDark ? '#99b3ff' : '#294fc7') : (isDark ? colors.textPrimary : GEMINI.titleColor),
                   }}>
                     {date.getDate()}
                   </Text>

@@ -35,6 +35,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { memberColorStyle } from '@/constants/memberColors';
 import { s } from './calendarCardStyles';
 import { isEventPast, isEventNow } from './calendarDateHelpers';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Filled map-pin — real SVG, replacing the 📍 emoji used as a location icon.
 function MapPinIcon({ c, size = 13 }: { c: string; size?: number }) {
@@ -349,7 +350,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
               {!!ev.seriesId && (
                 <Text style={{ fontSize: 11 }} accessibilityLabel="Recurring event">🔄</Text>
               )}
-              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 }} numberOfLines={1}>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor), flexShrink: 1 }} numberOfLines={1}>
                 {ev.title}
               </Text>
             </View>
@@ -357,7 +358,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
               {showCategory && ev.category && (
                 <View style={{ backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1,
                   borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{ev.category}</Text>
                 </View>
               )}
               {/* A both-ways ride fork creates 2 independent rows (Drop-off
@@ -407,7 +408,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   : badgeProvider === 'apple' ? 'logo-apple' : 'mail-outline';
                 return (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: colors.border }}>
-                    <Ionicons name={iconName as any} size={10} color={colors.textSecondary} />
+                    <Ionicons name={iconName as any} size={10} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
                     {syncMember && (
                       <FamilyAvatar name={syncMember.name} emoji={syncMember.emoji} avatarUrl={(syncMember as any).avatarUrl}
                         siblings={members.map(m => m.name)} size={12} ringWidth={0} />
@@ -500,7 +501,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
       {!!ev.seriesId && (
         <Text style={{ fontSize: 10 }} accessibilityLabel="Recurring event">🔄</Text>
       )}
-      <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+      <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
         {ev.title}
       </Text>
       {assignee && <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text }}>{assignee.name.split(' ')[0]}</Text>}
@@ -598,7 +599,7 @@ export function EventCardTimeline({
                 <Text style={[s.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
               </View>
               {isConf && <Text style={{ fontSize: 12 }}>⚠️</Text>}
-              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, flex: 1 }}>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor), flex: 1 }}>
                 {ev.title}
               </Text>
             </View>
@@ -652,7 +653,7 @@ export function EventCardTimeline({
                   </View>
                 ) : !isPast && isParent && pickerMembers.length > 0 ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{forLabel}:</Text>
                     {pickerMembers.map(k => (
                       <TouchableOpacity key={k.id} style={{ padding: 2 }} onPress={() => onAssignMember(k.id)}>
                         <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={pickerMembers.map(x => x.name)} size={30}
@@ -685,7 +686,7 @@ export function EventCardTimeline({
                   <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
                     siblings={members.map(m => m.name)} size={24} ringColor={colors.info} ringWidth={1.5} />
                 ) : (
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{assigneeName}</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{assigneeName}</Text>
                 )}
               </View>
             </View>
@@ -693,31 +694,31 @@ export function EventCardTimeline({
 
           {/* Category-specific extra fields */}
           {cat === 'Medical' && ev.doctorName && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-              🩺 Doctor: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.doctorName}</Text>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
+              🩺 Doctor: <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{ev.doctorName}</Text>
             </Text>
           )}
           {cat === 'Study' && ev.subject && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-              📖 Subject: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.subject}</Text>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
+              📖 Subject: <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{ev.subject}</Text>
             </Text>
           )}
           {cat === 'Sports' && ev.coachName && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-              🏅 Coached by: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.coachName}</Text>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
+              🏅 Coached by: <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{ev.coachName}</Text>
             </Text>
           )}
           {(cat === 'Ride' || cat === 'Sports') && (ev.pickupLocation || ev.dropLocation) && (
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 2 }}>
               {ev.pickupLocation && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>From: </Text>
+                  <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>From: </Text>
                   <LocationLink addr={ev.pickupLocation} color={colors.info} fontSize={TYPO.label} fontWeight="700" />
                 </View>
               )}
               {ev.dropLocation && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>→ To: </Text>
+                  <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>→ To: </Text>
                   <LocationLink addr={ev.dropLocation} color={colors.info} fontSize={TYPO.label} fontWeight="700" />
                 </View>
               )}
@@ -783,7 +784,7 @@ export function BusyBlockCard({ time, endTime, colors, isDark }: {
     }])}>
       <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={{ fontSize: 14 }}>🔒</Text>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
           Busy{time ? ` · ${fmtTime(time)}${endTime ? `–${fmtTime(endTime)}` : ''}` : ''}
         </Text>
       </View>

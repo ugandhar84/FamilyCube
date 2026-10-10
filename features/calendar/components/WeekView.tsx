@@ -25,6 +25,7 @@ const WEEK_EVENT_BG: Record<string, { light: string; dark: string }> = {
 };
 
 import Svg, { Path } from 'react-native-svg';
+import { GEMINI } from '@/constants/geminiRhythm';
 const ChevronLeft = ({ c, size = 16 }: { c: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path d="M15 18l-6-6 6-6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -63,15 +64,15 @@ export default function WeekView({
         <TouchableOpacity onPress={() => onNavigateWeek(-1)}
           style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
             borderWidth: 1, borderColor: colors.border }}>
-          <ChevronLeft c={colors.textSecondary} size={16} />
+          <ChevronLeft c={(isDark ? colors.textSecondary : GEMINI.bodyColor)} size={16} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: colors.textPrimary }}>
+        <Text style={{ fontSize: 19, fontWeight: '700', letterSpacing: -0.3, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
           {fmtDateShort(toDateStr(weekStart))} – {fmtDateShort(toDateStr(weekEnd))}
         </Text>
         <TouchableOpacity onPress={() => onNavigateWeek(1)}
           style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
             borderWidth: 1, borderColor: colors.border }}>
-          <ChevronRight c={colors.textSecondary} size={16} />
+          <ChevronRight c={(isDark ? colors.textSecondary : GEMINI.bodyColor)} size={16} />
         </TouchableOpacity>
       </View>
 
@@ -94,7 +95,7 @@ export default function WeekView({
                   <Text style={{ fontSize: 10, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                     {DAY_SHORT[(day.getDay() + 6) % 7]}
                   </Text>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : colors.textPrimary, marginTop: 2 }}>{day.getDate()}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isToday ? (isDark ? '#99b3ff' : '#294fc7') : (isDark ? colors.textPrimary : GEMINI.titleColor), marginTop: 2 }}>{day.getDate()}</Text>
                 </View>
               </View>
               {onAddDay ? (

@@ -14,6 +14,7 @@ import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { assigneeStyle } from './EventCard';
 import { timeToMinutes } from './calendarDateHelpers';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const SLOT_START = 5;   // 5 AM
 const SLOT_END   = 23;  // 11 PM
@@ -224,13 +225,13 @@ export default function DaySlotView({
                 )}
 
                 {/* Bold title */}
-                <Text style={{ fontSize: isShort ? 11 : 13, fontWeight: '700', color: isDark ? '#fff' : colors.textPrimary, lineHeight: 16 }} numberOfLines={isShort ? 1 : 2}>
+                <Text style={{ fontSize: isShort ? 11 : 13, fontWeight: '700', color: isDark ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 16 }} numberOfLines={isShort ? 1 : 2}>
                   {ev.title}
                 </Text>
 
                 {/* Subtitle — location · who · status */}
                 {isTall && subtitle ? (
-                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 3 }} numberOfLines={1}>
+                  <Text style={{ fontSize: 10, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 3 }} numberOfLines={1}>
                     {subtitle}
                   </Text>
                 ) : null}

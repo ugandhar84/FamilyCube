@@ -58,7 +58,12 @@ async function callGemini(
       generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const raw = await res.text();
+    let msg = `Gemini error ${res.status}`;
+    try { const j = JSON.parse(raw); msg = j?.error?.message ?? msg; } catch { /* keep msg */ }
+    throw new Error(msg);
+  }
   const data = await res.json();
   const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   if (!text) throw new Error('Gemini returned empty response');
@@ -76,7 +81,12 @@ async function callGeminiText(prompt: string): Promise<string> {
       generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini text ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const raw = await res.text();
+    let msg = `Gemini error ${res.status}`;
+    try { const j = JSON.parse(raw); msg = j?.error?.message ?? msg; } catch { /* keep msg */ }
+    throw new Error(msg);
+  }
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }

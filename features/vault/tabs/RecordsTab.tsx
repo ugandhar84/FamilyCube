@@ -91,8 +91,9 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const { checked: aiConsentChecked, consented: aiConsented, showSheet: showAiConsent, setShowSheet: setShowAiConsent, markConsented: markAiConsented } = useAiConsent(activeMemberId ?? undefined);
   const pendingAnalyzeAction = useRef<(() => void) | null>(null);
-  const [pending,     setPending]     = useState<Record<string, AiAnalysis | AppointmentAnalysis>>({});
-  const [notMedical,  setNotMedical]  = useState<Record<string, string>>({});
+  const [pending,        setPending]       = useState<Record<string, AiAnalysis | AppointmentAnalysis>>({});
+  const [notMedical,     setNotMedical]    = useState<Record<string, string>>({});
+  const [analyzeErrors,  setAnalyzeErrors] = useState<Record<string, string>>({});
   const [reviewRec,   setReviewRec]   = useState<MedRecord | null>(null);
   const [approving,   setApproving]   = useState(false);
   // Selection / download
@@ -367,13 +368,30 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
 
   const analyzeRecordNow = async (rec: MedRecord) => {
     setAnalyzingId(rec.id);
+    setAnalyzeErrors(prev => { const n = { ...prev }; delete n[rec.id]; return n; });
     const isVisitRecording = rec.tag === 'visit_recording';
     try {
       const { data: fnData, error } = await supabase.functions.invoke(
         isVisitRecording ? 'analyze-appointment-recording' : 'analyze-medical-record',
         { body: { record_id: rec.id, member_name: memberName(rec.member_id) } },
       );
-      if (error) throw new Error(error.message);
+      if (error) {
+        // FunctionsHttpError wraps a non-2xx response. The Supabase JS client
+        // exposes the parsed body on error.context — try to pull a real
+        // message from it before falling back to the generic string.
+        let msg = 'Analysis failed — please try again.';
+        try {
+          const ctx = (error as any).context;
+          // context may be the raw Response or an already-parsed object
+          const body = ctx?.json ? await ctx.json() : ctx;
+          if (body?.error) msg = body.error;
+          else if (body?.message) msg = body.message;
+          else if (typeof error.message === 'string' && !error.message.includes('non-2xx')) {
+            msg = error.message;
+          }
+        } catch { /* ignore parse failure */ }
+        throw new Error(msg);
+      }
       if (fnData?.error) throw new Error(fnData.error);
       if (fnData?.not_medical) {
         setNotMedical(prev => ({ ...prev, [rec.id]: fnData.message ?? 'This does not appear to be a medical document.' }));
@@ -402,7 +420,8 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         },
       }).catch(() => { /* non-blocking */ });
     } catch (err: any) {
-      Alert.alert('Analysis failed', err.message ?? 'Could not analyze. Please try again.');
+      const msg = err.message ?? 'Could not analyze. Please try again.';
+      setAnalyzeErrors(prev => ({ ...prev, [rec.id]: msg }));
     } finally {
       setAnalyzingId(null);
     }
@@ -461,6 +480,17 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     });
 
   const clearSelection = () => setSelectedIds(new Set());
+
+  const handleDownloadSingle = async (rec: MedRecord) => {
+    setDownloading(true);
+    try {
+      await downloadSingle(rec);
+    } catch (err: any) {
+      showToast('Download failed: ' + (err.message ?? 'please try again'));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleDownload = async () => {
     const toDownload = filtered.filter(r => selectedIds.has(r.id) && r.file_path);
@@ -544,8 +574,9 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           search={search} setSearch={setSearch}
           activeFilters={activeFilters} openFilterScreen={() => setShowFilter(true)}
           memberName={memberName} memberIndex={memberIndex}
-          analyzingId={analyzingId} pending={pending} notMedical={notMedical}
+          analyzingId={analyzingId} pending={pending} notMedical={notMedical} analyzeErrors={analyzeErrors}
           onAnalyze={analyzeRecord} onOpenReview={(rec) => setReviewRec(rec)} onDelete={deleteRecord}
+          onDownloadSingle={handleDownloadSingle}
           selectedIds={selectedIds} selectable={selectable} onToggleSelect={toggleSelect} clearSelection={clearSelection}
           downloading={downloading} onDownload={handleDownload}
         />

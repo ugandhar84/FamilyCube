@@ -8,13 +8,26 @@ import JSZip           from 'jszip';
 import { supabase }    from '@/lib/supabase';
 import type { MedRecord } from './types';
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  // Hermes (React Native) doesn't implement Blob.arrayBuffer() — use FileReader instead.
+  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    reader.onload  = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function downloadBytes(filePath: string): Promise<Uint8Array> {
   const { data, error } = await supabase.storage
     .from('medical-records')
     .download(filePath);
   if (error || !data) throw new Error(`Download failed: ${error?.message ?? 'unknown'}`);
-  const buf = await data.arrayBuffer();
-  return new Uint8Array(buf);
+  const b64 = await blobToBase64(data);
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 function ext(rec: MedRecord): string {
@@ -39,12 +52,12 @@ function safeName(rec: MedRecord, idx?: number): string {
 export async function downloadSingle(rec: MedRecord): Promise<void> {
   if (!rec.file_path) throw new Error('No file attached to this record');
 
-  const bytes  = await downloadBytes(rec.file_path);
-  const name   = safeName(rec);
-  const uri    = FileSystem.cacheDirectory + name;
-
-  // Write raw bytes via base64
-  const b64 = Buffer.from(bytes).toString('base64');
+  // Download via signed URL path → Blob → base64 (Hermes has no arrayBuffer or Buffer)
+  const { data, error } = await supabase.storage.from('medical-records').download(rec.file_path);
+  if (error || !data) throw new Error(`Download failed: ${error?.message ?? 'unknown'}`);
+  const b64  = await blobToBase64(data);
+  const name = safeName(rec);
+  const uri  = FileSystem.cacheDirectory + name;
   await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
 
   const canShare = await Sharing.isAvailableAsync();

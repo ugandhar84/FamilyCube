@@ -16,17 +16,19 @@ import { supabase }    from '@/lib/supabase';
 import type { MedRecord } from './types';
 
 async function signedUrl(filePath: string): Promise<string> {
+  console.log('[recordsDownload] createSignedUrl — path:', filePath);
   const { data, error } = await supabase.storage
     .from('medical-records')
-    .createSignedUrl(filePath, 60); // 60s is plenty for a download
+    .createSignedUrl(filePath, 120);
+  console.log('[recordsDownload] signedUrl result — url:', data?.signedUrl?.slice(0, 80), 'error:', error?.message);
   if (error || !data?.signedUrl) throw new Error(`Could not create download link: ${error?.message ?? 'unknown'}`);
   return data.signedUrl;
 }
 
 async function downloadBytesViaUrl(filePath: string): Promise<ArrayBuffer> {
   const url = await signedUrl(filePath);
-  // Native fetch (not the Supabase client) — its Response.arrayBuffer() works in Hermes
   const res = await fetch(url);
+  console.log('[recordsDownload] fetch status:', res.status, 'content-length:', res.headers.get('content-length'));
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
   return res.arrayBuffer();
 }
@@ -58,7 +60,12 @@ export async function downloadSingle(rec: MedRecord): Promise<void> {
   const uri  = (FileSystem.cacheDirectory ?? '') + name;
 
   // Let expo-file-system fetch the URL natively — no blob/base64 involved
+  console.log('[recordsDownload] downloadAsync — url (first 80):', url.slice(0, 80), 'uri:', uri);
   const result = await FileSystem.downloadAsync(url, uri);
+  console.log('[recordsDownload] downloadAsync result — status:', result.status, 'uri:', result.uri);
+  // Check actual file size
+  const info = await FileSystem.getInfoAsync(result.uri, { size: true });
+  console.log('[recordsDownload] file info after download:', JSON.stringify(info));
   if (result.status !== 200) throw new Error(`Download failed: HTTP ${result.status}`);
 
   const canShare = await Sharing.isAvailableAsync();

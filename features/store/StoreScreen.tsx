@@ -256,7 +256,22 @@ function PerkCard({ reward, index = 0, myCoins, myMaxAffordable, isKid, isParent
 // into edit mode — Edit is a deliberate second step, not the only option.
 // Full-page (FullPageOverlay), not a bottom sheet — same detail-then-edit
 // rhythm as features/vault/tabs/homeowner/NoteDetailSheet.tsx
-// [live-requested: "Add edit details forms should be full pages"].
+// [live-requested: "Add edit details forms should be full pages"]. Rebuilt
+// onto School's flat FieldCard rhythm — was pill badges + a loose text
+// block, now grouped bordered field cards matching PerkModal/School's own
+// detail screens [live-requested: "Detail page not in the rhythm of figma"].
+function DetailField({ label, value, colors, isDark }: {
+  label: string; value: string; colors: any; isDark: boolean;
+}) {
+  return (
+    <View style={{ borderWidth: 1, borderColor: isDark ? colors.border : FORM_BORDER, borderRadius: 14,
+      backgroundColor: isDark ? colors.card : FORM_CARD_BG, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : FORM_BODY_CLR, marginBottom: 3 }}>{label}</Text>
+      <Text style={{ fontSize: 15, color: isDark ? colors.textPrimary : FORM_TITLE_CLR, lineHeight: 20 }}>{value}</Text>
+    </View>
+  );
+}
+
 function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClose, onEdit }: {
   reward: Reward | null; allMembers: FamilyMember[]; colors: any; isDark: boolean; isParent: boolean;
   onClose: () => void; onEdit: (r: Reward) => void;
@@ -264,89 +279,86 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
   const insets = useSafeAreaInsets();
   const updater = reward?.updatedById ? allMembers.find(m => m.id === reward.updatedById) : undefined;
   const creator = reward?.createdById ? allMembers.find(m => m.id === reward.createdById) : undefined;
-  const canvas = isDark ? colors.background : PAGE_BG;
-  const P = colors.primary;
+  const canvas = isDark ? colors.background : FORM_CARD_BG;
+  const titleC = isDark ? colors.textPrimary : FORM_TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : FORM_BODY_CLR;
+  const border = isDark ? colors.border : FORM_BORDER;
 
   return (
     <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
-        <View style={{
-          paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-          backgroundColor: canvas, gap: 6,
-        }}>
+        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? FORM_BLUE : FORM_LINK_BLUE }}>‹ Store</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-            {reward?.title ?? 'Perk'}
-          </Text>
-          {reward?.category ? (
-            <Text style={{ fontSize: 14, color: colors.textSecondary }}>{reward.category}</Text>
-          ) : null}
+
+          {reward && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? colors.surface : FORM_SURFACE,
+                alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 18 }}>{reward.emoji ?? '🎁'}</Text>
+              </View>
+              <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{reward.title}</Text>
+            </View>
+          )}
+
+          {reward && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+              {reward.category ? (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : FORM_SURFACE }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{reward.category}</Text>
+                </View>
+              ) : null}
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : FORM_SURFACE }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: reward.available ? '#1B7A54' : bodyC }}>
+                  {reward.available ? 'Available' : 'Unavailable'}
+                </Text>
+              </View>
+              {reward.requiresApproval && (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : FORM_SURFACE }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>Needs approval</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {reward && (
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: colors.amberLight,
-                alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 26 }}>{reward.emoji ?? '🎁'}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>{reward.title}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, marginTop: 2 }}>{reward.cost} Coins 🪙</Text>
-              </View>
-            </View>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 10 }}>
+
+            <DetailField label="Coin cost" value={`${reward.cost} coins 🪙`} colors={colors} isDark={isDark} />
 
             {reward.description ? (
-              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>{reward.description}</Text>
+              <DetailField label="Description" value={reward.description} colors={colors} isDark={isDark} />
             ) : null}
 
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: reward.available ? colors.success : colors.textTertiary }}>
-                  {reward.available ? 'Available' : 'Unavailable'}
-                </Text>
-              </View>
-              {typeof reward.stock === 'number' && (
-                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>{reward.stock} in stock</Text>
-                </View>
-              )}
-              {reward.requiresApproval && (
-                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Needs approval</Text>
-                </View>
-              )}
-            </View>
+            {typeof reward.stock === 'number' ? (
+              <DetailField label="Stock" value={`${reward.stock} in stock`} colors={colors} isDark={isDark} />
+            ) : null}
 
-            {/* Last-updated tracking — the actual ask: "when parent changes
-                the perk, we should have the last updated by and date/time on
-                that card." Falls back to created info when never edited. */}
-            <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>
-              {reward.updatedAt ? (
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                  Last updated by {updater?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.updatedAt.slice(0, 10))} at{' '}
-                  {new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                </Text>
-              ) : (
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>Not edited since it was created</Text>
-              )}
-              {reward.createdAt && (
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                  Added by {creator?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.createdAt.slice(0, 10))}
-                </Text>
-              )}
-            </View>
+            <DetailField
+              label="Last updated"
+              value={reward.updatedAt
+                ? `${updater?.name?.split(' ')[0] ?? 'a parent'} · ${fmtDateShort(reward.updatedAt.slice(0, 10))} at ${new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                : 'Not edited since it was created'}
+              colors={colors} isDark={isDark}
+            />
+
+            {reward.createdAt && (
+              <DetailField
+                label="Added"
+                value={`${creator?.name?.split(' ')[0] ?? 'a parent'} · ${fmtDateShort(reward.createdAt.slice(0, 10))}`}
+                colors={colors} isDark={isDark}
+              />
+            )}
 
             {isParent && (
-              <Pressable onPress={() => onEdit(reward)}
-                style={{ backgroundColor: colors.teal, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 }}>
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Edit Perk</Text>
-              </Pressable>
+              <TouchableOpacity onPress={() => onEdit(reward)}
+                style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: FORM_BLUE, marginTop: 4 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Edit perk</Text>
+              </TouchableOpacity>
             )}
           </ScrollView>
         )}

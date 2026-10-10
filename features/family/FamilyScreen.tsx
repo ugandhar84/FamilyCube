@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Image,
+  View, Text, ScrollView, Pressable, Image,
   Animated, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -345,7 +345,8 @@ export default function FamilyScreen() {
           {/* ── The people in your life — lavender-tinted card ── */}
           <SectionCard title="The people in your life" bg={colors.pinkLight}>
             <ToolRow tool={byKey('people')} index={5} accentBg="#FFFFFF" accentFg={P} />
-            <AnimatedCard index={6}>
+            <ToolRow tool={byKey('calendars')} index={6} accentBg="#FFFFFF" accentFg={colors.teal} />
+            <AnimatedCard index={7}>
               <AnimatedPressable onPress={() => setShowFamilyTree(true)}
                 style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12 }}>
                 <View style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: '#FFFFFF',
@@ -367,7 +368,7 @@ export default function FamilyScreen() {
 
           {/* ── Find my family — highlighted teal banner, same rhythm as
               School's "Scan a schedule flyer" banner. ── */}
-          <AnimatedCard index={7}>
+          <AnimatedCard index={8}>
             <AnimatedPressable onPress={() => setShowLocations(true)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
                 backgroundColor: colors.tealLight, borderRadius: 18, padding: 16 }}>
@@ -391,13 +392,13 @@ export default function FamilyScreen() {
           <SectionCard title="Everyday life stays simple" bg={colors.amberLight}>
             {everydayRows.map((tool, i) => {
               const fg = tool.key === 'rewards' ? colors.pink : tool.key === 'games' ? P : colors.amber;
-              return <ToolRow key={tool.key} tool={tool} index={i + 8} accentBg="#FFFFFF" accentFg={fg} />;
+              return <ToolRow key={tool.key} tool={tool} index={i + 9} accentBg="#FFFFFF" accentFg={fg} />;
             })}
           </SectionCard>
 
           {/* ── Closing link — Family settings & permissions, last thing on
               the page [live-requested: "end should be settings"]. ── */}
-          <AnimatedCard index={11}>
+          <AnimatedCard index={12}>
             <AnimatedPressable onPress={() => router.push('/profile-settings' as any)}
               style={{ borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
                 paddingVertical: 14, alignItems: 'center' }}>
@@ -416,12 +417,13 @@ export default function FamilyScreen() {
 
       </ScrollView>
 
-      {/* Calendar page full-page overlay */}
-      {showCalendarPage && (
-        <View style={StyleSheet.absoluteFillObject}>
-          <ConnectCalendarPage onClose={() => setShowCalendarPage(false)} />
-        </View>
-      )}
+      {/* Calendar page — standard FullPageOverlay shell (owns entrance/exit
+          animation + edge-swipe-to-dismiss), same as every other full-page
+          screen in this app; ConnectCalendarPage no longer hand-rolls its
+          own slide animation/PanResponder. */}
+      <FullPageOverlay visible={showCalendarPage} onDismiss={() => setShowCalendarPage(false)} zIndex={51}>
+        <ConnectCalendarPage onClose={() => setShowCalendarPage(false)} />
+      </FullPageOverlay>
 
       {/* Family tree full-page overlay — slide-in/out via FullPageOverlay,
           same as every other full-page screen (was a bare tab route with

@@ -7,14 +7,14 @@
  * documented history of real two-way-sync bugs (stale sync_token on
  * reconnect, duplicate pushed events, silent Apple failures).
  */
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Animated, PanResponder,
-  Dimensions, ActivityIndicator, Switch, StyleSheet,
+  View, Text, ScrollView, TouchableOpacity, Animated,
+  ActivityIndicator, Switch, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Calendar, CheckCircle2, Info, RefreshCw, AlertCircle,
+  Calendar, CheckCircle2, Info, AlertCircle,
 } from 'lucide-react-native';
 import { useCalendarSync, PROVIDER_LABEL } from '@/lib/useCalendarSync';
 import type { CalendarProvider, CalendarPurpose } from '@/lib/calendarOAuth';
@@ -236,42 +236,24 @@ export function ConnectCalendarPage({ onClose }: { onClose: () => void }) {
     handleToggleApple, handleCleanupApple, handleCleanupInboundApple,
   } = sync;
 
-  // Slide-in from right on mount; slide-out on dismiss
-  const { width: SCREEN_W } = Dimensions.get('window');
-  const slideX = useRef(new Animated.Value(SCREEN_W)).current;
+  // FullPageOverlay (the caller's wrapper) already owns entrance/exit
+  // animation and edge-swipe-to-dismiss — this screen used to hand-roll
+  // both itself (Animated slideX + PanResponder), which is no longer
+  // needed now that every full-page screen in this app shares one shell.
   useEffect(() => {
     hideTabBar();
-    Animated.spring(slideX, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 0 }).start();
     return () => showTabBar();
   }, []);
-
-  const dismiss = () => {
-    Animated.timing(slideX, { toValue: SCREEN_W, duration: 260, useNativeDriver: true }).start(onClose);
-  };
-
-  const panResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: (e) => e.nativeEvent.pageX < 60,
-    onMoveShouldSetPanResponder: (_, gs) => gs.dx > 8 && Math.abs(gs.dy) < 30,
-    onPanResponderMove: (_, gs) => { if (gs.dx > 0) slideX.setValue(gs.dx); },
-    onPanResponderRelease: (_, gs) => {
-      if (gs.dx > SCREEN_W / 3 || gs.vx > 0.8) {
-        Animated.timing(slideX, { toValue: SCREEN_W, duration: 220, useNativeDriver: true }).start(onClose);
-      } else {
-        Animated.spring(slideX, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 0 }).start();
-      }
-    },
-  })).current;
 
   const connectedCount = connections.filter(c => c.status !== 'error').length + (activeMember?.appleCalendarSyncEnabled ? 1 : 0);
 
   return (
-    <Animated.View style={{ flex: 1, transform: [{ translateX: slideX }] }} {...panResponder.panHandlers}>
       <View style={{ flex: 1, backgroundColor: PAGE_BG }}>
 
         {/* ── Header ── */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: PAGE_BG }}>
-          <TouchableOpacity onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE }}>← Family</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE }}>‹ Family</Text>
           </TouchableOpacity>
           <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE, marginTop: 12 }}>Family tools</Text>
           <Text style={{ fontSize: 29, fontWeight: '700', color: TITLE_CLR, marginTop: 4, lineHeight: 36 }}>
@@ -417,7 +399,6 @@ export function ConnectCalendarPage({ onClose }: { onClose: () => void }) {
           </ScrollView>
         )}
       </View>
-    </Animated.View>
   );
 }
 

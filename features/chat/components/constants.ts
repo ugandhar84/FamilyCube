@@ -22,11 +22,13 @@ export function formatDuration(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// Matches colors.primary's light-mode value — these voice subcomponents
-// (VoiceNoteBubble/VoiceReviewBar/RecordingBar) don't receive the colors
-// object as a prop, so this stays a direct brand-purple constant rather
-// than threading colors through every one of them for this pass.
-export const VOICE_COLOR     = '#9261C7';
+// Darker blue instead of the old brand-purple — was reading as washed-out/
+// invisible on the pale sent-bubble tint in light mode [live-requested:
+// "put more darker animated colors blue", applied everywhere: recording
+// progress, review/send bar, and the sent voice-note bubble]. These voice
+// subcomponents don't receive the colors object as a prop, so this stays a
+// direct constant rather than threading colors through every one of them.
+export const VOICE_COLOR     = '#1D4ED8';
 export const QUICK_REACTIONS = ['❤️', '👍', '😋', '🙌', '🌟', '😂'];
 export type GroupChannel = { id: string; label: string; isDM: false; lock: boolean; seniorOnly?: boolean };
 

@@ -478,7 +478,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
 
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (
-              <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />
+              <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} isDark={isDark} colors={colors} />
             ) : isVoice ? (
               <Text style={{ fontSize: 14, color: isMe ? bubbleMeTxt : bubbleOtherTxt }}>
                 🎙️ Voice note ({Math.round(msg.voiceDuration ?? 0)}s)

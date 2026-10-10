@@ -108,8 +108,8 @@ export function FingerprintWaveform({ seed, progress, color, trackColor }: {
 
 // ─── Voice note bubble (in chat) ─────────────────────────────────────────────
 
-export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
-  uri: string; msgId: string; duration: number; isMine: boolean; colors: any;
+export function VoiceNoteBubble({ uri, msgId, duration, isMine, isDark, colors }: {
+  uri: string; msgId: string; duration: number; isMine: boolean; isDark: boolean; colors: any;
 }) {
   const [playing, setPlaying]   = useState(false);
   const [progress, setProgress] = useState(0);
@@ -146,8 +146,13 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
     playerRef.current?.remove();
   }, []);
 
-  const color      = isMine ? '#fff' : VOICE_COLOR;
-  const trackColor = isMine ? 'rgba(255,255,255,0.28)' : VOICE_COLOR + '30';
+  // "Mine" bubble is a solid pink in dark mode (white reads fine there) but
+  // only a pale lavender tint in light mode (bubbleMe '#e9edfb' in
+  // MessageBubble.tsx) — hardcoding white here made the play icon/waveform
+  // nearly invisible on light mode's own sent bubbles [live-reported via
+  // screenshot: washed-out white-on-pale-lavender voice bubble].
+  const color      = isMine && isDark ? '#fff' : VOICE_COLOR;
+  const trackColor = isMine && isDark ? 'rgba(255,255,255,0.28)' : VOICE_COLOR + '30';
   const elapsed    = playing ? progress * duration : duration;
 
   return (
@@ -155,7 +160,7 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
       style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2, paddingVertical: 4, minWidth: 200 }}>
       {/* Play / pause button */}
       <View style={{ width: 36, height: 36, borderRadius: 18,
-        backgroundColor: isMine ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
+        backgroundColor: isMine && isDark ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
         alignItems: 'center', justifyContent: 'center' }}>
         {playing ? <Pause size={18} color={color} /> : <Play size={18} color={color} />}
       </View>
@@ -165,7 +170,7 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
         : <FingerprintWaveform seed={msgId || uri} progress={progress} color={color} trackColor={trackColor} />
       }
       {/* Duration */}
-      <Text style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
+      <Text style={{ fontSize: 11, color: isMine && isDark ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
         minWidth: 34, textAlign: 'right', fontVariant: ['tabular-nums'] }}>
         {formatDuration(elapsed)}
       </Text>

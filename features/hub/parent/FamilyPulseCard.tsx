@@ -98,8 +98,15 @@ export function FamilyPulseCard({
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+        {/* FamilyAvatar placed directly, no extra circular ring wrapper —
+            that outer View's own borderRadius:999 was a leftover
+            circular-separator container fighting FamilyAvatar's own
+            (now square) border, rendering as a double ring
+            [live-reported: "pulse is still having the rounded and
+            rendering the family avatar - we need to just place the
+            family avatar directly"]. */}
         {members.slice(0, 5).map((m, i) => (
-          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7, borderWidth: 3, borderColor: colors.card, borderRadius: 999 }}>
+          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7 }}>
             <FamilyAvatar
               name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32}
               ringColor={m.role === 'parent' ? colors.teal : m.role === 'kid' ? colors.amber : colors.primary}

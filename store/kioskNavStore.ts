@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { router } from 'expo-router';
+import { useUIStore } from './uiStore';
 
 /**
  * useKioskNavStore — a tiny cross-screen signal so a push/in-app
@@ -84,6 +85,27 @@ export function navigateFromNotification(
     const kioskTab = PHONE_ROUTE_TO_KIOSK_TAB[pathname] ?? 'hub';
     useKioskNavStore.getState().setPendingTab(kioskTab);
     router.push('/(tabs)' as any);
+    return;
+  }
+  // '/(tabs)/grocery' and '/(tabs)/meals' are no longer real tab routes —
+  // both are opened as Hub-owned FullPageOverlay state instead (see
+  // HubScreen.tsx/GroceryScreen.tsx/MealsScreen.tsx's own header
+  // comments), to fix a stale-Reanimated-shared-value blank-screen bug
+  // that came from Expo Router's tab navigator keeping them mounted
+  // forever. Every notification/deep-link call site that used to push
+  // straight to one of those routes goes through this single function, so
+  // intercepting here (rather than at each call site in app/_layout.tsx
+  // and NotificationPanel.tsx) is the one place that needs to know: land
+  // on Hub first, then flip the one-shot uiStore flag HubScreen consumes
+  // to open the matching overlay.
+  if (pathname === '/(tabs)/grocery') {
+    router.push('/(tabs)' as any);
+    useUIStore.getState().setOpenGroceryScreenRequested(true);
+    return;
+  }
+  if (pathname === '/(tabs)/meals') {
+    router.push('/(tabs)' as any);
+    useUIStore.getState().setOpenMealsScreenRequested(true);
     return;
   }
   router.push(dest as any);

@@ -328,7 +328,7 @@ interface FamilyState {
   // generated, per explicit spec: the profile exists first, the code just
   // claims it later. Returns the created member (id needed immediately to
   // call generate-invite-code with targetMemberId) or null on failure.
-  addPendingMember: (name: string, role: MemberRole, relationship?: string, dateOfBirth?: string, email?: string) => Promise<FamilyMember | null>;
+  addPendingMember: (name: string, role: MemberRole, relationship?: string, dateOfBirth?: string, email?: string, linkedParentId?: string) => Promise<FamilyMember | null>;
   updateMember: (id: string, updates: Partial<FamilyMember>) => Promise<void>;
   removeMember: (id: string) => Promise<void>;
   awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => Promise<void>;
@@ -813,7 +813,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   },
 
-  addPendingMember: async (name, role, relationship, dateOfBirth, email) => {
+  addPendingMember: async (name, role, relationship, dateOfBirth, email, linkedParentId) => {
     const active = get().members.find(m => m.id === get().activeMemberId);
     if (!active?.familyId) { console.warn('[familyStore] addPendingMember: no active familyId'); return null; }
     const dbRole = role === 'kid' ? 'child' : role === 'teen' ? 'teenager' : role === 'senior' ? 'grandparent' : role;
@@ -840,6 +840,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         coins: 0, xp: 0, level: 1, max_xp: 100, streak: 0,
         family_id: active.familyId,
         invite_status: 'pending',
+        linked_parent_id: linkedParentId ?? null,
       }])
       .select()
       .single();

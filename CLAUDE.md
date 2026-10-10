@@ -59,14 +59,14 @@ functions, no hooks) — keep both in sync if this table changes.
 | `colors.textTertiary` | `#A69A8A` | `#7A6E60` | Timestamps, captions |
 | `colors.card` | `#FFFFFF` | `#1D1A24` | Card backgrounds |
 | `colors.surface` | `#F2ECE1` | `#17151D` | Surface / input backgrounds |
-| `colors.background` | `#FAF8F4` | `#0E0C13` | Screen background (warm cashmere) |
+| `colors.background` | `#FFFFFF` | `#0E0C13` | Screen background (pure white canvas app-wide) |
 | `colors.border` | terracotta/15% | terracotta/15% | Dividers, card borders |
 | `colors.danger` | `#C54A27` | `#EE8058` | Errors, destructive |
 | `colors.success` | `#3D7A5A` | `#5FA37D` | Success states |
-| `colors.primaryLight` | `#FBEADF` | rgba terracotta | Light tint of primary |
-| `colors.tealLight` | `#E1EFE7` | rgba sage | Light tint of teal |
-| `colors.amberLight` | `#FDF1D6` | rgba amber | Light tint of amber |
-| `colors.pinkLight` | `#EFE8F8` | rgba lavender | Light tint of pink/accent |
+| `colors.primaryLight` | `#FADFD2` | rgba terracotta | Light tint of primary |
+| `colors.tealLight` | `#D1E3D9` | rgba sage | Light tint of teal |
+| `colors.amberLight` | `#F9E5C1` | rgba amber | Light tint of amber |
+| `colors.pinkLight` | `#E3DAF0` | rgba lavender | Light tint of pink/accent |
 
 ### Role color mapping:
 - **Parent** → `colors.parent` (sage) / `colors.parentLight`
@@ -159,7 +159,7 @@ If UI change: start dev server, verify, share screenshot.
 If type/logic only: run `npx tsc --noEmit`.
 
 ### 6. Screen canvas — pure white in light mode, no warm tints
-Every screen's root background (ScrollView, SafeAreaView, modal container) in light mode uses **`#FFFFFF`** (clean white — user hates warm-tinted backgrounds). Dark mode uses `#0E0C13`. Do NOT use `colors.background` (it has a warm cashmere tint the user dislikes). Cards and form fields use `colors.card` to lift off the white canvas.
+Every screen's root background (ScrollView, SafeAreaView, modal container) in light mode uses **`#FFFFFF`** (clean white — user hates warm-tinted backgrounds). Dark mode uses `#0E0C13`. `colors.background` is now itself pure white in light mode, so it is safe to use for screen roots. Cards and form fields use `colors.card` to lift off the white canvas.
 
 ### 7. Cards float on the canvas — use `colors.card` for elevated surfaces
 TextInput fields, picker pills, coin buttons, and preview cards use `colors.card` (white/dark) so they pop off the cashmere `colors.background`. Surface-level groupings (tip areas, info callouts) use `colors.surface` or `colors.tealLight`/`colors.pinkLight`/`colors.amberLight`/`colors.primaryLight` for section pastel tints.

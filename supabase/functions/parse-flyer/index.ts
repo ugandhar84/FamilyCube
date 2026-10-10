@@ -97,7 +97,34 @@ Return:
   }
 }
 
-Return ONLY valid JSON — no markdown fences, no explanation. If a field is unknown, use null.
+## Reading times and locations — do this BEFORE returning null
+
+Only use null for startTime/endTime/time/end_time/location/room if you have
+genuinely scanned the ENTIRE image and the information is not present
+anywhere, in any form. Do not default to null just because it isn't in an
+obvious dedicated column or field.
+
+Times and locations appear in many formats and places on a real flyer —
+actively look for ALL of these before giving up:
+- A dedicated "Time" or "When" column or row in a table/grid.
+- Inline within the subject/event text itself, e.g. "Soccer practice 3:00-4:30pm",
+  "Doors open 6pm", "Starts at 9", "9-10:15am Science".
+- A header or footer line separate from the main grid, e.g. "School hours: 8:20am–3:05pm",
+  "All classes 45 minutes unless noted".
+- Times written in 12h format with or without am/pm, with a dash, "to", "–", "-", or "until"
+  between start and end (e.g. "3-4", "3:00 to 4:00", "15:00-16:00") — convert ALL of these to 24h HH:MM.
+- A single time with an implied duration (e.g. "1 hour session at 4pm" → startTime "16:00", endTime "17:00").
+- Locations/rooms similarly: look for "Room 204", "Gym", "Cafeteria", "Main Hall", "Field B",
+  address lines, "@ <venue>", or a venue name near the title — not just a field literally labeled "Location".
+- If a time is only given as a start with no visible end (e.g. "doors 6pm"), set only startTime
+  and leave endTime null — do not invent an end time, but DO still report the start time you found.
+
+Re-read the image a second time specifically hunting for these patterns before
+settling on null for any time or location field — a flyer that mentions a
+time or place anywhere in its text should almost never produce a fully-null
+schedule.
+
+Return ONLY valid JSON — no markdown fences, no explanation. If a field is unknown after this careful search, use null.
 For timetable periods: always specify the exact days each period occurs. If a subject appears on different days in different weeks or terms, create a separate period entry per term and set the "term" field accordingly.
 For rotating/block schedules: each day-block (A/B/C etc.) gets separate period entries with the days array set to only the days that block runs.
 For calendar events: extract ALL visible events, even if there are 20+.`;
@@ -105,22 +132,6 @@ For calendar events: extract ALL visible events, even if there are 20+.`;
 // ── Gemini vision call ────────────────────────────────────────────────────────
 async function callGemini(key: string, images: { data: string; mimeType: string }[]): Promise<string> {
   const imageParts = images.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }));
-
-  const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{
-      role: 'user',
-      parts: [
-        ...imageParts,
-        { text: 'Determine the document type and extract all details. Return compact JSON only (no pretty-printing, no extra whitespace).' },
-      ],
-    }],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 4096,
-      thinkingConfig: { thinkingBudget: 0 },
-    },
-  });
 
   // gemini-1.5-flash-8b and gemini-1.5-flash are both retired on the
   // current v1beta API surface (live-reported elsewhere in this app via
@@ -136,8 +147,17 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
   let lastErr = '';
   for (const m of MODELS) {
     try {
+      // Bug fixed here: this was backwards — thinkingBudget: 0 DISABLES
+      // extended reasoning, but it was only ever set when m.thinking was
+      // true, so the "thinking" attempt actually had thinking OFF, and the
+      // "non-thinking" retries got Gemini's normal (non-zero) default
+      // budget instead. For a task that depends on carefully re-scanning
+      // an image for scattered times/locations rather than giving up with
+      // null [live-reported: "scanner is not decoding the start/end
+      // times and locations"], thinking genuinely enabled should be tried
+      // first, not accidentally suppressed.
       const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384 };
-      if (m.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      if (!m.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       const reqBody = JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{

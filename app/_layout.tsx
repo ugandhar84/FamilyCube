@@ -47,6 +47,8 @@ import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
 import { startBatteryPolling, stopBatteryPolling, startLocationHeartbeat, stopLocationHeartbeat, setBackgroundLocationMemberId, setBackgroundLocationFamilyId } from '@/lib/locationTracking';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
+import '@/lib/placeGeofencing'; // defines the place geofence task at load so a cold-start wake works
+import { usePlacesStore } from '@/store/placesStore';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
@@ -642,8 +644,11 @@ function RootNavigator() {
         // used to fall through to the generic default case below with no
         // case of its own, landing on /(tabs)/notifications instead of the
         // actual grocery list (live-reported: "it is going to somewhere").
-        // Grocery has its own dedicated route. No kiosk Grocery tab yet —
-        // falls back to Hub there via navigateFromNotification.
+        // Grocery is no longer a real tab route either — it's a Hub-owned
+        // FullPageOverlay now — but navigateFromNotification itself knows
+        // how to land on Hub and open it from this same '/(tabs)/grocery'
+        // string, same as before this call site needed to change. No
+        // kiosk Grocery tab exists yet — falls back to Hub there too.
         navigateFromNotification('/(tabs)/grocery', isKioskDevice);
       } else if (data?.type === 'schedule_conflict') {
         // schedule-conflict-sweep's server-side double-booking push —
@@ -1245,6 +1250,9 @@ function RootNavigator() {
     const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
     if (!familyId) return;
     registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+    // Family places (Home / schools / work) — load, then re-register this
+    // device's geofences for them (no-op until background location is granted).
+    usePlacesStore.getState().load(familyId, activeMemberId).catch(() => {});
   }, [activeMemberId]);
 
   useEffect(() => {

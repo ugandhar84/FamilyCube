@@ -39,6 +39,18 @@ interface UIState {
   // "Grocery + FAB should be similar like in the other pages"). Reads this
   // once on focus to open AddItemSheet, then clears it immediately.
   openGroceryComposerRequested: boolean;
+  // One-shot: Grocery/Meals are no longer real tab routes — they're opened
+  // as Hub-owned FullPageOverlay state (same pattern as ReviewInboxScreen)
+  // to fix a stale-Reanimated-shared-value blank-screen bug that came from
+  // Expo Router's tab navigator keeping them mounted forever. Anything
+  // outside HubScreen (a notification tap, a deep link) that used to
+  // router.push('/(tabs)/grocery')/('/(tabs)/meals') now navigates to Hub
+  // and flips this flag instead; HubScreen consumes it once and clears it,
+  // same one-shot shape as openGroceryComposerRequested above.
+  openGroceryScreenRequested: boolean;
+  openMealsScreenRequested: boolean;
+  setOpenGroceryScreenRequested: (v: boolean) => void;
+  setOpenMealsScreenRequested: (v: boolean) => void;
   // One-shot: a screen asks Chat to open this channel on next focus (e.g. co-parent dispute -> parents' DM).
   pendingChatChannelId: string | null;
   // One-shot: a Hub row asks HubScreen to open the approval action center for this chore.
@@ -77,6 +89,21 @@ interface UIState {
   // event again themselves.
   requestedEventDetailId: string | undefined;
   setRequestedEventDetailId: (v: string | undefined) => void;
+  // One-shot, same pattern as openHealthRecordsComposerRequested — set by
+  // HealthRecordsScreen.tsx's flat "Scan prescription / vaccine record →"
+  // bottom button (which has no direct handle to HealthTab's own
+  // showScanSheet/scanMode state) so HealthTab can open the SAME real
+  // ScanReviewSheet its AI banner's scan buttons already trigger, instead
+  // of a second scan implementation. Value is the scan mode to open with
+  // ('rx' | 'vaccine'), undefined when idle.
+  openHealthScanRequested: 'rx' | 'vaccine' | undefined;
+  setOpenHealthScanRequested: (v: 'rx' | 'vaccine' | undefined) => void;
+  // One-shot, same pattern — set by HealthRecordsScreen.tsx's flat
+  // "Export PDF →" bottom button so HealthTab (the only place that holds
+  // the real vaccine array) can run the existing shareVaccineRecordsPdf
+  // export instead of this screen re-querying/duplicating that logic.
+  openHealthPdfExportRequested: boolean;
+  setOpenHealthPdfExportRequested: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -95,6 +122,10 @@ export const useUIStore = create<UIState>((set) => ({
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   openGroceryComposerRequested: false,
+  openGroceryScreenRequested: false,
+  openMealsScreenRequested: false,
+  setOpenGroceryScreenRequested: (v) => set({ openGroceryScreenRequested: v }),
+  setOpenMealsScreenRequested: (v) => set({ openMealsScreenRequested: v }),
   pendingChatChannelId: null,
   openApprovalDetailChoreId: null,
   setOpenApprovalDetailChoreId: (id) => set({ openApprovalDetailChoreId: id }),
@@ -104,4 +135,8 @@ export const useUIStore = create<UIState>((set) => ({
   setHealthRecordsActiveSegment: (v) => set({ healthRecordsActiveSegment: v }),
   activeTabName: undefined,
   setActiveTabName: (name) => set({ activeTabName: name }),
+  openHealthScanRequested: undefined,
+  setOpenHealthScanRequested: (v) => set({ openHealthScanRequested: v }),
+  openHealthPdfExportRequested: false,
+  setOpenHealthPdfExportRequested: (v) => set({ openHealthPdfExportRequested: v }),
 }));

@@ -57,6 +57,21 @@ export const TYPO = {
 
 export type TypoKey = keyof typeof TYPO;
 
+// Page chrome standard — measured from the app's most common existing pattern
+// (29/700/-0.5 titles in 33 places; header insets.top + 12 / bottom 16; 20px
+// content gutters in 45). New and updated pages use these instead of local
+// numbers. Colours are applied at the call site from useTheme().
+export const PAGE = {
+  title:    { fontSize: 29, fontWeight: '700', letterSpacing: -0.5 } as const,
+  eyebrow:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.6 } as const,
+  subtitle: { fontSize: 14, fontWeight: '400', lineHeight: 20 } as const,
+  headerPaddingTop: 12,      // added to the safe-area top inset
+  headerPaddingBottom: 16,
+  headerGap: 4,
+  contentPadding: 20,
+  sectionGap: 12,
+} as const;
+
 // Letter-spacing pairings lifted from the mock (Tailwind's tracking-wider
 // on uppercase labels, tracking-tight on display headings). Kept as a
 // lookup so callers don't reinvent slightly-different values per screen.

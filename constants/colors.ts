@@ -15,24 +15,24 @@
 export const lightColors = {
   // ── Brand primary — terracotta ─────────────────────────────────────────
   primary:      '#DF613C',
-  primaryLight: '#FBEADF',
+  primaryLight: '#FADFD2',
   primaryDark:  '#B84D2C',
   primaryMid:   '#E07356',
   primaryText:  '#DF613C',
 
   // ── Teal slot — sage (parent role accent) ──────────────────────────────
   teal:         '#3D7A5A',
-  tealLight:    '#E1EFE7',
+  tealLight:    '#D1E3D9',
   tealDark:     '#2C5B41',
 
   // ── Amber slot — amber (kid role accent) ───────────────────────────────
   amber:        '#D97706',
-  amberLight:   '#FDF1D6',
+  amberLight:   '#F9E5C1',
   amberDark:    '#A85A04',
 
   // ── Pink slot — lavender (third accent) ────────────────────────────────
   pink:         '#7B5EA7',
-  pinkLight:    '#EFE8F8',
+  pinkLight:    '#E3DAF0',
   pinkDark:     '#5D3F86',
 
   // ── Navy — warm near-black (wordmark / text primary) ───────────────────
@@ -41,34 +41,34 @@ export const lightColors = {
 
   // ── Role accents ────────────────────────────────────────────────────────
   parent:       '#3D7A5A',
-  parentLight:  '#E1EFE7',
+  parentLight:  '#D1E3D9',
   parentDark:   '#2C5B41',
 
   kid:          '#D97706',
-  kidLight:     '#FDF1D6',
+  kidLight:     '#F9E5C1',
   kidDark:      '#A85A04',
 
   // ── Semantics ───────────────────────────────────────────────────────────
   danger:       '#C54A27',
-  dangerLight:  '#FBEADF',
+  dangerLight:  '#F6DACD',
   dangerDark:   '#9C3A1F',
   warning:      '#D97706',
-  warningLight: '#FDF1D6',
+  warningLight: '#F9E5C1',
   warningDark:  '#A85A04',
   success:      '#3D7A5A',
-  successLight: '#E1EFE7',
+  successLight: '#D1E3D9',
   successDark:  '#2C5B41',
   info:         '#7B5EA7',
-  infoLight:    '#EFE8F8',
+  infoLight:    '#E3DAF0',
   infoDark:     '#5D3F86',
 
   // ── Accent (lavender) ───────────────────────────────────────────────────
   accent:       '#7B5EA7',
-  accentLight:  '#EFE8F8',
+  accentLight:  '#E3DAF0',
   accentDark:   '#5D3F86',
 
   // ── Surfaces ────────────────────────────────────────────────────────────
-  background:   '#FAF8F4',
+  background:   '#FFFFFF',   // pure white canvas app-wide (was warm cashmere #FAF8F4)
   surface:      '#F2ECE1',
   card:         '#FFFFFF',
   overlay:      'rgba(44,39,34,0.45)',
@@ -86,7 +86,7 @@ export const lightColors = {
   textDisabled:  '#D4C9BC',
 
   // ── Tab bar ─────────────────────────────────────────────────────────────
-  tabBar:       '#FDFCF9',
+  tabBar:       '#FFFFFF',
   tabBarBorder: 'rgba(223,97,60,0.12)',
   tabActive:    '#DF613C',
   tabInactive:  '#A69A8A',
@@ -105,60 +105,60 @@ export const lightColors = {
 
   // ── Sky blue — Figma "Arrange a ride" / informational ───────────────────
   sky:         '#4A7FA5',
-  skyLight:    '#E8F1F8',
+  skyLight:    '#D8E6F0',
   skyDark:     '#2E5F80',
 
   // ── Legacy compat ───────────────────────────────────────────────────────
   purple:      '#7B5EA7',
-  purpleLight: '#EFE8F8',
+  purpleLight: '#E3DAF0',
   purpleDark:  '#5D3F86',
 };
 
 export const darkColors: typeof lightColors = {
   primary:      '#EE8058',
-  primaryLight: 'rgba(238,128,88,0.18)',
+  primaryLight: 'rgba(238,128,88,0.20)',
   primaryDark:  '#C85D38',
   primaryMid:   '#E8704A',
   primaryText:  '#EE8058',
 
   teal:         '#5FA37D',
-  tealLight:    'rgba(95,163,125,0.18)',
+  tealLight:    'rgba(95,163,125,0.20)',
   tealDark:     '#7BBFA0',
 
   amber:        '#F5A85A',
-  amberLight:   'rgba(245,168,90,0.18)',
+  amberLight:   'rgba(245,168,90,0.20)',
   amberDark:    '#F9C488',
 
   pink:         '#A78BC9',
-  pinkLight:    'rgba(167,139,201,0.18)',
+  pinkLight:    'rgba(167,139,201,0.20)',
   pinkDark:     '#C3AAE0',
 
   navy:         '#EDE7DE',
   navyLight:    'rgba(237,231,222,0.12)',
 
   parent:       '#5FA37D',
-  parentLight:  'rgba(95,163,125,0.18)',
+  parentLight:  'rgba(95,163,125,0.20)',
   parentDark:   '#7BBFA0',
 
   kid:          '#F5A85A',
-  kidLight:     'rgba(245,168,90,0.18)',
+  kidLight:     'rgba(245,168,90,0.20)',
   kidDark:      '#F9C488',
 
   danger:       '#EE8058',
-  dangerLight:  'rgba(238,128,88,0.18)',
+  dangerLight:  'rgba(238,128,88,0.20)',
   dangerDark:   '#F2A07A',
   warning:      '#F5A85A',
-  warningLight: 'rgba(245,168,90,0.18)',
+  warningLight: 'rgba(245,168,90,0.20)',
   warningDark:  '#F9C488',
   success:      '#5FA37D',
-  successLight: 'rgba(95,163,125,0.18)',
+  successLight: 'rgba(95,163,125,0.20)',
   successDark:  '#7BBFA0',
   info:         '#A78BC9',
-  infoLight:    'rgba(167,139,201,0.18)',
+  infoLight:    'rgba(167,139,201,0.20)',
   infoDark:     '#C3AAE0',
 
   accent:       '#A78BC9',
-  accentLight:  'rgba(167,139,201,0.18)',
+  accentLight:  'rgba(167,139,201,0.20)',
   accentDark:   '#C3AAE0',
 
   background:   '#0E0C13',
@@ -191,11 +191,11 @@ export const darkColors: typeof lightColors = {
   skeletonHighlight: '#252030',
 
   sky:         '#6FA8CC',
-  skyLight:    'rgba(111,168,204,0.18)',
+  skyLight:    'rgba(111,168,204,0.20)',
   skyDark:     '#4A85AA',
 
   purple:      '#A78BC9',
-  purpleLight: 'rgba(167,139,201,0.18)',
+  purpleLight: 'rgba(167,139,201,0.20)',
   purpleDark:  '#C3AAE0',
 };
 

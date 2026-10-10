@@ -71,7 +71,7 @@ function DetailRow({ label, value, colors, isDark }: { label: string; value: str
   return (
     <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
       paddingHorizontal: 16, paddingVertical: 12 }}>
-      <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
       <Text style={{ fontSize: 15, color: titleC, lineHeight: 20 }}>{value}</Text>
     </View>
   );
@@ -155,7 +155,7 @@ export function NoteDetailSheet({ visible, note, colors, isDark, onClose, onEdit
           {note.notes ? (
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14,
               backgroundColor: isDark ? colors.card : CARD_BG, paddingHorizontal: 16, paddingVertical: 12 }}>
-              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Homeowner note</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Homeowner note</Text>
               <Text style={{ fontSize: 15, color: titleC, lineHeight: 21 }}>{note.notes}</Text>
             </View>
           ) : (

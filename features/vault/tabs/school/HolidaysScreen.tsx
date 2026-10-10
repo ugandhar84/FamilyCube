@@ -71,7 +71,7 @@ function DropRow({ label, value, options, onSelect, isDark, colors }: {
   return (
     <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, backgroundColor: cardBg }}>
       <TouchableOpacity onPress={() => setOpen(o => !o)} style={{ paddingHorizontal: 14, paddingVertical: 10 }}>
-        <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
         <Text style={{ fontSize: 15, color: titleC }}>{options.find(o => o.key === value)?.label ?? value} ▾</Text>
       </TouchableOpacity>
       {open && (
@@ -227,7 +227,7 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
               </Text>
 
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Title</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Title</Text>
                 <TextInput
                   value={reason}
                   onChangeText={setReason}
@@ -238,7 +238,7 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
               </View>
 
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>School / member</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>School / member</Text>
                 <Text style={{ fontSize: 15, color: titleC }}>{activeMemberName}{schedule?.school ? ` · ${schedule.school}` : ''}</Text>
               </View>
 
@@ -246,7 +246,7 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
               <ScanDateField label="To · inclusive" value={toDate} onChange={setToDate} colors={colors} isDark={isDark} accent={BLUE} />
 
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Pattern</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Pattern</Text>
                 <Text style={{ fontSize: 15, color: titleC }}>All-day exception</Text>
               </View>
 

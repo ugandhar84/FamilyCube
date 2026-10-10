@@ -366,7 +366,7 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
 
                 <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                   paddingHorizontal: 16, paddingVertical: 12 }}>
-                  <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Name this document</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Name this document</Text>
                   <TextInput value={docName} onChangeText={setDocName}
                     placeholder="e.g. Homeowners insurance policy"
                     placeholderTextColor="#C0C7D4"

@@ -75,7 +75,7 @@ function FieldRow({ label, value, onChangeText, placeholder, multiline, keyboard
   return (
     <View style={{ borderWidth: 1, borderColor: focused ? BLUE : border, borderRadius: 14,
       backgroundColor: cardBg, paddingHorizontal: 16, paddingVertical: 12 }}>
-      <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -103,7 +103,7 @@ function DropRow({ label, value, options, onSelect, isDark, colors }: {
   return (
     <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg }}>
       <TouchableOpacity onPress={() => setOpen(o => !o)} style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-        <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
         <Text style={{ fontSize: 15, color: titleC }}>{options.find(o => o.key === value)?.label ?? value} ▾</Text>
       </TouchableOpacity>
       {open && (
@@ -232,7 +232,7 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
             {/* Repeat interval */}
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
               paddingHorizontal: 16, paddingVertical: 12 }}>
-              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Repeat interval (days)</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Repeat interval (days)</Text>
               <TextInput
                 value={recurDays}
                 onChangeText={v => setRecurDays(v.replace(/[^\d]/g, ''))}
@@ -255,7 +255,7 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
             {/* Reminder — call alert */}
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
               paddingHorizontal: 16, paddingVertical: 14 }}>
-              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 2 }}>Reminder · call alert</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 2 }}>Reminder · call alert</Text>
               <Text style={{ fontSize: 11, color: bodyC, marginBottom: 10, lineHeight: 15 }}>
                 Send a call-style reminder before the due date.
               </Text>
@@ -286,7 +286,7 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
             {/* Last done — read-only */}
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
               paddingHorizontal: 16, paddingVertical: 12 }}>
-              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Last done</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Last done</Text>
               <Text style={{ fontSize: 15, color: note.completedAt ? titleC : bodyC }}>
                 {note.completedAt ? fmtDisplay(note.completedAt.slice(0, 10)) : 'Not recorded yet'}
               </Text>
@@ -295,7 +295,7 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
             {/* Next due inferred */}
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
               paddingHorizontal: 16, paddingVertical: 12 }}>
-              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Next due · inferred</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Next due · inferred</Text>
               <Text style={{ fontSize: 15, color: nextDueInferred ? titleC : bodyC }}>
                 {nextDueInferred
                   ? `${fmtDisplay(nextDueInferred)} · last done + ${intervalLabel(parseInt(recurDays, 10))}`
@@ -375,7 +375,7 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
             {/* Visibility */}
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
               paddingHorizontal: 16, paddingVertical: 12 }}>
-              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Visibility</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Visibility</Text>
               <Text style={{ fontSize: 15, color: titleC }}>{visibilityLine}</Text>
             </View>
 

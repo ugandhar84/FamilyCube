@@ -63,7 +63,7 @@ function DropRow({ label, value, options, onSelect, isDark, colors }: {
   return (
     <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg }}>
       <TouchableOpacity onPress={() => setOpen(o => !o)} style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-        <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
         <Text style={{ fontSize: 15, color: titleC }}>{options.find(o => o.key === value)?.label ?? value} ▾</Text>
       </TouchableOpacity>
       {open && (
@@ -322,7 +322,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
               {/* Title */}
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                 paddingHorizontal: 16, paddingVertical: 12 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Title</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Title</Text>
                 <TextInput value={title} onChangeText={setTitle}
                   placeholder="e.g. Replace kitchen filter"
                   placeholderTextColor="#C0C7D4"
@@ -332,7 +332,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
               {/* Homeowner note */}
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                 paddingHorizontal: 16, paddingVertical: 12 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Homeowner note</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Homeowner note</Text>
                 <TextInput value={notes} onChangeText={setNotes} multiline
                   placeholder="Spare filter under the sink. Confirm the model in its booklet."
                   placeholderTextColor="#C0C7D4"
@@ -342,7 +342,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
               {/* Repeat interval */}
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                 paddingHorizontal: 16, paddingVertical: 12 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Repeat interval (days)</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Repeat interval (days)</Text>
                 <TextInput value={recurDays} onChangeText={setRecurDays}
                   placeholder="e.g. 90 = every 3 months"
                   placeholderTextColor="#C0C7D4" keyboardType="numeric"
@@ -361,7 +361,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
               {/* Reminder — call alert */}
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                 paddingHorizontal: 16, paddingVertical: 14 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 2 }}>Reminder · call alert</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 2 }}>Reminder · call alert</Text>
                 <Text style={{ fontSize: 11, color: bodyC, marginBottom: 10, lineHeight: 15 }}>
                   Send a call-style reminder before the due date. Only fires when a start date is set.
                 </Text>
@@ -394,7 +394,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
               {/* Room */}
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                 paddingHorizontal: 16, paddingVertical: 12 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Room / area (optional)</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Room / area (optional)</Text>
                 <TextInput value={room} onChangeText={setRoom}
                   placeholder="e.g. Kitchen, Hall cupboard"
                   placeholderTextColor="#C0C7D4"
@@ -435,7 +435,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
                 <>
                   <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                     paddingHorizontal: 16, paddingVertical: 12 }}>
-                    <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Serial / model number</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Serial / model number</Text>
                     <TextInput value={serialNumber} onChangeText={setSerialNumber}
                       placeholder="Optional" placeholderTextColor="#C0C7D4"
                       style={{ fontSize: 15, color: titleC, padding: 0 }} />
@@ -449,7 +449,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
 
                   <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                     paddingHorizontal: 16, paddingVertical: 12 }}>
-                    <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Cost ($)</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Cost ($)</Text>
                     <TextInput value={cost} onChangeText={setCost}
                       placeholder="0.00" placeholderTextColor="#C0C7D4" keyboardType="decimal-pad"
                       style={{ fontSize: 15, color: titleC, padding: 0 }} />
@@ -457,7 +457,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
 
                   <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                     paddingHorizontal: 16, paddingVertical: 12 }}>
-                    <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Contractor / company name</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Contractor / company name</Text>
                     <TextInput value={vendorName} onChangeText={setVendorName}
                       placeholder="e.g. ABC HVAC" placeholderTextColor="#C0C7D4"
                       style={{ fontSize: 15, color: titleC, padding: 0 }} />
@@ -465,7 +465,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
 
                   <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                     paddingHorizontal: 16, paddingVertical: 12 }}>
-                    <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Contractor phone</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Contractor phone</Text>
                     <TextInput value={vendorPhone} onChangeText={setVendorPhone}
                       placeholder="Optional" placeholderTextColor="#C0C7D4" keyboardType="phone-pad"
                       style={{ fontSize: 15, color: titleC, padding: 0 }} />
@@ -473,7 +473,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
 
                   <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                     paddingHorizontal: 16, paddingVertical: 12 }}>
-                    <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Contractor notes</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Contractor notes</Text>
                     <TextInput value={vendorNotes} onChangeText={setVendorNotes}
                       placeholder="e.g. Ask for Mike, does our AC every year" placeholderTextColor="#C0C7D4"
                       multiline style={{ fontSize: 15, color: titleC, padding: 0, minHeight: 60 }} />

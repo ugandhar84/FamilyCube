@@ -267,7 +267,7 @@ export function BuildPeriodsScreen({ visible, colors, isDark, draft, onClose, on
                 </Text>
 
                 <View style={{ borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
-                  <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Class / period name</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Class / period name</Text>
                   <TextInput
                     value={editing.period.name}
                     onChangeText={v => setEditing(e => e ? { ...e, period: { ...e.period, name: v } } : e)}

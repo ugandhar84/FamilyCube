@@ -60,7 +60,7 @@ function FieldRow({ label, value, onChangeText, placeholder, colors, isDark }: {
   return (
     <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
       paddingHorizontal: 16, paddingVertical: 12 }}>
-      <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -84,7 +84,7 @@ function DropRow({ label, value, options, onSelect, isDark, colors }: {
   return (
     <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg }}>
       <TouchableOpacity onPress={() => setOpen(o => !o)} style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-        <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>{label}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>{label}</Text>
         <Text style={{ fontSize: 15, color: titleC }}>{options.find(o => o.key === value)?.label ?? 'Choose…'} ▾</Text>
       </TouchableOpacity>
       {open && (
@@ -217,14 +217,14 @@ export function CreateScheduleScreen({ visible, colors, isDark, parentName, onCl
 
                 <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                   paddingHorizontal: 16, paddingVertical: 12 }}>
-                  <Text style={{ fontSize: 12, color: bodyC, marginBottom: 3 }}>Time zone</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 4 }}>Time zone</Text>
                   <Text style={{ fontSize: 15, color: titleC }}>{timeZone}</Text>
                 </View>
 
                 {/* Teaching days — individual Mon-Sun toggle pills */}
                 <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                   paddingHorizontal: 16, paddingVertical: 14, gap: 10 }}>
-                  <Text style={{ fontSize: 12, color: bodyC }}>Choose teaching days</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC }}>Choose teaching days</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                     {ALL_DAYS.map(d => {
                       const on = days.includes(d);

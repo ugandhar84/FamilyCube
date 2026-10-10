@@ -179,7 +179,7 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
             {!done && (
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
                 paddingHorizontal: 16, paddingVertical: 12 }}>
-                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 6 }}>Completion note (optional)</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: bodyC, marginBottom: 6 }}>Completion note (optional)</Text>
                 <TextInput
                   value={comment}
                   onChangeText={setComment}

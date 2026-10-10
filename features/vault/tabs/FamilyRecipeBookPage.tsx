@@ -258,22 +258,15 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
         </View>
 
         {/* Title — tapping it goes back, no separate breadcrumb link above
-            it [live-requested pattern, same as Grocery's sub-screens]. */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }} style={{ flex: 1 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-              Family recipe book
-            </Text>
-          </Pressable>
-          {isParent && (
-            <Pressable
-              onPress={() => { resetAddRecipeForm(); setShowAddRecipe(true); }}
-              style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primaryLight,
-                alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
-              <Plus size={20} color={P} strokeWidth={2.2} />
-            </Pressable>
-          )}
-        </View>
+            it [live-requested pattern, same as Grocery's sub-screens].
+            Header "+" add-recipe button removed per explicit request
+            ("remove + from headers") — adding a recipe still happens via
+            the recipe cards' own "+ New recipe" affordance below. */}
+        <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+            Family recipe book
+          </Text>
+        </Pressable>
 
         <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 20 }}>
           Recipes your family has made and loved. Add any recipe to this week's plan.

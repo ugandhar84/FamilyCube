@@ -59,14 +59,24 @@ export async function downloadSingle(rec: MedRecord): Promise<void> {
   const name = safeName(rec);
   const uri  = (FileSystem.cacheDirectory ?? '') + name;
 
-  // Let expo-file-system fetch the URL natively — no blob/base64 involved
-  console.log('[recordsDownload] downloadAsync — url (first 80):', url.slice(0, 80), 'uri:', uri);
-  const result = await FileSystem.downloadAsync(url, uri);
-  console.log('[recordsDownload] downloadAsync result — status:', result.status, 'uri:', result.uri);
-  // Check actual file size
-  const info = await FileSystem.getInfoAsync(result.uri);
-  console.log('[recordsDownload] file info after download:', JSON.stringify(info));
-  if (result.status !== 200) throw new Error(`Download failed: HTTP ${result.status}`);
+  // Use native fetch → arrayBuffer → base64 → write.
+  // FileSystem.downloadAsync returns 200 + 0 bytes for Supabase signed URLs
+  // because it doesn't follow the storage redirect properly.
+  console.log('[recordsDownload] fetch — url length:', url.length);
+  const res = await fetch(url);
+  console.log('[recordsDownload] fetch status:', res.status, 'content-length:', res.headers.get('content-length'));
+  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+  const buf = await res.arrayBuffer();
+  console.log('[recordsDownload] arrayBuffer byteLength:', buf.byteLength);
+  if (buf.byteLength === 0) throw new Error('Downloaded file is empty — storage may still be syncing, please retry');
+  // arrayBuffer → base64 via Uint8Array + btoa (works in Hermes)
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  const b64 = btoa(binary);
+  await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+  const info = await FileSystem.getInfoAsync(uri);
+  console.log('[recordsDownload] written file info:', JSON.stringify(info));
 
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) throw new Error('Sharing is not available on this device');

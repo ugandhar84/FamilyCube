@@ -224,3 +224,85 @@ function CarouselMemberCardImpl({ m, isActive, isParentViewer, colors, isDark, o
 
 /** Memoized — same rationale as MemberCard above. */
 export const CarouselMemberCard = memo(CarouselMemberCardImpl, memberPropsEqual);
+
+/**
+ * MemberTreeCard — full-width, single-column connector-tree card,
+ * matching the reference mockup's own card 1:1: centered circular photo
+ * near the top, first name below it, relation/role subtitle under that.
+ * Active member ("You") gets a blue ring + "· You" suffix, same as the
+ * mock's outlined Maya card. Tapping opens the same member-profile
+ * sheet every other card variant in this app opens
+ * [live-requested: "and when we click on that each family card it
+ * should open this page" — confirming the mock's own "Tap a person's
+ * card to see their place in the family" caption, same onPress this
+ * component already wires through to FamilyTreeView's onView].
+ */
+const TREE_CARD_BLUE = '#3B5FE4';
+
+function MemberTreeCardImpl({ m, isActive, isParentViewer, colors, isDark, siblings, subtitleOverride, onPress, onLongPress, onPinPress }: {
+  m: FamilyMember; isActive: boolean; isParentViewer: boolean; colors: any; isDark: boolean;
+  siblings: string[];
+  /** Full subtitle override (e.g. "Maya's mother") — falls back to the
+   * member's own relationship/role label when not given. */
+  subtitleOverride?: string;
+  onPress: () => void;
+  onLongPress: () => void; onPinPress: () => void;
+}) {
+  const hasPin = !!m.pin;
+  const baseLabel = m.relationship ?? ROLE_LABEL[m.role] ?? m.role;
+  const subtitle = subtitleOverride ?? (isActive ? `${baseLabel} · You` : baseLabel);
+  const cardBg = isDark ? colors.card : '#FFFFFF';
+  const borderC = isDark ? colors.border : '#E4DFD6';
+
+  return (
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress} onLongPress={onLongPress} delayLongPress={500}
+      style={{
+        backgroundColor: cardBg, borderRadius: 18, position: 'relative',
+        borderWidth: isActive ? 2 : 1, borderColor: isActive ? TREE_CARD_BLUE : borderC,
+        paddingVertical: 20, paddingHorizontal: 14, alignItems: 'center',
+      }}>
+      <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+        siblings={siblings} size={64} ringWidth={0} shape="circle" />
+      <Text style={{ fontSize: 17, fontWeight: '700', color: isDark ? colors.textPrimary : '#1A1A1A', marginTop: 10 }} numberOfLines={1}>
+        {m.name.split(' ')[0]}
+      </Text>
+      <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : '#6B6558', marginTop: 2, textAlign: 'center' }} numberOfLines={2}>
+        {subtitle}
+      </Text>
+
+      {(hasPin || (m.role === 'teen' && m.hasCar)) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          {hasPin ? <I.Lock c={colors.success} /> : null}
+          {m.role === 'teen' && m.hasCar ? <I.Car c={colors.amber} /> : null}
+        </View>
+      )}
+
+      {(isParentViewer || isActive) && (
+        <TouchableOpacity onPress={onPinPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ position: 'absolute', top: 10, right: 10, padding: 4 }}>
+          <I.Key c={colors.textTertiary} />
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function memberTreePropsEqual(
+  prev: { m: FamilyMember; isActive: boolean; isParentViewer: boolean; colors: any; isDark: boolean; siblings?: string[]; subtitleOverride?: string },
+  next: typeof prev,
+) {
+  if (prev.m !== next.m) return false;
+  if (prev.isActive !== next.isActive) return false;
+  if (prev.isParentViewer !== next.isParentViewer) return false;
+  if (prev.isDark !== next.isDark) return false;
+  if (prev.colors !== next.colors) return false;
+  if (prev.subtitleOverride !== next.subtitleOverride) return false;
+  if (prev.siblings !== next.siblings) {
+    const a = prev.siblings, b = next.siblings;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export const MemberTreeCard = memo(MemberTreeCardImpl, memberTreePropsEqual);

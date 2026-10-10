@@ -1,40 +1,94 @@
 /**
- * FamilyTreeView — card-grid family visualization, grouped by generation:
- * Grandparents split into Paternal/Maternal columns (via each GP's
- * linked_parent_id — whichever parent they're linked to determines their
- * side; unlinked GPs get their own column so they're never dropped),
- * Parents shown side by side, Kids/Teens in a 3-across grid. Replaces the
- * old connector-line diagram with plain cards — clearer at this scale and
- * far less brittle than hand-computed x/y connector math.
+ * FamilyTreeView — connector-line family tree diagram, matching the
+ * provided mockup 1:1: one card per row (not a side-by-side grid),
+ * full-width rounded cards with a top avatar photo, vertical lines
+ * connecting single generations ("Parent of Maya" labeled), and a
+ * couple's two cards joined by a short horizontal line that drops into
+ * a bracket spanning their children below.
+ *
+ * Previously this was a side-by-side card-grid (grouped by generation,
+ * 2-3 cards per row) specifically BECAUSE the earlier connector-line
+ * version (TreeConnectors.tsx/GenerationBridge.tsx, both still in this
+ * directory but unused until now) needed brittle hand-computed x/y
+ * connector math for a multi-column grid. Rebuilt here as a true
+ * connector diagram per explicit request with a reference mockup — but
+ * single-column (one card per row, full width) instead of the old
+ * multi-column grid, so the connector geometry stays simple: every
+ * card's horizontal center is the same fixed x (half the content
+ * width), so a connector is just a vertical line at that x, or for a
+ * couple, two cards side by side joined by one short horizontal line
+ * with the vertical drop continuing from its midpoint.
  */
 import { memo } from 'react';
 import { View, Text } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Heart } from 'lucide-react-native';
-import { MemberCard } from './MemberCard';
+import { MemberTreeCard } from './MemberCard';
 import type { FamilyMember } from '@/store/familyStore';
 
-function GenGroup({ label, colors, children }: { label: string; colors: any; children: React.ReactNode }) {
+const LINE_LIGHT = '#CBC3B8';
+const LINE_DARK  = '#3A362E';
+
+function lineColor(isDark: boolean, colors: any) {
+  return isDark ? (colors.border ?? LINE_DARK) : LINE_LIGHT;
+}
+
+function GenLabel({ label, colors, isDark }: { label: string; colors: any; isDark: boolean }) {
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-        {label}
-      </Text>
-      {children}
+    <Text style={{
+      fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase',
+      color: isDark ? colors.textTertiary : '#8A8172', marginBottom: 10,
+    }}>
+      {label}
+    </Text>
+  );
+}
+
+/** Single vertical line, with an optional centered label (e.g. "Parent of Maya"). */
+function VerticalLink({ label, colors, isDark }: { label?: string; colors: any; isDark: boolean }) {
+  const stroke = lineColor(isDark, colors);
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+      <View style={{ width: 2, height: label ? 20 : 28, backgroundColor: stroke }} />
+      {label && (
+        <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : '#5C5648', marginVertical: 4 }}>
+          {label}
+        </Text>
+      )}
+      <View style={{ width: 2, height: label ? 20 : 0, backgroundColor: stroke }} />
     </View>
   );
 }
 
-// Small vertical gradient bar between generation groups — a lighter echo
-// of the mock's connector-line dividers, without resurrecting the old
-// hand-computed x/y coordinate math to draw exact node-to-node lines.
-// `align` positions it under whichever column actually has content on both
-// sides of the seam (e.g. Mary → Priya, both in the right column) instead
-// of always sitting dead-center regardless of where the cards really are.
-function GenDivider({ from, to, align = 'center' }: { from: string; to: string; align?: 'left' | 'center' | 'right' }) {
+/** Horizontal line joining a couple's two cards, with the vertical drop
+ * to their children continuing from the joint's midpoint. */
+function CoupleJoint({ colors, isDark, hasChildren }: { colors: any; isDark: boolean; hasChildren: boolean }) {
+  const stroke = lineColor(isDark, colors);
   return (
-    <View style={{ flexDirection: 'row', justifyContent: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center', paddingHorizontal: '25%' }}>
-      <LinearGradient colors={[from, to]} style={{ width: 2, height: 16, borderRadius: 1 }} />
+    <View style={{ height: 24, flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ flex: 1 }} />
+      <View style={{ width: 24, alignItems: 'center' }}>
+        <View style={{ position: 'absolute', left: -24, right: -24, top: 11, height: 2, backgroundColor: stroke }} />
+        {hasChildren && <View style={{ width: 2, height: 24, backgroundColor: stroke, position: 'absolute', top: 11 }} />}
+      </View>
+      <View style={{ flex: 1 }} />
+    </View>
+  );
+}
+
+/** Bracket spanning N children — a vertical drop from the parent joint,
+ * a horizontal bar spanning the full row of children, then a vertical
+ * drop into each child's card. Children render in a row below this. */
+function ChildrenBracket({ count, colors, isDark }: { count: number; colors: any; isDark: boolean }) {
+  const stroke = lineColor(isDark, colors);
+  if (count <= 1) {
+    return <View style={{ alignItems: 'center' }}><View style={{ width: 2, height: 20, backgroundColor: stroke }} /></View>;
+  }
+  return (
+    <View style={{ height: 20 }}>
+      <View style={{ position: 'absolute', left: `${50 / count}%`, right: `${50 / count}%`, top: 0, height: 2, backgroundColor: stroke }} />
+      {Array.from({ length: count }).map((_, i) => {
+        const centerPct = (100 / count) * (i + 0.5);
+        return <View key={i} style={{ position: 'absolute', left: `${centerPct}%`, marginLeft: -1, top: 0, width: 2, height: 20, backgroundColor: stroke }} />;
+      })}
     </View>
   );
 }
@@ -48,113 +102,70 @@ function FamilyTreeViewImpl({ members, activeMemberId, isParent, colors, isDark,
   const parents       = members.filter(m => m.role === 'parent');
   const kids           = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const allNames = members.map(m => m.name);
+  const activeMember = members.find(m => m.id === activeMemberId);
 
-  // Side = whichever parent this GP is linked to — a GP linked to Priya's
-  // id lands under Priya's column specifically, never "between" both
-  // parents. "Maternal"/"Paternal" is derived from THAT linked parent's own
-  // relationship (Mother → Maternal, Father → Paternal), not from array
-  // position, so it stays correct regardless of which parent comes first.
-  const sideForGp = (gp: FamilyMember): 'a' | 'b' | 'unlinked' => {
-    if (!gp.linkedParentId) return 'unlinked';
-    if (gp.linkedParentId === parents[0]?.id) return 'a';
-    if (gp.linkedParentId === parents[1]?.id) return 'b';
-    return 'unlinked';
-  };
-  const sideLabel = (p?: FamilyMember): string | undefined =>
-    p?.relationship === 'Mother' ? 'Maternal' : p?.relationship === 'Father' ? 'Paternal' : undefined;
-  const gpSideA = grandparents.filter(gp => sideForGp(gp) === 'a');
-  const gpSideB = grandparents.filter(gp => sideForGp(gp) === 'b');
-  const gpUnlinked = grandparents.filter(gp => sideForGp(gp) === 'unlinked');
-
-  const renderCard = (m: FamilyMember, sidePrefix?: string) => (
-    <MemberCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
-      colors={colors} isDark={isDark} siblings={allNames} sidePrefix={sidePrefix}
+  const renderCard = (m: FamilyMember, subtitleOverride?: string) => (
+    <MemberTreeCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
+      colors={colors} isDark={isDark} siblings={allNames} subtitleOverride={subtitleOverride}
       onPress={() => onView(m)}
       onLongPress={() => { if (isParent) onEdit(m); }}
       onPinPress={() => onPin(m)} />
   );
 
+  // "Parent of <active member's first name>" — matches the mockup's
+  // "Parent of Maya" connector label. Falls back to no label if there's
+  // no active member to anchor the phrase to (kiosk/no-session context).
+  const activeFirstName = activeMember?.name.split(' ')[0];
+
   return (
-    <View style={{ gap: 16 }}>
+    <View style={{ gap: 4 }}>
       {grandparents.length > 0 && (
-        <GenGroup label={`Grandparents (${grandparents.length})`} colors={colors}>
-          {/* Two columns, spatially aligned under the matching parent card
-              below — a GP linked to the left parent renders in the left
-              column, right parent's GPs render in the right column. The
-              alignment itself shows the link, no box/label needed. */}
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
-              {gpSideA.map(gp => renderCard(gp, sideLabel(parents[0])))}
-            </View>
-            <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
-              {gpSideB.map(gp => renderCard(gp, sideLabel(parents[1])))}
-            </View>
+        <View>
+          <GenLabel label={`Grandparents (${grandparents.length})`} colors={colors} isDark={isDark} />
+          <View style={{ gap: 14 }}>
+            {grandparents.map(gp => renderCard(gp))}
           </View>
-          {gpUnlinked.length > 0 && (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {gpUnlinked.map(gp => renderCard(gp))}
-            </View>
-          )}
-        </GenGroup>
+        </View>
       )}
 
       {grandparents.length > 0 && parents.length > 0 && (
-        <GenDivider from={colors.amber} to={colors.parent}
-          align={gpSideA.length > 0 && gpSideB.length === 0 ? 'left' : gpSideB.length > 0 && gpSideA.length === 0 ? 'right' : 'center'} />
+        <VerticalLink label={activeFirstName ? `Parent of ${activeFirstName}` : undefined} colors={colors} isDark={isDark} />
       )}
 
       {parents.length > 0 && (
-        <GenGroup label={`Parents (${parents.length})`} colors={colors}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, position: 'relative' }}>
-            {/* Same flex:1-column structure as the grandparent row above,
-                so each parent lands directly under their own linked GPs. */}
-            <View style={{ flex: 1, alignItems: 'center' }}>{parents[0] && renderCard(parents[0])}</View>
-            {parents[1] && <View style={{ flex: 1, alignItems: 'center' }}>{renderCard(parents[1])}</View>}
-            {/* Heart badge — overlaps Priya's (second parent's) card left
-                edge specifically, reading as "attached to Priya" rather
-                than a neutral marker floating between both cards. Fixed
-                rose/pink-red (no true rose token in this palette —
-                everything maps to the lavender/terracotta brand system). */}
-            {parents.length === 2 && (
-              <View style={{
-                position: 'absolute', left: '50%', top: '50%',
-                width: 24, height: 24, borderRadius: 12, marginLeft: -10, marginTop: -12,
-                alignItems: 'center', justifyContent: 'center',
-                backgroundColor: '#F43F5E', borderWidth: 2, borderColor: colors.card,
-                zIndex: 1,
-              }}>
-                <Heart size={12} color="#fff" fill="#fff" />
+        <View>
+          <GenLabel label={`Parents · Partners (${parents.length})`} colors={colors} isDark={isDark} />
+          {parents.length === 2 ? (
+            <>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>{renderCard(parents[0])}</View>
+                <View style={{ flex: 1 }}>{renderCard(parents[1])}</View>
               </View>
-            )}
-          </View>
-        </GenGroup>
+              <CoupleJoint colors={colors} isDark={isDark} hasChildren={kids.length > 0} />
+            </>
+          ) : (
+            <View style={{ gap: 14 }}>
+              {parents.map(p => renderCard(p))}
+            </View>
+          )}
+        </View>
       )}
 
       {parents.length > 0 && kids.length > 0 && (
-        <GenDivider from={colors.pink} to={colors.success} />
-      )}
-
-      {kids.length > 0 && (
-        <GenGroup label={`Kids (${kids.length})`} colors={colors}>
-          {/* alignItems: 'center' — each kid's column is flex:1 (2 or
-              fewer kids) or a fixed 31% (3+, wrapping), but MemberCard
-              itself is a fixed 180px width with no self-centering, so
-              without this each card sat flush at its column's LEFT edge
-              instead of centered — same alignItems:'center' the Parents
-              row above already has per-column, just missing here
-              [live-reported: "still kids are aprt from - not aligned"]. */}
-          <View style={{ flexDirection: 'row', gap: 6, flexWrap: kids.length > 3 ? 'wrap' : 'nowrap' }}>
-            {kids.map(k => (
-              <View key={k.id} style={{
-                width: kids.length > 3 ? '31%' : undefined,
-                flex: kids.length > 3 ? undefined : 1,
-                alignItems: 'center',
-              }}>
-                {renderCard(k)}
-              </View>
-            ))}
+        <>
+          {parents.length !== 2 && <VerticalLink colors={colors} isDark={isDark} />}
+          <View>
+            <GenLabel label="Their Children" colors={colors} isDark={isDark} />
+            {parents.length === 2 && <ChildrenBracket count={kids.length} colors={colors} isDark={isDark} />}
+            <View style={{ flexDirection: 'row', gap: 10, flexWrap: kids.length > 2 ? 'wrap' : 'nowrap' }}>
+              {kids.map(k => (
+                <View key={k.id} style={{ width: kids.length > 2 ? '47%' : undefined, flex: kids.length > 2 ? undefined : 1 }}>
+                  {renderCard(k)}
+                </View>
+              ))}
+            </View>
           </View>
-        </GenGroup>
+        </>
       )}
     </View>
   );
@@ -167,8 +178,4 @@ function FamilyTreeViewImpl({ members, activeMemberId, isParent, colors, isDark,
 // on props is sufficient here (unlike MemberCard/CarouselMemberCard, which
 // needed a custom comparator because THEIR callers — this component's own
 // renderCard — wrap those same setters in a fresh inline arrow per card).
-// Matters most in RosterTab.tsx, where this is always mounted (unlike
-// Profile's own showFullTree-gated usage, which unmounts it entirely when
-// collapsed) — every unrelated store tick there used to re-run all four
-// .filter()/.map() calls and the whole generation-grouped JSX tree.
 export const FamilyTreeView = memo(FamilyTreeViewImpl);

@@ -47,9 +47,10 @@ export function QuestFilters({
   // No dedicated "Paid ✓" tab — approved/paid chores stay inline in "All"
   // alongside active ones instead of being segregated into their own view.
   const STATUS_TABS: { key: TabStatus; label: string }[] = [
-    { key: 'all',       label: 'All' },
     { key: 'todo',      label: 'To Do' },
     { key: 'review',    label: 'In Review' },
+    { key: 'completed', label: 'Completed' },
+    { key: 'all',       label: 'All' },
   ];
 
   return (
@@ -65,7 +66,7 @@ export function QuestFilters({
           style={[pillBase, kidFilter === 'all'
             ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple }
             : { backgroundColor: pillBg, borderColor: pillBdr }]}
-          onPress={() => { onSetKidFilter('all'); onSetTabStatus('all'); }}
+          onPress={() => { onSetKidFilter('all'); onSetTabStatus('todo'); }}
         >
           <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'all' ? '#fff' : colors.textSecondary }}>
             {isKid ? '🎯 My Chores' : 'All Family'}
@@ -79,7 +80,7 @@ export function QuestFilters({
             style={[pillBase, { paddingHorizontal: 6, paddingVertical: 4 }, kidFilter === k.id
               ? { backgroundColor: k.color ?? BRAND.amber, borderColor: k.color ?? BRAND.amber }
               : { backgroundColor: pillBg, borderColor: pillBdr }]}
-            onPress={() => { onSetKidFilter(k.id); onSetTabStatus('all'); }}
+            onPress={() => { onSetKidFilter(k.id); onSetTabStatus('todo'); }}
           >
             <FamilyAvatar name={k.name} emoji={k.emoji ?? undefined} size={28}
               ringColor={k.color != null ? k.color : BRAND.amber} ringWidth={kidFilter === k.id ? 2.5 : 0} />
@@ -94,7 +95,7 @@ export function QuestFilters({
             style={[pillBase, kidFilter === 'adults'
               ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple }
               : { backgroundColor: pillBg, borderColor: pillBdr }]}
-            onPress={() => { onSetKidFilter('adults'); onSetTabStatus('all'); }}
+            onPress={() => { onSetKidFilter('adults'); onSetTabStatus('todo'); }}
           >
             <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'adults' ? '#fff' : colors.textSecondary }}>
               👨‍👩 Adults
@@ -107,7 +108,7 @@ export function QuestFilters({
           style={[pillBase, kidFilter === 'pool'
             ? { backgroundColor: BRAND.amber, borderColor: BRAND.amber }
             : { backgroundColor: colors.amberLight, borderColor: colors.amberLight }]}
-          onPress={() => { onSetKidFilter('pool'); onSetTabStatus('all'); }}
+          onPress={() => { onSetKidFilter('pool'); onSetTabStatus('todo'); }}
         >
           <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'pool' ? '#fff' : colors.amber }}>
             ⚡ Bounty
@@ -122,7 +123,7 @@ export function QuestFilters({
             style={[pillBase, kidFilter === 'cheer'
               ? { backgroundColor: colors.accent, borderColor: colors.accent }
               : { backgroundColor: colors.accentLight, borderColor: colors.accentLight }]}
-            onPress={() => { onSetKidFilter('cheer'); onSetTabStatus('all'); }}
+            onPress={() => { onSetKidFilter('cheer'); onSetTabStatus('todo'); }}
           >
             <ThumbsUpIcon c={kidFilter === 'cheer' ? '#fff' : colors.accent} />
             <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'cheer' ? '#fff' : colors.accent, marginLeft: 4 }}>

@@ -137,7 +137,7 @@ export default function RewardsDashboardScreen({
   const myGpCoins   = (activeMember as any)?.gpCoins   ?? 0;
   const myCoins     = myMainCoins + myGpCoins;
 
-  const canvas = isDark ? colors.background : '#F4F6FA';
+  const canvas = isDark ? colors.background : '#F3F5F2';
 
   // Hide tab bar while this screen is mounted
   useEffect(() => {

@@ -24,7 +24,7 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import FullPageOverlay from '@/components/FullPageOverlay';
 
 // ─── Figma rhythm tokens ──────────────────────────────────────────────────────
-const PAGE_BG   = '#F4F6FA';
+const PAGE_BG   = '#F3F5F2';
 const TITLE_CLR = '#172337';
 const BODY_CLR  = '#657185';
 const BORDER    = '#DFE5EF';

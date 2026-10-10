@@ -15,7 +15,7 @@ import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, Upload, Shield, ChevronDown, Check, Minus, Plus } from 'lucide-react-native';
 
-const PAGE_BG   = '#F5F7FB';
+const PAGE_BG   = '#F3F5F2';
 const TITLE_CLR = '#172337';
 const BODY_CLR  = '#657185';
 const BLUE      = '#345DE3';

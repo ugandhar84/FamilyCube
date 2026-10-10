@@ -21,7 +21,7 @@ import { MemberAvatar } from '../tabs/shared';
 import { fmtDate } from '@/lib/dates';
 import { MedRecord, TAG_MAP, URGENCY_META, memberColor, fmtSize } from './types';
 
-const PAGE_BG   = '#F5F7FB';
+const PAGE_BG   = '#F3F5F2';
 const TITLE_CLR = '#172337';
 const BODY_CLR  = '#657185';
 const BLUE      = '#345DE3';

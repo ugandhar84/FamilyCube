@@ -19,7 +19,7 @@ import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 // Two distinct blues per the exact Figma export: BLUE (#345DE3) is the real
 // primary/action color (buttons, selected states); LINK_BLUE (#294FC7) is
 // reserved for link-style text only (back-links, Cancel label).
-const PAGE_BG   = '#F5F7FB';
+const PAGE_BG   = '#F3F5F2';
 const TITLE_CLR = '#172337';
 const BODY_CLR  = '#657185';
 const BLUE      = '#345DE3';

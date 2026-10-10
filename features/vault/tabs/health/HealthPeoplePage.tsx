@@ -38,7 +38,7 @@ import HealthRecordsScreen from '../HealthRecordsScreen';
 import { useHealthRecords } from './useHealthRecords';
 import { medicationAdherenceHistory, formatDoseTime, today } from './types';
 
-const PAGE_BG   = '#F5F7FB';
+const PAGE_BG   = '#F3F5F2';
 const TITLE_CLR = '#172337';
 const BODY_CLR  = '#657185';
 const LINK_BLUE = '#294FC7';

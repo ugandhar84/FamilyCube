@@ -36,6 +36,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { todayLocal, parseLocalDate, withinLast24h, parseTimeInput } from '@/lib/dates';
+import { countOverdueChores } from '@/lib/overdue';
 import { useChatStore } from '@/store/chatStore';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { supabase } from '@/lib/supabase';
@@ -174,7 +175,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     (q.assignedToIds?.length > 0 && q.assignedToIds.includes(memberId));
 
   const [kidFilter,      setKidFilter]      = useState('all');
-  const [tabStatus,      setTabStatus]      = useState<TabStatus>('all');
+  const [tabStatus,      setTabStatus]      = useState<TabStatus>('todo');
   const [internalSearchQuery, setSearchQuery] = useState('');
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
   const [dateRange,      setDateRange]      = useState<DateRange>(null);
@@ -339,7 +340,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
 
     // Reset filters to role-appropriate defaults
     setKidFilter('all');
-    setTabStatus('all');
+    setTabStatus('todo');
 
     // Close AI panel + clear in-flight loading
     setShowAiTool('none');
@@ -851,9 +852,10 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
           const stillOpen = quests.filter(q =>
             !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) && !q.isAdultTask
           ).length;
-          const helpers = new Set(
-            quests.filter(q => q.assignedToId && !['archived','cancelled'].includes(q.status)).map(q => q.assignedToId!)
-          ).size;
+          const inProgress = quests.filter(q =>
+            q.status === 'in_progress' || q.status === 'pending_approval'
+          ).length;
+          const overdueCount = countOverdueChores(quests, activeMember);
 
           return (
             <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
@@ -883,19 +885,27 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                 </TouchableOpacity>
               )}
 
-              {/* 3-tile summary strip */}
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                <View style={{ flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: colors.pinkLight, padding: 12, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 19, fontWeight: '700', color: colors.textPrimary }}>{doneToday}</Text>
-                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>done today</Text>
+              {/* 4-tile summary strip */}
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+                <View style={{ flex: 1, minHeight: 72, borderRadius: 17, backgroundColor: colors.pinkLight, padding: 10, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{doneToday}</Text>
+                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 2 }}>done today</Text>
                 </View>
-                <View style={{ flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: colors.primaryLight, padding: 12, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 19, fontWeight: '700', color: colors.textPrimary }}>{stillOpen}</Text>
-                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>still open</Text>
+                <View style={{ flex: 1, minHeight: 72, borderRadius: 17, backgroundColor: colors.primaryLight, padding: 10, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{stillOpen}</Text>
+                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 2 }}>pending</Text>
                 </View>
-                <View style={{ flex: 1, minHeight: 78, borderRadius: 17, backgroundColor: colors.tealLight, padding: 12, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 19, fontWeight: '700', color: colors.textPrimary }}>{helpers}</Text>
-                  <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>people helping</Text>
+                <View style={{ flex: 1, minHeight: 72, borderRadius: 17, backgroundColor: colors.tealLight, padding: 10, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{inProgress}</Text>
+                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 2 }}>in progress</Text>
+                </View>
+                <View style={{ flex: 1, minHeight: 72, borderRadius: 17,
+                  backgroundColor: overdueCount > 0 ? colors.danger + '18' : colors.surface,
+                  padding: 10, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700',
+                    color: overdueCount > 0 ? colors.danger : colors.textTertiary }}>{overdueCount}</Text>
+                  <Text style={{ fontSize: 9, marginTop: 2, fontWeight: overdueCount > 0 ? '700' : '400',
+                    color: overdueCount > 0 ? colors.danger : colors.textTertiary }}>overdue</Text>
                 </View>
               </View>
             </View>
@@ -1157,7 +1167,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                 .sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''))
                 [0];
               const winner = recentWin ? members.find(m => m.id === recentWin.assignedToId) : null;
-              if (!recentWin || !winner) return null;
+              if (!recentWin || !winner || winner.id === activeMemberId) return null;
               return (
                 <View style={{ marginHorizontal: 14, marginTop: 14, padding: 18, borderRadius: 22, backgroundColor: colors.amberLight }}>
                   <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.amber }}>SMALL WIN</Text>

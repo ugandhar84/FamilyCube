@@ -38,7 +38,7 @@ import FullPageOverlay from '@/components/FullPageOverlay';
 // ── Flat Figma tokens — matches HomeownerNotesScreen.tsx/SchoolScreen.tsx/
 // ConnectCalendarPage.tsx/InvitePage.tsx exactly. Dark mode falls back to
 // the real theme colors (these tokens have no dark variant of their own).
-const PAGE_BG   = '#F5F7FB';
+const PAGE_BG   = '#F3F5F2';
 const TITLE_CLR = '#172337';
 const BODY_CLR  = '#657185';
 // Two distinct blues per the exact Figma export — see HealthRecordsScreen.

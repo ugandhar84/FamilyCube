@@ -24,15 +24,19 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import StoreScreen from './StoreScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 
-// ─── Figma tokens — same palette SchoolHomeScreen.tsx uses ──────────────────
-const CANVAS = '#FFFFFF';
-const TITLE_CLR = '#172337';
-const BODY_CLR = '#657185';
-const BLUE = '#345DE3';
-const LINK_BLUE = '#294FC7';
-const BORDER = '#E8EBF0';
+// ─── "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — same
+// palette SchoolHomeScreen.tsx uses; see that file's own comment for the
+// full rationale. ──────────────────────────────────────────────────────────
+const CANVAS = '#ECE6DE';
+const TITLE_CLR = '#0D1210';
+const BODY_CLR = '#3D4D47';
+const BODY_CLR_LIGHT = '#4E5C56';
+const BLUE = '#3B5FE4';
+const LINK_BLUE = '#23352B';
+const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
-const SURFACE = '#F5F7FB';
+const SURFACE = '#F0EDE6';
+const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 const GREEN_TXT = '#1B7A54';
 const AMBER_TXT = '#B5720A';
 const RED_TXT = '#C0392B';
@@ -56,9 +60,9 @@ function Card({ children, colors, isDark, style }: {
 }) {
   return (
     <View style={[{
-      borderWidth: 1, borderColor: isDark ? colors.border : BORDER, borderRadius: 16,
+      borderWidth: isDark ? 1 : 0, borderColor: colors.border, borderRadius: 18,
       backgroundColor: isDark ? colors.card : CARD_BG, overflow: 'hidden',
-    }, style]}>
+    }, !isDark && CARD_SHADOW, style]}>
       {children}
     </View>
   );

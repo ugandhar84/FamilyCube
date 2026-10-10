@@ -22,26 +22,27 @@ import { fmtDateShort } from '@/lib/dates';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import FullPageOverlay from '@/components/FullPageOverlay';
 
-// ─── Figma rhythm tokens ──────────────────────────────────────────────────────
-const PAGE_BG   = '#F3F5F2';
-const TITLE_CLR = '#172337';
-const BODY_CLR  = '#657185';
-const BORDER    = '#DFE5EF';
+// ─── "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) ──────────
+// See features/vault/tabs/SchoolHomeScreen.tsx's own comment for the full
+// rationale. PAGE_BG/FORM_CARD_BG etc. used to differ slightly between the
+// browse grid and the field-card forms below — unified to one set now that
+// both follow the same warm-cream-canvas rhythm.
+const PAGE_BG   = '#ECE6DE';
+const TITLE_CLR = '#0D1210';
+const BODY_CLR  = '#3D4D47';
+const BODY_CLR_LIGHT = '#4E5C56';
+const BORDER    = '#DDD6CC';
 const AMBER_TXT = '#B5720A';
-const BLUE_BTN  = '#345DE3';
+const BLUE_BTN  = '#3B5FE4';
+const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 
-// School's flat field-card rhythm (SchoolHomeScreen.tsx/CreateScheduleScreen.tsx)
-// — used by PerkDetailScreen/PerkModal below, kept distinct from the browse
-// grid's own PAGE_BG/BORDER/BLUE_BTN tokens above since School's canvas is
-// pure white (not PAGE_BG's cashmere tint) with a slightly different border
-// hex [live-requested: "make rewards module similar to school ... also forms too"].
-const FORM_TITLE_CLR = '#172337';
-const FORM_BODY_CLR  = '#657185';
-const FORM_BLUE      = '#345DE3';
-const FORM_LINK_BLUE = '#294FC7';
-const FORM_BORDER    = '#E8EBF0';
+const FORM_TITLE_CLR = TITLE_CLR;
+const FORM_BODY_CLR  = BODY_CLR;
+const FORM_BLUE      = BLUE_BTN;
+const FORM_LINK_BLUE = '#23352B';
+const FORM_BORDER    = BORDER;
 const FORM_CARD_BG   = '#FFFFFF';
-const FORM_SURFACE   = '#F5F7FB';
+const FORM_SURFACE   = '#F0EDE6';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always

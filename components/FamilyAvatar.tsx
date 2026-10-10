@@ -96,13 +96,18 @@ export default function FamilyAvatar({
     );
   }
 
-  // Tier 2: remote image (with initials fallback on error)
+  // Tier 2: remote image (with initials fallback on error). resizeMode
+  // "cover" + an explicit matching borderRadius — a non-square source
+  // photo was letterboxing inside the square frame without "cover",
+  // showing the container's own bg tint as a thin ring around the image
+  // [live-reported: "why the avatar have the some white color borders"].
   if (avatarUrl && !imgError) {
     return (
       <View style={containerStyle}>
         <Image
           source={{ uri: avatarUrl }}
-          style={{ width: size, height: size }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          resizeMode="cover"
           onError={() => setImgError(true)}
         />
       </View>

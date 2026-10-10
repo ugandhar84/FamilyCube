@@ -51,6 +51,8 @@ export default function ScanReviewSheet({
 }) {
   const insets = useSafeAreaInsets();
 
+  const [maxPages, setMaxPages] = useState(3);
+
   // Prescription scanner
   const {
     scanning, scanResult, scanError,
@@ -58,7 +60,7 @@ export default function ScanReviewSheet({
     pickImage, scan, pickAndScan,
     removeImage, clearPending, clearScan, setScanResult,
     aiConsent,
-  } = usePrescriptionScanner(activeMemberId, members.find(m => m.id === activeMemberId)?.familyId);
+  } = usePrescriptionScanner(activeMemberId, members.find(m => m.id === activeMemberId)?.familyId, maxPages);
 
   // Report scanning state up so the parent's AI banner can show its spinner
   useEffect(() => { onScanningChange?.(scanning); }, [scanning]);
@@ -536,6 +538,8 @@ export default function ScanReviewSheet({
                 onPickPdf={() => { if (!scanning) pickAndScan('document'); }}
                 ownerMemberId={reviewMemberId || activeMemberId}
                 setOwnerMemberId={setReviewMemberId}
+                maxPages={maxPages}
+                setMaxPages={setMaxPages}
               />
             )}
 

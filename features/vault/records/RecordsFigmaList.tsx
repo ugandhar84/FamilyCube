@@ -233,7 +233,13 @@ export default function RecordsFigmaList({
                   paddingHorizontal: 12, paddingVertical: 9, opacity: analyzingId === rec.id ? 0.6 : 1 }}>
                 <Sparkles size={13} color={BLUE} />
                 <Text style={{ fontSize: 12, fontWeight: '700', color: BLUE }}>
-                  {analyzingId === rec.id ? 'Analyzing…' : (rec.tag === 'visit_recording' ? 'Submit for analysis' : 'Analyze with AI')}
+                  {analyzingId === rec.id ? 'Analyzing…'
+                    : rec.tag === 'visit_recording' ? 'Submit visit for analysis'
+                    : rec.tag === 'lab' ? 'Analyze lab results'
+                    : rec.tag === 'imaging' ? 'Analyze imaging report'
+                    : rec.tag === 'prescription' ? 'Analyze prescription'
+                    : rec.tag === 'vaccination' ? 'Analyze vaccine record'
+                    : 'Analyze with AI'}
                 </Text>
               </TouchableOpacity>
             )}

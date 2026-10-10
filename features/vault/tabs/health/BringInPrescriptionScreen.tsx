@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, Upload, Shield, FileText, ChevronDown, Check } from 'lucide-react-native';
+import { Camera, Upload, Shield, ChevronDown, Check, Minus, Plus } from 'lucide-react-native';
 
 const PAGE_BG   = '#F5F7FB';
 const TITLE_CLR = '#172337';
@@ -43,6 +43,7 @@ export default function BringInPrescriptionScreen({
   onPickLibrary,
   onPickPdf,
   ownerMemberId, setOwnerMemberId,
+  maxPages, setMaxPages,
 }: {
   colors: any;
   isDark: boolean;
@@ -56,6 +57,8 @@ export default function BringInPrescriptionScreen({
   onPickPdf: () => void;
   ownerMemberId: string;
   setOwnerMemberId: (id: string) => void;
+  maxPages: number;
+  setMaxPages: (n: number) => void;
 }) {
   const insets  = useSafeAreaInsets();
   const titleC  = isDark ? colors.textPrimary   : TITLE_CLR;
@@ -110,6 +113,32 @@ export default function BringInPrescriptionScreen({
         {/* Source picker card */}
         <View style={contentGroupStyle(cardBg, isDark, border)}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Choose how to bring it in</Text>
+
+          {/* Page count stepper */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            borderRadius: 14, borderWidth: 1, borderColor: border, paddingHorizontal: 14, paddingVertical: 10 }}>
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>Pages to scan</Text>
+              <Text style={{ fontSize: 11, color: bodyC, marginTop: 2 }}>Max pages per document (1–10)</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity onPress={() => setMaxPages(Math.max(1, maxPages - 1))}
+                disabled={maxPages <= 1}
+                style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: accent + '18',
+                  alignItems: 'center', justifyContent: 'center', opacity: maxPages <= 1 ? 0.4 : 1 }}>
+                <Minus size={15} color={accent} />
+              </TouchableOpacity>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: titleC, minWidth: 22, textAlign: 'center' }}>{maxPages}</Text>
+              <TouchableOpacity onPress={() => setMaxPages(Math.min(10, maxPages + 1))}
+                disabled={maxPages >= 10}
+                style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: accent + '18',
+                  alignItems: 'center', justifyContent: 'center', opacity: maxPages >= 10 ? 0.4 : 1 }}>
+                <Plus size={15} color={accent} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={{ height: 1, backgroundColor: border }} />
 
           {/* Camera */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

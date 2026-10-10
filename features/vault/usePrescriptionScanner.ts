@@ -61,7 +61,7 @@ export interface PendingImage {
   mimeType: string;
 }
 
-const MAX_PHOTOS = 3;
+const DEFAULT_MAX_PHOTOS = 10;
 
 async function callEdgeFunction(images: PendingImage[]): Promise<Record<string, any>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -102,7 +102,8 @@ const PICKER_OPTS: ImagePicker.ImagePickerOptions = {
  * (5.1.1(i)/5.1.2(i)) requires consent for. Callers must render the
  * returned `consentSheet` element so the sheet actually shows.
  */
-export function usePrescriptionScanner(memberId?: string, familyId?: string) {
+export function usePrescriptionScanner(memberId?: string, familyId?: string, maxPhotosOverride?: number) {
+  const MAX_PHOTOS = maxPhotosOverride ?? DEFAULT_MAX_PHOTOS;
   const [scanning, setScanning]         = useState(false);
   const [scanResult, setScanResult]     = useState<ScanResult | null>(null);
   const [showReview, setShowReview]     = useState(false);
@@ -160,7 +161,7 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string) {
         console.warn('[usePrescriptionScanner] JPEG re-encode failed, using picker base64 as-is:', e?.message);
       }
       setPendingImages(prev => {
-        if (prev.length >= MAX_PHOTOS) return prev; // cap at 3
+        if (prev.length >= MAX_PHOTOS) return prev;
         return [...prev, { base64: base64!, mimeType }];
       });
     } catch (err: any) {

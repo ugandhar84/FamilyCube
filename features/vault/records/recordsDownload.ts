@@ -16,11 +16,9 @@ import { supabase }    from '@/lib/supabase';
 import type { MedRecord } from './types';
 
 async function signedUrl(filePath: string): Promise<string> {
-  console.log('[recordsDownload] createSignedUrl — path:', filePath);
   const { data, error } = await supabase.storage
     .from('medical-records')
     .createSignedUrl(filePath, 120);
-  console.log('[recordsDownload] signedUrl result — url:', data?.signedUrl?.slice(0, 80), 'error:', error?.message);
   if (error || !data?.signedUrl) throw new Error(`Could not create download link: ${error?.message ?? 'unknown'}`);
   return data.signedUrl;
 }
@@ -28,7 +26,6 @@ async function signedUrl(filePath: string): Promise<string> {
 async function downloadBytesViaUrl(filePath: string): Promise<ArrayBuffer> {
   const url = await signedUrl(filePath);
   const res = await fetch(url);
-  console.log('[recordsDownload] fetch status:', res.status, 'content-length:', res.headers.get('content-length'));
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
   return res.arrayBuffer();
 }
@@ -67,22 +64,15 @@ export async function downloadSingle(rec: MedRecord): Promise<void> {
   // Use native fetch → arrayBuffer → base64 → write.
   // FileSystem.downloadAsync returns 200 + 0 bytes for Supabase signed URLs
   // because it doesn't follow the storage redirect properly.
-  console.log('[recordsDownload] fetch — url length:', url.length);
   const res = await fetch(url);
-  console.log('[recordsDownload] fetch status:', res.status, 'content-length:', res.headers.get('content-length'));
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
   const buf = await res.arrayBuffer();
-  console.log('[recordsDownload] arrayBuffer byteLength:', buf.byteLength);
   if (buf.byteLength === 0) throw new Error('Downloaded file is empty — storage may still be syncing, please retry');
-  // arrayBuffer → base64 via Uint8Array + btoa (works in Hermes)
   const bytes = new Uint8Array(buf);
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
   const b64 = btoa(binary);
   await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
-  const info = await FileSystem.getInfoAsync(uri);
-  console.log('[recordsDownload] written file info:', JSON.stringify(info));
-
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) throw new Error('Sharing is not available on this device');
   await Sharing.shareAsync(uri, { mimeType: mimeFor(name), dialogTitle: rec.title });

@@ -980,6 +980,8 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
             start_date: editMed.start_date ?? today(), end_date: editMed.end_date ?? '',
             reminder_times: editMed.frequency_times?.length ? editMed.frequency_times : ['08:00'],
             alert_call: false,
+            source_note: editMed.source_note ?? '',
+            dosage_count: 1, frequency_days: [],
           },
         } : undefined}
       />

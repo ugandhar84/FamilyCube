@@ -35,7 +35,7 @@ export default function FindFamTab() {
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={50}>
-      <FindFamScreen onClose={close} />
+      {(requestAnimatedClose) => <FindFamScreen onClose={requestAnimatedClose} />}
     </FullPageOverlay>
   );
 }

@@ -21,7 +21,7 @@ export default function FindFamScreen({ onClose }: { onClose?: () => void }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GpsTab colors={colors} isDark={isDark} />
+      <GpsTab colors={colors} isDark={isDark} onClose={onClose} />
     </View>
   );
 }

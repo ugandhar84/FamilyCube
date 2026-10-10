@@ -9,10 +9,10 @@
  */
 import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle, Gauge } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
@@ -26,6 +26,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill } from './shared';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { PlacesPage } from '@/features/gps/PlacesPage';
 import { PlaceEditorPage } from '@/features/gps/PlaceEditorPage';
 import { usePlacesStore, type FamilyPlace, type PlaceKind } from '@/store/placesStore';
@@ -227,14 +228,8 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   );
 });
 
-export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
-  // Real tab bar height (includes the safe-area bottom inset the custom
-  // CustomTabBar already factors in) — without this, the sheet's min-height
-  // snap point and its content's bottom padding were computed against the
-  // full screen height, so the last roster row and the sheet itself at its
-  // minimum size both ended up hidden behind the tab bar.
-  let tabBarHeight = 0;
-  try { tabBarHeight = useBottomTabBarHeight(); } catch { /* not inside a bottom-tabs navigator (e.g. some embedded contexts) — no bar to clear */ }
+export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDark: boolean; onClose?: () => void }) {
+  const insets = useSafeAreaInsets();
 
   const { members, activeMemberId } = useFamilyStore();
   const [locations, setLocations]   = useState<MemberLocation[]>([]);
@@ -300,6 +295,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   useEffect(() => {
     if (familyId && activeMemberId) loadPlaces(familyId, activeMemberId);
   }, [familyId, activeMemberId]);
+
+  // Full-bleed map with no header of its own — the bottom tab bar was
+  // still showing underneath it [live-requested: "hide the bottom nav on
+  // this page"], since neither this screen nor FindFamScreen ever called
+  // hideTabBar() — being reached via FullPageOverlay alone doesn't hide
+  // it automatically, every other full-page screen in the app calls this
+  // itself.
+  useEffect(() => {
+    hideTabBar();
+    return () => showTabBar();
+  }, []);
 
   // load() is called on first mount AND on every realtime location ping /
   // 5-min poll from ANY family member — it used to setLoading(true) every
@@ -858,13 +864,16 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // area — using the raw screen height for the map/sheet split let the
   // sheet's own "MIN" snap point end up SHORTER than the tab bar itself,
   // so at min-height the entire sheet rendered underneath the bar instead
-  // of just being smaller. Usable height is screen minus the tab bar; and
-  // SHEET_MIN has its own floor (not just a percentage) so it's always at
-  // least tall enough to show the grabber + "Family (N)" header AND read as
-  // an obvious, easy-to-grab sheet edge — confirmed live as too easy to
-  // drag down to where the sheet became invisible against the map with
-  // nothing left to grab it by. 140px (not 110) leaves real visible margin.
-  const SCREEN_H = SCREEN_H_RAW - tabBarHeight;
+  // of just being smaller. SHEET_MIN has its own floor (not just a
+  // percentage) so it's always at least tall enough to show the grabber +
+  // "Family (N)" header AND read as an obvious, easy-to-grab sheet edge —
+  // confirmed live as too easy to drag down to where the sheet became
+  // invisible against the map with nothing left to grab it by. 140px (not
+  // 110) leaves real visible margin. No longer subtracting tabBarHeight —
+  // this screen now hides the tab bar entirely (hideTabBar() above), so
+  // reserving space for it left a dead gap at the bottom of the sheet
+  // [live-requested: "Remove safe sea of this bottom sheet bottom"].
+  const SCREEN_H = SCREEN_H_RAW;
   const SHEET_MIN = Math.max(140, Math.round(SCREEN_H * 0.16));
   const SHEET_DEFAULT = Math.round(SCREEN_H * 0.48);
   const SHEET_MAX = Math.round(SCREEN_H * 0.86);
@@ -973,6 +982,23 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         )}
 
+        {/* Close — this screen has no header at all (full-bleed map, "no
+            headers" per its own live-requested layout), so without this
+            there was genuinely no visible way to leave except an edge
+            swipe [live-reported: no overlay/close icon existed on the map
+            at all]. onClose is the render-prop requestAnimatedClose from
+            FullPageOverlay (threaded through FindFamScreen), so tapping
+            this plays the same slide-out-to-the-right animation the swipe
+            gesture already does, not an instant unmount. */}
+        {onClose && (
+          <TouchableOpacity onPress={onClose}
+            style={{ position: 'absolute', top: insets.top + 10, left: 12 }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <ChevronDown size={26} color="#fff" strokeWidth={2.5}
+              style={{ shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }} />
+          </TouchableOpacity>
+        )}
+
         {/* Share My Location — floating pill, bottom-right of the map like a Maps action button */}
         <TouchableOpacity onPress={toggleTracking} disabled={togglingTrack} style={g.trackFab}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -1008,7 +1034,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         </View>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 90 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}
           showsVerticalScrollIndicator={false}>
 
         {/* Places — Home/School/Work/Other pins with real device
@@ -1017,15 +1043,15 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
             actually wired up now. */}
         <TouchableOpacity onPress={() => setShowPlaces(true)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-            borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+            borderRadius: 14, borderWidth: 1, borderColor: colors.border,
             backgroundColor: isDark ? colors.card : '#fff',
             paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 13,
+          <View style={{ width: 40, height: 40, borderRadius: 12,
             backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' }}>
             <MapPin size={20} color={colors.teal} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Places</Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Places</Text>
             <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
               {places.length === 0
                 ? 'Pin Home, school, work for arrival check-ins'
@@ -1035,7 +1061,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           <ChevronDown size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '-90deg' }] }} />
         </TouchableOpacity>
 
-        <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 }}>
           Family ({roster.length})
         </Text>
 
@@ -1460,8 +1486,8 @@ const g = StyleSheet.create({
   sheet:        { borderTopLeftRadius: 22, borderTopRightRadius: 22,
                   shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 6 },
   grabber:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#00000020', alignSelf: 'center', marginTop: 8, marginBottom: 12 },
-  exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1,
-                    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
+  exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1,
+                    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
   row:          { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12 },
   rowExpanded:  { borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 10, marginVertical: 2, borderTopWidth: 1.5 },
   actionPill:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 16,

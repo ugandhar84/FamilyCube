@@ -461,7 +461,7 @@ export default function FamilyScreen() {
           : <HealthRecordsScreen onClose={() => setShowHealth(false)} />}
       </FullPageOverlay>
       <FullPageOverlay visible={showLocations} onDismiss={() => setShowLocations(false)} zIndex={50}>
-        <FindFamScreen onClose={() => setShowLocations(false)} />
+        {(requestAnimatedClose) => <FindFamScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
       <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50}>
         <RewardsDashboardScreen onClose={() => setShowRewards(false)} backLabel="Family" />

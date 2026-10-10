@@ -36,7 +36,7 @@ function currentWeekOf(): string {
   return localDateStr(d);
 }
 
-export default function MealsScreen() {
+export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();

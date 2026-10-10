@@ -46,6 +46,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { useUIStore } from '@/store/uiStore';
 import { localDateStr } from '@/lib/dates';
 import AppHeader from '@/components/AppHeader';
+import { PageHeading } from '@/components/PageHeading';
 import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import CalendarScreen from '@/features/calendar/CalendarScreen';
@@ -358,12 +359,34 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   const stillOpen = choreCounts.pending + choreCounts.active;
   const helpers = chores.filter(c => c.status === 'in_progress' || c.status === 'pending_approval').length;
 
+  const todayStr = localDateStr(new Date());
+  const todayEventCount = events.filter(e => e.date === todayStr).length;
+  const overdueCount = chores.filter(c => {
+    if (!c.dueDate) return false;
+    if (['done','approved','archived','cancelled','completed','auto_approved'].includes(c.status)) return false;
+    return c.dueDate < todayStr && (activeMember?.role === 'parent' || c.assignedToId === activeMemberId);
+  }).length;
+  const scheduleSubtitle = todayEventCount === 0
+    ? 'Nothing scheduled today — a calm day.'
+    : `${todayEventCount} event${todayEventCount === 1 ? '' : 's'} today · tap any day to see more`;
+  const tasksSubtitle = overdueCount > 0
+    ? `${stillOpen} open · ${overdueCount} overdue — start with the late ones`
+    : stillOpen > 0
+      ? `${stillOpen} open · ${doneToday} done today`
+      : doneToday > 0 ? `All caught up — ${doneToday} done today` : 'All caught up — nothing left to do';
+
   // Fixed header — title + tab switcher, never scrolls
+  const isSchedule = segment === 'schedule' || lockedSegment === 'schedule';
   const fixedHeader = (
     <View style={{ backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', paddingBottom: 8 }}>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 34, marginHorizontal: 20, marginTop: 14, marginBottom: 12 }}>
-        {lockedSegment === 'schedule' ? 'Schedule' : lockedSegment === 'chores' ? 'Tasks' : 'Schedule'}
-      </Text>
+      <PageHeading
+        eyebrow={`FAMILY CUBE · ${isSchedule ? 'SCHEDULE' : 'TASKS'}`}
+        title={isSchedule ? 'Schedule' : 'Tasks'}
+        subtitle={isSchedule ? scheduleSubtitle : tasksSubtitle}
+        accent={isSchedule ? 'teal' : 'pink'}
+        Icon={isSchedule ? CalendarDays : ListChecks}
+        topInset={insets.top}
+      />
       {!lockedSegment && <View style={{
         flexDirection: 'row', gap: 4, marginHorizontal: 20,
         padding: 4, borderRadius: 14,

@@ -15,7 +15,8 @@ import {
   View, Text, ScrollView, FlatList, Pressable, StyleSheet, TextInput,
   KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard, ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PageHeading } from '@/components/PageHeading';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -71,6 +72,7 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const {
     channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage, clearChannel,
@@ -875,14 +877,13 @@ export default function ChatScreen() {
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
         {/* Header */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.6 }}>
-            FAMILY CUBE · CHAT
-          </Text>
-          <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, marginTop: 2 }}>
-            Messages
-          </Text>
-        </View>
+        <PageHeading
+          eyebrow="FAMILY CUBE · CHAT"
+          title="Messages"
+          subtitle={`${members.length} people · tap a name to start a thread`}
+          accent="pink"
+          topInset={insets.top}
+        />
 
         {/* Presence card — Figma: pinkLight rounded card with family faces */}
         {members.length > 0 && (

@@ -58,7 +58,7 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boolean }) {
+export default function GroceryScreen({ hideHeader = false, onClose }: { hideHeader?: boolean; onClose?: () => void }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId, familyName } = useFamilyStore();

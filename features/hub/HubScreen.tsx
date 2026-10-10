@@ -39,6 +39,8 @@ import { ApprovalDetailScreen } from './parent/ApprovalDetailScreen';
 import { RewardReviewScreen } from './parent/RewardReviewScreen';
 import HelpDispatchQueue from './HelpDispatchQueue';
 import RequestHelpModal from './RequestHelpModal';
+import GroceryScreen from '@/features/grocery/GroceryScreen';
+import MealsScreen from '@/features/vault/tabs/MealsScreen';
 import { KidView } from './KidView';
 import { SeniorView } from './SeniorView';
 import { TeenView } from './TeenView';
@@ -114,6 +116,8 @@ export default function HubScreen() {
   // ActiveTripDetailScreen (real push/pop), not closed first.
   const [showRidesRoom, setShowRidesRoom] = useState(false);
   const [activeTripDetailId, setActiveTripDetailId] = useState<string | null>(null);
+  const [showGrocery, setShowGrocery] = useState(false);
+  const [showMeals, setShowMeals] = useState(false);
   // Category landing cards (ReviewInboxScreen) open one of these queue
   // screens, which in turn open the actual per-item detail screen below —
   // three levels deep (inbox → queue → detail), not inbox → detail
@@ -151,8 +155,20 @@ export default function HubScreen() {
     useUIStore.getState().setOpenApprovalDetailChoreId(null);
     setReversalChoreId(approvalDetailRequest);
   }, [approvalDetailRequest]);
+  const groceryRequest = useUIStore(st => st.openGroceryScreenRequested);
   useEffect(() => {
-    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom;
+    if (!groceryRequest) return;
+    useUIStore.getState().setOpenGroceryScreenRequested(false);
+    setShowGrocery(true);
+  }, [groceryRequest]);
+  const mealsRequest = useUIStore(st => st.openMealsScreenRequested);
+  useEffect(() => {
+    if (!mealsRequest) return;
+    useUIStore.getState().setOpenMealsScreenRequested(false);
+    setShowMeals(true);
+  }, [mealsRequest]);
+  useEffect(() => {
+    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals;
     useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
     // Live direction: "remove the bottom nav on the sub pages" — the
     // Figma mocks for every one of these full-page screens
@@ -166,7 +182,7 @@ export default function HubScreen() {
     // while a child screen is open — see FullPageOverlay's own doc.
     if (anyFullBleedOpen) hideTabBar(); else showTabBar();
     return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
-  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom]);
+  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals]);
   const describeFullFormRef = useRef<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>(null);
 
   // Drive ParentView's entrance animation from HubScreen's focus events —
@@ -776,6 +792,14 @@ export default function HubScreen() {
       </FullPageOverlay>
       <FullPageOverlay visible={!!activeTripDetailId} onDismiss={() => setActiveTripDetailId(null)} zIndex={51}>
         {activeTripDetailId ? <ActiveTripDetailScreen tripId={activeTripDetailId} onClose={() => setActiveTripDetailId(null)} /> : null}
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={showGrocery} onDismiss={() => setShowGrocery(false)} zIndex={50}>
+        <GroceryScreen onClose={() => setShowGrocery(false)} />
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={showMeals} onDismiss={() => setShowMeals(false)} zIndex={50}>
+        <MealsScreen onClose={() => setShowMeals(false)} />
       </FullPageOverlay>
 
       {/* Senior Hub's own En Route flow still uses the picker modal — it has

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, Easing, Image } from 'react-native';
 import { useUnsplashMealImage } from '@/lib/hooks/useUnsplashMealImage';
-import { router } from 'expo-router';
+import { useUIStore } from '@/store/uiStore';
 import { supabase } from '@/lib/supabase';
 import { weekOf, DAYS } from '@/features/vault/tabs/meals/types';
 import type { FamilyMember } from '@/store/familyStore';
@@ -81,7 +81,7 @@ export function TonightMealCard({
 
   return (
     <AnimatedPressable
-      onPress={() => router.push('/(tabs)/meals' as any)}
+      onPress={() => useUIStore.getState().setOpenMealsScreenRequested(true)}
       style={{
         marginHorizontal: 20, marginTop: 14, marginBottom: 20,
         flexDirection: 'row', gap: 0,

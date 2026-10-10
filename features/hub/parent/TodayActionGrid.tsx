@@ -1,7 +1,7 @@
 import { View, Text } from 'react-native';
-import { router } from 'expo-router';
 import { ClipboardCheck, ShoppingCart, Calendar, ListChecks } from 'lucide-react-native';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { useUIStore } from '@/store/uiStore';
 
 /**
  * TodayActionGrid — originally a pixel-faithful rebuild of the Figma Make
@@ -74,7 +74,7 @@ export function TodayActionGrid({
       bg: colors.tealLight,
       title: 'Groceries',
       subtitle: groceryCount > 0 ? `${groceryCount} item${groceryCount === 1 ? '' : 's'} open` : 'List is clear',
-      onPress: () => router.push('/(tabs)/grocery' as any),
+      onPress: () => useUIStore.getState().setOpenGroceryScreenRequested(true),
     },
     {
       key: 'createEvent',

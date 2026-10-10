@@ -17,10 +17,6 @@
  * useUIStore's setFullBleedScreenActive, which only hides the FAB, not
  * the real tab bar (a previously-fixed, real bug per CLAUDE.md).
  *
- * "Pickup authorization →" is a disabled-looking STUB per the
- * orchestrating agent's own grep confirmation (zero hits for "pickup"
- * anywhere in the codebase outside node_modules) — no real feature
- * exists or is built here; tapping it does nothing.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
@@ -263,21 +259,13 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
                 borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
               <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Holidays &amp; exceptions →</Text>
             </TouchableOpacity>
-
-            {/* Pickup authorization — disabled stub, no real feature behind it */}
-            <View
-              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: border, backgroundColor: isDark ? colors.surface : SURFACE, opacity: 0.55 }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: bodyC }}>Pickup authorization →</Text>
-            </View>
           </View>
         )}
 
         {/* Caption */}
         <View style={{ paddingHorizontal: 20, paddingTop: 18 }}>
           <Text style={{ fontSize: 12, color: bodyC, lineHeight: 17 }}>
-            School collectors are a separate permission list. Minor accounts see only their own schedule,
-            not health records or profile administration.
+            Minor accounts see only their own schedule, not health records or profile administration.
           </Text>
         </View>
       </ScrollView>

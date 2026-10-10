@@ -65,11 +65,17 @@ function Card({ children, colors, isDark, style }: {
 }
 
 // ─── Section heading inside a card ───────────────────────────────────────────
-function CardSection({ label, children }: { label: string; children: React.ReactNode }) {
+// Plain bold section heading — School's actual rhythm (SchoolDayScreen.tsx/
+// HomeownerNotesTab.tsx: fontSize 15, weight 700, no uppercase, no accent
+// bar, no colored text) [live-requested: "Why section heading not Figma
+// styles"] — was a leftover dashboard-style uppercase green label with a
+// colored accent bar, never actually matched School's own heading style.
+function CardSection({ label, colors, isDark, children }: {
+  label: string; colors: any; isDark: boolean; children: React.ReactNode;
+}) {
   return (
     <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-      <Text style={{ fontSize: 12, fontWeight: '800', color: GREEN_TXT,
-        textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 }}>
+      <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR, marginBottom: 10 }}>
         {label}
       </Text>
       {children}
@@ -259,7 +265,7 @@ export default function RewardsDashboardScreen({
                   </View>
                   <TouchableOpacity onPress={() => setStoreOpen(true)}
                     style={{ padding: 10, borderRadius: 12, backgroundColor: isDark ? colors.surface : SURFACE }}>
-                    <ShoppingBag size={20} color={isDark ? colors.amber : AMBER_TXT} />
+                    <ShoppingBag size={20} color={isDark ? colors.teal : GREEN_TXT} />
                   </TouchableOpacity>
                 </View>
               </Card>
@@ -296,7 +302,7 @@ export default function RewardsDashboardScreen({
                       const canAfford = myCoins >= reward.cost;
                       let statusLabel = canAfford ? 'can afford' : `need ${reward.cost - myCoins} more`;
                       let statusColor = canAfford
-                        ? (isDark ? colors.amber : AMBER_TXT)
+                        ? (isDark ? colors.teal : GREEN_TXT)
                         : (isDark ? colors.danger : RED_TXT);
                       if (reward.requiresApproval && canAfford) {
                         statusLabel = 'parent approval needed';
@@ -337,7 +343,7 @@ export default function RewardsDashboardScreen({
               {/* My receipts */}
               {myReceipts.length > 0 && (
                 <Card colors={colors} isDark={isDark}>
-                  <CardSection label="My Receipts">
+                  <CardSection label="My Receipts" colors={colors} isDark={isDark}>
                     {myReceipts.map((rd, i) => {
                       const reward = rewards.find(r => r.id === rd.rewardId);
                       return (
@@ -383,7 +389,7 @@ export default function RewardsDashboardScreen({
               {/* Kids' Piggy Banks */}
               {members.filter(m => m.role === 'kid' || m.role === 'teen').length > 0 && (
                 <Card colors={colors} isDark={isDark}>
-                  <CardSection label="Kids' Piggy Banks">
+                  <CardSection label="Kids' Piggy Banks" colors={colors} isDark={isDark}>
                     <View style={{ paddingBottom: 4 }}>
                       {members
                         .filter(m => m.role === 'kid' || m.role === 'teen')
@@ -468,7 +474,7 @@ export default function RewardsDashboardScreen({
               {/* Pending approvals */}
               {pendingApprovals.length > 0 && (
                 <Card colors={colors} isDark={isDark}>
-                  <CardSection label={`Pending Requests · ${pendingApprovals.length}`}>
+                  <CardSection label={`Pending Requests · ${pendingApprovals.length}`} colors={colors} isDark={isDark}>
                     {pendingApprovals.map((rd, i) => {
                       const reward = rewards.find(r => r.id === rd.rewardId);
                       const kid    = members.find(m => m.id === rd.memberId);
@@ -513,7 +519,7 @@ export default function RewardsDashboardScreen({
               {/* History */}
               {history.length > 0 && (
                 <Card colors={colors} isDark={isDark}>
-                  <CardSection label="Recent Transactions">
+                  <CardSection label="Recent Transactions" colors={colors} isDark={isDark}>
                     {history.map((rd, i) => {
                       const reward = rewards.find(r => r.id === rd.rewardId);
                       const kid    = members.find(m => m.id === rd.memberId);

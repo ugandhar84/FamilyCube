@@ -63,7 +63,11 @@ const CAT_LABELS: Record<string, string> = {
 // unmapped) instead cycles through the brand palette by grid position —
 // real categories (Treats/Experiences/Screen Time/Privileges) stay fixed
 // since those already carry distinct meaning.
-const SPECIAL_CYCLE = ['danger', 'accent', 'teal', 'amber'] as const;
+// Only one warm/terracotta slot (amber) — was 'danger' + 'amber' (half the
+// cycle), which painted most Special-category perks (the most common
+// category) in orange/terracotta tones [live-reported: "perk store text
+// and icons are terracotta"].
+const SPECIAL_CYCLE = ['accent', 'teal', 'amber', 'info'] as const;
 
 function categoryAccent(category: string | undefined, colors: any, index = 0): string {
   const map: Record<string, string> = {
@@ -561,7 +565,14 @@ export default function StoreScreen({
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadRewards(); }, []);
-  useEffect(() => { hideTabBar(); return () => { showTabBar(); }; }, []);
+  // No hideTabBar()/showTabBar() here — StoreScreen only ever renders
+  // nested inside RewardsDashboardScreen's own FullPageOverlay, which
+  // already owns tab-bar visibility for the whole Rewards flow. This
+  // screen's own cleanup calling showTabBar() on unmount was firing the
+  // moment the user closed Store and returned to Rewards (which was still
+  // mounted, still wanting the bar hidden), popping the tab bar back up
+  // [live-reported: "When I went to perk store and came back bottom nav
+  // popping up back"].
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
@@ -843,11 +854,8 @@ export default function StoreScreen({
           <View style={{ borderRadius: 22, overflow: 'hidden',
             backgroundColor: isDark ? colors.card : '#fff',
             ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-              paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
-              <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.teal }} />
-              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal,
-                textTransform: 'uppercase', letterSpacing: 0.7 }}>
+            <View style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
                 Kids' Piggy Banks
               </Text>
             </View>
@@ -923,9 +931,9 @@ export default function StoreScreen({
                         }}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                           paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9,
-                          backgroundColor: grantTarget?.id === kid.id ? colors.amber : colors.amberLight }}>
-                        <Ionicons name="gift-outline" size={12} color={grantTarget?.id === kid.id ? '#fff' : colors.amber} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: grantTarget?.id === kid.id ? '#fff' : colors.amber }}>Grant</Text>
+                          backgroundColor: grantTarget?.id === kid.id ? colors.teal : colors.tealLight }}>
+                        <Ionicons name="gift-outline" size={12} color={grantTarget?.id === kid.id ? '#fff' : colors.teal} />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: grantTarget?.id === kid.id ? '#fff' : colors.teal }}>Grant</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -961,7 +969,7 @@ export default function StoreScreen({
                             setGrantAmount('');
                           }}
                           style={{ paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                            backgroundColor: colors.amber }}>
+                            backgroundColor: colors.teal }}>
                           <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Grant</Text>
                         </TouchableOpacity>
                       </View>
@@ -993,16 +1001,14 @@ export default function StoreScreen({
           <View style={{ borderRadius: 22, overflow: 'hidden',
             backgroundColor: isDark ? colors.card : '#fff',
             ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
-            {/* Section heading inside card */}
+            {/* Section heading inside card — plain School-style heading,
+                not the old uppercase/accent-bar dashboard treatment
+                [live-requested: "Why section heading not Figma styles"]. */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
               paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.primary }} />
-                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary,
-                  textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                  Available Perks · {rewards.filter(r => r.available).length}
-                </Text>
-              </View>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
+                Available Perks · {rewards.filter(r => r.available).length}
+              </Text>
               {!isParent && (
                 <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR }}>
                   Balance: <Text style={{ fontWeight: '800', color: isDark ? colors.amber : AMBER_TXT }}>{myCoins} 🪙</Text>
@@ -1063,7 +1069,13 @@ export default function StoreScreen({
                         )}
                       </View>
                     </View>
-                    {/* Right action */}
+                    {/* Right action — parents get no separate pencil/edit
+                        button here: the row itself already does single tap
+                        → details (setDetailPerk above) / long-press → edit,
+                        same as every other role [live-requested: "Remove
+                        pencil icons long press edit single tap details"].
+                        A bare pencil button bypassed that distinction and
+                        jumped straight to edit on a single tap. */}
                     {canRedeemSelf ? (
                       <TouchableOpacity onPress={() => handleRedeem(r)}
                         disabled={!canAfford}
@@ -1074,12 +1086,6 @@ export default function StoreScreen({
                           color: canAfford ? '#fff' : (isDark ? colors.textTertiary : BODY_CLR) }}>
                           {canAfford ? 'Redeem' : `−${r.cost - myMaxAffordable}`}
                         </Text>
-                      </TouchableOpacity>
-                    ) : isParent ? (
-                      <TouchableOpacity onPress={() => { setEditing(r); setShowCreate(true); }}
-                        style={{ padding: 8, borderRadius: 10,
-                          backgroundColor: isDark ? colors.surface : '#F0F2F7' }}>
-                        <Ionicons name="pencil-outline" size={16} color={isDark ? colors.textSecondary : BODY_CLR} />
                       </TouchableOpacity>
                     ) : null}
                   </TouchableOpacity>

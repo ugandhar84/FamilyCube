@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Pressable } from 'react-native';
-import { Home, Wrench, Shield, Zap, Droplets, Package, TreePine, ChevronRight, Plus } from 'lucide-react-native';
+import { Home, Thermometer, ShieldAlert, ScrollText, Zap, Droplets, Refrigerator, TreePine, ChevronRight, Plus } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory } from '@/store/homeownerNotesStore';
 import { CATEGORY_LABEL } from './maintenancePresets';
@@ -18,9 +18,14 @@ const CARD_BG = '#FFFFFF';
 const SURFACE = '#F0EDE6';
 const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 
+// One distinct, relevant icon per task category — was Wrench for HVAC
+// (reads as generic repair, not climate control) and Shield for BOTH
+// safety and warranty (identical icon, no visual distinction between the
+// two) [live-requested: "use the icons for the tasks in home care
+// relevant to them"].
 const CATEGORY_ICON: Record<HomeownerNoteCategory, any> = {
-  hvac: Wrench, plumbing: Droplets, electrical: Zap, appliance: Package,
-  exterior: TreePine, safety: Shield, warranty: Shield, general: Home,
+  hvac: Thermometer, plumbing: Droplets, electrical: Zap, appliance: Refrigerator,
+  exterior: TreePine, safety: ShieldAlert, warranty: ScrollText, general: Home,
 };
 
 function parseLocalDateStr(s: string): Date {

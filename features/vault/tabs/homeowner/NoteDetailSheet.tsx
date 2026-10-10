@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Wrench, Shield, Zap, Droplets, Package, TreePine, Pencil, CheckCircle2 } from 'lucide-react-native';
+import { Home, Thermometer, ShieldAlert, ScrollText, Zap, Droplets, Refrigerator, TreePine, Pencil, CheckCircle2 } from 'lucide-react-native';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { CATEGORY_LABEL } from './maintenancePresets';
 import type { HomeownerNote, HomeownerNoteCategory, HomeownerNotePriority } from '@/store/homeownerNotesStore';
@@ -20,9 +20,12 @@ const CARD_BG = '#FFFFFF';
 const SURFACE = '#F0EDE6';
 const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 
+// Same relevant-per-category mapping as HomeownerNotesTab.tsx
+// [live-requested: "use the icons for the tasks in home care relevant to
+// them"].
 const CATEGORY_ICON: Record<HomeownerNoteCategory, any> = {
-  hvac: Wrench, plumbing: Droplets, electrical: Zap, appliance: Package,
-  exterior: TreePine, safety: Shield, warranty: Shield, general: Home,
+  hvac: Thermometer, plumbing: Droplets, electrical: Zap, appliance: Refrigerator,
+  exterior: TreePine, safety: ShieldAlert, warranty: ScrollText, general: Home,
 };
 
 const PRIORITY_LABEL: Record<HomeownerNotePriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };

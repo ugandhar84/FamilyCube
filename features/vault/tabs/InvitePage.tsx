@@ -18,13 +18,18 @@ import { useTheme } from '@/lib/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMember } from '@/store/familyStore';
 import { localDateStr, fmtDate } from '@/lib/dates';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 
-// ── Figma exact values ───────────────────────────────────────────────────────
-const PAGE_BG   = '#F3F5F2';
-const TITLE_CLR = '#172337';
-const BODY_CLR  = '#657185';
-const BLUE      = '#294FC7';
-const BORDER    = '#DFE5EF';
+// Gemini rhythm tokens — was its own hardcoded "Figma exact values" palette,
+// out of step with the rest of the app [live-reported: "why this is not
+// rhythm if gemini including all tokens"]. Dark mode keeps the app's own
+// colors.* tokens via isDark-gated locals below.
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+const BLUE      = GEMINI.blue;
+const BORDER    = GEMINI.border;
 
 const ROLES: { value: MemberRole; label: string; emoji: string }[] = [
   { value: 'kid',    label: 'Kid',         emoji: '🧒' },
@@ -53,10 +58,20 @@ function SectionLabel({ text }: { text: string }) {
 export function InvitePage({ onClose }: { onClose: () => void }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const pageBg = isDark ? '#0E0C13' : PAGE_BG;
-  const cardBg = isDark ? '#1D1A24' : '#FFFFFF';
+  const pageBg = isDark ? colors.background : PAGE_BG;
+  const cardBg = isDark ? colors.card : GEMINI.cardBg;
   const inputBg = isDark ? colors.surface : PAGE_BG;
-  const labelClr = isDark ? '#FDFCF9' : TITLE_CLR;
+  const labelClr = isDark ? colors.textPrimary : TITLE_CLR;
+
+  // Now also reachable directly from FamilyScreen's own tool grid (not just
+  // via FamilyTreePage, which already hides the tab bar itself) — without
+  // this, the bottom nav bar floated over the last "Already Joined" row
+  // [live-reported via screenshot: "give more padding to the bottom to
+  // unblock the view"].
+  useEffect(() => {
+    hideTabBar();
+    return () => showTabBar();
+  }, []);
 
   const activeMemberId   = useFamilyStore(s => s.activeMemberId);
   const allMembers       = useFamilyStore(s => s.members);
@@ -231,7 +246,7 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
             value={name} onChangeText={setName}
             onBlur={() => setTouched(t => ({ ...t, name: true }))}
             placeholder="e.g. Emma" maxLength={60}
-            placeholderTextColor={isDark ? colors.textTertiary : '#B0BAC9'}
+            placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
             style={inputStyle(touched.name && nameError)}
           />
           {touched.name && nameError ? <Text style={[s.errText, { color: colors.danger }]}>{nameError}</Text> : null}
@@ -319,7 +334,7 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
             style={[inputStyle(dobError ? dobError : undefined), { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
           >
             <Calendar size={15} color={BODY_CLR} strokeWidth={1.8} />
-            <Text style={{ fontSize: 15, color: dob ? labelClr : isDark ? colors.textTertiary : '#B0BAC9', flex: 1 }}>
+            <Text style={{ fontSize: 15, color: dob ? labelClr : isDark ? colors.textTertiary : GEMINI.bodyColorLight, flex: 1 }}>
               {dob ? fmtDate(localDateStr(dob)) : 'Tap to choose a date'}
             </Text>
           </TouchableOpacity>
@@ -347,7 +362,7 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
             value={email} onChangeText={setEmail}
             onBlur={() => setTouched(t => ({ ...t, email: true }))}
             placeholder="e.g. emma@example.com"
-            placeholderTextColor={isDark ? colors.textTertiary : '#B0BAC9'}
+            placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
             autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
             style={inputStyle(touched.email && emailError)}
           />
@@ -397,7 +412,7 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
                     {/* Code + actions */}
                     {isLive ? (
                       <View style={{ marginTop: 12, gap: 8 }}>
-                        <View style={[s.codeBox, { backgroundColor: isDark ? colors.surface : '#EEF2FC', borderColor: BLUE + '30' }]}>
+                        <View style={[s.codeBox, { backgroundColor: isDark ? colors.surface : GEMINI.blue + '12', borderColor: BLUE + '30' }]}>
                           <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: 4, color: labelClr }}>{inv.code}</Text>
                           <Text style={{ fontSize: 11, color: BODY_CLR }}>{fmtExpiry(inv.expires_at)}</Text>
                         </View>
@@ -454,8 +469,8 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
                     {/* Inline code status */}
                     {codeStatus?.memberId === m.id && (
                       <View style={{ marginTop: 8, padding: 10, borderRadius: 10,
-                        backgroundColor: codeStatus.kind === 'error' ? colors.danger + '15' : '#DDF5EC' }}>
-                        <Text style={{ fontSize: 12, color: codeStatus.kind === 'error' ? colors.danger : '#1A6B45', lineHeight: 17 }}>
+                        backgroundColor: codeStatus.kind === 'error' ? colors.danger + '15' : colors.success + '18' }}>
+                        <Text style={{ fontSize: 12, color: codeStatus.kind === 'error' ? colors.danger : colors.success, lineHeight: 17 }}>
                           {codeStatus.text}
                         </Text>
                       </View>
@@ -474,7 +489,7 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
             <View style={{ gap: 6 }}>
               {joinedMembers.map(m => (
                 <View key={m.id} style={[s.joinedRow, {
-                  backgroundColor: isDark ? colors.surface : '#F0FAF5',
+                  backgroundColor: isDark ? colors.surface : colors.success + '12',
                   borderColor: colors.success + '30',
                 }]}>
                   <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' }}>

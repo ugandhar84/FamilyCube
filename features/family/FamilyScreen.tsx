@@ -13,6 +13,7 @@ import {
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { ConnectCalendarPage } from './ConnectCalendarPage';
 import { FamilyTreePage } from './FamilyTreePage';
+import { InvitePage } from '@/features/vault/tabs/InvitePage';
 import HomeownerNotesScreen from '@/features/vault/tabs/HomeownerNotesScreen';
 import HealthRecordsScreen from '@/features/vault/tabs/HealthRecordsScreen';
 import HealthPeoplePage from '@/features/vault/tabs/health/HealthPeoplePage';
@@ -105,6 +106,7 @@ export default function FamilyScreen() {
   const kidCount = members.filter(m => m.role === 'kid' || m.role === 'teen').length;
   const [showCalendarPage, setShowCalendarPage] = useState(false);
   const [showFamilyTree, setShowFamilyTree] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [showHomeCare, setShowHomeCare] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
   const [showSchool, setShowSchool] = useState(false);
@@ -127,11 +129,11 @@ export default function FamilyScreen() {
   const TOOLS: Tool[] = [
     {
       key: 'people',
-      label: 'People',
-      subtitle: 'Profiles and permissions',
+      label: 'Family Invite',
+      subtitle: 'Add members and share codes',
       icon: Users,
       accent: PASTELS[0],
-      route: '__overlay:familyTree',
+      route: '__overlay:invite',
     },
     {
       key: 'calendars',
@@ -209,6 +211,7 @@ export default function FamilyScreen() {
   const handleToolPress = (tool: Tool) => {
     if (tool.route === '__overlay:calendar') { setShowCalendarPage(true); return; }
     if (tool.route === '__overlay:familyTree') { setShowFamilyTree(true); return; }
+    if (tool.route === '__overlay:invite') { setShowInvite(true); return; }
     if (tool.route === '__overlay:homeCare') { setShowHomeCare(true); return; }
     if (tool.route === '__overlay:health') {
       setShowHealth(true);
@@ -448,6 +451,15 @@ export default function FamilyScreen() {
           no entrance animation before). */}
       <FullPageOverlay visible={showFamilyTree} onDismiss={() => setShowFamilyTree(false)} zIndex={50}>
         <FamilyTreePage onClose={() => setShowFamilyTree(false)} />
+      </FullPageOverlay>
+
+      {/* Family Invite — same InvitePage used inside Family Tree's own
+          "Invite" button, now also reachable directly from the Family
+          screen's tool grid [live-requested: "for the people in family
+          rename as family invite.. and then link that family invite
+          page"]. */}
+      <FullPageOverlay visible={showInvite} onDismiss={() => setShowInvite(false)} zIndex={50}>
+        <InvitePage onClose={() => setShowInvite(false)} />
       </FullPageOverlay>
 
       {/* Home care full-page overlay — same '__overlay:*' sentinel pattern

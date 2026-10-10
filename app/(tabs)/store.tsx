@@ -1,1 +1,1 @@
-export { default } from '@/features/store/StoreScreen';
+export { default } from '@/features/store/RewardsDashboardScreen';

@@ -1419,20 +1419,24 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               opacity: dayDockAnim,
               transform: [{ translateY: dayDockAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
             }}>
-              <View style={withAndroidShadowFix({ marginHorizontal: 20, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : BORDER,
-                backgroundColor: isDark ? colors.card : CARD_BG, paddingVertical: 8, paddingHorizontal: 14,
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } })}>
+              {/* Pastel pill, same terracotta-light tint as the static date
+                  row above — was a plain white/shadowed card
+                  [live-requested: "i said when we scroll that date" —
+                  this is the docked bar shown while scrolling, not the
+                  static one]. */}
+              <View style={{ marginHorizontal: 20, borderRadius: 18,
+                backgroundColor: isDark ? colors.surface : colors.primaryLight, paddingVertical: 8, paddingHorizontal: 10,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                  style={{ padding: 6 }}>
-                  <I.ChevronLeft c={isDark ? colors.textSecondary : BODY_CLR} size={15} />
+                  style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
+                  <I.ChevronLeft c={colors.primary} size={15} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR }}>
                   {selectedDateLabel}
                 </Text>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                  style={{ padding: 6 }}>
-                  <I.ChevronRight c={isDark ? colors.textSecondary : BODY_CLR} size={15} />
+                  style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
+                  <I.ChevronRight c={colors.primary} size={15} />
                 </TouchableOpacity>
               </View>
             </Animated.View>

@@ -4,9 +4,11 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, Image as ImageIcon, FileText, Trash2, File } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, FileText, Trash2, File, Download, Search, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { useHomeownerDocumentsStore, type HomeownerDocument, type HomeownerDocType } from '@/store/homeownerDocumentsStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -54,6 +56,7 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
   const [docType, setDocType] = useState<HomeownerDocType>('other');
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [search, setSearch] = useState('');
 
   const canvas = isDark ? colors.background : CANVAS;
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
@@ -172,7 +175,46 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
     ] as any);
   };
 
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const download = async (doc: HomeownerDocument) => {
+    setDownloadingId(doc.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from('homeowner-documents')
+        .createSignedUrl(doc.filePath, 120);
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Could not create download link');
+      const res = await fetch(data.signedUrl);
+      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength === 0) throw new Error('Downloaded file is empty — please retry');
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const b64 = btoa(binary);
+      const cleaned = doc.fileName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_');
+      const uri = (FileSystem.cacheDirectory ?? '') + `FC_${cleaned || 'document.bin'}`;
+      await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) throw new Error('Sharing is not available on this device');
+      await Sharing.shareAsync(uri, { mimeType: doc.mimeType ?? 'application/octet-stream', dialogTitle: doc.name });
+    } catch (err: any) {
+      showAlert('Download failed', err?.message ?? 'Could not download the file. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const isImage = (mime?: string) => !!mime && mime.startsWith('image/');
+
+  const filteredDocuments = search.trim()
+    ? documents.filter(d => {
+        const q = search.toLowerCase();
+        return d.name.toLowerCase().includes(q) ||
+          d.fileName.toLowerCase().includes(q) ||
+          DOC_TYPE_LABEL[d.docType].toLowerCase().includes(q);
+      })
+    : documents;
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
@@ -223,6 +265,26 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
                   Saved documents
                 </Text>
 
+                {documents.length > 0 && (
+                  <View style={{ borderRadius: 14, borderWidth: 1, borderColor: border,
+                    backgroundColor: cardBg, paddingHorizontal: 14, paddingVertical: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Search size={14} color={bodyC} />
+                      <TextInput
+                        value={search} onChangeText={setSearch}
+                        placeholder="Search documents"
+                        placeholderTextColor={isDark ? colors.textTertiary : '#B0B8C8'}
+                        style={{ flex: 1, fontSize: 15, color: titleC, padding: 0 }}
+                      />
+                      {search.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+                          <X size={14} color={bodyC} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
                 {isLoading && documents.length === 0 ? (
                   <ActivityIndicator color={BLUE} style={{ marginTop: 20 }} />
                 ) : documents.length === 0 ? (
@@ -232,10 +294,17 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
                       No house documents yet — upload one above.
                     </Text>
                   </View>
+                ) : filteredDocuments.length === 0 ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 32, gap: 8 }}>
+                    <Search size={24} color={bodyC} />
+                    <Text style={{ fontSize: 13, color: bodyC, textAlign: 'center' }}>
+                      No documents match "{search}"
+                    </Text>
+                  </View>
                 ) : (
                   <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14,
                     backgroundColor: cardBg, overflow: 'hidden' }}>
-                    {documents.map((doc, i) => {
+                    {filteredDocuments.map((doc, i) => {
                       const uploader = members.find(m => m.id === doc.uploadedBy);
                       return (
                         <View key={doc.id}
@@ -260,9 +329,16 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
                               {fmtDisplay(doc.createdAt)}{uploader ? ` · ${uploader.name.split(' ')[0]}` : ''}{doc.fileSize ? ` · ${fmtSize(doc.fileSize)}` : ''}
                             </Text>
                           </View>
-                          <TouchableOpacity onPress={() => remove(doc)} hitSlop={8}>
-                            <Trash2 size={16} color={colors.danger} />
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                            <TouchableOpacity onPress={() => download(doc)} disabled={downloadingId === doc.id} hitSlop={8}>
+                              {downloadingId === doc.id
+                                ? <ActivityIndicator size="small" color={BLUE} />
+                                : <Download size={16} color={BLUE} />}
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => remove(doc)} hitSlop={8}>
+                              <Trash2 size={16} color={colors.danger} />
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       );
                     })}

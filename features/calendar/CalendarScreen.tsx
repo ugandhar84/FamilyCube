@@ -1451,11 +1451,16 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
               {/* Day summary strip — date + event count + next event + nav */}
               <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}>
-                {/* Date row with prev/next arrows */}
+                {/* Date row with prev/next arrows — pastel pill behind the
+                    date text instead of sitting bare on the canvas
+                    [live-requested: "lets make this date color nice
+                    pastel"]. */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                  paddingHorizontal: 20, paddingTop: 6, paddingBottom: 4 }}>
+                  marginHorizontal: 20, marginTop: 6, marginBottom: 4,
+                  paddingHorizontal: 10, paddingVertical: 8, borderRadius: 18,
+                  backgroundColor: isDark ? colors.surface : colors.primaryLight }}>
                   <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                    style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.surface : colors.primaryLight }}>
+                    style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
                     <I.ChevronLeft c={colors.primary} size={16} />
                   </TouchableOpacity>
 
@@ -1472,7 +1477,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   </TouchableOpacity>
 
                   <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
-                    style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.surface : colors.primaryLight }}>
+                    style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
                     <I.ChevronRight c={colors.primary} size={16} />
                   </TouchableOpacity>
                 </View>

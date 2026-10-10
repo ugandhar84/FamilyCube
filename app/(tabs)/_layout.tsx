@@ -156,8 +156,13 @@ function CustomTabBar({ state, navigation }: any) {
   // inactive-icon color must read against a dark pill regardless of
   // light/dark mode — was colors.textSecondary in light mode, a dark
   // warm-gray meant for a light background, nearly invisible here.
+  // Active tab uses a dedicated warm gold (not colors.amber, which reads
+  // as burnt orange, #D97706) rather than the brand terracotta — gold
+  // reads richer against the dark bar [live-requested: "maybe the
+  // selected active tab to gold color?"].
   const NAV_BAR_BG    = '#211A13';
-  const activeColor   = colors.primary;
+  const NAV_GOLD      = '#E8B84B';
+  const activeColor   = NAV_GOLD;
   const inactiveColor = 'rgba(255,255,255,0.55)';
 
   const activeTabIndex = TABS.findIndex(t => t.name === state.routes[state.index]?.name);
@@ -237,16 +242,11 @@ function CustomTabBar({ state, navigation }: any) {
               }}
               style={styles.tabItem}
             >
-              {/* All tabs: icon + label stacked; active tab gets a pill
-                  highlight — was colors.primaryLight (a pale pastel), a
-                  bright mismatched patch against the new near-black bar
-                  [live-requested: "i think we can mute that color"].
-                  Muted to a soft translucent primary tint instead, same
-                  in both themes since the bar itself no longer changes
-                  with isDark. */}
+              {/* All tabs: icon + label stacked; active tab gets a gold
+                  pill highlight, matching the active icon/label color. */}
               <View style={[
                 styles.tabInner,
-                focused && { backgroundColor: colors.primary + '26' },
+                focused && { backgroundColor: NAV_GOLD + '26' },
               ]}>
                 <View style={{ position: 'relative' }}>
                   <AnimatedTabIcon

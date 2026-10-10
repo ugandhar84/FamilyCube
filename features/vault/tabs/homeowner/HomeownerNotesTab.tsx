@@ -176,7 +176,16 @@ export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, o
 
   // Context line: today's date + who can view
   const today = new Date().toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-  const viewerNames = members.filter(m => m.id !== activeMemberId).map(m => m.name.split(' ')[0]).join(' and ');
+  const otherMembers = members.filter(m => m.id !== activeMemberId);
+  // "Shared with: Name, Name + N" — compact format, not the old long
+  // sentence-style context line [live-requested: shown a mockup with this
+  // exact "Shared with: Praveena, Jaswi + 2" layout above the filter tabs].
+  const sharedWithLabel = (() => {
+    if (otherMembers.length === 0) return null;
+    const firstNames = otherMembers.map(m => m.name.split(' ')[0]);
+    if (firstNames.length <= 2) return `Shared with: ${firstNames.join(', ')}`;
+    return `Shared with: ${firstNames.slice(0, 2).join(', ')} + ${firstNames.length - 2}`;
+  })();
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
@@ -184,10 +193,15 @@ export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, o
         contentContainerStyle={{ paddingBottom: 120 }}>
 
         {/* Context line */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 3 }}>
           <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, lineHeight: 18 }}>
-            {today}{viewerNames ? ` · ${viewerNames} can view permitted house notes. Only ${activeMember?.name?.split(' ')[0] ?? 'you'} edits homeowner instructions.` : ''}
+            {today}
           </Text>
+          {sharedWithLabel && (
+            <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : TITLE_CLR, lineHeight: 18 }}>
+              {sharedWithLabel}
+            </Text>
+          )}
         </View>
 
         {/* Filter tabs */}

@@ -5,13 +5,18 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory } from '@/store/homeownerNotesStore';
 import { CATEGORY_LABEL } from './maintenancePresets';
 
-const CANVAS = '#FFFFFF';
-const TITLE_CLR = '#172337';
-const BODY_CLR = '#657185';
-const BLUE = '#345DE3';
-const BORDER = '#E8EBF0';
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — see
+// features/vault/tabs/SchoolHomeScreen.tsx's own comment for the full
+// rationale.
+const CANVAS = '#ECE6DE';
+const TITLE_CLR = '#0D1210';
+const BODY_CLR = '#3D4D47';
+const BODY_CLR_LIGHT = '#4E5C56';
+const BLUE = '#3B5FE4';
+const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
-const SURFACE = '#F5F7FB';
+const SURFACE = '#F0EDE6';
+const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 
 const CATEGORY_ICON: Record<HomeownerNoteCategory, any> = {
   hvac: Wrench, plumbing: Droplets, electrical: Zap, appliance: Package,

@@ -16,7 +16,10 @@ import { HouseDocumentsSheet } from './homeowner/HouseDocumentsSheet';
 import { useHomeownerNotesStore, type HomeownerNote } from '@/store/homeownerNotesStore';
 import { showAlert } from '@/components/AppAlert';
 
-const PAGE_BG = '#F3F5F2';
+// "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, 2026-10-10) — see
+// features/vault/tabs/SchoolHomeScreen.tsx's own comment for the full
+// rationale.
+const PAGE_BG = '#ECE6DE';
 
 export default function HomeownerNotesScreen({ hideHeader = false, onClose }: { hideHeader?: boolean; onClose?: () => void; }) {
   const { colors, isDark } = useTheme();
@@ -46,7 +49,7 @@ export default function HomeownerNotesScreen({ hideHeader = false, onClose }: { 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? colors.background : PAGE_BG }}>
       {!hideHeader && (
-        <View style={{ backgroundColor: isDark ? colors.background : '#FFFFFF' }}>
+        <View style={{ backgroundColor: isDark ? colors.background : PAGE_BG }}>
           <PageHeading
             eyebrow="FAMILY CUBE · HOME CARE"
             title="Home Care"

@@ -101,7 +101,8 @@ export default function RecordsFigmaList({
     };
 
     return (
-      <View style={{ borderTopWidth: isLast ? 0 : 1, borderTopColor: border, paddingTop: isLast ? 0 : 12, marginTop: isLast ? 0 : 12 }}>
+      <View style={{ backgroundColor: cardBg, borderRadius: 16, padding: 12,
+        marginTop: isLast ? 0 : 10 }}>
         <TouchableOpacity
           onPress={() => selectable ? onToggleSelect(rec.id) : onRowTap()}
           onLongPress={() => onToggleSelect(rec.id)}
@@ -114,15 +115,15 @@ export default function RecordsFigmaList({
               </View>
             ) : (
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: tag.color + '18',
-                alignItems: 'center', justifyContent: 'center' }}>
+                alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 }}>
                 <tag.Icon size={15} color={tag.color} />
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: titleC, flex: 1 }} numberOfLines={1}>{rec.title}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: titleC, flex: 1, lineHeight: 20 }} numberOfLines={1}>{rec.title}</Text>
                 {hasPending && !rec.ai_analyzed && (
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.amber }} />
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.amber, marginTop: 6 }} />
                 )}
                 {rec.ai_analyzed && urgency !== 'routine' && (
                   <View style={{ backgroundColor: urgMeta.color + '18', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
@@ -130,17 +131,17 @@ export default function RecordsFigmaList({
                   </View>
                 )}
               </View>
-              <Text style={{ fontSize: 12, color: bodyC, marginTop: 2 }}>{subtitle}</Text>
-              <Text style={{ fontSize: 12, color: bodyC, marginTop: 1 }}>{tag.label}</Text>
+              <Text style={{ fontSize: 12, color: bodyC, marginTop: 2 }}>
+                {tag.label} · {subtitle}
+              </Text>
 
               {!selectable && (
-                <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: LINK_BLUE }}>
-                    {hasPending && !rec.ai_analyzed ? 'Review AI findings' : 'View record'}
-                  </Text>
-                  {expanded && !(hasPending && !rec.ai_analyzed)
-                    ? <ChevronUp size={13} color={LINK_BLUE} />
-                    : <ChevronRight size={13} color={LINK_BLUE} />}
+                <View style={{ marginTop: 6 }}>
+                  <TouchableOpacity onPress={onRowTap} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: BLUE }}>
+                      {hasPending && !rec.ai_analyzed ? 'Review AI findings →' : 'View record →'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
@@ -148,10 +149,15 @@ export default function RecordsFigmaList({
           </View>
         </TouchableOpacity>
 
-        {/* Expanded detail — file, notes, AI summary. Real "view this
-            record" destination, not a dead link. */}
+        {/* Expanded detail + actions — only shown once the row is tapped
+            open, indented under the icon chip (paddingLeft 42 = chip width
+            32 + gap 10) so it reads as part of this row's own text column
+            instead of a full-bleed block floating under it
+            [live-requested: "rearrange the card stuff nicely" — these
+            buttons used to always render below every row, competing with
+            the title row's own link]. */}
         {expanded && !selectable && (
-          <View style={{ marginTop: 10, gap: 8, paddingTop: 10, borderTopWidth: 1, borderColor: border }}>
+          <View style={{ marginTop: 10, gap: 8 }}>
             {rec.file_name && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10,
                 backgroundColor: isDark ? colors.surface : '#F1F5F9', padding: 10 }}>
@@ -173,13 +179,7 @@ export default function RecordsFigmaList({
                 <Text style={{ fontSize: 12, color: titleC, marginTop: 3, lineHeight: 17 }}>{rec.ai_summary}</Text>
               </View>
             )}
-          </View>
-        )}
 
-        {/* Inline action row — Analyze / review-pending / not-medical,
-            same handlers as before, flat chrome. */}
-        {!selectable && (
-          <View style={{ marginTop: 10, gap: 8 }}>
             {!rec.file_name && !rec.file_path && (
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderRadius: 10, borderWidth: 1,
                 borderColor: colors.amber + '50', backgroundColor: colors.amber + '10', padding: 10 }}>
@@ -188,18 +188,6 @@ export default function RecordsFigmaList({
                   No file is attached to this record — AI analysis works best with a document attached.
                 </Text>
               </View>
-            )}
-            {hasPending && !rec.ai_analyzed && (
-              <TouchableOpacity onPress={() => onOpenReview(rec)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10,
-                  borderWidth: 1, borderColor: colors.amber + '60', backgroundColor: colors.amber + '12',
-                  paddingHorizontal: 12, paddingVertical: 9 }}>
-                <Sparkles size={13} color={colors.amber} />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.amber, flex: 1 }}>
-                  AI findings ready — tap to review
-                </Text>
-                <ChevronRight size={13} color={colors.amber} />
-              </TouchableOpacity>
             )}
             {notMedMsg && !rec.ai_analyzed && !hasPending && (
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderRadius: 10, borderWidth: 1,
@@ -250,6 +238,23 @@ export default function RecordsFigmaList({
                 <Trash2 size={13} color={colors.danger + 'AA'} />
               </TouchableOpacity>
             </View>
+          </View>
+        )}
+
+        {/* AI findings pending nudge — always visible (not gated behind
+            expand) since it's a real actionable prompt, same as before. */}
+        {!selectable && hasPending && !rec.ai_analyzed && (
+          <View style={{ marginTop: 10 }}>
+            <TouchableOpacity onPress={() => onOpenReview(rec)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10,
+                borderWidth: 1, borderColor: colors.amber + '60', backgroundColor: colors.amber + '12',
+                paddingHorizontal: 12, paddingVertical: 9 }}>
+              <Sparkles size={13} color={colors.amber} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.amber, flex: 1 }}>
+                AI findings ready — tap to review
+              </Text>
+              <ChevronRight size={13} color={colors.amber} />
+            </TouchableOpacity>
           </View>
         )}
       </View>

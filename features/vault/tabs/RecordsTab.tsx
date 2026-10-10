@@ -683,10 +683,12 @@ function TouchableOpacityBringIn({ onPress, colors, isDark }: { onPress: () => v
   return (
     <TouchableOpacity onPress={onPress}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-        backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor: border, padding: 16 }}>
-      <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: BLUE + '15',
+        backgroundColor: isDark ? cardBg : colors.pinkLight,
+        borderRadius: 16, borderWidth: isDark ? 1 : 0, borderColor: border, padding: 16 }}>
+      <View style={{ width: 44, height: 44, borderRadius: 14,
+        backgroundColor: isDark ? BLUE + '15' : '#FFFFFF',
         alignItems: 'center', justifyContent: 'center' }}>
-        <Lock size={20} color={BLUE} />
+        <Lock size={20} color={isDark ? BLUE : colors.pink} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Bring in a document</Text>

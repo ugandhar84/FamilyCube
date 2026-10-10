@@ -207,7 +207,7 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
                     <FamilyAvatar
                       name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
                       siblings={members.map(mm => mm.name)}
-                      size={38} ringColor={roleAccent.fg} bgColor={roleAccent.bg} ringWidth={0}
+                      size={38} ringColor={roleAccent.fg} bgColor={roleAccent.bg} ringWidth={1}
                       shape="square"
                     />
                   </View>

@@ -385,7 +385,8 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
       ? `${stillOpen} open · ${doneToday} done today`
       : doneToday > 0 ? `All caught up — ${doneToday} done today` : 'All caught up — nothing left to do';
 
-  // Fixed header — title + tab switcher, never scrolls
+  // Title + tab switcher — now scrolls away with the rest of the page
+  // (prepended into tasksHeader below) instead of staying pinned.
   const isSchedule = segment === 'schedule' || lockedSegment === 'schedule';
   const fixedHeader = (
     <View style={{ backgroundColor: isDark ? '#0E0C13' : PAGE_BG, paddingBottom: 8 }}>
@@ -436,8 +437,15 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   );
 
   // Scrollable per-segment chrome injected into each child screen's ScrollView
+  // — now includes the title/eyebrow/segment-switcher block too (previously
+  // `fixedHeader`, rendered as a pinned sibling above the ScrollView) so the
+  // whole page scrolls as one unit instead of the title staying fixed while
+  // only the chrome below it scrolled [live-requested: "we can now move the
+  // tasks header also in scroll view"].
   const tasksHeader = (
     <View>
+      {fixedHeader}
+
       {/* CTA / Search bar — scrolls with content */}
       <View style={{ marginHorizontal: 20, marginTop: 6, marginBottom: 4, height: 52 }}>
         {searchOpen ? (
@@ -574,7 +582,6 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : PAGE_BG }} edges={['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-      {fixedHeader}
 
       {segment === 'schedule'
         ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} onRequestJustDescribe={(prefill) => { setJustDescribeEventPrefill(prefill ?? {}); setShowJustDescribeEvent(true); }} onRequestEventDetail={(ev) => setDetailEvent(ev)} />

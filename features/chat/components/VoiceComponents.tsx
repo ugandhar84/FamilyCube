@@ -4,6 +4,7 @@ import { AudioModule, createAudioPlayer } from 'expo-audio';
 import { Play, Pause, Trash2, Send, Square } from 'lucide-react-native';
 import { VOICE_COLOR, WF_BARS, WF_H, formatDuration, seedWaveform } from './constants';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Live waveform (recording / playing) — sine-physics at ~30fps ────────────
 
@@ -250,8 +251,11 @@ export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
 export function RecordingBar({ elapsed, isDark, onStop }: {
   elapsed: number; isDark: boolean; onStop: () => void;
 }) {
-  const bg     = isDark ? '#0f0a1e' : '#fff0f0';
-  const border = isDark ? '#7f1d1d' : '#fecaca';
+  // Same card/border rhythm as the attach sheet (s.attachMenu) instead of a
+  // separate red-tinted bar — the red accent lives only on the dot/timer/
+  // stop button now, not the whole container.
+  const bg     = isDark ? '#1D1A24' : GEMINI.cardBg;
+  const border = isDark ? 'rgba(238,128,88,0.15)' : GEMINI.border;
   const MAX    = 10;
   // Blink the red dot
   const blinkAnim = useRef(new Animated.Value(1)).current;
@@ -278,7 +282,7 @@ export function RecordingBar({ elapsed, isDark, onStop }: {
         {formatDuration(elapsed)}
       </Text>
       {/* Live sine waveform — red */}
-      <LiveWaveform active color='#EF4444' trackColor={isDark ? '#7f1d1d55' : '#fca5a555'} />
+      <LiveWaveform active color='#EF4444' trackColor={isDark ? '#3a3440' : '#F0EDE6'} />
       {/* Countdown warning */}
       {showCountdown && (
         <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c', minWidth: 24 }}>

@@ -98,15 +98,19 @@ export function FamilyPulseCard({
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
-        {/* FamilyAvatar placed directly, no extra circular ring wrapper —
-            that outer View's own borderRadius:999 was a leftover
-            circular-separator container fighting FamilyAvatar's own
-            (now square) border, rendering as a double ring
-            [live-reported: "pulse is still having the rounded and
-            rendering the family avatar - we need to just place the
-            family avatar directly"]. */}
+        {/* FamilyAvatar placed directly — the old wrapper's circular
+            borderRadius:999 ring was removed (it double-bordered against
+            FamilyAvatar's own square border). A thin opaque square
+            separator is still needed behind the overlap though — without
+            it, each avatar's own translucent background tint shows the
+            one behind it through at the intersection instead of a clean
+            stacked edge [live-reported: "the overlap is transparent
+            intersection not good"]. */}
         {members.slice(0, 5).map((m, i) => (
-          <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7 }}>
+          <View key={m.id} style={{
+            marginLeft: i === 0 ? 0 : -7,
+            backgroundColor: colors.card, borderRadius: 32 * 0.34 + 2, padding: 2,
+          }}>
             <FamilyAvatar
               name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32}
               ringColor={m.role === 'parent' ? colors.teal : m.role === 'kid' ? colors.amber : colors.primary}

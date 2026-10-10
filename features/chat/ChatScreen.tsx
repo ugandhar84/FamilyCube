@@ -60,7 +60,7 @@ import { showToast } from '@/components/AppToast';
 import { MessageBubble } from './components/MessageBubble';
 import { MessageActionSheet } from './components/MessageActionSheet';
 import { GroceryModal } from './components/GroceryModal';
-import { RecordingBar, VoiceReviewBar } from './components/VoiceComponents';
+import { RecordingProgress, VoiceReviewProgress } from './components/VoiceComponents';
 import { formatDay, QUICK_REACTIONS, buildGroupChannels, REPLY_KIND_LABEL } from './components/constants';
 import { stripMentionBrackets } from './components/MentionText';
 import { s } from './components/styles';
@@ -1545,17 +1545,6 @@ export default function ChatScreen() {
               </View>
             )}
 
-            {/* ── Active recording bar ── */}
-            {recording && (
-              <RecordingBar elapsed={recordingElapsed} isDark={isDark} onStop={doStopRecording} />
-            )}
-
-            {/* ── Voice review bar ── */}
-            {reviewing && reviewUri && (
-              <VoiceReviewBar uri={reviewUri} duration={reviewDur} isDark={isDark}
-                onSend={sendVoiceNote} onDiscard={discardVoice} />
-            )}
-
             {/* ── Mention picker — grows upward from just above input bar ── */}
             {mentionSuggestions.length > 0 && (
               <View style={withAndroidShadowFix({ backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border,
@@ -1579,23 +1568,35 @@ export default function ChatScreen() {
               </View>
             )}
 
-            {/* ── Attach menu popup ── */}
-            {showAttachMenu && (
+            {/* ── Attach menu popup — also hosts the recording progress and
+                voice-review UI when Mic is tapped/recording finishes,
+                reusing this exact sheet container instead of separate bars
+                [live-requested: "when i open the attach it is opening the
+                options sheet.. if the user click the mic it should use for
+                the mic recording progress animations/components"]. ── */}
+            {(showAttachMenu || recording || (reviewing && reviewUri)) && (
               <View style={[s.attachMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                {([
-                  { Icon: Camera,    label: 'Camera',   color: colors.accent,  onPress: () => { setShowAttachMenu(false); pickCamera(); } },
-                  { Icon: ImageIcon, label: 'Photo',    color: colors.success, onPress: () => { setShowAttachMenu(false); pickImage(); } },
-                  { Icon: Video,     label: 'Video',    color: colors.danger,  onPress: () => { setShowAttachMenu(false); recordVideo(); } },
-                  { Icon: FileText,  label: 'Document', color: colors.warning, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
-                  { Icon: MapPin,    label: 'Location', color: colors.info,    onPress: () => { setShowAttachMenu(false); sendLocation(); } },
-                ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
-                  <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
-                    <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
-                      <item.Icon size={24} color={item.color} />
-                    </View>
-                    <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
-                  </Pressable>
-                ))}
+                {recording ? (
+                  <RecordingProgress elapsed={recordingElapsed} isDark={isDark} onStop={doStopRecording} />
+                ) : reviewing && reviewUri ? (
+                  <VoiceReviewProgress uri={reviewUri} duration={reviewDur} isDark={isDark}
+                    onSend={sendVoiceNote} onDiscard={discardVoice} />
+                ) : (
+                  ([
+                    { Icon: Camera,    label: 'Camera',   color: colors.accent,  onPress: () => { setShowAttachMenu(false); pickCamera(); } },
+                    { Icon: ImageIcon, label: 'Photo',    color: colors.success, onPress: () => { setShowAttachMenu(false); pickImage(); } },
+                    { Icon: Video,     label: 'Video',    color: colors.danger,  onPress: () => { setShowAttachMenu(false); recordVideo(); } },
+                    { Icon: FileText,  label: 'Document', color: colors.warning, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
+                    { Icon: MapPin,    label: 'Location', color: colors.info,    onPress: () => { setShowAttachMenu(false); sendLocation(); } },
+                  ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
+                    <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
+                      <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
+                        <item.Icon size={24} color={item.color} />
+                      </View>
+                      <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
+                    </Pressable>
+                  ))
+                )}
               </View>
             )}
 

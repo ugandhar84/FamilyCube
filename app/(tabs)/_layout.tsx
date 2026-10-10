@@ -3,7 +3,6 @@ import { Tabs, router } from 'expo-router';
 import {
   View, Text, StyleSheet, Pressable, Animated, Platform,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -22,6 +21,7 @@ import { useUIStore } from '@/store/uiStore';
 import { Sparkles, Plus, Home, ListChecks, MessageCircle, CalendarDays } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 import { useDeviceClass } from '@/lib/useDeviceClass';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -153,8 +153,12 @@ function CustomTabBar({ state, navigation }: any) {
   // Store moved to Hub pills — badge was on the store tab, now unused here
   const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
+  // Nav bar is solid near-black (GEMINI.titleColor) now in both themes,
+  // so inactive-icon color must read against a dark pill regardless of
+  // light/dark mode — was colors.textSecondary in light mode, a dark
+  // warm-gray meant for a light background, nearly invisible here.
   const activeColor   = colors.primary;
-  const inactiveColor = isDark ? colors.textTertiary : colors.textSecondary;
+  const inactiveColor = 'rgba(255,255,255,0.55)';
 
   const activeTabIndex = TABS.findIndex(t => t.name === state.routes[state.index]?.name);
   const activeRouteName: string | undefined = state.routes[state.index]?.name;
@@ -197,13 +201,19 @@ function CustomTabBar({ state, navigation }: any) {
         }],
       }}
     >
-      <BlurView
-        intensity={isDark ? 55 : 65}
-        tint={isDark ? 'dark' : 'extraLight'}
+      {/* Solid near-black pill, both themes — was a frosted light-glass
+          blur. Uses the exact same near-black (GEMINI.titleColor,
+          #0D1210) already used as a selected-pill fill across Home
+          Care/School forms [live-requested: "can we make the bottom nav
+          near black like in the home care pill color?" -> "no see that
+          near black not pure black.. see in the pill color in the
+          homecare forms"]. */}
+      <View
         style={[styles.bar, {
+          backgroundColor: GEMINI.titleColor,
           overflow: 'hidden',
-          shadowColor: isDark ? '#000' : '#2C2722',
-          shadowOpacity: isDark ? 0.45 : 0.18,
+          shadowColor: '#000',
+          shadowOpacity: 0.3,
           shadowRadius: 20,
           shadowOffset: { width: 0, height: 6 },
           elevation: 16,
@@ -227,10 +237,16 @@ function CustomTabBar({ state, navigation }: any) {
               }}
               style={styles.tabItem}
             >
-              {/* All tabs: icon + label stacked; active tab gets a pill highlight */}
+              {/* All tabs: icon + label stacked; active tab gets a pill
+                  highlight — was colors.primaryLight (a pale pastel), a
+                  bright mismatched patch against the new near-black bar
+                  [live-requested: "i think we can mute that color"].
+                  Muted to a soft translucent primary tint instead, same
+                  in both themes since the bar itself no longer changes
+                  with isDark. */}
               <View style={[
                 styles.tabInner,
-                focused && { backgroundColor: isDark ? colors.primary + '30' : colors.primaryLight },
+                focused && { backgroundColor: colors.primary + '26' },
               ]}>
                 <View style={{ position: 'relative' }}>
                   <AnimatedTabIcon
@@ -243,7 +259,7 @@ function CustomTabBar({ state, navigation }: any) {
                   {name === 'tasks' && overdueCount > 0 && (
                     <Animated.View
                       accessibilityLabel={`${overdueCount} overdue`}
-                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: isDark ? colors.card : '#fff', transform: [{ scale: overduePulse }] }]}>
+                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: GEMINI.titleColor, transform: [{ scale: overduePulse }] }]}>
                       <Text style={styles.countBadgeText}>{overdueCount > 99 ? '99+' : overdueCount}</Text>
                     </Animated.View>
                   )}
@@ -258,7 +274,7 @@ function CustomTabBar({ state, navigation }: any) {
             </Pressable>
           );
         })}
-      </BlurView>
+      </View>
     </Animated.View>
   );
 }

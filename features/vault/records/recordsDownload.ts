@@ -1,6 +1,13 @@
 // Download helper for medical record files.
-// Single file → save to device cache + share in original format.
+// Single file → signed URL + FileSystem.downloadAsync → share.
 // Multiple files → bundle as ZIP + share.
+//
+// NOTE: Supabase storage .download() returns a Blob. On React Native/Hermes,
+// Blob.arrayBuffer() is not implemented and FileReader.readAsDataURL sometimes
+// returns an empty result for large files. We bypass all blob handling for
+// single-file download by creating a short-lived signed URL and letting
+// expo-file-system fetch it natively. The zip path uses the same signed URL
+// approach to get a real ArrayBuffer via native fetch.
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing    from 'expo-sharing';
@@ -8,26 +15,20 @@ import JSZip           from 'jszip';
 import { supabase }    from '@/lib/supabase';
 import type { MedRecord } from './types';
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  // Hermes (React Native) doesn't implement Blob.arrayBuffer() — use FileReader instead.
-  const reader = new FileReader();
-  return new Promise((resolve, reject) => {
-    reader.onload  = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function downloadBytes(filePath: string): Promise<Uint8Array> {
+async function signedUrl(filePath: string): Promise<string> {
   const { data, error } = await supabase.storage
     .from('medical-records')
-    .download(filePath);
-  if (error || !data) throw new Error(`Download failed: ${error?.message ?? 'unknown'}`);
-  const b64 = await blobToBase64(data);
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+    .createSignedUrl(filePath, 60); // 60s is plenty for a download
+  if (error || !data?.signedUrl) throw new Error(`Could not create download link: ${error?.message ?? 'unknown'}`);
+  return data.signedUrl;
+}
+
+async function downloadBytesViaUrl(filePath: string): Promise<ArrayBuffer> {
+  const url = await signedUrl(filePath);
+  // Native fetch (not the Supabase client) — its Response.arrayBuffer() works in Hermes
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+  return res.arrayBuffer();
 }
 
 function ext(rec: MedRecord): string {
@@ -52,38 +53,38 @@ function safeName(rec: MedRecord, idx?: number): string {
 export async function downloadSingle(rec: MedRecord): Promise<void> {
   if (!rec.file_path) throw new Error('No file attached to this record');
 
-  // Download via signed URL path → Blob → base64 (Hermes has no arrayBuffer or Buffer)
-  const { data, error } = await supabase.storage.from('medical-records').download(rec.file_path);
-  if (error || !data) throw new Error(`Download failed: ${error?.message ?? 'unknown'}`);
-  const b64  = await blobToBase64(data);
+  const url  = await signedUrl(rec.file_path);
   const name = safeName(rec);
-  const uri  = FileSystem.cacheDirectory + name;
-  await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+  const uri  = (FileSystem.cacheDirectory ?? '') + name;
+
+  // Let expo-file-system fetch the URL natively — no blob/base64 involved
+  const result = await FileSystem.downloadAsync(url, uri);
+  if (result.status !== 200) throw new Error(`Download failed: HTTP ${result.status}`);
 
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) throw new Error('Sharing is not available on this device');
-  await Sharing.shareAsync(uri, { mimeType: mimeFor(name), dialogTitle: rec.title });
+  await Sharing.shareAsync(result.uri, { mimeType: mimeFor(name), dialogTitle: rec.title });
 }
 
 export async function downloadZip(recs: MedRecord[], zipName = 'medical-records.zip'): Promise<void> {
-  const zip  = new JSZip();
-  const usedNames: Set<string> = new Set();
+  const zip       = new JSZip();
+  const usedNames = new Set<string>();
 
   await Promise.all(
     recs.filter(r => r.file_path).map(async (rec, idx) => {
       let name = safeName(rec, idx);
-      // Deduplicate filenames
       if (usedNames.has(name)) name = `${idx + 1}_${name}`;
       usedNames.add(name);
-      const bytes = await downloadBytes(rec.file_path!);
-      zip.file(name, bytes);
+      const buf = await downloadBytesViaUrl(rec.file_path!);
+      zip.file(name, buf);
     }),
   );
 
   const zipBlob: Blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-  const zipUri = FileSystem.cacheDirectory + zipName;
+  const zipUri = (FileSystem.cacheDirectory ?? '') + zipName;
 
-  // Blob → base64
+  // For the zip blob we still need FileReader — JSZip only outputs Blob here,
+  // and this is a generated blob (not from storage) so it's reliably readable.
   const reader = new FileReader();
   const b64: string = await new Promise((resolve, reject) => {
     reader.onload  = () => resolve((reader.result as string).split(',')[1]);

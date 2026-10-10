@@ -1425,7 +1425,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   this is the docked bar shown while scrolling, not the
                   static one]. */}
               <View style={{ marginHorizontal: 20, borderRadius: 18,
-                backgroundColor: isDark ? colors.surface : colors.primaryLight, paddingVertical: 8, paddingHorizontal: 10,
+                backgroundColor: isDark ? colors.primary + '26' : colors.primaryLight, paddingVertical: 8, paddingHorizontal: 10,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
@@ -1462,7 +1462,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   marginHorizontal: 20, marginTop: 6, marginBottom: 4,
                   paddingHorizontal: 10, paddingVertical: 8, borderRadius: 18,
-                  backgroundColor: isDark ? colors.surface : colors.primaryLight }}>
+                  backgroundColor: isDark ? colors.primary + '26' : colors.primaryLight }}>
                   <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                     style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
                     <I.ChevronLeft c={colors.primary} size={16} />
@@ -1497,7 +1497,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                       paddingHorizontal: 20, paddingBottom: 10, flexWrap: 'wrap' }}>
                       {/* Event count */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-                        backgroundColor: isDark ? colors.surface : colors.primaryLight,
+                        backgroundColor: isDark ? colors.primary + '26' : colors.primaryLight,
                         borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
                         <I.Calendar c={colors.primary} size={13} />
                         <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>

@@ -6,8 +6,10 @@
  * possible"] — presets are a starting point, everything stays editable.
  */
 import { useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { X, Search, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { ChevronLeft, Search, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { ScanDateField } from '../health/ScanDateField';
 import { fmtDate } from '../health/types';
 import { MAINTENANCE_PRESETS, CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
@@ -18,7 +20,8 @@ const CATEGORIES: HomeownerNoteCategory[] = ['general', 'hvac', 'plumbing', 'ele
 const PRIORITIES: HomeownerNotePriority[] = ['low', 'normal', 'high'];
 const PRIORITY_LABEL: Record<HomeownerNotePriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
 
-export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave }: {
+export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave, zIndex = 60 }: {
+  zIndex?: number;
   visible: boolean; colors: any; isDark: boolean;
   onClose: () => void;
   onSave: (params: {
@@ -41,6 +44,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
   // onSave twice, creating a duplicate homeowner note [live-requested
   // app-wide: "We should avoid double tab submit for all the app wide"].
   const { submitting: saving, guard } = useSubmitGuard();
+  const insets = useSafeAreaInsets();
 
   const [showMore, setShowMore] = useState(false);
   const [serialNumber, setSerialNumber] = useState('');
@@ -99,17 +103,19 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
   });
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
+    <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <TouchableOpacity onPress={close} hitSlop={10}>
-            <X size={22} color={colors.textSecondary} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+          paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: 14,
+          borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <TouchableOpacity onPress={close} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <ChevronLeft size={20} color={colors.teal} strokeWidth={2.5} />
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>Home Care</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }}>
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
             {mode === 'presets' ? 'Add maintenance' : 'Details'}
           </Text>
-          <View style={{ width: 22 }} />
+          <View style={{ width: 70 }} />
         </View>
 
         {mode === 'presets' ? (
@@ -402,6 +408,6 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
           </KeyboardAvoidingView>
         )}
       </View>
-    </Modal>
+    </FullPageOverlay>
   );
 }

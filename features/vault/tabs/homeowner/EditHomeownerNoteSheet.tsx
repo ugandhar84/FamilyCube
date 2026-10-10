@@ -4,8 +4,10 @@
  * visual language as AddHomeownerNoteSheet's custom-entry form.
  */
 import { useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { X, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { ChevronLeft, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { ScanDateField } from '../health/ScanDateField';
 import { CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
 import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory, type HomeownerNotePriority } from '@/store/homeownerNotesStore';
@@ -15,10 +17,11 @@ const CATEGORIES: HomeownerNoteCategory[] = ['general', 'hvac', 'plumbing', 'ele
 const PRIORITIES: HomeownerNotePriority[] = ['low', 'normal', 'high'];
 const PRIORITY_LABEL: Record<HomeownerNotePriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
 
-export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose }: {
-  visible: boolean; note: HomeownerNote; colors: any; isDark: boolean; onClose: () => void;
+export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose, zIndex = 60 }: {
+  visible: boolean; note: HomeownerNote; colors: any; isDark: boolean; onClose: () => void; zIndex?: number;
 }) {
   const { updateNote } = useHomeownerNotesStore();
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState(note.title);
   const [notes, setNotes] = useState(note.notes ?? '');
   const [category, setCategory] = useState<HomeownerNoteCategory>(note.category);
@@ -62,15 +65,17 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={zIndex}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <X size={22} color={colors.textSecondary} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+          paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: 14,
+          borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <TouchableOpacity onPress={onClose} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <ChevronLeft size={20} color={colors.teal} strokeWidth={2.5} />
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>Home Care</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }}>Edit reminder</Text>
-          <View style={{ width: 22 }} />
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>Edit reminder</Text>
+          <View style={{ width: 70 }} />
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
@@ -292,6 +297,6 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose 
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
-    </Modal>
+    </FullPageOverlay>
   );
 }

@@ -152,15 +152,22 @@ function CustomTabBar({ state, navigation }: any) {
   // Store moved to Hub pills — badge was on the store tab, now unused here
   const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
-  // Nav bar is a solid warm espresso-black now in both themes, so
-  // inactive-icon color must read against a dark pill regardless of
-  // light/dark mode — was colors.textSecondary in light mode, a dark
-  // warm-gray meant for a light background, nearly invisible here.
+  // Nav bar is a solid dark pill in both themes, so inactive-icon color
+  // must read against dark regardless of light/dark mode — was
+  // colors.textSecondary in light mode, a dark warm-gray meant for a
+  // light background, nearly invisible here.
+  // Light mode: warm espresso-black, matched to the warm cream canvas'
+  // own undertone (#ECE6DE) instead of a cool neutral near-black.
+  // Dark mode: colors.card (#1D1A24) nearly matched the screen's own
+  // background (#0E0C13) behind it, so the floating pill barely read as
+  // its own surface [live-reported: "we can give some different color on
+  // black theme to highlight"]. Lightened to a visibly distinct warm
+  // charcoal instead of reusing an existing (too-dark) token.
+  const NAV_BAR_BG    = isDark ? '#2E2A3A' : '#211A13';
   // Active tab uses a dedicated warm gold (not colors.amber, which reads
   // as burnt orange, #D97706) rather than the brand terracotta — gold
   // reads richer against the dark bar [live-requested: "maybe the
   // selected active tab to gold color?"].
-  const NAV_BAR_BG    = '#211A13';
   const NAV_GOLD      = '#E8B84B';
   const activeColor   = NAV_GOLD;
   const inactiveColor = 'rgba(255,255,255,0.55)';

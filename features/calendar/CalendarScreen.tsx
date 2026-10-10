@@ -1474,7 +1474,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                     </Text>
                     {selectedDate === todayStr && (
                       <View style={{ marginTop: 2, paddingHorizontal: 8, paddingVertical: 2,
-                        borderRadius: 6, backgroundColor: colors.primary }}>
+                        borderRadius: 6, backgroundColor: colors.teal }}>
                         <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff', letterSpacing: 0.8 }}>TODAY</Text>
                       </View>
                     )}

@@ -46,9 +46,14 @@ function ext(rec: MedRecord): string {
 }
 
 function safeName(rec: MedRecord, idx?: number): string {
-  const base = rec.file_name
-    ? rec.file_name.replace(/[^a-zA-Z0-9._\-]/g, '_')
-    : `${rec.title.replace(/[^a-zA-Z0-9]/g, '_')}.${ext(rec)}`;
+  const raw = rec.file_name ?? `${rec.title}.${ext(rec)}`;
+  // Replace non-alphanumeric (except . - _) with underscore, then collapse
+  // runs of underscores and strip leading/trailing ones, then prefix FC_
+  const cleaned = raw
+    .replace(/[^a-zA-Z0-9._\-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const base = `FC_${cleaned || 'document.bin'}`;
   return idx !== undefined ? `${String(idx + 1).padStart(2, '0')}_${base}` : base;
 }
 

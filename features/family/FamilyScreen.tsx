@@ -18,6 +18,7 @@ import HealthRecordsScreen from '@/features/vault/tabs/HealthRecordsScreen';
 import HealthPeoplePage from '@/features/vault/tabs/health/HealthPeoplePage';
 import SchoolScreen from '@/features/vault/tabs/SchoolScreen';
 import FindFamScreen from '@/features/gps/FindFamScreen';
+import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -100,6 +101,7 @@ export default function FamilyScreen() {
   const [showHealth, setShowHealth] = useState(false);
   const [showSchool, setShowSchool] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
   const familySubtitle = `${members.length} ${members.length === 1 ? 'person' : 'people'} · ${parentCount} parent${parentCount === 1 ? '' : 's'}${kidCount > 0 ? `, ${kidCount} kid${kidCount === 1 ? '' : 's'}` : ''}. Everyone in one place.`;
   const activeMember = members.find(m => (m as any).id === activeMemberId) ?? members[0];
   const familyName = (members[0] as any)?.familyName ?? 'Family';
@@ -207,16 +209,14 @@ export default function FamilyScreen() {
     }
     if (tool.route === '__overlay:school') { setShowSchool(true); return; }
     if (tool.route === '__overlay:locations') { setShowLocations(true); return; }
-    // Rewards ('/(tabs)/store') is Hub-owned FullPageOverlay state, not a
-    // real navigable screen — land on Hub first, then flip the one-shot
-    // flag it consumes, same interception kioskNavStore.ts's
-    // navigateFromNotification already does for notification-triggered
-    // navigation to this same destination.
-    if (tool.route === '/(tabs)/store') {
-      router.push('/(tabs)' as any);
-      useUIStore.getState().setOpenRewardsScreenRequested(true);
-      return;
-    }
+    // Rewards opened from the Family tab stays owned by FamilyScreen
+    // itself (own FullPageOverlay below), same as School/Home Care/
+    // Health/Locations above — so swipe-back lands on Family, not Hub
+    // [live-requested: "Back swipe of reward should go to family"].
+    // Every OTHER entry point (Hub's coin pill, kid Hero Card, etc.) still
+    // goes through uiStore's openRewardsScreenRequested flag, which closes
+    // back to Hub — correct for those, since Hub is what's underneath them.
+    if (tool.route === '/(tabs)/store') { setShowRewards(true); return; }
     router.push(tool.route as any);
   };
 
@@ -462,6 +462,9 @@ export default function FamilyScreen() {
       </FullPageOverlay>
       <FullPageOverlay visible={showLocations} onDismiss={() => setShowLocations(false)} zIndex={50}>
         <FindFamScreen onClose={() => setShowLocations(false)} />
+      </FullPageOverlay>
+      <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50}>
+        <RewardsDashboardScreen onClose={() => setShowRewards(false)} backLabel="Family" />
       </FullPageOverlay>
     </View>
   );

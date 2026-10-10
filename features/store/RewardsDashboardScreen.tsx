@@ -114,9 +114,17 @@ function Divider({ colors, isDark }: { colors: any; isDark: boolean }) {
 export default function RewardsDashboardScreen({
   hideHeader = false,
   onClose,
+  backLabel = 'Hub',
 }: {
   hideHeader?: boolean;
   onClose?: () => void;
+  /** Text after the "←" in the top-left back link — defaults to 'Hub'
+   *  (opened from HubScreen's coin pill/quick-access pill/kid cards), but
+   *  FamilyScreen passes 'Family' when it opens this as its own
+   *  FullPageOverlay [live-requested: "Back swipe of reward should go to
+   *  family"] so the visible breadcrumb matches where swipe-back/onClose
+   *  actually lands. */
+  backLabel?: string;
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -233,7 +241,7 @@ export default function RewardsDashboardScreen({
 
           {onClose && (
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Hub</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← {backLabel}</Text>
             </TouchableOpacity>
           )}
 

@@ -30,6 +30,19 @@ const BORDER    = '#DFE5EF';
 const AMBER_TXT = '#B5720A';
 const BLUE_BTN  = '#345DE3';
 
+// School's flat field-card rhythm (SchoolHomeScreen.tsx/CreateScheduleScreen.tsx)
+// — used by PerkDetailScreen/PerkModal below, kept distinct from the browse
+// grid's own PAGE_BG/BORDER/BLUE_BTN tokens above since School's canvas is
+// pure white (not PAGE_BG's cashmere tint) with a slightly different border
+// hex [live-requested: "make rewards module similar to school ... also forms too"].
+const FORM_TITLE_CLR = '#172337';
+const FORM_BODY_CLR  = '#657185';
+const FORM_BLUE      = '#345DE3';
+const FORM_LINK_BLUE = '#294FC7';
+const FORM_BORDER    = '#E8EBF0';
+const FORM_CARD_BG   = '#FFFFFF';
+const FORM_SURFACE   = '#F5F7FB';
+
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always
 // agrees with PerkCard's icon-chip accent for the same category — Treats/
@@ -264,7 +277,7 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
           backgroundColor: canvas, gap: 6,
         }}>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Store</Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? FORM_BLUE : FORM_LINK_BLUE }}>‹ Store</Text>
           </TouchableOpacity>
           <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
             {reward?.title ?? 'Perk'}
@@ -342,10 +355,25 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
   );
 }
 
-// ─── Create / Edit Perk Modal ─────────────────────────────────────────────────
+// ─── Create / Edit Perk form — School's flat field-card rhythm ────────────────
+// (SchoolHomeScreen.tsx/CreateScheduleScreen.tsx): bordered flat cards, no
+// shadows, labeled rows, blue fill action button [live-requested: "make
+// rewards module similar to school ... also forms too"].
 
 const CATEGORIES = ['Treats', 'Experiences', 'Screen Time', 'Privileges', 'Special'];
 const EMOJIS = ['🎮','🎬','🍕','🎂','🏖️','🎪','📱','🛍️','🎁','⭐','🏆','🎵','🎨','🎯','🚀'];
+
+function FieldCard({ label, children, colors, isDark }: {
+  label: string; children: React.ReactNode; colors: any; isDark: boolean;
+}) {
+  return (
+    <View style={{ borderWidth: 1, borderColor: isDark ? colors.border : FORM_BORDER, borderRadius: 14,
+      backgroundColor: isDark ? colors.card : FORM_CARD_BG, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : FORM_BODY_CLR, marginBottom: 3 }}>{label}</Text>
+      {children}
+    </View>
+  );
+}
 
 function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete }: {
   visible: boolean; editing?: Reward | null; colors: any; isDark: boolean;
@@ -358,8 +386,11 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
   const [emoji, setEmoji] = useState('🎁');
   const [cat,   setCat]   = useState('Special');
 
-  const canvas = isDark ? colors.background : PAGE_BG;
-  const P = colors.primary;
+  const canvas = isDark ? colors.background : FORM_CARD_BG;
+  const titleC = isDark ? colors.textPrimary : FORM_TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : FORM_BODY_CLR;
+  const border = isDark ? colors.border : FORM_BORDER;
+  const cardBg = isDark ? colors.card : FORM_CARD_BG;
 
   useEffect(() => {
     if (visible) {
@@ -382,24 +413,15 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={70}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
-          {/* ReviewInbox-style header */}
-          <View style={{
-            paddingHorizontal: 20,
-            paddingTop: insets.top + 12,
-            paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-            backgroundColor: canvas,
-            gap: 6,
-          }}>
+          {/* Header */}
+          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Store</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? FORM_BLUE : FORM_LINK_BLUE }}>‹ Store</Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34,
-              letterSpacing: -0.5, color: colors.textPrimary }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
               {editing ? 'Edit Perk' : 'New Perk'}
             </Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary }}>
+            <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>
               {editing ? 'Update perk details below.' : 'Build a new reward for your family.'}
             </Text>
           </View>
@@ -408,98 +430,83 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
             keyboardShouldPersistTaps="always"
             onScrollBeginDrag={Keyboard.dismiss}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: insets.bottom + 48 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 12 }}
             style={{ flex: 1, backgroundColor: canvas }}>
 
-            {/* Card: Title + Cost */}
-            <View style={{ borderRadius: 22, backgroundColor: isDark ? colors.card : '#fff', padding: 18,
-              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: P }} />
-                <Text style={{ fontSize: 12, fontWeight: '800', color: P, textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                  Details
-                </Text>
-              </View>
-              <Text style={[s.label, { color: colors.textSecondary }]}>PERK TITLE</Text>
+            <FieldCard label="Perk title" colors={colors} isDark={isDark}>
               <TextInput value={name} onChangeText={setName}
                 placeholder="e.g. Movie Night Choice"
-                placeholderTextColor={colors.textTertiary}
-                style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                  backgroundColor: colors.surface }]} />
-              <Text style={[s.label, { color: colors.textSecondary, marginTop: 6 }]}>COIN COST</Text>
+                placeholderTextColor="#C0C7D4"
+                style={{ fontSize: 15, color: titleC, padding: 0 }} />
+            </FieldCard>
+
+            <FieldCard label="Coin cost" colors={colors} isDark={isDark}>
               <TextInput value={cost} onChangeText={setCost} keyboardType="number-pad"
-                style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                  backgroundColor: colors.surface }]} />
-              <Text style={[s.label, { color: colors.textSecondary, marginTop: 6 }]}>DESCRIPTION (optional)</Text>
+                placeholderTextColor="#C0C7D4"
+                style={{ fontSize: 15, color: titleC, padding: 0 }} />
+            </FieldCard>
+
+            <FieldCard label="Description (optional)" colors={colors} isDark={isDark}>
               <TextInput value={desc} onChangeText={setDesc} placeholder="Brief description…"
-                placeholderTextColor={colors.textTertiary} multiline numberOfLines={2}
-                style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                  backgroundColor: colors.surface, height: 68, textAlignVertical: 'top' }]} />
-            </View>
+                placeholderTextColor="#C0C7D4" multiline numberOfLines={2}
+                style={{ fontSize: 15, color: titleC, padding: 0, minHeight: 50, textAlignVertical: 'top' }} />
+            </FieldCard>
 
-            {/* Card: Category */}
-            <View style={{ borderRadius: 22, backgroundColor: isDark ? colors.card : '#fff', padding: 18,
-              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.teal }} />
-                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.teal, textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                  Category
-                </Text>
-              </View>
+            {/* Category */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 8 }}>Category</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {CATEGORIES.map(c => (
-                  <TouchableOpacity key={c} onPress={() => setCat(c)}
-                    style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1.5,
-                      backgroundColor: cat === c ? colors.teal + '20' : colors.surface,
-                      borderColor: cat === c ? colors.teal : colors.border }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700',
-                      color: cat === c ? colors.teal : colors.textSecondary }}>
-                      {c}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {CATEGORIES.map(c => {
+                  const active = cat === c;
+                  return (
+                    <TouchableOpacity key={c} onPress={() => setCat(c)}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
+                        borderColor: active ? FORM_BLUE : border,
+                        backgroundColor: active ? (isDark ? colors.surface : '#EEF3FB') : cardBg }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: active ? FORM_BLUE : bodyC }}>
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
-            {/* Card: Emoji */}
-            <View style={{ borderRadius: 22, backgroundColor: isDark ? colors.card : '#fff', padding: 18,
-              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.amber }} />
-                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.amber, textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                  Icon
-                </Text>
-              </View>
+            {/* Icon */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 8 }}>Icon</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                {EMOJIS.map(e => (
-                  <TouchableOpacity key={e} onPress={() => setEmoji(e)}
-                    style={{ width: 48, height: 48, borderRadius: 14, borderWidth: 2,
-                      alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: emoji === e ? colors.primary + '18' : colors.surface,
-                      borderColor: emoji === e ? colors.primary : colors.border }}>
-                    <Text style={{ fontSize: 22 }}>{e}</Text>
-                  </TouchableOpacity>
-                ))}
+                {EMOJIS.map(e => {
+                  const active = emoji === e;
+                  return (
+                    <TouchableOpacity key={e} onPress={() => setEmoji(e)}
+                      style={{ width: 44, height: 44, borderRadius: 12, borderWidth: 1.5,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderColor: active ? FORM_BLUE : border,
+                        backgroundColor: active ? (isDark ? colors.surface : '#EEF3FB') : cardBg }}>
+                      <Text style={{ fontSize: 20 }}>{e}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
             {/* Save */}
-            <TouchableOpacity onPress={submit}
-              style={{ borderRadius: 14, paddingVertical: 16, alignItems: 'center',
-                backgroundColor: name.trim() ? BLUE_BTN : (isDark ? colors.surface : '#D0D5E0'),
-                ...Platform.select({ ios: { shadowColor: BLUE_BTN, shadowOpacity: name.trim() ? 0.3 : 0, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }, android: {} }) }}>
-              <Text style={{ fontSize: 16, fontWeight: '800',
-                color: name.trim() ? '#fff' : colors.textTertiary }}>
-                {editing ? 'Save Changes' : 'Publish to Family Store'}
+            <TouchableOpacity onPress={submit} disabled={!name.trim()}
+              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: name.trim() ? FORM_BLUE : (isDark ? colors.surface : FORM_SURFACE) }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: name.trim() ? '#FFFFFF' : bodyC }}>
+                {editing ? 'Save changes' : 'Publish to family store'}
               </Text>
             </TouchableOpacity>
 
             {editing && onDelete && (
               <TouchableOpacity onPress={() => onDelete(editing)}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                  gap: 6, paddingVertical: 12 }}>
+                style={{ height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <Ionicons name="trash-outline" size={16} color={colors.danger} />
-                <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Remove Perk</Text>
+                <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Remove perk</Text>
               </TouchableOpacity>
             )}
           </ScrollView>

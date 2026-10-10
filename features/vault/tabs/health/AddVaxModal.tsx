@@ -1,28 +1,30 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
-  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Keyboard, StyleSheet,
+  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Check, Calendar, ChevronLeft } from 'lucide-react-native';
-import StepProgressBar from '@/components/StepProgressBar';
-import StepTransition from '@/components/StepTransition';
+import { Check, Calendar } from 'lucide-react-native';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import {
   VaxForm, BLANK_VAX, VAX_TYPES, VAX_SUGGESTIONS,
   fmtDate, fmtDateDisplay, aStyles,
 } from './types';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
-import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { GEMINI } from '@/constants/geminiRhythm';
 
-// Stepper — same rationale as AddMedModal.tsx's own comment: was one long
-// scroll across 5 sections, broken into steps matching the existing
-// section boundaries. Steps 1–2 required, step 3 skippable via Next.
-const STEPS = ['basics', 'dates', 'notes'] as const;
-type Step = typeof STEPS[number];
-const STEP_TITLES: Record<Step, string> = {
-  basics: 'What & Who', dates: 'Dates & Series', notes: 'Provider & Notes',
-};
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception) — same shared module
+// AddMedModal.tsx uses, so both forms render with identical canvas/card/
+// button colors [live-requested: "use the same rythm of button colors in
+// all the forms"].
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+const BLUE      = GEMINI.blue;
+const LINK_BLUE = GEMINI.linkBlue;
+const BORDER    = GEMINI.border;
+const CARD_BG   = GEMINI.cardBg;
 
 // A YYYY-MM-DD string (as VaxForm.date/next_due_date store it) parsed as
 // LOCAL midnight, matching fmtDate/lib/dates.ts's own convention — a plain
@@ -33,6 +35,46 @@ function parseLocalDateStr(s: string): Date {
   return y && m && d ? new Date(y, m - 1, d) : new Date();
 }
 
+// ── Field row — label + value inside a section group card. Same shared
+// pattern as AddMedModal.tsx's own FieldRow/SectionCard (not reused via
+// import since both are local, file-scoped styling helpers there too).
+function FieldRow({ label, children, isDark, colors, errColor, noBorder }: {
+  label: string; children: React.ReactNode; isDark: boolean; colors: any;
+  errColor?: string; noBorder?: boolean;
+}) {
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  return (
+    <View style={{ gap: 4, paddingVertical: 12,
+      borderBottomWidth: noBorder ? 0 : 1,
+      borderBottomColor: errColor ?? (isDark ? colors.border : BORDER) }}>
+      <Text style={{ fontSize: 11, fontWeight: '600', color: errColor ?? bodyC, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        {label}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+function SectionCard({ children, isDark, colors }: { children: React.ReactNode; isDark: boolean; colors: any }) {
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const style = isDark
+    ? { backgroundColor: cardBg, borderRadius: 22, borderWidth: 1, borderColor: border, padding: 16, gap: 0 }
+    : { backgroundColor: cardBg, borderRadius: 22, padding: 16, gap: 0,
+        shadowColor: '#102347', shadowOpacity: 0.05, shadowRadius: 20, shadowOffset: { width: 0, height: 6 }, elevation: 3 };
+  return <View style={style}>{children}</View>;
+}
+
+function SectionHeading({ children, accent, isDark, colors }: { children: React.ReactNode; accent?: string; isDark: boolean; colors: any }) {
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+      {accent && <View style={{ width: 4, height: 18, borderRadius: 2, backgroundColor: accent }} />}
+      <Text style={{ fontSize: 16, fontWeight: '800', color: accent ?? titleC }}>{children}</Text>
+    </View>
+  );
+}
+
 export default function AddVaxModal({ visible, onClose, onSave, members, colors, isDark, editing, lockedMemberId }: {
   visible: boolean; onClose: () => void;
   onSave: (memberId: string, form: VaxForm, vaxId?: string) => Promise<void>;
@@ -41,7 +83,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
   lockedMemberId?: string;
 }) {
   const [form, setForm]               = useState<VaxForm>(BLANK_VAX);
-  const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
+  const [selectedMember, setSelectedMember] = useState(lockedMemberId ?? members[0]?.id ?? '');
   // Was a plain `saving` state with no synchronous check — a fast
   // double-tap on Save could fire onSave twice, duplicating a vaccine
   // record [live-requested app-wide: "We should avoid double tab submit
@@ -51,9 +93,6 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
   const [nextDate, setNextDate]       = useState<Date | null>(null);
   const [showAdminPick, setShowAdminPick]   = useState(false);
   const [showNextPick, setShowNextPick]     = useState(false);
-  const [nameFocused, setNameFocused] = useState(false);
-  const [stepIndex, setStepIndex]     = useState(0);
-  const step = STEPS[stepIndex];
 
   const set = (k: keyof VaxForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -72,16 +111,15 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
 
   const reset = () => {
     setForm(BLANK_VAX); setAdminDate(new Date()); setNextDate(null);
-    setShowAdminPick(false); setShowNextPick(false); setNameFocused(false);
-    setVaxTouched({}); setVaxSubmitAttempted(false); setStepIndex(0);
+    setShowAdminPick(false); setShowNextPick(false);
+    setVaxTouched({}); setVaxSubmitAttempted(false);
   };
 
-  // Seed from `editing` every time the sheet opens with one, instead of
+  // Seed from `editing` every time the page opens with one, instead of
   // BLANK_VAX — mirrors BLANK_VAX's own field set exactly so nothing is
   // silently dropped switching between add and edit.
   useEffect(() => {
     if (!visible) return;
-    setStepIndex(0);
     if (editing) {
       setForm(editing.form);
       setSelectedMember(editing.memberId);
@@ -89,27 +127,18 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
       setNextDate(editing.form.next_due_date ? parseLocalDateStr(editing.form.next_due_date) : null);
     } else {
       setForm(BLANK_VAX);
-      setSelectedMember(members[0]?.id ?? '');
+      setSelectedMember(lockedMemberId ?? members[0]?.id ?? '');
       setAdminDate(new Date());
       setNextDate(null);
     }
-  }, [visible, editing]);
+  }, [visible, editing, lockedMemberId]);
 
   const handleClose = () => { reset(); onClose(); };
-
-  const goNext = () => {
-    if (step === 'basics' && (vaxErrors.title || vaxErrors.member)) {
-      setVaxTouched(t => ({ ...t, title: true, member: true }));
-      return;
-    }
-    if (stepIndex < STEPS.length - 1) setStepIndex(i => i + 1);
-  };
-  const goBack = () => { if (stepIndex > 0) setStepIndex(i => i - 1); };
 
   const handleSave = guard(async () => {
     setVaxSubmitAttempted(true);
     if (vaxErrors.title || vaxErrors.member) {
-      setStepIndex(0);
+      setVaxTouched(t => ({ ...t, title: true, member: true }));
       return;
     }
     await onSave(selectedMember, {
@@ -126,334 +155,337 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
     return VAX_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(form.title.toLowerCase())).slice(0, 6);
   }, [form.title]);
 
+  const insets = useSafeAreaInsets();
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC  = isDark ? colors.textSecondary : BODY_CLR;
+  const linkC  = isDark ? BLUE : LINK_BLUE;
+  const pageBg = isDark ? colors.background : PAGE_BG;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const border = isDark ? colors.border : BORDER;
+  const privacyBg = colors.tealLight;
+
+  const activeMember = members.find(m => m.id === selectedMember);
+
   const inp = [
     aStyles.inp,
-    { backgroundColor: isDark ? colors.card : colors.tealLight, borderColor: colors.border, color: colors.textPrimary },
+    { paddingHorizontal: 0, paddingVertical: 0, borderWidth: 0,
+      fontSize: 16, fontWeight: '600' as const, color: titleC },
   ];
 
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
-
+  // Full single-page Figma form — was a 3-step wizard (basics → dates →
+  // notes), now one continuous scroll matching AddMedModal.tsx's exact
+  // page structure and button rhythm (same BLUE save button, same linkC
+  // Cancel link) [live-requested: "we ned the flatren like medication" /
+  // "use the same rythm of button colors in all the forms"]. Every field
+  // from the old wizard is kept, just regrouped into section cards.
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-          <View style={withAndroidShadowFix({ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card,
-            borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 })}>
+    <FullPageOverlay visible={visible} onDismiss={handleClose} zIndex={60}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: pageBg }}>
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: bodyC, textTransform: 'uppercase' }}>
+                Family Cube
+              </Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: linkC }}>
+                {activeMember?.name ?? 'Member'} · Record owner
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 12 }}>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>‹ Health records</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
+              {editing ? 'Edit vaccine' : 'Log vaccine'}
+            </Text>
+          </View>
 
-            {/* Drag handle */}
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+          <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ padding: 24, paddingTop: 12, paddingBottom: 8, gap: 14 }}>
 
-            {/* Fixed header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              {stepIndex > 0 && (
-                <TouchableOpacity onPress={goBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  style={{ marginRight: 10 }}>
-                  <ChevronLeft size={22} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-                  {stepIndex === 0 ? (editing ? 'Edit Vaccine' : 'Log Vaccine') : STEP_TITLES[step]}
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
-                  Step {stepIndex + 1} of {STEPS.length}
+            <View style={{ flexDirection: 'row' }}>
+              <View style={{ backgroundColor: colors.primaryLight, borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.primary : BLUE }}>
+                  {activeMember?.name ?? 'Member'} · private record draft
                 </Text>
               </View>
             </View>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: -6, lineHeight: 18 }}>
+              Enter only what you've confirmed with a provider or vaccination record — this form does not offer medical advice.
+            </Text>
 
-            {/* Step progress — animated fill instead of an instant snap */}
-            <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
-              <StepProgressBar stepCount={STEPS.length} activeIndex={stepIndex} accentColor={colors.teal} trackColor={colors.border} />
+            {/* ── Vaccine details ── */}
+            <SectionHeading isDark={isDark} colors={colors} accent={colors.pink}>Vaccine details</SectionHeading>
+
+            <SectionCard isDark={isDark} colors={colors}>
+              {lockedMemberId && !editing ? (
+                <FieldRow label="Record owner" isDark={isDark} colors={colors}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: titleC }}>
+                    {members.find(m => m.id === lockedMemberId)?.name ?? 'Member'}
+                  </Text>
+                </FieldRow>
+              ) : (
+                <FieldRow label="Who is this for?" isDark={isDark} colors={colors} errColor={showVaxErr('member') ? colors.danger : undefined}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ flexDirection: 'row', gap: 14, paddingTop: 8 }}>
+                    {members.map(m => {
+                      const sel = selectedMember === m.id;
+                      const mc = m.role === 'parent' ? colors.teal : m.role === 'senior' ? colors.pink : colors.amber;
+                      return (
+                        <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 4 }}
+                          onPress={() => { setSelectedMember(m.id); touchVax('member'); }}>
+                          <View style={{
+                            width: 44, height: 44, borderRadius: 22,
+                            backgroundColor: sel ? mc + '20' : (isDark ? colors.surface : PAGE_BG),
+                            borderWidth: sel ? 2.5 : 0, borderColor: mc,
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Text style={{ fontSize: 17, fontWeight: '900', color: sel ? mc : colors.textSecondary }}>
+                              {m.name.charAt(0).toUpperCase()}
+                            </Text>
+                            {sel && (
+                              <View style={{ position: 'absolute', bottom: -2, right: -2,
+                                width: 15, height: 15, borderRadius: 8,
+                                backgroundColor: mc, alignItems: 'center', justifyContent: 'center' }}>
+                                <Check size={8} color="#FFF" />
+                              </View>
+                            )}
+                          </View>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: sel ? mc : colors.textTertiary }} numberOfLines={1}>
+                            {m.name.split(' ')[0]}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  {showVaxErr('member') && (
+                    <Text style={{ fontSize: 11, color: colors.danger, marginTop: 4 }}>{vaxErrors.member}</Text>
+                  )}
+                </FieldRow>
+              )}
+
+              {/* Vaccine type */}
+              <FieldRow label="Vaccine type" isDark={isDark} colors={colors}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingTop: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {VAX_TYPES.map(t => {
+                      const sel = form.vaccine_type === t;
+                      return (
+                        <TouchableOpacity key={t} onPress={() => set('vaccine_type', sel ? '' : t)}
+                          style={{
+                            borderRadius: 100, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 6,
+                            backgroundColor: sel ? colors.teal + '18' : 'transparent',
+                            borderColor: sel ? colors.teal : border,
+                          }}>
+                          <Text style={{ fontSize: 13, fontWeight: sel ? '700' : '500', textTransform: 'capitalize',
+                            color: sel ? colors.teal : bodyC }}>{t}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </FieldRow>
+
+              {/* Vaccine name */}
+              <FieldRow label="Vaccine name *" isDark={isDark} colors={colors}
+                errColor={showVaxErr('title') ? colors.danger : undefined} noBorder>
+                <TextInput value={form.title} onChangeText={v => set('title', v)}
+                  onBlur={() => touchVax('title')}
+                  placeholder="e.g. Flu Shot 2026" placeholderTextColor={colors.textTertiary}
+                  style={inp} />
+                {showVaxErr('title') && (
+                  <Text style={{ fontSize: 11, color: colors.danger, marginTop: 2 }}>{vaxErrors.title}</Text>
+                )}
+              </FieldRow>
+            </SectionCard>
+
+            {/* ── Name matches — same radio-row autocomplete pattern as
+                AddMedModal's "Name matches" block. ── */}
+            {suggestions.length > 0 && (
+              <View style={{ backgroundColor: colors.primaryLight, borderRadius: 22, padding: 16, gap: 10 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: titleC }}>Name matches</Text>
+                {suggestions.map((s, i) => {
+                  const sel = form.title.trim().toLowerCase() === s.name.toLowerCase();
+                  return (
+                    <TouchableOpacity key={i} onPress={() => set('title', s.name)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                        backgroundColor: isDark ? colors.card + 'AA' : '#FFFFFF',
+                        borderRadius: 14, padding: 12 }}>
+                      <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 1.8,
+                        borderColor: sel ? BLUE : bodyC, alignItems: 'center', justifyContent: 'center' }}>
+                        {sel && <Check size={12} color={BLUE} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '600', color: titleC }}>{s.name}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: 1 }}>{s.hint}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* ── Dates & series ── */}
+            <SectionHeading isDark={isDark} colors={colors} accent={colors.teal}>Dates & series</SectionHeading>
+
+            <SectionCard isDark={isDark} colors={colors}>
+              <FieldRow label="Date administered *" isDark={isDark} colors={colors}>
+                <TouchableOpacity onPress={() => { setShowAdminPick(p => !p); setShowNextPick(false); }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 4 }}>
+                    <Calendar size={14} color={showAdminPick ? colors.teal : colors.textTertiary} />
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: showAdminPick ? colors.teal : titleC }}>
+                      {fmtDateDisplay(adminDate)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </FieldRow>
+              {showAdminPick && (
+                <Modal transparent animationType="fade" visible onRequestClose={() => setShowAdminPick(false)}>
+                  <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowAdminPick(false)}>
+                    <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '900', color: titleC }}>Date Administered</Text>
+                        <TouchableOpacity onPress={() => setShowAdminPick(false)}>
+                          <Text style={{ color: BLUE, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <DateTimePicker
+                        value={adminDate} mode="date" display="spinner"
+                        onChange={(_, d) => { if (d) setAdminDate(d); }}
+                        textColor={titleC} style={{ height: 180, width: '100%' }}
+                      />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                </Modal>
+              )}
+
+              <FieldRow label="Next due · optional" isDark={isDark} colors={colors}>
+                <TouchableOpacity onPress={() => { setShowNextPick(p => !p); setShowAdminPick(false); }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 4 }}>
+                    <Calendar size={14} color={nextDate ? colors.amber : colors.textTertiary} />
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: nextDate ? (showNextPick ? colors.amber : titleC) : colors.textTertiary }}>
+                      {nextDate ? fmtDateDisplay(nextDate) : 'No next due date'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </FieldRow>
+              {showNextPick && (
+                <Modal transparent animationType="fade" visible onRequestClose={() => setShowNextPick(false)}>
+                  <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowNextPick(false)}>
+                    <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '900', color: titleC }}>Next Due Date</Text>
+                        <View style={{ flexDirection: 'row', gap: 16 }}>
+                          {!!nextDate && (
+                            <TouchableOpacity onPress={() => { setNextDate(null); setShowNextPick(false); }}>
+                              <Text style={{ color: colors.danger, fontWeight: '800', fontSize: 15 }}>Clear</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity onPress={() => setShowNextPick(false)}>
+                            <Text style={{ color: BLUE, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <DateTimePicker
+                        value={nextDate ?? new Date()} mode="date" display="spinner"
+                        onChange={(_, d) => { if (d) setNextDate(d); }}
+                        textColor={titleC} style={{ height: 180, width: '100%' }}
+                      />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                </Modal>
+              )}
+
+              <FieldRow label="Current dose #" isDark={isDark} colors={colors}>
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
+                  {['1', '2', '3', '4'].map(n => (
+                    <TouchableOpacity key={n} onPress={() => set('series_current', n)}
+                      style={[aStyles.chipSmall, {
+                        flex: 1, alignItems: 'center',
+                        borderColor: form.series_current === n ? colors.teal : border,
+                        backgroundColor: form.series_current === n ? colors.teal + '15' : 'transparent',
+                      }]}>
+                      <Text style={{ fontSize: 13, fontWeight: '800',
+                        color: form.series_current === n ? colors.teal : bodyC }}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </FieldRow>
+
+              <FieldRow label="Total doses" isDark={isDark} colors={colors} noBorder>
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
+                  {['1', '2', '3', '4'].map(n => (
+                    <TouchableOpacity key={n} onPress={() => set('series_total', n)}
+                      style={[aStyles.chipSmall, {
+                        flex: 1, alignItems: 'center',
+                        borderColor: form.series_total === n ? colors.info : border,
+                        backgroundColor: form.series_total === n ? colors.info + '15' : 'transparent',
+                      }]}>
+                      <Text style={{ fontSize: 13, fontWeight: '800',
+                        color: form.series_total === n ? colors.info : bodyC }}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </FieldRow>
+            </SectionCard>
+
+            {/* ── Provider & notes ── */}
+            <SectionHeading isDark={isDark} colors={colors} accent={colors.amber}>Provider & notes</SectionHeading>
+
+            <SectionCard isDark={isDark} colors={colors}>
+              <FieldRow label="Administered by" isDark={isDark} colors={colors}>
+                <TextInput value={form.administered_by} onChangeText={v => set('administered_by', v)}
+                  placeholder="Dr. Name / CVS" placeholderTextColor={colors.textTertiary} style={inp} />
+              </FieldRow>
+
+              <FieldRow label="Location" isDark={isDark} colors={colors}>
+                <TextInput value={form.location} onChangeText={v => set('location', v)}
+                  placeholder="Clinic / School" placeholderTextColor={colors.textTertiary} style={inp} />
+              </FieldRow>
+
+              <FieldRow label="Notes / lot number" isDark={isDark} colors={colors} noBorder>
+                <TextInput value={form.notes} onChangeText={v => set('notes', v)}
+                  placeholder="Reactions, lot number, clinic notes…"
+                  placeholderTextColor={colors.textTertiary}
+                  style={[inp, { minHeight: 44, textAlignVertical: 'top' }]} multiline />
+              </FieldRow>
+            </SectionCard>
+
+            {/* ── Privacy footer — same copy/token pattern as AddMedModal ── */}
+            <View style={{ backgroundColor: privacyBg, borderRadius: 22, padding: 16, gap: 4, marginTop: 4 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.6, color: colors.teal, textTransform: 'uppercase' }}>
+                Private · {activeMember?.name ?? 'Member'}'s health
+              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? colors.textPrimary : '#1D3B2E' }}>
+                Shared with your family
+              </Text>
+              <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : '#3E5A4D' }}>
+                Kids, teens and seniors only ever see their own medications and vaccines.
+              </Text>
             </View>
 
-            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: 8, gap: 18 }}>
-              <StepTransition stepKey={step}>
-
-              {step === 'basics' && (
-                <>
-                  {/* ── Vaccine name + suggestions ── */}
-                  <View>
-                    <Text style={[aStyles.label, { color: showVaxErr('title') ? colors.danger : colors.textSecondary }]}>
-                      Vaccine Name *
-                    </Text>
-                    <TextInput value={form.title} onChangeText={v => set('title', v)}
-                      onFocus={() => setNameFocused(true)}
-                      onBlur={() => { touchVax('title'); setNameFocused(false); }}
-                      placeholder="e.g. Flu Shot 2025" placeholderTextColor={colors.textTertiary}
-                      style={[inp, { borderColor: showVaxErr('title') ? colors.danger : form.title ? colors.border : colors.teal + '60' }]} />
-                    {showVaxErr('title') && (
-                      <Text style={[aStyles.errText, { color: colors.danger }]}>{vaxErrors.title}</Text>
-                    )}
-                    {suggestions.length > 0 && (
-                      <View style={{ marginTop: 6 }}>
-                        <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
-                          {form.title.trim() ? 'Matching — tap to fill' : 'Quick picks'}
-                        </Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                          <View style={{ flexDirection: 'row', gap: 7 }}>
-                            {suggestions.map((s, i) => (
-                              <TouchableOpacity key={i} onPress={() => { set('title', s.name); setNameFocused(false); }}
-                                style={[aStyles.suggPill, {
-                                  backgroundColor: form.title === s.name ? colors.teal + '20' : colors.tealLight,
-                                  borderColor: form.title === s.name ? colors.teal : colors.teal + '40',
-                                }]}>
-                                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>{s.name}</Text>
-                                <Text style={{ fontSize: 11, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </ScrollView>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* ── Vaccine type chips ── */}
-                  <View>
-                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Vaccine Type</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 2 }}>
-                        {VAX_TYPES.map(t => {
-                          const sel = form.vaccine_type === t;
-                          return (
-                            <TouchableOpacity key={t} onPress={() => set('vaccine_type', sel ? '' : t)}
-                              style={{
-                                borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 6,
-                                backgroundColor: sel ? colors.teal + '18' : 'transparent',
-                                borderColor: sel ? colors.teal : colors.border,
-                              }}>
-                              <Text style={{ fontSize: 12, fontWeight: '700', textTransform: 'uppercase',
-                                color: sel ? colors.teal : colors.textSecondary }}>{t}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </ScrollView>
-                  </View>
-
-                  {/* ── Member avatar picker ── */}
-                  <View>
-                    <Text style={[aStyles.sectionLabel, { color: showVaxErr('member') ? colors.danger : colors.teal }]}>
-                      For Member {showVaxErr('member') ? '— ' + vaxErrors.member : ''}
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ flexDirection: 'row', gap: 14, paddingBottom: 4 }}>
-                      {members.map(m => {
-                        const sel = selectedMember === m.id;
-                        const mc = m.role === 'parent' ? colors.accent : m.role === 'senior' ? colors.info : colors.success;
-                        return (
-                          <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 5 }}
-                            onPress={() => { setSelectedMember(m.id); touchVax('member'); }}>
-                            <View style={{
-                              width: 52, height: 52, borderRadius: 26,
-                              backgroundColor: sel ? mc + '20' : colors.surface,
-                              borderWidth: sel ? 2.5 : 0, borderColor: mc,
-                              alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              <Text style={{ fontSize: 20, fontWeight: '900', color: sel ? mc : colors.textSecondary }}>
-                                {m.name.charAt(0).toUpperCase()}
-                              </Text>
-                              {sel && (
-                                <View style={{ position: 'absolute', bottom: -2, right: -2,
-                                  width: 16, height: 16, borderRadius: 8,
-                                  backgroundColor: mc, alignItems: 'center', justifyContent: 'center' }}>
-                                  <Check size={9} color={colors.textInverse} />
-                                </View>
-                              )}
-                            </View>
-                            <Text style={{ fontSize: 11, fontWeight: '700',
-                              color: sel ? mc : colors.textTertiary }} numberOfLines={1}>
-                              {m.name.split(' ')[0]}
-                            </Text>
-                            <Text style={{ fontSize: 10, color: colors.textTertiary, textTransform: 'capitalize' }}>{m.role}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                </>
-              )}
-
-              {step === 'dates' && (
-                <>
-                  {/* ── Dates ── */}
-                  <View>
-                    <Text style={[aStyles.sectionLabel, { color: colors.teal }]}>Administration Dates</Text>
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Date Administered *</Text>
-                        <TouchableOpacity onPress={() => { setShowAdminPick(p => !p); setShowNextPick(false); }}
-                          style={[aStyles.dateBtn, {
-                            backgroundColor: showAdminPick ? colors.teal + '20' : colors.tealLight,
-                            borderColor: showAdminPick ? colors.teal : colors.border,
-                          }]}>
-                          <Calendar size={14} color={showAdminPick ? colors.teal : colors.textTertiary} />
-                          <Text style={{ fontSize: 13, fontWeight: '700',
-                            color: showAdminPick ? colors.teal : colors.textPrimary }}>
-                            {fmtDateDisplay(adminDate)}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Next Due (optional)</Text>
-                        <TouchableOpacity onPress={() => { setShowNextPick(p => !p); setShowAdminPick(false); }}
-                          style={[aStyles.dateBtn, {
-                            backgroundColor: showNextPick ? colors.amber + '20' : colors.amberLight,
-                            borderColor: showNextPick ? colors.amber : (nextDate ? colors.amber + '80' : colors.border),
-                          }]}>
-                          <Calendar size={14} color={nextDate ? colors.amber : colors.textTertiary} />
-                          <Text style={{ fontSize: 13, fontWeight: '700',
-                            color: nextDate ? (showNextPick ? colors.amber : colors.textPrimary) : colors.textTertiary }}>
-                            {nextDate ? fmtDateDisplay(nextDate) : 'Pick date'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {(showAdminPick || showNextPick) && (
-                      <Modal transparent animationType="fade" visible onRequestClose={() => { setShowAdminPick(false); setShowNextPick(false); }}>
-                        <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1}
-                          onPress={() => { setShowAdminPick(false); setShowNextPick(false); }}>
-                          <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                              paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                              <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>
-                                {showAdminPick ? 'Date Administered' : 'Next Due Date'}
-                              </Text>
-                              <TouchableOpacity onPress={() => { setShowAdminPick(false); setShowNextPick(false); }}>
-                                <Text style={{ color: colors.teal, fontWeight: '900', fontSize: 15 }}>Done</Text>
-                              </TouchableOpacity>
-                            </View>
-                            <DateTimePicker
-                              value={showAdminPick ? adminDate : (nextDate ?? new Date())}
-                              mode="date" display="spinner"
-                              onChange={(_, d) => {
-                                if (d) { showAdminPick ? setAdminDate(d) : setNextDate(d); }
-                              }}
-                              textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                            />
-                          </TouchableOpacity>
-                        </TouchableOpacity>
-                      </Modal>
-                    )}
-                  </View>
-
-                  {/* ── Series ── */}
-                  <View>
-                    <Text style={[aStyles.sectionLabel, { color: colors.teal }]}>Dose Series</Text>
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Current Dose #</Text>
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          {['1', '2', '3', '4'].map(n => (
-                            <TouchableOpacity key={n} onPress={() => set('series_current', n)}
-                              style={[aStyles.chipSmall, {
-                                flex: 1, alignItems: 'center',
-                                borderColor: form.series_current === n ? colors.teal : colors.border,
-                                backgroundColor: form.series_current === n ? colors.teal + '15' : 'transparent',
-                              }]}>
-                              <Text style={{ fontSize: 13, fontWeight: '800',
-                                color: form.series_current === n ? colors.teal : colors.textSecondary }}>{n}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Total Doses</Text>
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          {['1', '2', '3', '4'].map(n => (
-                            <TouchableOpacity key={n} onPress={() => set('series_total', n)}
-                              style={[aStyles.chipSmall, {
-                                flex: 1, alignItems: 'center',
-                                borderColor: form.series_total === n ? colors.info : colors.border,
-                                backgroundColor: form.series_total === n ? colors.info + '15' : 'transparent',
-                              }]}>
-                              <Text style={{ fontSize: 13, fontWeight: '800',
-                                color: form.series_total === n ? colors.info : colors.textSecondary }}>{n}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {step === 'notes' && (
-                <>
-                  {/* ── Administered by / location ── */}
-                  <View>
-                    <Text style={[aStyles.sectionLabel, { color: colors.teal }]}>Provider & Location</Text>
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Administered By</Text>
-                        <TextInput value={form.administered_by} onChangeText={v => set('administered_by', v)}
-                          placeholder="Dr. Name / CVS" placeholderTextColor={colors.textTertiary} style={inp} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Location</Text>
-                        <TextInput value={form.location} onChangeText={v => set('location', v)}
-                          placeholder="Clinic / School" placeholderTextColor={colors.textTertiary} style={inp} />
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Notes */}
-                  <View>
-                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Notes / Lot Number</Text>
-                    <TextInput value={form.notes} onChangeText={v => set('notes', v)}
-                      placeholder="Reactions, lot number, clinic notes…"
-                      placeholderTextColor={colors.textTertiary}
-                      style={[inp, { height: 68, textAlignVertical: 'top' }]} multiline />
-                  </View>
-
-                  {/* ── Review — compact summary before Save ── */}
-                  <View style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.border,
-                    backgroundColor: colors.surface, padding: 14, gap: 6 }}>
-                    <Text style={[aStyles.sectionLabel, { color: colors.textSecondary, marginBottom: 2 }]}>Review</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>
-                      {form.title.trim() || 'Untitled vaccine'}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                      Dose {form.series_current}/{form.series_total} · {fmtDateDisplay(adminDate)}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                      For {members.find(m => m.id === selectedMember)?.name ?? '—'}
-                    </Text>
-                  </View>
-                </>
-              )}
-              </StepTransition>
-            </ScrollView>
-
-            {/* Fixed footer — Back/Next through steps 1-2, Save on the last */}
-            <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
-              <TouchableOpacity onPress={stepIndex === 0 ? handleClose : goBack}
-                style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>
-                  {stepIndex === 0 ? 'Cancel' : 'Back'}
+            {/* ── Actions — scroll with the rest of the page, same BLUE CTA
+                + linkC Cancel rhythm as AddMedModal's own footer. ── */}
+            <View style={{ gap: 10, marginTop: 4, paddingBottom: insets.bottom + 8 }}>
+              <TouchableOpacity onPress={handleSave}
+                style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: BLUE }}
+                disabled={saving}>
+                {saving
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
+                      {editing ? 'Save vaccine changes' : 'Save vaccine'}
+                    </Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleClose} style={{ alignItems: 'center', paddingVertical: 6 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: linkC }}>
+                  Cancel · back to vaccines
                 </Text>
               </TouchableOpacity>
-              {stepIndex < STEPS.length - 1 ? (
-                <TouchableOpacity onPress={goNext} style={[aStyles.saveBtn, { backgroundColor: colors.teal }]}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textInverse }}>Next</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity onPress={handleSave}
-                  style={[aStyles.saveBtn, { backgroundColor: colors.teal }]} disabled={saving}>
-                  {saving
-                    ? <ActivityIndicator size="small" color={colors.textInverse} />
-                    : <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textInverse }}>{editing ? 'Save Changes' : 'Save Vaccine'}</Text>}
-                </TouchableOpacity>
-              )}
             </View>
-          </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </FullPageOverlay>
   );
 }

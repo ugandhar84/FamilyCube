@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Pressable } from 'react-native';
-import { Home, Thermometer, ShieldAlert, ScrollText, Zap, Droplets, Refrigerator, TreePine, ChevronRight, Plus } from 'lucide-react-native';
+import {
+  Home, Thermometer, ShieldAlert, ScrollText, Zap, Droplets, Refrigerator, TreePine, ChevronRight, Plus,
+  RotateCw, Wind, Flame, Bug, Wrench, Paintbrush, Trash2, Filter, Sparkles, AlertTriangle,
+} from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useHomeownerNotesStore, type HomeownerNote, type HomeownerNoteCategory } from '@/store/homeownerNotesStore';
 import { CATEGORY_LABEL } from './maintenancePresets';
@@ -27,6 +30,46 @@ const CATEGORY_ICON: Record<HomeownerNoteCategory, any> = {
   hvac: Thermometer, plumbing: Droplets, electrical: Zap, appliance: Refrigerator,
   exterior: TreePine, safety: ShieldAlert, warranty: ScrollText, general: Home,
 };
+
+// Per-category pastel tint for the icon chip background — matches the
+// mockup's colored-chip-per-task-type look instead of one flat teal tint
+// for every row regardless of category.
+const CATEGORY_TINT: Record<HomeownerNoteCategory, { bg: string; bgDark: string; fg: string }> = {
+  hvac:       { bg: '#FBE4D8', bgDark: '#3A2A20', fg: '#B5560C' },
+  plumbing:   { bg: '#DDEBF5', bgDark: '#1E2E3A', fg: '#2B6CA3' },
+  electrical: { bg: '#F5EBD0', bgDark: '#3A3420', fg: '#9A7A0C' },
+  appliance:  { bg: '#E6E0F5', bgDark: '#2A2538', fg: '#6B4FA0' },
+  exterior:   { bg: '#DCEEDD', bgDark: '#1E3324', fg: '#2F7A3E' },
+  safety:     { bg: '#E6E4EC', bgDark: '#2A2838', fg: '#5B5680' },
+  warranty:   { bg: '#F0E6DC', bgDark: '#332A20', fg: '#8A6440' },
+  general:    { bg: '#DCEEE0', bgDark: '#1E3324', fg: '#3D7A52' },
+};
+
+// Keyword-matched icon per TASK (not just category) — a task's title
+// often implies something more specific than its broad category bucket
+// (e.g. "Rotate/replace mattress" is Appliance-ish but really means
+// "rotate," "Test smoke detector" is Safety but really means "alert
+// test") [live-requested: "i was asking the icon based on the task"].
+// Falls back to CATEGORY_ICON when no keyword matches.
+const TASK_ICON_RULES: [RegExp, any][] = [
+  [/rotate|replace.*filter|filter.*replace/i, RotateCw],
+  [/clean|declutter|dust|wash|vacuum/i, Sparkles],
+  [/gutter|downspout|drain/i, Wind],
+  [/smoke|alarm|detector|fire extinguisher|carbon monoxide/i, AlertTriangle],
+  [/pest|termite|rodent|bug/i, Bug],
+  [/paint|stain|caulk|seal/i, Paintbrush],
+  [/trash|garbage|dispose|declutter/i, Trash2],
+  [/water filter|air filter|hvac filter/i, Filter],
+  [/fireplace|chimney/i, Flame],
+  [/fix|repair|tighten|loose/i, Wrench],
+];
+
+function taskIconFor(note: HomeownerNote): any {
+  for (const [pattern, Icon] of TASK_ICON_RULES) {
+    if (pattern.test(note.title)) return Icon;
+  }
+  return CATEGORY_ICON[note.category] ?? Home;
+}
 
 function parseLocalDateStr(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
@@ -74,15 +117,17 @@ function NoteRow({ note, members, colors, isDark, onTap }: {
   const overdue = isOverdue(note);
   const dueSoon = isDueSoon(note);
   const creator = members.find(m => m.id === note.createdBy);
-  const CatIcon = CATEGORY_ICON[note.category] ?? Home;
+  const TaskIcon = taskIconFor(note);
+  const tint = CATEGORY_TINT[note.category] ?? CATEGORY_TINT.general;
 
   return (
     <View style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>
       {/* Title row */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-        <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: isDark ? colors.surface : SURFACE,
+        <View style={{ width: 32, height: 32, borderRadius: 10,
+          backgroundColor: overdue ? (isDark ? colors.dangerLight : '#F9DEDC') : (isDark ? tint.bgDark : tint.bg),
           alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 }}>
-          <CatIcon size={14} color={overdue ? colors.danger : colors.teal} strokeWidth={2} />
+          <TaskIcon size={16} color={overdue ? colors.danger : (isDark ? '#FFFFFF' : tint.fg)} strokeWidth={2} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR, lineHeight: 20 }}>
@@ -290,14 +335,17 @@ export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, o
             <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR,
               paddingHorizontal: 20, marginBottom: 4 }}>Useful notes</Text>
             <View style={{ paddingHorizontal: 20 }}>
-              {freeNotes.map(note => (
+              {freeNotes.map(note => {
+                const FreeNoteIcon = taskIconFor(note);
+                const freeTint = CATEGORY_TINT[note.category] ?? CATEGORY_TINT.general;
+                return (
                 <TouchableOpacity key={note.id} onPress={() => onOpenNote(note)}
                   style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : BORDER }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                    <View style={{ width: 28, height: 28, borderRadius: 8,
-                      backgroundColor: isDark ? colors.surface : SURFACE,
+                    <View style={{ width: 32, height: 32, borderRadius: 10,
+                      backgroundColor: isDark ? freeTint.bgDark : freeTint.bg,
                       alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Home size={14} color={colors.teal} strokeWidth={2} />
+                      <FreeNoteIcon size={16} color={isDark ? '#FFFFFF' : freeTint.fg} strokeWidth={2} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textPrimary : TITLE_CLR }}>
@@ -319,7 +367,8 @@ export default function HomeownerNotesTab({ colors, isDark, onAdd, onOpenNote, o
                     </View>
                   </View>
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           </View>
         )}

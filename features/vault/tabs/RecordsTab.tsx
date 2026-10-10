@@ -179,11 +179,17 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       const ext  = file.name.split('.').pop() ?? 'bin';
       const path = `${familyId}/${memberId}/${Date.now()}.${ext}`;
       try {
-        const blob = await fetch(file.uri).then(r => r.blob());
-        console.log('[RecordsTab] fetched blob for upload — size:', blob.size, 'type:', blob.type, 'path:', path);
+        // Supabase JS on React Native/Hermes uploads a Blob as 0 bytes.
+        // Read the file as base64 with FileSystem, decode to Uint8Array, upload that.
+        const FS = await import('expo-file-system/legacy');
+        const b64str = await FS.readAsStringAsync(file.uri, { encoding: 'base64' as any });
+        const binary = atob(b64str);
+        const bytes  = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        console.log('[RecordsTab] read file bytes — length:', bytes.byteLength, 'path:', path);
         const { data: up, error: upErr } = await supabase.storage
           .from('medical-records')
-          .upload(path, blob, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+          .upload(path, bytes, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
         if (upErr) {
           // Was silently swallowed — a failed storage upload still inserted
           // the record with file_path: null, no error surfaced anywhere

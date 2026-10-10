@@ -80,7 +80,7 @@ export async function downloadSingle(rec: MedRecord): Promise<void> {
 
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) throw new Error('Sharing is not available on this device');
-  await Sharing.shareAsync(result.uri, { mimeType: mimeFor(name), dialogTitle: rec.title });
+  await Sharing.shareAsync(uri, { mimeType: mimeFor(name), dialogTitle: rec.title });
 }
 
 export async function downloadZip(recs: MedRecord[], zipName = 'medical-records.zip'): Promise<void> {

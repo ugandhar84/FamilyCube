@@ -21,6 +21,7 @@ import DayCard from './meals/DayCard';
 import MealFormSheet from './meals/MealFormSheet';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Main MealsTab ────────────────────────────────────────────────────────────
 
@@ -276,7 +277,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
           onPress={() => setAddDay(DAYS[0])}
           activeOpacity={0.82}
           style={{ borderRadius: 14, paddingVertical: 16, alignItems: 'center',
-            backgroundColor: colors.primary, marginBottom: 16 }}>
+            backgroundColor: isDark ? colors.primary : GEMINI.blue, marginBottom: 16 }}>
           <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>+ Add meal</Text>
         </TouchableOpacity>
       )}

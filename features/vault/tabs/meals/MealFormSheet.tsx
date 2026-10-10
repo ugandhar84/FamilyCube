@@ -12,6 +12,7 @@ import { em } from './styles';
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
 import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Voice import — soft: the lib may not be linked in all build variants
 let Voice: any = null;
@@ -30,8 +31,8 @@ function parseTimeLabel(label: string | null | undefined): Date | null {
 }
 
 // FieldCard — same pattern as JustDescribeItScreen / grocery AddItemSheet
-function FieldCard({ label, accent, children, colors }: {
-  label: string; accent?: string; children: React.ReactNode; colors: any;
+function FieldCard({ label, accent, children, colors, isDark }: {
+  label: string; accent?: string; children: React.ReactNode; colors: any; isDark: boolean;
 }) {
   return (
     <View style={{
@@ -39,7 +40,7 @@ function FieldCard({ label, accent, children, colors }: {
       borderWidth: 1, borderColor: colors.border,
       padding: 14, marginBottom: 12,
     }}>
-      <Text style={{ fontSize: 12, fontWeight: '700', color: accent ?? colors.textSecondary, marginBottom: 8, letterSpacing: 0.3 }}>
+      <Text style={{ fontSize: 12, fontWeight: '700', color: accent ?? (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 8, letterSpacing: 0.3 }}>
         {label.toUpperCase()}
       </Text>
       {children}
@@ -236,33 +237,32 @@ export default function MealFormSheet({
   return (
     <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
 
-              {/* ── ReviewInbox-style header ── */}
+              {/* ── Header — canvas + explicit X close (kept — this is a
+                  form, not a drill-in page, so a dedicated close affordance
+                  stays alongside the tappable title) [live-requested:
+                  "make the gemini rythem everywhere in the meals"]. ── */}
               <View style={{
                 paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
-                borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-                backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 6,
+                borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
+                backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 6,
               }}>
                 {/* Family chrome */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColorLight) }}>
                     FAMILY CUBE / {familyName.toUpperCase()}
                   </Text>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                     {(activeMember as any)?.name} · {(activeMember as any)?.role === 'parent' ? 'Parent / Admin' : 'Member'}
                   </Text>
                 </View>
 
-                {/* Breadcrumb + close */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Meal week</Text>
-                  </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
                   <TouchableOpacity onPress={onClose}
                     style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface,
                       alignItems: 'center', justifyContent: 'center' }}>
-                    <X size={16} color={colors.textSecondary} />
+                    <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
                   </TouchableOpacity>
                 </View>
 
@@ -276,9 +276,11 @@ export default function MealFormSheet({
                   </View>
                 </View>
 
-                <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-                  {isEdit ? `Edit ${type}` : 'Add a meal'}
-                </Text>
+                <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                  <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                    {isEdit ? `Edit ${type}` : 'Add a meal'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* ── Scrollable form body ── */}
@@ -316,7 +318,7 @@ export default function MealFormSheet({
                             {item.emoji || '🍽️'}
                           </Text>
                           <Text style={{ fontSize: 13, fontWeight: '700',
-                            color: colors.textPrimary, lineHeight: 17 }} numberOfLines={2}>
+                            color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 17 }} numberOfLines={2}>
                             {item.title}
                           </Text>
                           <Text style={{ fontSize: 11, fontWeight: '600',
@@ -338,8 +340,8 @@ export default function MealFormSheet({
                 )}
 
                 {/* DATE — read-only display */}
-                <FieldCard label="Date" colors={colors}>
-                  <Text style={{ fontSize: 16, fontWeight: '500', color: colors.textPrimary }}>
+                <FieldCard label="Date" colors={colors} isDark={isDark}>
+                  <Text style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     {(() => {
                       const dayName = day ?? editingMeal?.day;
                       const idx = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].indexOf(dayName ?? '');
@@ -353,7 +355,7 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* MEAL TYPE */}
-                <FieldCard label="Meal type" colors={colors}>
+                <FieldCard label="Meal type" colors={colors} isDark={isDark}>
                   <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {MEAL_TYPES.map(t => {
                       const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? colors.amber;
@@ -363,7 +365,7 @@ export default function MealFormSheet({
                           style={{ borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7,
                             backgroundColor: sel ? tc + '18' : 'transparent',
                             borderColor: sel ? tc : colors.border }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? tc : colors.textSecondary }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? tc : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                             {t === 'Breakfast' ? '🌅 ' : t === 'Lunch' ? '☀️ ' : t === 'Dinner' ? '🌙 ' : '🍎 '}{t}
                           </Text>
                         </TouchableOpacity>
@@ -373,7 +375,7 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* TITLE */}
-                <FieldCard label="Title" accent={P} colors={colors}>
+                <FieldCard label="Title" accent={P} colors={colors} isDark={isDark}>
                   {/* Emoji picker trigger */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                     <TouchableOpacity onPress={() => setShowEmoji(v => !v)}
@@ -400,7 +402,7 @@ export default function MealFormSheet({
                     placeholder="e.g. Lemon chicken bowls"
                     placeholderTextColor={colors.textTertiary}
                     autoCapitalize="words"
-                    style={{ fontSize: 16, fontWeight: '500', color: colors.textPrimary,
+                    style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                       borderWidth: touched && !title.trim() ? 1.5 : 0,
                       borderColor: colors.danger, borderRadius: 8, padding: touched && !title.trim() ? 8 : 0 }}
                   />
@@ -410,11 +412,11 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* TIME */}
-                <FieldCard label="Time" colors={colors}>
+                <FieldCard label="Time" colors={colors} isDark={isDark}>
                   <TouchableOpacity onPress={() => setShowTimePicker(true)}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={{ fontSize: 16, fontWeight: '500',
-                      color: startTime ? colors.textPrimary : colors.textTertiary }}>
+                      color: startTime ? (isDark ? colors.textPrimary : GEMINI.titleColor) : colors.textTertiary }}>
                       {startTime ? fmtTimeLabel(startTime) : 'No time set'}
                     </Text>
                     {startTime && (
@@ -426,8 +428,8 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* CHEF */}
-                <FieldCard label="Chef" colors={colors}>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginBottom: 12 }}>
+                <FieldCard label="Chef" colors={colors} isDark={isDark}>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 12 }}>
                     Who's cooking?
                   </Text>
                   <View style={{ gap: 8 }}>
@@ -440,7 +442,7 @@ export default function MealFormSheet({
                         <Text style={{ fontSize: 16 }}>👨‍👩‍👧</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>Anyone</Text>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Anyone</Text>
                         <Text style={{ fontSize: 12, color: colors.textTertiary }}>No chef assigned</Text>
                       </View>
                       {!chefId && (
@@ -466,7 +468,7 @@ export default function MealFormSheet({
                             <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>{initials}</Text>
                           </View>
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{name}</Text>
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{name}</Text>
                             <Text style={{ fontSize: 12, color: colors.textTertiary }}>
                               {role === 'kid' ? 'With a parent\'s help' : 'Family member'}
                             </Text>
@@ -495,7 +497,7 @@ export default function MealFormSheet({
                         {createReminder && <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✓</Text>}
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                           Add a cooking reminder
                         </Text>
                         <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 1 }}>
@@ -507,32 +509,32 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* SERVINGS */}
-                <FieldCard label="Servings" colors={colors}>
+                <FieldCard label="Servings" colors={colors} isDark={isDark}>
                   <TextInput
                     value={servings} onChangeText={setServings}
                     placeholder={String(members.length || 4)}
                     placeholderTextColor={colors.textTertiary}
                     keyboardType="numeric"
-                    style={{ fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
+                    style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
                   />
                 </FieldCard>
 
                 {/* PREP TIME */}
-                <FieldCard label="Prep time" colors={colors}>
+                <FieldCard label="Prep time" colors={colors} isDark={isDark}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TextInput
                       value={prepMins} onChangeText={setPrepMins}
                       placeholder="35"
                       placeholderTextColor={colors.textTertiary}
                       keyboardType="numeric"
-                      style={{ fontSize: 16, fontWeight: '500', color: colors.textPrimary, flex: 1 }}
+                      style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), flex: 1 }}
                     />
                     <Text style={{ fontSize: 14, color: colors.textTertiary, fontWeight: '600' }}>minutes</Text>
                   </View>
                 </FieldCard>
 
                 {/* DIETARY TAGS */}
-                <FieldCard label="Dietary tags · optional" colors={colors}>
+                <FieldCard label="Dietary tags · optional" colors={colors} isDark={isDark}>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                     {DIETARY_OPTIONS.map(tag => {
                       const sel = dietTags.includes(tag);
@@ -542,7 +544,7 @@ export default function MealFormSheet({
                           style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1.5,
                             backgroundColor: sel ? colors.teal + '22' : 'transparent',
                             borderColor: sel ? colors.teal : colors.border }}>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? colors.teal : colors.textSecondary }}>{tag}</Text>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{tag}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -550,34 +552,34 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* INGREDIENTS */}
-                <FieldCard label="Ingredients" accent={colors.teal} colors={colors}>
+                <FieldCard label="Ingredients" accent={colors.teal} colors={colors} isDark={isDark}>
                   <TextInput
                     value={ingredients} onChangeText={setIngredients}
                     placeholder={'500g chicken breast\n300g rice\n2 lemons\n1 cucumber'}
                     placeholderTextColor={colors.textTertiary}
                     multiline
                     onContentSizeChange={e => setIngredientsH(Math.max(110, e.nativeEvent.contentSize.height + 8))}
-                    style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary,
+                    style={{ fontSize: 14, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                       height: ingredientsH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
                 </FieldCard>
 
                 {/* STEPS */}
-                <FieldCard label="Steps · one per line" accent={colors.teal} colors={colors}>
+                <FieldCard label="Steps · one per line" accent={colors.teal} colors={colors} isDark={isDark}>
                   <TextInput
                     value={prepSteps} onChangeText={setPrepSteps}
                     placeholder={'Season chicken\nBoil quinoa 15 min\nGrill 6 min each side'}
                     placeholderTextColor={colors.textTertiary}
                     multiline
                     onContentSizeChange={e => setStepsH(Math.max(110, e.nativeEvent.contentSize.height + 8))}
-                    style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary,
+                    style={{ fontSize: 14, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                       height: stepsH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
                 </FieldCard>
 
                 {/* RECIPE TEXT + MIC */}
-                <FieldCard label="Recipe · type or speak" accent={colors.pink} colors={colors}>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 10, lineHeight: 18 }}>
+                <FieldCard label="Recipe · type or speak" accent={colors.pink} colors={colors} isDark={isDark}>
+                  <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 10, lineHeight: 18 }}>
                     Add a full recipe description — or tap the mic to speak it aloud and it'll be transcribed here.
                   </Text>
                   <TextInput
@@ -586,7 +588,7 @@ export default function MealFormSheet({
                     placeholderTextColor={colors.textTertiary}
                     multiline
                     onContentSizeChange={e => setRecipeH(Math.max(130, e.nativeEvent.contentSize.height + 8))}
-                    style={{ fontSize: 14, fontWeight: '400', color: colors.textPrimary,
+                    style={{ fontSize: 14, fontWeight: '400', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                       height: recipeH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
 
@@ -611,7 +613,7 @@ export default function MealFormSheet({
                       <TouchableOpacity onPress={() => setRecipeText('')}
                         style={{ paddingHorizontal: 12, paddingVertical: 11,
                           borderRadius: 12, borderWidth: 1.5, borderColor: colors.border }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>Clear</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Clear</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -621,32 +623,35 @@ export default function MealFormSheet({
                 </FieldCard>
 
                 {/* NOTE */}
-                <FieldCard label="Note · optional" colors={colors}>
+                <FieldCard label="Note · optional" colors={colors} isDark={isDark}>
                   <TextInput
                     value={note} onChangeText={setNote}
                     placeholder="e.g. Ava can help assemble bowls after study group."
                     placeholderTextColor={colors.textTertiary}
                     multiline
                     onContentSizeChange={e => setNoteH(Math.max(70, e.nativeEvent.contentSize.height + 8))}
-                    style={{ fontSize: 14, fontWeight: '400', color: colors.textPrimary,
+                    style={{ fontSize: 14, fontWeight: '400', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
                       height: noteH, textAlignVertical: 'top', lineHeight: 22 }}
                   />
                 </FieldCard>
 
                 {/* Keep plan connected tip */}
                 <View style={{ borderRadius: 16, backgroundColor: colors.tealLight, padding: 18, marginBottom: 20 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginBottom: 6 }}>
                     Keep the plan connected
                   </Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+                  <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
                     The recipe and grocery link stay attached. Date, meal time and chef assignment stay unchanged in this draft.
                   </Text>
                 </View>
 
-                {/* ── Buttons scroll with content ── */}
+                {/* ── Buttons scroll with content — shared Gemini BLUE CTA,
+                    same as every other converted module's Save button
+                    [live-reported: "i still see toreekotta CTA button
+                    instead of gemini blue"]. ── */}
                 <TouchableOpacity onPress={handleSave} disabled={saving}
                   style={{ borderRadius: 16, paddingVertical: 17, alignItems: 'center',
-                    backgroundColor: saving ? colors.primary + '80' : colors.primary }}>
+                    backgroundColor: isDark ? colors.primary : (saving ? GEMINI.blue + '80' : GEMINI.blue) }}>
                   {saving
                     ? <ActivityIndicator size="small" color="#fff" />
                     : <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>

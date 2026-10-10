@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import type { Meal } from './types';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const MEAL_SLOTS = [
   { type: 'breakfast', label: 'Breakfast', icon: '🍳' },
@@ -60,7 +61,7 @@ export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelet
     <View style={{ marginBottom: 20 }}>
       {/* Day heading */}
       <Text style={{
-        fontSize: 20, fontWeight: '700', color: colors.textPrimary,
+        fontSize: 20, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
         marginBottom: 10, marginTop: 4,
       }}>
         {fmtDayHeading(day)}
@@ -98,13 +99,13 @@ export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelet
                 </View>
 
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     {label}
                   </Text>
 
                   {meal ? (
                     <>
-                      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }} numberOfLines={1}>
+                      <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>
                         {meal.title}{meal.start_time ? ` · ${meal.start_time}` : ''}
                       </Text>
 
@@ -125,7 +126,7 @@ export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelet
                             onPress={(e) => { e.stopPropagation?.(); setChefPickerMealId(isPickerOpen ? null : meal.id); }}
                             style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
                               backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                               {chef ? 'Swap chef' : 'Assign chef'}
                             </Text>
                           </Pressable>
@@ -151,7 +152,7 @@ export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelet
                               backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
                               <Text style={{ fontSize: 12 }}>👨‍👩‍👧</Text>
                             </View>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Anyone</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Anyone</Text>
                             {!chef && <Text style={{ fontSize: 11, color: colors.teal, marginLeft: 'auto' }}>✓</Text>}
                           </Pressable>
                           {members.map(m => {
@@ -166,7 +167,7 @@ export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelet
                                 })}>
                                 <MemberAvatar member={m} size={22} colors={colors} />
                                 <View style={{ flex: 1 }}>
-                                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                                     {(m as any).name}
                                   </Text>
                                   <Text style={{ fontSize: 11, color: colors.textTertiary }}>

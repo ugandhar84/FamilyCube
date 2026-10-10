@@ -9,6 +9,7 @@ import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { Meal } from './types';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Recipe Detail — full-page overlay ────────────────────────────────────────
 
@@ -74,26 +75,25 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60 }}>
       <SwipeBackWrapper onDismiss={onClose}>
         <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
+          <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
 
-            {/* ── ReviewInbox-style header ── */}
+            {/* ── Header — canvas + "tap title to go back" pattern, same as
+                the rest of the Meals module
+                [live-requested: "make the gemini rythem everywhere in the
+                meals"]. ── */}
             <View style={{
               paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-              backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 6,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
+              backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 6,
             }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColorLight) }}>
                   FAMILY CUBE / {familyName.toUpperCase()}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {(activeMember as any)?.name} · {(activeMember as any)?.role === 'parent' ? 'Parent / Admin' : 'Member'}
                 </Text>
               </View>
-
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Meal week</Text>
-              </TouchableOpacity>
 
               {/* Status pill */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -109,9 +109,11 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
                 )}
               </View>
 
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-                {meal.title}
-              </Text>
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                  {meal.title}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <ScrollView
@@ -128,12 +130,12 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Text style={{ fontSize: 22 }}>{meal.emoji ?? '🍽️'}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                       {meal.start_time ?? 'No time set'} · {meal.chef_id
                         ? `${(members.find(m => (m as any).id === meal.chef_id) as any)?.name?.split(' ')[0] ?? 'Chef'} cooks`
                         : 'No chef assigned'}
                     </Text>
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                    <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
                       {[
                         meal.prep_minutes ? `about ${meal.prep_minutes} minutes` : null,
                         (meal as any).recipe_text ? 'Family recipe' : null,
@@ -170,10 +172,10 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
               {!!(meal as any).recipe_text && (
                 <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
                   borderColor: colors.border, padding: 16 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginBottom: 8 }}>
                     Recipe notes
                   </Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 22 }}>
+                  <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 22 }}>
                     {(meal as any).recipe_text}
                   </Text>
                 </View>
@@ -182,14 +184,14 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
               {/* Ingredients */}
               <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
                 borderColor: colors.border, padding: 16 }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginBottom: 12 }}>
                   Ingredients · serves {(meal as any).servings ?? members.length}
                 </Text>
                 <View style={{ gap: 10 }}>
                   {meal.ingredients.map((ing, i) => (
                     <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teal, marginTop: 1 }} />
-                      <Text style={{ fontSize: 15, color: colors.textPrimary, fontWeight: '500', flex: 1 }}>{ing}</Text>
+                      <Text style={{ fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontWeight: '500', flex: 1 }}>{ing}</Text>
                     </View>
                   ))}
                 </View>
@@ -198,7 +200,7 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
               {/* Steps */}
               <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,
                 borderColor: colors.border, padding: 16 }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginBottom: 12 }}>
                   How to make it
                 </Text>
                 <View style={{ gap: 16 }}>
@@ -208,7 +210,7 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
                         alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Text style={{ fontSize: 13, fontWeight: '900', color: P }}>{i + 1}</Text>
                       </View>
-                      <Text style={{ fontSize: 14, color: colors.textSecondary, flex: 1, lineHeight: 22, paddingTop: 3 }}>
+                      <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), flex: 1, lineHeight: 22, paddingTop: 3 }}>
                         {step}
                       </Text>
                     </View>

@@ -16,6 +16,7 @@ import AiPlannerBanner from './AiPlannerBanner';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { useUnsplashMealImage } from '@/lib/hooks/useUnsplashMealImage';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Per-row sub-component so useUnsplashMealImage can be called per meal ────
 type SuggestionOpt = {
@@ -89,10 +90,10 @@ function SuggestionRow({
 
           {/* Meal info */}
           <Pressable style={{ flex: 1 }} onPress={onOpenRecipe}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               {opt.emoji ? opt.emoji + ' ' : ''}{opt.mealName}
             </Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+            <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
               {[
                 opt.prepMinutes ? `${opt.prepMinutes} min` : null,
                 opt.dietaryTags?.slice(0, 2).join(' · ') || null,
@@ -160,7 +161,7 @@ function SuggestionRow({
                     borderWidth: 1, borderColor: isActive ? colors.teal : colors.border,
                     opacity: pressed ? 0.75 : 1, alignItems: 'center',
                   })}>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: isActive ? '#fff' : colors.textSecondary }}>{d}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isActive ? '#fff' : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{d}</Text>
                   <Text style={{ fontSize: 9, color: isActive ? 'rgba(255,255,255,0.8)' : colors.textTertiary }}>{nextWeek.date}</Text>
                 </Pressable>
               );
@@ -185,7 +186,7 @@ function SuggestionRow({
                   opacity: taken ? 0.35 : pressed ? 0.75 : 1,
                 })}>
                 <Text style={{ fontSize: 11, fontWeight: '700',
-                  color: active ? '#fff' : colors.textSecondary }}>
+                  color: active ? '#fff' : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {TYPE_LABEL[t]}
                 </Text>
               </Pressable>
@@ -349,8 +350,12 @@ export default function AiSuggestionsPage({
 
   const hasSuggestions = pendingOptions.length > 0;
   const P = colors.primary;
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
-  const cardBg  = isDark ? colors.card : '#FFFFFF';
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care/Grocery/MealsScreen's own identical
+  // comment) [live-requested: "make the gemini rythem everywhere in the
+  // meals"].
+  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const cardBg  = isDark ? colors.card : GEMINI.cardBg;
 
   const allSuggestions = pendingOptions.flatMap(dayOpt =>
     dayOpt.options.map((opt, idx) => ({ ...opt, day: dayOpt.day, optionIdx: idx }))
@@ -446,7 +451,7 @@ export default function AiSuggestionsPage({
               backgroundColor: canvas, gap: 6,
             }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
                   FAMILY CUBE / {familyName.toUpperCase()}
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
@@ -454,13 +459,14 @@ export default function AiSuggestionsPage({
                 </Text>
               </View>
 
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Meals</Text>
+              {/* Title — tapping it goes back, no separate breadcrumb link
+                  above it [live-requested pattern, same as Grocery/Meals'
+                  other sub-screens]. */}
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+                  A little inspiration
+                </Text>
               </TouchableOpacity>
-
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: colors.textPrimary }}>
-                A little inspiration
-              </Text>
 
               <View style={{ flexDirection: 'row', marginTop: 2 }}>
                 <View style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: colors.pinkLight }}>
@@ -498,11 +504,11 @@ export default function AiSuggestionsPage({
               {(aiLoading || cacheLoading) && (
                 <View style={{ backgroundColor: colors.pinkLight, borderRadius: 20, padding: 28, alignItems: 'center', gap: 12 }}>
                   <ActivityIndicator size="large" color={colors.pink} />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     {aiLoading ? 'Crafting your week…' : 'Loading your ideas…'}
                   </Text>
                   {aiLoading && (
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19 }}>
+                    <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textAlign: 'center', lineHeight: 19 }}>
                       CubeAI is picking meals that match your family's tastes.
                     </Text>
                   )}
@@ -530,8 +536,8 @@ export default function AiSuggestionsPage({
                         <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
                       </View>
                       <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{item.title}</Text>
-                        <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>{item.body}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{item.title}</Text>
+                        <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>{item.body}</Text>
                       </View>
                     </View>
                   ))}
@@ -541,8 +547,8 @@ export default function AiSuggestionsPage({
               {/* ── Why these ideas? (shown with results) ── */}
               {hasSuggestions && tip && !aiLoading && (
                 <View style={{ backgroundColor: colors.pinkLight, borderRadius: 16, padding: 18, gap: 8 }}>
-                  <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary }}>Why these ideas?</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 22 }}>{tip}</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Why these ideas?</Text>
+                  <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 22 }}>{tip}</Text>
                 </View>
               )}
 
@@ -556,10 +562,10 @@ export default function AiSuggestionsPage({
                 shadowOffset: { width: 0, height: 2 },
               }}>
                 <View style={{ padding: 18, paddingBottom: 12 }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     Suggested for the week
                   </Text>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 3 }}>
+                  <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 3 }}>
                     Tap a meal to see recipe · pick day and slot below
                   </Text>
                 </View>
@@ -610,7 +616,7 @@ export default function AiSuggestionsPage({
                 })}
 
                 <View style={{ padding: 16, paddingTop: 8 }}>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 20 }}>
+                  <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
                     {totalSelected === 0
                       ? 'No ideas selected yet — tap the circles to pick meals.'
                       : `${totalSelected} meal${totalSelected > 1 ? 's' : ''} selected. Chef assignments can be set from the week plan.`}

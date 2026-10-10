@@ -223,7 +223,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   const pillBg  = (active: boolean) =>
     active ? P : (isDark ? colors.surface : colors.surface);
   const pillText = (active: boolean) =>
-    active ? '#FFFFFF' : colors.textSecondary;
+    active ? '#FFFFFF' : (isDark ? colors.textSecondary : GEMINI.bodyColor);
 
   const filtered = query.trim()
     ? recipes.filter(r =>
@@ -291,7 +291,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             value={query} onChangeText={setQuery}
             placeholder="Search recipes or ingredients…"
             placeholderTextColor={colors.textTertiary}
-            style={{ flex: 1, fontSize: 15, color: colors.textPrimary }}
+            style={{ flex: 1, fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
           />
         </View>
 
@@ -311,10 +311,10 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
               <Plus size={24} color={colors.amber} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 Add a family recipe
               </Text>
-              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 }}>
+              <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
                 Record ingredients and steps — Cube AI can clean it up and generate a photo.
               </Text>
             </View>
@@ -332,10 +332,10 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             alignItems: 'center', gap: 12,
             ...Platform.select({ ios: { shadowColor: colors.navy, shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 2 } }) }}>
             <BookOpen size={36} color={colors.textTertiary} strokeWidth={1.4} />
-            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), textAlign: 'center' }}>
               {query ? 'No recipes match that search' : 'No recipes yet'}
             </Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
+            <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textAlign: 'center', lineHeight: 20 }}>
               {query
                 ? 'Try a different ingredient or meal name.'
                 : 'Meals with ingredients and steps will appear here automatically. Plan a meal with steps to get started.'}
@@ -366,10 +366,10 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                 </View>
 
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                     {recipe.title}
                   </Text>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary }} numberOfLines={1}>
+                  <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>
                     {[
                       chefLabel(recipe),
                       recipe.prep_minutes ? `${recipe.prep_minutes} min` : null,
@@ -484,7 +484,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                   alignItems: 'center', justifyContent: 'center', gap: 8,
                 }}>
                 <Camera size={28} color={colors.textTertiary} strokeWidth={1.6} />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   Add a photo
                 </Text>
                 <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 28 }}>
@@ -522,7 +522,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                   style={{ flex: 1, height: 52, borderRadius: 14,
                     backgroundColor: isDark ? colors.surface : colors.surface,
                     paddingHorizontal: 14, fontSize: 16, fontWeight: '600',
-                    color: colors.textPrimary }}
+                    color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
                 />
               </View>
             </View>
@@ -539,7 +539,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                 keyboardType="number-pad"
                 style={{ height: 48, borderRadius: 14,
                   backgroundColor: isDark ? colors.surface : colors.surface,
-                  paddingHorizontal: 14, fontSize: 15, color: colors.textPrimary }}
+                  paddingHorizontal: 14, fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
               />
             </View>
 
@@ -561,7 +561,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                     placeholderTextColor={colors.textTertiary}
                     style={{ flex: 1, height: 44, borderRadius: 12,
                       backgroundColor: isDark ? colors.surface : colors.surface,
-                      paddingHorizontal: 12, fontSize: 15, color: colors.textPrimary }}
+                      paddingHorizontal: 12, fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
                     onSubmitEditing={() => setNewIngredients(prev => [...prev, ''])}
                     returnKeyType="next"
                   />
@@ -606,7 +606,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                 style={{ minHeight: 140, borderRadius: 14,
                   backgroundColor: isDark ? colors.surface : colors.surface,
                   paddingHorizontal: 14, paddingVertical: 12,
-                  fontSize: 15, color: colors.textPrimary, lineHeight: 22 }}
+                  fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 22 }}
               />
             </View>
 
@@ -632,7 +632,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                         opacity: pressed ? 0.75 : 1,
                       })}>
                       <Text style={{ fontSize: 13, fontWeight: '700',
-                        color: sel ? colors.teal : colors.textSecondary }}>
+                        color: sel ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                         {tag}
                       </Text>
                     </Pressable>
@@ -663,10 +663,10 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                   : <Wand2 size={20} color={colors.pink} strokeWidth={1.8} />}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {refining ? 'Cube AI is refining…' : 'Refine with Cube AI'}
                 </Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 }}>
+                <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
                   {refining
                     ? 'Cleaning up steps, quantities, and tags…'
                     : 'Tap to let AI clean up your steps, suggest quantities, emoji, and dietary notes.'}
@@ -679,20 +679,25 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
               <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 14,
                 flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                 <Sparkles size={16} color={colors.teal} strokeWidth={1.8} style={{ marginTop: 2 }} />
-                <Text style={{ flex: 1, fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+                <Text style={{ flex: 1, fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
                   {aiTip}
                 </Text>
               </View>
             ) : null}
 
-            {/* Save + Cancel scroll with the form — no fixed footer */}
+            {/* Save + Cancel scroll with the form — no fixed footer. Shared
+                Gemini BLUE CTA, same as every other converted module's
+                Save button [live-reported: "i still see toreekotta CTA
+                button instead of gemini blue"]. */}
             <View style={{ gap: 10, paddingTop: 8 }}>
               <Pressable
                 onPress={saveNewRecipe}
                 disabled={savingRecipe || !newTitle.trim()}
                 style={({ pressed }) => ({
                   borderRadius: 16, paddingVertical: 17, alignItems: 'center',
-                  backgroundColor: newTitle.trim() ? (pressed ? P + 'CC' : P) : colors.border,
+                  backgroundColor: !newTitle.trim() ? colors.border
+                    : isDark ? P
+                    : (pressed ? GEMINI.blue + 'CC' : GEMINI.blue),
                   flexDirection: 'row', justifyContent: 'center', gap: 8,
                 })}>
                 {savingRecipe
@@ -799,9 +804,9 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
 
             {/* Inline confirmation note */}
             <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 16 }}>
-              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                This will add <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{addTarget?.title}</Text> to{' '}
-                <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{DAY_FULL[pickerDay]} {pickerType.toLowerCase()}</Text> in the current week.
+              <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
+                This will add <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{addTarget?.title}</Text> to{' '}
+                <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{DAY_FULL[pickerDay]} {pickerType.toLowerCase()}</Text> in the current week.
                 Chef assignment can be set from the week plan.
               </Text>
             </View>
@@ -818,7 +823,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             <Pressable onPress={addToWeek} disabled={saving}
               style={({ pressed }) => ({
                 borderRadius: 16, paddingVertical: 17, alignItems: 'center',
-                backgroundColor: pressed ? P + 'CC' : P,
+                backgroundColor: isDark ? P : (pressed ? GEMINI.blue + 'CC' : GEMINI.blue),
                 flexDirection: 'row', justifyContent: 'center', gap: 8,
               })}>
               {saving

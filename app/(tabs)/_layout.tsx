@@ -515,7 +515,6 @@ export default function TabLayout() {
         <Tabs.Screen name="schedule" />
         <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
-        <Tabs.Screen name="store"    />
         {/* FindFam — in TABS_DEFAULT for everyone except senior (Memories
             takes that slot instead); registered without href:null like
             every other visible tab, same pattern already used for
@@ -527,6 +526,7 @@ export default function TabLayout() {
         <Tabs.Screen name="quests"   options={{ href: null }} />
         <Tabs.Screen name="calendar" options={{ href: null }} />
         {/* Hidden routes — not in tab bar */}
+        <Tabs.Screen name="store"                options={{ href: null }} />
         <Tabs.Screen name="grocery"              options={{ href: null }} />
         <Tabs.Screen name="meals"                options={{ href: null }} />
         <Tabs.Screen name="school"               options={{ href: null }} />

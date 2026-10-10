@@ -24,6 +24,7 @@ import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
 import { useNotifStore } from '@/store/notifStore';
+import { useUIStore } from '@/store/uiStore';
 
 type PillId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'grocery' | 'store' | 'profile';
 
@@ -338,7 +339,17 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
           const { light, deep } = PILL_COLORS[p.id];
           return (
             <TouchableOpacity key={p.id} activeOpacity={0.75}
-              onPress={() => router.push(PILL_ROUTES[p.id] as any)}
+              onPress={() => {
+                // 'store'/'ledger' both point at Rewards — a real-but-
+                // hidden tab route kept only for stale deep links. This
+                // pill is rendered inside HubScreen, which already owns
+                // the FullPageOverlay (showRewards) this flag opens.
+                if (p.id === 'store' || p.id === 'ledger') {
+                  useUIStore.getState().setOpenRewardsScreenRequested(true);
+                  return;
+                }
+                router.push(PILL_ROUTES[p.id] as any);
+              }}
               onLongPress={() => setEditing(true)}
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 5,

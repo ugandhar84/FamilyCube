@@ -2,6 +2,7 @@ import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { PiggyBank, Gift, ClipboardList, Calendar, Trophy, PartyPopper } from 'lucide-react-native';
 import { KID } from './kidTheme';
+import { useUIStore } from '@/store/uiStore';
 
 // Row wraps to two lines of 3 (rather than 6-in-a-row, which got cramped)
 // once Leaderboard/Cheer Squad joined Piggy Bank/Rewards/My Requests/Full
@@ -20,7 +21,7 @@ export function KidMoreRow({ onPiggyBank, onHistory, onLeaderboard, onCheerSquad
   // pink and Cheer Squad green that didn't exist anywhere else in the app).
   const tiles: { Icon: typeof PiggyBank; label: string; color: string; onPress: () => void; badge?: number }[] = [
     { Icon: PiggyBank,     label: 'Piggy Bank',    color: colors.kid,    onPress: onPiggyBank },
-    { Icon: Gift,          label: 'Rewards',       color: colors.accent, onPress: () => router.push('/(tabs)/store' as any) },
+    { Icon: Gift,          label: 'Rewards',       color: colors.accent, onPress: () => useUIStore.getState().setOpenRewardsScreenRequested(true) },
     // colors.danger previously tinted this tile — a fun competitive
     // feature rendered in the same alarm/red color as "Running Late" and
     // decline actions elsewhere on this screen. colors.primary isn't used

@@ -108,5 +108,15 @@ export function navigateFromNotification(
     useUIStore.getState().setOpenMealsScreenRequested(true);
     return;
   }
+  // Same interception as grocery/meals above — '/(tabs)/store' (Rewards)
+  // is a real-but-hidden tab route kept only for stale deep links; normal
+  // navigation goes through Hub-owned FullPageOverlay state instead (see
+  // app/(tabs)/store.tsx's own header comment for why: a hidden tab route
+  // got neither swipe-back nor a reliable tab-bar hide on repeat visits).
+  if (pathname === '/(tabs)/store') {
+    router.push('/(tabs)' as any);
+    useUIStore.getState().setOpenRewardsScreenRequested(true);
+    return;
+  }
   router.push(dest as any);
 }

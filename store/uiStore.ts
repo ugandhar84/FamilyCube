@@ -51,6 +51,18 @@ interface UIState {
   openMealsScreenRequested: boolean;
   setOpenGroceryScreenRequested: (v: boolean) => void;
   setOpenMealsScreenRequested: (v: boolean) => void;
+  // Same one-shot pattern as openGroceryScreenRequested/openMealsScreenRequested
+  // above — Rewards (app/(tabs)/store.tsx) is a real-but-hidden Expo Router
+  // tab route (no longer in TABS_DEFAULT/TABS_SENIOR, "moved to Hub pills"),
+  // which meant every router.push('/(tabs)/store') still hit the tab
+  // navigator's own showTabBar() effect (app/(tabs)/_layout.tsx, keyed on
+  // activeTabIndex/activeRouteName) and stomped the screen's own
+  // hideTabBar() call, plus got no FullPageOverlay swipe-back gesture
+  // [live-reported: "Family rewards pages not rhythm of figma no back
+  // swipe and still bottom nav"]. Converts Rewards to the same Hub-owned
+  // FullPageOverlay pattern Meals/Grocery already use.
+  openRewardsScreenRequested: boolean;
+  setOpenRewardsScreenRequested: (v: boolean) => void;
   // One-shot: a screen asks Chat to open this channel on next focus (e.g. co-parent dispute -> parents' DM).
   pendingChatChannelId: string | null;
   // One-shot: a Hub row asks HubScreen to open the approval action center for this chore.
@@ -126,6 +138,8 @@ export const useUIStore = create<UIState>((set) => ({
   openMealsScreenRequested: false,
   setOpenGroceryScreenRequested: (v) => set({ openGroceryScreenRequested: v }),
   setOpenMealsScreenRequested: (v) => set({ openMealsScreenRequested: v }),
+  openRewardsScreenRequested: false,
+  setOpenRewardsScreenRequested: (v) => set({ openRewardsScreenRequested: v }),
   pendingChatChannelId: null,
   openApprovalDetailChoreId: null,
   setOpenApprovalDetailChoreId: (id) => set({ openApprovalDetailChoreId: id }),

@@ -41,6 +41,7 @@ import HelpDispatchQueue from './HelpDispatchQueue';
 import RequestHelpModal from './RequestHelpModal';
 import GroceryScreen from '@/features/grocery/GroceryScreen';
 import MealsScreen from '@/features/vault/tabs/MealsScreen';
+import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
 import { KidView } from './KidView';
 import { SeniorView } from './SeniorView';
 import { TeenView } from './TeenView';
@@ -118,6 +119,7 @@ export default function HubScreen() {
   const [activeTripDetailId, setActiveTripDetailId] = useState<string | null>(null);
   const [showGrocery, setShowGrocery] = useState(false);
   const [showMeals, setShowMeals] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
   // Category landing cards (ReviewInboxScreen) open one of these queue
   // screens, which in turn open the actual per-item detail screen below —
   // three levels deep (inbox → queue → detail), not inbox → detail
@@ -167,8 +169,14 @@ export default function HubScreen() {
     useUIStore.getState().setOpenMealsScreenRequested(false);
     setShowMeals(true);
   }, [mealsRequest]);
+  const rewardsRequest = useUIStore(st => st.openRewardsScreenRequested);
   useEffect(() => {
-    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals;
+    if (!rewardsRequest) return;
+    useUIStore.getState().setOpenRewardsScreenRequested(false);
+    setShowRewards(true);
+  }, [rewardsRequest]);
+  useEffect(() => {
+    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals || showRewards;
     useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
     // Live direction: "remove the bottom nav on the sub pages" — the
     // Figma mocks for every one of these full-page screens
@@ -182,7 +190,7 @@ export default function HubScreen() {
     // while a child screen is open — see FullPageOverlay's own doc.
     if (anyFullBleedOpen) hideTabBar(); else showTabBar();
     return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
-  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals]);
+  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals, showRewards]);
   const describeFullFormRef = useRef<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>(null);
 
   // Drive ParentView's entrance animation from HubScreen's focus events —
@@ -800,6 +808,10 @@ export default function HubScreen() {
 
       <FullPageOverlay visible={showMeals} onDismiss={() => setShowMeals(false)} zIndex={50}>
         <MealsScreen onClose={() => setShowMeals(false)} />
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50}>
+        <RewardsDashboardScreen onClose={() => setShowRewards(false)} />
       </FullPageOverlay>
 
       {/* Senior Hub's own En Route flow still uses the picker modal — it has

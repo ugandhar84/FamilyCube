@@ -207,6 +207,16 @@ export default function FamilyScreen() {
     }
     if (tool.route === '__overlay:school') { setShowSchool(true); return; }
     if (tool.route === '__overlay:locations') { setShowLocations(true); return; }
+    // Rewards ('/(tabs)/store') is Hub-owned FullPageOverlay state, not a
+    // real navigable screen — land on Hub first, then flip the one-shot
+    // flag it consumes, same interception kioskNavStore.ts's
+    // navigateFromNotification already does for notification-triggered
+    // navigation to this same destination.
+    if (tool.route === '/(tabs)/store') {
+      router.push('/(tabs)' as any);
+      useUIStore.getState().setOpenRewardsScreenRequested(true);
+      return;
+    }
     router.push(tool.route as any);
   };
 

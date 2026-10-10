@@ -1,5 +1,4 @@
 import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
 import { Zap, Target, CheckCircle2, Calendar, Flame } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -7,6 +6,7 @@ import { KID } from './kidTheme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { useUIStore } from '@/store/uiStore';
 
 // Money-green — "goal met" positive accent on the quest-progress bar; also
 // matches the "ride" accent used throughout the Kid Hub (KidNeedsYouSection's
@@ -93,7 +93,7 @@ export function KidHeroCard({
           )}
         </View>
 
-        <Pressable onPress={() => { router.push('/(tabs)/store' as any); }}
+        <Pressable onPress={() => { useUIStore.getState().setOpenRewardsScreenRequested(true); }}
           style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
           <View style={{
             backgroundColor: isDark ? BRAND.amber + '26' : BRAND.amber + '18',

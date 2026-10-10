@@ -456,8 +456,11 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   overflow: 'hidden',
                   marginBottom: 8,
                   // Outgoing: a translucent white tint pops against the solid
-                  // primary bubble; incoming: colors.surface against the card.
-                  backgroundColor: isMe ? 'rgba(255,255,255,0.16)' : colors.surface,
+                  // dark-mode pink bubble; incoming/light-mode's pale "mine"
+                  // tint both use colors.surface instead — white-on-white
+                  // was invisible on light mode's own pale sent bubble
+                  // [live-reported via screenshot: washed-out reply quote].
+                  backgroundColor: isMe && isDark ? 'rgba(255,255,255,0.16)' : colors.surface,
                 }}>
                 {/* Accent strip — the QUOTED message's own sender's color
                     (not this message's sender), so it reads as "whose
@@ -469,7 +472,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                     {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
                   </Text>
                   <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
-                    color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
+                    color: isMe && isDark ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
                     {(msg.replyTo.text ? stripMentionBrackets(msg.replyTo.text) : null) || REPLY_KIND_LABEL[msg.replyTo.kind ?? 'voice']}
                   </Text>
                 </View>
@@ -510,17 +513,22 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                     >
                       <Marker coordinate={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng }} />
                     </MapView>
-                    {/* Address footer */}
+                    {/* Address footer — isMe's dark/white tint only reads on
+                        dark mode's solid pink bubble; light mode's pale
+                        sent-bubble tint needs the same surface/textPrimary
+                        treatment as incoming messages
+                        [live-reported via screenshot: washed-out reply quote
+                        applied the same fix here]. */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                       paddingHorizontal: 10, paddingVertical: 8,
-                      backgroundColor: isMe ? 'rgba(0,0,0,0.28)' : colors.surface }}>
-                      <MapPin size={13} color={isMe ? '#fff' : colors.primary} />
+                      backgroundColor: isMe && isDark ? 'rgba(0,0,0,0.28)' : colors.surface }}>
+                      <MapPin size={13} color={isMe && isDark ? '#fff' : colors.primary} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 12, fontWeight: '700',
-                          color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={1}>
+                          color: isMe && isDark ? '#fff' : colors.textPrimary }} numberOfLines={1}>
                           {msg.locationPin.address}
                         </Text>
-                        <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.55)' : colors.textTertiary }}>
+                        <Text style={{ fontSize: 10, color: isMe && isDark ? 'rgba(255,255,255,0.55)' : colors.textTertiary }}>
                           Tap to open in Maps
                         </Text>
                       </View>
@@ -543,17 +551,17 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   <Pressable onPress={() => WebBrowser.openBrowserAsync(msg.documentUri!).catch(() =>
                     Alert.alert("Couldn't open document", 'Please try again.'))}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : colors.surface,
+                    backgroundColor: isMe && isDark ? 'rgba(0,0,0,0.2)' : colors.surface,
                     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 220 }}>
                     <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: colors.amber + '22',
                       alignItems: 'center', justifyContent: 'center' }}>
                       <FileText size={20} color={colors.amber} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={2}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isMe && isDark ? '#fff' : colors.textPrimary }} numberOfLines={2}>
                         {msg.documentName ?? 'Document'}
                       </Text>
-                      <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.6)' : colors.textTertiary }}>
+                      <Text style={{ fontSize: 10, color: isMe && isDark ? 'rgba(255,255,255,0.6)' : colors.textTertiary }}>
                         Tap to open
                       </Text>
                     </View>

@@ -90,7 +90,7 @@ export const GROCERY_STORES: GroceryStore[]   = ['Costco','Supermarket',"Trader 
 // ─── Waveform helpers ─────────────────────────────────────────────────────────
 
 export const WF_BARS = 36;
-export const WF_H    = 36; // container height px
+export const WF_H    = 48; // container height px
 
 /** Deterministic "fingerprint" waveform from a seed string (uri / msgId). */
 export function seedWaveform(seed: string): number[] {

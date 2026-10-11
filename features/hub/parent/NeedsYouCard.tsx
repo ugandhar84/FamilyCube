@@ -22,9 +22,17 @@ import { GEMINI } from '@/constants/geminiRhythm';
 // review but we have seen the only one card here — how do we handle this
 // scenario?"]. Optional and omitted for kinds that aren't naturally
 // multi-item (conflict).
+// urgentCount: of the items counted in extraCount (this one plus the
+// others behind it), how many are flagged urgent/emergency or otherwise
+// time-critical within their own category — e.g. "2 urgent" out of "5
+// pending." Live direction: "mention how many are in urgency catogory" —
+// a parent scanning several category cards needs to know which ones have
+// something flagged inside them, not just a raw pending count. Omitted
+// when a category has no urgency concept of its own (conflict) or when
+// none of its pending items are flagged.
 export type NeedsYouItem =
   | { kind: 'conflict'; title: string; reason: string; dueDate?: string; dueTime?: string }
-  | { kind: 'approval'; title: string; reason: string; dueDate?: string; dueTime?: string; extraCount?: number }
+  | { kind: 'approval'; title: string; reason: string; dueDate?: string; dueTime?: string; extraCount?: number; urgentCount?: number }
   | { kind: 'backlog'; title: string; reason: string; dueDate?: string; dueTime?: string };
 
 // Was a full-width "Review options" / "Review & approve" / "See task" CTA
@@ -97,6 +105,9 @@ export function NeedsYouCard({
         {item.kind === 'approval' && !!item.extraCount && (
           <Text style={{ color: colors.amber, fontSize: 12, fontWeight: '700', marginTop: dueLabel ? 4 : 2 }}>
             +{item.extraCount} more awaiting review
+            {!!item.urgentCount && (
+              <Text style={{ color: colors.danger }}> · {item.urgentCount} urgent</Text>
+            )}
           </Text>
         )}
       </View>

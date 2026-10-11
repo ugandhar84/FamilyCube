@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Animated, Easing } from 'react-native';
+import { View, Text, Animated, Easing } from 'react-native';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
@@ -544,55 +544,139 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // ever make it genuinely urgent. (backlogTask itself removed — its only
   // consumer was the needsYouItem 'backlog' branch, also removed.)
 
-  // dueDate/dueTime now carried as their own fields (see NeedsYouCard's own
-  // comment) instead of interpolated raw into reason — conflictEvent's own
-  // date/time, myPendingHelperEvent's raw 24h time string, and the backlog
-  // task's raw ISO dueDate were all previously baked straight into the
-  // reason text with no formatting, violating the app's 12h/human-date rule.
-  const needsYouItem: NeedsYouItem | null = criticalKidRequest
-    ? { kind: 'approval',
-        title: criticalKidRequest.type === 'permission' ? (criticalKidRequest.detail ?? 'Permission request') : 'SOS — needs attention now',
-        reason: `${members.find(m => m.id === criticalKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${criticalKidRequest.type === 'permission' ? ' needs a yes/no.' : ' needs you right now.'}`,
-        extraCount: Math.max(0, pendingKidRequestsCount - 1) }
-    : conflictEvent
-    ? { kind: 'conflict', title: conflictEvent.title,
-        reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.',
-        dueDate: conflictEvent.date, dueTime: conflictEvent.time }
-    : pendingApprovalChore
-    ? { kind: 'approval', title: pendingApprovalChore.title ?? 'Chore awaiting review',
+  // ReviewConflictModal's own open state — declared here (not down by its
+  // JSX usage) since the conflict card's onReview below needs to call it.
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+
+  // ─── Needs You: one card PER CATEGORY, not a single winner-takes-all slot ──
+  // Live direction: "i think for each category we should show each .. with
+  // the +more and also mention how many are in urgency catogory" /
+  // "caotogy meaning . tasks, kids request , dispute, rewards each one N+
+  // more" — a dispute winning the old single-slot cascade meant pending
+  // kid requests, chores, and rewards never got their own card even though
+  // they were also waiting. Each of the four real review categories
+  // (chores/tasks, kid requests, disputes, rewards) now gets its OWN card
+  // whenever it has at least one pending item, each carrying its own
+  // extraCount ("+N more") and urgentCount (how many of those N are
+  // flagged urgent/emergency) — all shown together, ranked by severity,
+  // instead of only the single most-urgent one suppressing the rest.
+  // Conflict/helper-event/ride stay as single supplementary items (they
+  // aren't "categories" with their own review-inbox screen) appended after
+  // the four category cards.
+  const needsYouCards: { item: NeedsYouItem; onReview: () => void }[] = [];
+
+  if (criticalKidRequest || pendingKidRequest) {
+    const r = criticalKidRequest ?? pendingKidRequest!;
+    const urgentKidRequestsCount = (kidRequests as any[]).filter(req =>
+      req.status === 'pending' && (req.type === 'permission' || req.urgency === 'urgent' || req.urgency === 'emergency')
+    ).length;
+    needsYouCards.push({
+      item: {
+        kind: 'approval',
+        title: criticalKidRequest
+          ? (criticalKidRequest.type === 'permission' ? (criticalKidRequest.detail ?? 'Permission request') : 'SOS — needs attention now')
+          : (r.detail ?? 'Request from a kid'),
+        reason: `${members.find(m => m.id === r.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${criticalKidRequest?.type === 'permission' ? ' needs a yes/no.' : criticalKidRequest ? ' needs you right now.' : ' is waiting for your response.'}`,
+        extraCount: Math.max(0, pendingKidRequestsCount - 1),
+        urgentCount: urgentKidRequestsCount,
+      },
+      onReview: onReviewOpen,
+    });
+  }
+
+  if (pendingApprovalChore) {
+    const urgentChoresCount = (pendingReviews as any[]).filter((c: any) =>
+      (c.dueDate && c.dueDate < localDateStr(new Date())) || minsAgo(c.submittedAt) > URGENT_WAIT_MS
+    ).length;
+    needsYouCards.push({
+      item: {
+        kind: 'approval',
+        title: pendingApprovalChore.title ?? 'Chore awaiting review',
         reason: (pendingApprovalChore.dueDate && pendingApprovalChore.dueDate < localDateStr(new Date()))
           ? 'Overdue — a family member completed this and is waiting for your approval.'
           : 'Waiting a while — a family member completed this and is waiting for your approval.',
         dueDate: pendingApprovalChore.dueDate, dueTime: pendingApprovalChore.dueTime,
-        // This card only ever surfaces ONE most-urgent item — without a
-        // count, a parent had no way to tell "this is the only thing
-        // pending" from "there are several more behind it"
-        // [live-reported via screenshot: "i've multiple items inside for
-        // the review but we have seen the only one card here"].
-        extraCount: Math.max(0, pendingReviews.length - 1) }
-    : pendingKidRequest
-    ? { kind: 'approval', title: pendingKidRequest.detail ?? 'Request from a kid',
-        reason: `${members.find(m => m.id === pendingKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'} is waiting for your response.`,
-        extraCount: Math.max(0, pendingKidRequestsCount - 1) }
-    : pendingDispute
-    ? { kind: 'approval', title: pendingDispute.title ?? 'Dispute needs a second look',
-        reason: pendingDispute.status === 'kid_disputed_redo' ? 'A redo request is being disputed.' : 'Another parent is asking to reverse an approval.',
-        extraCount: Math.max(0, pendingDisputesCount - 1) }
-    : pendingRedemption
-    ? { kind: 'approval', title: pendingRedemption.rewardTitle ?? 'Reward redemption',
-        reason: `${members.find(m => m.id === pendingRedemption.memberId)?.name?.split(' ')[0] ?? pendingRedemption.memberName ?? 'A family member'} redeemed this and is waiting on you.`,
-        extraCount: Math.max(0, pendingRedemptionsCount - 1) }
-    : myPendingHelperEvent
-    ? { kind: 'approval', title: myPendingHelperEvent.title,
-        reason: `You're assigned${myPendingHelperEvent.location ? ` · ${myPendingHelperEvent.location}` : ''} — confirm you can make it.`,
-        dueDate: myPendingHelperEvent.date, dueTime: myPendingHelperEvent.time }
-    : pendingRideEvent
-    ? { kind: 'approval', title: pendingRideEvent.title, reason: "Starting soon — who's driving?",
-        dueDate: pendingRideEvent.date, dueTime: pendingRideEvent.time }
-    : null;
+        extraCount: Math.max(0, pendingReviews.length - 1),
+        urgentCount: urgentChoresCount,
+      },
+      onReview: onReviewOpen,
+    });
+  }
 
-  // ReviewConflictModal's context rows — only relevant for conflict kind.
-  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  if (pendingDispute) {
+    needsYouCards.push({
+      item: {
+        kind: 'approval',
+        title: pendingDispute.title ?? 'Dispute needs a second look',
+        reason: pendingDispute.status === 'kid_disputed_redo' ? 'A redo request is being disputed.' : 'Another parent is asking to reverse an approval.',
+        // Every dispute surfaced here is already "urgent" by definition
+        // (an active disagreement, not a routine queue item) — the whole
+        // category count doubles as its own urgent count.
+        extraCount: Math.max(0, pendingDisputesCount - 1),
+        urgentCount: pendingDisputesCount,
+      },
+      onReview: onReviewOpen,
+    });
+  }
+
+  if (pendingRedemption) {
+    const urgentRedemptionsCount = useRewardStore.getState().redemptions.filter(rd =>
+      rd.status === 'pending' && minsAgo(rd.redeemedAt) > URGENT_WAIT_MS
+    ).length;
+    needsYouCards.push({
+      item: {
+        kind: 'approval',
+        title: pendingRedemption.rewardTitle ?? 'Reward redemption',
+        reason: `${members.find(m => m.id === pendingRedemption.memberId)?.name?.split(' ')[0] ?? pendingRedemption.memberName ?? 'A family member'} redeemed this and is waiting on you.`,
+        extraCount: Math.max(0, pendingRedemptionsCount - 1),
+        urgentCount: urgentRedemptionsCount,
+      },
+      onReview: onReviewOpen,
+    });
+  }
+
+  if (conflictEvent) {
+    needsYouCards.push({
+      item: {
+        kind: 'conflict', title: conflictEvent.title,
+        reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.',
+        dueDate: conflictEvent.date, dueTime: conflictEvent.time,
+      },
+      onReview: () => setReviewModalOpen(true),
+    });
+  }
+
+  if (myPendingHelperEvent) {
+    needsYouCards.push({
+      item: {
+        kind: 'approval', title: myPendingHelperEvent.title,
+        reason: `You're assigned${myPendingHelperEvent.location ? ` · ${myPendingHelperEvent.location}` : ''} — confirm you can make it.`,
+        dueDate: myPendingHelperEvent.date, dueTime: myPendingHelperEvent.time,
+      },
+      onReview: () => {
+        // Same stale-route fix as NextUpCard's own goToSchedule — /calendar
+        // is a disused standalone route outside the real tab bar; the
+        // actual Schedule view lives in the Tasks tab's embedded segment.
+        useUIStore.getState().setRequestedTasksSegment('schedule');
+        useUIStore.getState().setRequestedEventDetailId(myPendingHelperEvent.id);
+        router.push('/(tabs)/schedule' as any);
+      },
+    });
+  } else if (pendingRideEvent) {
+    needsYouCards.push({
+      item: {
+        kind: 'approval', title: pendingRideEvent.title, reason: "Starting soon — who's driving?",
+        dueDate: pendingRideEvent.date, dueTime: pendingRideEvent.time,
+      },
+      onReview: onReviewOpen,
+    });
+  }
+
+  // Back-compat single-item alias — ReviewConflictModal's relatedContext
+  // below and FamilyPulseCard's hasUrgentItem flag only need "is there
+  // anything at all," not the full list.
+  const needsYouItem: NeedsYouItem | null = needsYouCards[0]?.item ?? null;
+
   const needsYouRelatedContext = conflictEvent
     ? conflictEvents
         .filter(e => e.id !== conflictEvent.id)
@@ -691,26 +775,31 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
       </Animated.View>
 
-      {needsYouItem && (
-        <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
-        <NeedsYouCard item={needsYouItem} onReview={() => {
-          if (needsYouItem.kind === 'conflict') setReviewModalOpen(true);
-          else if (myPendingHelperEvent && needsYouItem.title === myPendingHelperEvent.title) {
-            // Same stale-route fix as NextUpCard's own goToSchedule — /calendar
-            // is a disused standalone route outside the real tab bar; the
-            // actual Schedule view lives in the Tasks tab's embedded segment.
-            useUIStore.getState().setRequestedTasksSegment('schedule');
-            useUIStore.getState().setRequestedEventDetailId(myPendingHelperEvent.id);
-            router.push('/(tabs)/schedule' as any);
-          }
-          // 'backlog' branch removed — backlogTask was dropped from
-          // needsYouItem's own possible kinds (never a real urgency
-          // signal, see the computation above's own comment), so this
-          // callback no longer needs to route for it.
-          else onReviewOpen();
-        }} />
-        </Animated.View>
-      )}
+      <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
+        {needsYouCards.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            {needsYouCards.map((c, i) => (
+              <NeedsYouCard key={i} item={c.item} onReview={c.onReview} />
+            ))}
+          </View>
+        ) : (
+          // Live direction: "if none of them available Nedds you we can
+          // show - it is a quite , followup with family if they need help
+          // some info message" — an empty slot read as "broken/nothing to
+          // see," not "all caught up." A quiet info message instead
+          // confirms there's genuinely nothing pending AND nudges toward a
+          // proactive check-in, rather than just disappearing.
+          <View style={{
+            marginHorizontal: 20, marginTop: 14, padding: 16, borderRadius: 22,
+            backgroundColor: colors.tealLight,
+          }}>
+            <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>ALL QUIET</Text>
+            <Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: '600', marginTop: 4, lineHeight: 20 }}>
+              Nothing needs you right now — a good time to check in with the family if they need any help.
+            </Text>
+          </View>
+        )}
+      </Animated.View>
       {backlogTaskDetailId && (() => {
         const fullQuest = quests.find(q => q.id === backlogTaskDetailId);
         if (!fullQuest) { setBacklogTaskDetailId(null); return null; }

@@ -79,7 +79,7 @@ export default function ChatScreen() {
   const {
     channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage, clearChannel,
     lastActivity, loadLastActivity, unreadCounts, loadUnreadCounts, markChannelRead,
-    readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId,
+    readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId, respondToProposal,
   } = useChatStore();
   const { addItem: addGrocery } = useGroceryStore();
 
@@ -1146,7 +1146,22 @@ export default function ChatScreen() {
         {/* Back to inbox — tap target now covers the chevron AND the
             channel-name row (was chevron-only, ~24px wide, too small to
             reliably hit [live-reported: "touch area too less"]). */}
-        <Pressable onPress={() => setThreadOpen(false)} hitSlop={8}
+        <Pressable
+          onPress={() => {
+            // Re-lock Just Us on returning to the inbox list too — the two
+            // existing re-lock triggers (switchChannel, useFocusEffect blur)
+            // only fire on an explicit channel switch or leaving the Chat
+            // TAB entirely; closing the thread back to the inbox while
+            // staying on this tab with the same channelId selected tripped
+            // neither, so the inbox's privacy preview re-lock check
+            // (isLockedCouple, below) saw isCoupleChannelUnlocked still
+            // true and leaked the last-message preview again [live-
+            // reported: "once user closes the chat and came back to the
+            // main chat landing page it is showing the preview"].
+            if (openCoupleChannel) useCoupleChannelStore.getState().lock(channelId);
+            setThreadOpen(false);
+          }}
+          hitSlop={8}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 17, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹</Text>
           <ShieldCheck size={13} color="#10b981" />
@@ -1464,7 +1479,16 @@ export default function ChatScreen() {
                     onOpenImage={setLightboxUri}
                     onOpenVideo={setVideoLightboxUri}
                     onOpenSharedCard={setSharedCardPayload}
-                    onRespondProposal={(msg, response) => {
+                    onRespondProposal={async (msg, response) => {
+                      // Marks the original proposal card answered (so its
+                      // buttons disappear for everyone) before posting the
+                      // reply — if the mark-answered write is refused
+                      // because another tap already answered it, skip the
+                      // reply instead of posting a second one for the same
+                      // proposal [live-reported: confirming once produced
+                      // two answers].
+                      const ok = await respondToProposal(channelId, msg.id, response);
+                      if (!ok) return;
                       const label = msg.systemEvent?.payload?.label ?? 'the plan';
                       const text = response === 'confirmed' ? `Confirmed: ${label}` : `Can't tonight: ${label}`;
                       sendMessage(channelId, activeMemberId ?? '', text, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,

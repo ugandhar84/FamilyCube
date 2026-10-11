@@ -489,6 +489,11 @@ interface ChatState {
   ) => Promise<string | undefined>;
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
+  // Marks a couple_proposal card as answered in place (system_event.payload.response),
+  // so its Confirm/Can't-tonight buttons disappear for good — without this the card
+  // stayed answerable forever and a double-tap (or two taps across a slow network
+  // round-trip) posted two separate "Confirmed: ..." reply messages for one proposal.
+  respondToProposal: (channelId: string, messageId: string, response: 'confirmed' | 'declined') => Promise<boolean>;
   deleteMessage: (channelId: string, messageId: string) => Promise<void>;
   // Bulk-clears every message in one channel — RLS-safe as-is (any
   // participant of the channel may already delete any message in it, per
@@ -1255,6 +1260,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
     get()._upsertMessage(channelId, { ...msg, reactions });
+  },
+
+  respondToProposal: async (channelId, messageId, response) => {
+    const ch  = get().channels[channelId];
+    const msg = ch?.messages.find(m => m.id === messageId);
+    if (!msg?.systemEvent || msg.systemEvent.type !== 'couple_proposal') return false;
+    // Already answered (e.g. a second tap that landed before the first
+    // write's optimistic update re-rendered) — refuse instead of
+    // overwriting the first response or posting a second reply.
+    if (msg.systemEvent.payload?.response) return false;
+
+    const systemEvent = { ...msg.systemEvent, payload: { ...msg.systemEvent.payload, response } };
+    const { error } = await supabase
+      .from('chat_messages')
+      .update({ system_event: systemEvent })
+      .eq('id', messageId);
+    if (error) {
+      console.warn('[chatStore] respondToProposal error', error);
+      return false;
+    }
+    get()._upsertMessage(channelId, { ...msg, systemEvent });
+    return true;
   },
 
   // ── Delete ────────────────────────────────────────────────────────────────

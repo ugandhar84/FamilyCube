@@ -83,7 +83,12 @@ export function CoupleProposalBubble({ payload, colors, isMe, onLongPress, onRes
   onRespond?: (response: 'confirmed' | 'declined') => void;
 }) {
   const accent = colors.pink ?? colors.accent;
-  const responded = !!payload.response;
+  // Local flag flips the instant either button is tapped, ahead of the
+  // async store write landing — closes the gap where a fast double-tap
+  // (or a slow network round-trip) could fire onRespond twice for one
+  // card before payload.response came back from the DB.
+  const [tapped, setTapped] = useState(false);
+  const responded = !!payload.response || tapped;
 
   return (
     <Pressable onLongPress={onLongPress} delayLongPress={350}
@@ -97,11 +102,11 @@ export function CoupleProposalBubble({ payload, colors, isMe, onLongPress, onRes
         <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{payload.label}</Text>
         {!isMe && !responded && (
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
-            <Pressable onPress={() => onRespond?.('confirmed')}
+            <Pressable onPress={() => { setTapped(true); onRespond?.('confirmed'); }}
               style={{ flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: accent, alignItems: 'center' }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Confirm</Text>
             </Pressable>
-            <Pressable onPress={() => onRespond?.('declined')}
+            <Pressable onPress={() => { setTapped(true); onRespond?.('declined'); }}
               style={{ flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>Can't tonight</Text>
             </Pressable>
@@ -174,7 +179,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   // Just Us proposal card's Confirm/Decline — posts a reply message via
   // ChatScreen's own sendMessage, same "callback out, not props in" shape
   // as onOpenSharedCard above.
-  onRespondProposal?: (msg: ChatMessage, response: 'confirmed' | 'declined') => void;
+  onRespondProposal?: (msg: ChatMessage, response: 'confirmed' | 'declined') => void | Promise<void>;
   // Only relevant when msg.status === 'failed' — retries the exact send
   // that failed (network drop, RLS error, etc.) using the args chatStore
   // captured at failure time.

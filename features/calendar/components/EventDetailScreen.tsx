@@ -23,8 +23,11 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { fetchActivityLog, type ActivityLogRow } from '@/lib/activityLog';
 import { parseDbTime } from '@/lib/dates';
 import JustDescribeItEventScreen from './JustDescribeItEventScreen';
-import SwipeBackWrapper from '@/components/SwipeBackWrapper';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useUIStore } from '@/store/uiStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +263,18 @@ export default function EventDetailScreen({
   const refreshLog = () => fetchActivityLog('event', ev.id, 20).then(setLog);
   useEffect(() => { refreshLog(); }, [ev.id, liveEv.helperStatus, liveEv.driverStatus]);
 
+  // Same mechanism as QuestDetailModal's own hide — hideTabBar/showTabBar
+  // actually animates the real tab bar away; fullBleedScreenActive on top
+  // of that controls the shared floating FAB's visibility.
+  useEffect(() => {
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []);
+
   const cat      = liveEv.category ?? 'Event';
   const accent   = catColor(cat);
   const emoji    = CAT_EMOJI[cat] ?? '📅';
@@ -400,14 +415,30 @@ export default function EventDetailScreen({
     await updateEvent(liveEv.id, { conflictAcknowledged: true });
   }
 
+  // A call reminder is a standing property of "this recurring thing" (e.g.
+  // Jaswi's Dance class, every week), not a one-off per-occurrence detail
+  // like notes — so setting it here propagates forward to every future
+  // occurrence in the series, not just the one being viewed, via the same
+  // updateEventScoped('following') path EventFormModal already uses for
+  // other series-wide field edits. No scope prompt: unlike title/notes,
+  // there's no plausible case where a reminder should apply to only one
+  // occurrence of a recurring event.
   function handleAlertCallChange(v: boolean | ((prev: boolean) => boolean)) {
     const next = typeof v === 'function' ? v(alertCall) : v;
     setAlertCall(next);
-    updateEvent(liveEv.id, { alertCall: next });
+    if (liveEv.seriesId) {
+      useEventStore.getState().updateEventScoped(liveEv.id, { alertCall: next }, 'following');
+    } else {
+      updateEvent(liveEv.id, { alertCall: next });
+    }
   }
   function handleLeadMinutesChange(v: number) {
     setAlertCallLeadMinutes(v);
-    updateEvent(liveEv.id, { alertCallLeadMinutes: v });
+    if (liveEv.seriesId) {
+      useEventStore.getState().updateEventScoped(liveEv.id, { alertCallLeadMinutes: v }, 'following');
+    } else {
+      updateEvent(liveEv.id, { alertCallLeadMinutes: v });
+    }
   }
 
   function confirmDelete() {
@@ -419,7 +450,7 @@ export default function EventDetailScreen({
     ]);
   }
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+  const canvas = isDark ? colors.background : GEMINI.canvas;
 
   if (editing) {
     return (
@@ -578,7 +609,7 @@ export default function EventDetailScreen({
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <SwipeBackWrapper onDismiss={onClose} backgroundColor={canvas}>
+    <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
         {/* ── Top bar ── */}
@@ -981,6 +1012,6 @@ export default function EventDetailScreen({
         </ScrollView>
 
     </View>
-    </SwipeBackWrapper>
+    </FullPageOverlay>
   );
 }

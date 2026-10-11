@@ -10,7 +10,7 @@
  * Server rules (co-sign, identity, atomic coin clawback) are enforced by the
  * flag_approval / request_reversal / cosign_reversal / stand_by_approval RPCs.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -58,6 +58,19 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note>(null);
 
+  // The dispute/co-sign windows below are computed from Date.now() — with
+  // no ticking state, this screen only re-evaluated "window has passed"
+  // whenever something else happened to re-render it (a store update), so
+  // the countdown looked frozen/dead the whole time it was open [live-
+  // reported: "timer is not running there"]. Ticks once a minute (window is
+  // 24h, no need for anything finer) so pastDisputeWindow/pastCosignWindow
+  // and the "X has until..." copy actually advance in real time.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const canvas = isDark ? '#0E0C13' : '#FFFFFF';
   const first = (id?: string | null) => members.find(m => m.id === id)?.name?.split(' ')[0] ?? 'A parent';
 
@@ -99,6 +112,9 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
   const fmtDeadline = (iso: string) => parseDbTime(iso).toLocaleString('en-US',
     { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+
+  const disputedOn = disputedAt && Number.isFinite(parseDbTime(disputedAt).getTime())
+    ? fmtDeadline(disputedAt) : null;
 
   // Shown to BOTH parents (the approver and the other parent) while the
   // approval is still disputable — not just to whoever might dispute it.
@@ -284,6 +300,11 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
                 ? `No coins have moved. Talk it over with ${otherName}, or keep your approval as is.`
                 : `Nothing changes unless you co-sign. If you do, ${kidName} loses ${coins} coins and the chore is marked declined.`}
             </Text>
+            {disputedOn && (
+              <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textTertiary : colors.textSecondary) }}>
+                {otherName} {chore.disputeStatus === 'flagged' ? 'flagged' : 'requested reversal of'} this on {disputedOn}.
+              </Text>
+            )}
             {pastCosignWindow && (
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>
                 The 24-hour window to co-sign this has passed — standing by keeps the approval as is.

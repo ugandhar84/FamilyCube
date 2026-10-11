@@ -28,8 +28,8 @@ import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScre
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
-import { ReviewCategoryQueueScreen, type QueueRow } from './parent/ReviewCategoryQueueScreen';
 import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
+import { RewardsReviewQueueScreen } from './parent/RewardsReviewQueueScreen';
 import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
 import { DisputesInboxScreen, type DisputeKind } from './parent/DisputesInboxScreen';
 import { RidesControlRoomScreen } from './parent/RidesControlRoomScreen';
@@ -61,12 +61,6 @@ export default function HubScreen() {
   const { loadFromStorage: loadEvents }  = useEventStore();
   const { loadFromStorage: loadRewards } = useRewardStore();
   // Reactive subscription for the Rewards review queue screen below — was
-  // reading useRewardStore.getState() directly inside render, which
-  // doesn't re-render on store changes (approving one item wouldn't drop
-  // it from the queue list without a manual reopen). Chores & Quests now
-  // has its own ChoresReviewQueueScreen with its own subscriptions.
-  const reviewRedemptions = useRewardStore(s => s.redemptions);
-  const reviewRewards = useRewardStore(s => s.rewards);
   const { activeTrips: trips, loadFromStorage: loadTrip, dispatch: dispatchTrip,
           updateEta: updateTripEta, markOverdueAlertSent, complete: completeTrip } = useTripStore();
 
@@ -738,29 +732,8 @@ export default function HubScreen() {
         />
       </FullPageOverlay>
       <FullPageOverlay visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
-        <ReviewCategoryQueueScreen
-          title="Rewards"
-          subtitle={(() => {
-            const n = reviewRedemptions.filter(r => r.status === 'pending').length;
-            return n > 0 ? `${n} redemption${n !== 1 ? 's' : ''} waiting on you` : 'No reward requests waiting';
-          })()}
-          accentColor={colors.amber}
+        <RewardsReviewQueueScreen
           onClose={() => setShowRedemptionsQueue(false)}
-          rows={reviewRedemptions.filter(r => r.status === 'pending').map((r): QueueRow => {
-            // Was a flat "Name · N coins" with no sense of how long it's
-            // been waiting — same class of gap the Rides screen's static
-            // "Live"/"Upcoming" pills had before that pass. A redemption
-            // sitting 3 days unanswered is a different situation than one
-            // from 10 minutes ago.
-            const mins = Math.floor((Date.now() - new Date(r.redeemedAt).getTime()) / 60000);
-            const waitLabel = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago`
-              : mins < 1440 ? `${Math.floor(mins / 60)}h ago` : `${Math.floor(mins / 1440)}d ago`;
-            return {
-              id: r.id,
-              title: r.rewardTitle ?? reviewRewards.find(rw => rw.id === r.rewardId)?.title ?? 'Reward',
-              detail: `${members.find(m => m.id === r.memberId)?.name?.split(' ')[0] ?? 'Someone'} · ${r.deductedCoins} coins · redeemed ${waitLabel}`,
-            };
-          })}
           onSelectRow={(id) => setReviewRedemptionId(id)}
         />
       </FullPageOverlay>

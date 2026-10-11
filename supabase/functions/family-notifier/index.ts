@@ -168,6 +168,14 @@ type NotifType =
   // audit, gap #4/#26/#27) until ride-deadline-notifier added it.
   | 'ride_pool_unclaimed_urgent'
   | 'ride_still_on'
+  // ride-assignment-confirm-sweeper: a driver/helper who hasn't tapped
+  // Confirm within 1h of being assigned gets this nudge warning the
+  // assignment auto-confirms at the 2h mark if they stay silent; the
+  // second type fires once that auto-confirm actually happens, telling
+  // both the auto-confirmed person and the other parent(s) it occurred
+  // without anyone explicitly saying yes.
+  | 'ride_assignment_confirm_nudge'
+  | 'ride_assignment_auto_confirmed'
   // Chore handoff (offer/accept/decline a chore to a specific person, master
   // flow's "hand it to someone" path) — previously fired zero notifications
   // at all; see store/choreStore.ts's offerChoreHandoff/acceptChoreHandoff/
@@ -1004,6 +1012,32 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    case 'ride_assignment_confirm_nudge':
+      // Sent once, ~1h after assignment, to the assigned driver/helper only.
+      // Warns the pending assignment auto-confirms at the 2h mark if they
+      // stay silent — not an ask for a yes, just a heads-up before it
+      // happens automatically.
+      return {
+        title: p.role === 'helper' ? '🙋 Still need your confirmation' : '🚗 Still need your confirmation',
+        body: `You haven't confirmed as ${p.role} for "${p.eventTitle}" yet — we'll auto-confirm you in about an hour if we don't hear back.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'ride_assignment_auto_confirmed':
+      // Two audiences: the person who got auto-confirmed (soft, no sound —
+      // this isn't urgent, it already happened), and the parent who made
+      // the assignment, told it went through without an explicit yes.
+      return p.forAssignee
+        ? {
+            title: '✅ Auto-Confirmed',
+            body: `You didn't respond in time, so we went ahead and confirmed you as ${p.role} for "${p.eventTitle}".`,
+            data: { screen: 'Schedule', eventId: p.eventId },
+          }
+        : {
+            title: '✅ Auto-Confirmed',
+            body: `${p.assigneeName ?? 'They'} didn't respond in time, so ${p.role === 'helper' ? 'their helper assignment' : 'their driver assignment'} for "${p.eventTitle}" was auto-confirmed.`,
+            data: { screen: 'Schedule', eventId: p.eventId },
+          };
     case 'approval_cutoff_nudge':
       return {
         title: '📋 Waiting on Your Yes or No',

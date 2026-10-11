@@ -1540,6 +1540,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               <DaySlotView
                 dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday')}
                 members={members}
+                selectedDate={selectedDate}
                 colors={colors} isDark={isDark}
                 onSelect={(ev) => { openDetail(ev); }}
                 onLongPressEvent={(ev) => { routeLongPress(ev); }}

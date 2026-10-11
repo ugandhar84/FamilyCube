@@ -18,7 +18,7 @@
  * Rows sorted oldest-submitted-first, so the thing that's been waiting
  * longest surfaces at the top — not insertion order.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, Image, StyleSheet,
 } from 'react-native';
@@ -60,12 +60,40 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
   const getParentReviewDeck = useChoreStore(s => s.getParentReviewDeck);
   const chores = useChoreStore(s => s.chores); // subscribe so the deck recomputes on change
   const { members } = useFamilyStore();
+  const [filter, setFilter] = useState<'pending' | 'completed' | 'rejected' | 'all'>('pending');
 
-  const rows: ChoreTask[] = React.useMemo(() => {
+  const pendingRows: ChoreTask[] = React.useMemo(() => {
     return [...getParentReviewDeck()].sort((a, b) =>
       (a.submittedAt ?? '').localeCompare(b.submittedAt ?? '')
     );
   }, [chores]);
+
+  // "Completed" — the review decision has landed and the chore paid out.
+  // "Rejected" — sent back for a redo, not a terminal state, but it's the
+  // closest analog to "rejected" a parent-facing filter needs here.
+  const completedRows: ChoreTask[] = React.useMemo(() => {
+    return chores
+      .filter(c => c.status === 'approved' || c.status === 'auto_approved' || c.status === 'completed')
+      .sort((a, b) => (b.reviewedAt ?? b.approvedAt ?? '').localeCompare(a.reviewedAt ?? a.approvedAt ?? ''));
+  }, [chores]);
+
+  const rejectedRows: ChoreTask[] = React.useMemo(() => {
+    return chores
+      .filter(c => c.status === 'redo_requested' || c.status === 'declined')
+      .sort((a, b) => (b.reviewedAt ?? '').localeCompare(a.reviewedAt ?? ''));
+  }, [chores]);
+
+  const allRows: ChoreTask[] = React.useMemo(() => {
+    return [...chores].sort((a, b) =>
+      (b.submittedAt ?? b.reviewedAt ?? b.createdAt ?? '').localeCompare(a.submittedAt ?? a.reviewedAt ?? a.createdAt ?? '')
+    );
+  }, [chores]);
+
+  const rows: ChoreTask[] =
+    filter === 'pending' ? pendingRows :
+    filter === 'completed' ? completedRows :
+    filter === 'rejected' ? rejectedRows :
+    allRows;
 
   const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
   const cardWhiteBg = isDark ? colors.card : GEMINI.cardBg;
@@ -76,13 +104,36 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <View style={{ backgroundColor: canvas }}>
+      <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
         <PageHeading
           title="Chores & Quests"
-          subtitle={rows.length > 0 ? `${rows.length} chore${rows.length !== 1 ? 's' : ''} need${rows.length === 1 ? 's' : ''} your review` : 'All chores reviewed'}
+          subtitle={pendingRows.length > 0 ? `${pendingRows.length} chore${pendingRows.length !== 1 ? 's' : ''} need${pendingRows.length === 1 ? 's' : ''} your review` : 'All chores reviewed'}
           onTitlePress={onClose}
           topInset={insets.top}
         />
+
+        <View style={{ marginHorizontal: 20, flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 14, padding: 4, gap: 4 }}>
+          {([
+            { key: 'pending', label: `Pending · ${pendingRows.length}` },
+            { key: 'completed', label: 'Completed' },
+            { key: 'rejected', label: 'Rejected' },
+            { key: 'all', label: 'All' },
+          ] as const).map(seg => {
+            const active = filter === seg.key;
+            return (
+              <Pressable
+                key={seg.key}
+                onPress={() => setFilter(seg.key)}
+                style={{ flex: 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: active ? cardWhiteBg : 'transparent' }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: active ? '700' : '400', color: active ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                  {seg.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <ScrollView
@@ -96,7 +147,10 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
             ...cardShadow,
           }}>
             <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
-              Nothing pending right now.
+              {filter === 'pending' ? 'Nothing pending right now.'
+                : filter === 'completed' ? 'Nothing completed yet.'
+                : filter === 'rejected' ? 'Nothing rejected.'
+                : 'No chores yet.'}
             </Text>
           </View>
         ) : (

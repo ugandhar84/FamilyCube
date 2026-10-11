@@ -536,13 +536,17 @@ const STALE_DISPUTE = 'This approval just changed — pull to refresh and try ag
 function disputeErrorMessage(raw: string): string {
   if (/own approval/i.test(raw)) return "You can't dispute your own approval.";
   if (/only a parent/i.test(raw)) return 'Only a parent can do that.';
+  if (/original approver or the parent who raised/i.test(raw)) return "Only the approving parent or the parent who raised this can close it.";
   if (/original approver/i.test(raw)) return 'Only the parent who approved this can co-sign.';
   if (/already has an open dispute|already requested/i.test(raw)) return 'This approval already has an open dispute.';
+  if (/no open dispute/i.test(raw)) return 'This dispute was already resolved — refresh to see the latest status.';
   if (/window to dispute/i.test(raw)) return 'The 24-hour window to dispute this approval has passed — it’s final.';
   if (/window to co-sign/i.test(raw)) return 'The 24-hour window to co-sign this reversal has passed.';
   if (/not approved/i.test(raw)) return 'This chore is no longer approved, so there is nothing to change.';
+  if (/not found/i.test(raw)) return 'This chore no longer exists.';
+  if (/not in the same family/i.test(raw)) return 'This chore belongs to a different family than your session — switch profiles and try again.';
   if (/caller is not member/i.test(raw)) return 'Your session changed — switch back to your profile and try again.';
-  return "Couldn't update the approval — please try again.";
+  return `Couldn't update the approval: ${raw}`;
 }
 
 function memberName(memberId: string | undefined | null): string {

@@ -9,12 +9,47 @@
  *   - Now marker: terracotta pill chip + line
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated, Easing } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, Animated, Easing, Linking, Platform } from 'react-native';
+import { router } from 'expo-router';
 import type { FamilyEvent } from '@/store/eventStore';
+import { eventAssignee } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { assigneeStyle } from './EventCard';
-import { timeToMinutes } from './calendarDateHelpers';
+import { timeToMinutes, toDateStr } from './calendarDateHelpers';
 import { GEMINI } from '@/constants/geminiRhythm';
+
+// Street-only label for the subtitle row — full address is still what gets
+// sent to the maps app on tap, this just keeps the chip from overflowing
+// into "4127 Revard Rd, Celina, TX, United States" the way EventCard's own
+// shortAddress() avoids on the detail screen.
+function streetOnly(addr: string): string {
+  return addr.split(',')[0].trim();
+}
+function openInMaps(addr: string) {
+  const encoded = encodeURIComponent(addr);
+  const url = Platform.OS === 'ios'
+    ? `https://maps.apple.com/?q=${encoded}`
+    : `https://maps.google.com/?q=${encoded}`;
+  Linking.openURL(url).catch(() => Linking.openURL(`https://maps.google.com/?q=${encoded}`));
+}
+
+// Same category palette as WeekView's WEEK_EVENT_BG — Day view now colors
+// blocks by category (not assignee) so the two views read as one system.
+// Each entry adds an accent (strip/time-label/duration-chip color) on top
+// of WeekView's light/dark tint, picked to match each pastel's hue family.
+const DAY_EVENT_STYLE: Record<string, { light: string; dark: string; accent: string }> = {
+  Sports:  { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)',  accent: '#3D7A5A' }, // mint
+  Medical: { light: '#f9ebe7', dark: 'rgba(223,97,60,0.25)',  accent: '#DF613C' }, // peach
+  Ride:    { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)',  accent: '#3D7A5A' }, // mint
+  Work:    { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)', accent: '#7B5EA7' }, // lavender
+  Study:   { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)', accent: '#3B82F6' }, // sky
+  School:  { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)', accent: '#3B82F6' }, // sky
+  Event:   { light: '#fff2cf', dark: 'rgba(217,119,6,0.25)',  accent: '#D97706' }, // butter
+  default: { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)', accent: '#7B5EA7' }, // lavender
+};
+function dayEventStyle(category: string | undefined, isDark: boolean) {
+  const c = DAY_EVENT_STYLE[category ?? 'default'] ?? DAY_EVENT_STYLE.default;
+  return { bg: isDark ? c.dark : c.light, accent: c.accent };
+}
 
 const SLOT_START = 5;   // 5 AM
 const SLOT_END   = 23;  // 11 PM
@@ -92,9 +127,9 @@ function PulseDot({ color }: { color: string }) {
 }
 
 export default function DaySlotView({
-  dayEvents, members, colors, isDark, onSelect, onLongPressEvent, onAddAtTime,
+  dayEvents, members, selectedDate, colors, isDark, onSelect, onLongPressEvent, onAddAtTime,
 }: {
-  dayEvents: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
+  dayEvents: FamilyEvent[]; members: FamilyMember[]; selectedDate: string; colors: any; isDark: boolean;
   onSelect: (ev: FamilyEvent) => void;
   onLongPressEvent?: (ev: FamilyEvent) => void;
   onAddAtTime: (hourTimeKey: string) => void;
@@ -119,7 +154,8 @@ export default function DaySlotView({
     return () => clearInterval(id);
   }, []);
   const nowTop = (nowMin - SLOT_START * 60) * (HOUR_H / 60);
-  const showNow = nowTop >= 0 && nowTop <= TOTAL_H;
+  const isToday = selectedDate === toDateStr(new Date());
+  const showNow = isToday && nowTop >= 0 && nowTop <= TOTAL_H;
 
   const TIME_COL = 52; // px — left time-label column width
   const TRACK_L  = TIME_COL + 8;
@@ -139,7 +175,7 @@ export default function DaySlotView({
             : `${hour - 12} PM`;
           return (
             <View key={hour} style={{ position: 'absolute', top, left: 0, right: 0, flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ width: TIME_COL, fontSize: 10, fontWeight: '700', color: colors.textTertiary, textAlign: 'right', paddingRight: 8 }}>
+              <Text style={{ width: TIME_COL, fontSize: 10, fontWeight: '700', color: isDark ? '#fff' : GEMINI.titleColor, textAlign: 'right', paddingRight: 8 }}>
                 {label}
               </Text>
               <View style={{ flex: 1, height: StyleSheet_hairline, backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(44,39,34,0.07)', marginRight: TRACK_R }} />
@@ -165,32 +201,52 @@ export default function DaySlotView({
         <View style={{ position: 'absolute', top: 0, left: TRACK_L, right: TRACK_R, height: TOTAL_H + 40 }}>
           {laid.map(ev => {
             const assignee = members.find(m => m.id === ev.memberId);
-            const allAssignees = ev.memberIds?.map(id => members.find(m => m.id === id)).filter(Boolean) as FamilyMember[] ?? (assignee ? [assignee] : []);
-            const rs = assigneeStyle(assignee, colors, isDark);
+            // `memberIds` can be an empty array (not just undefined) when an
+            // event only has a single legacy `memberId` set — `??` doesn't
+            // fall through for `[]`, so that case silently dropped the
+            // assignee name from the subtitle. Fall back whenever the
+            // mapped list is empty, not just when memberIds is nullish.
+            const mappedAssignees = ev.memberIds?.map(id => members.find(m => m.id === id)).filter(Boolean) as FamilyMember[] | undefined;
+            const allAssignees = mappedAssignees && mappedAssignees.length > 0 ? mappedAssignees : (assignee ? [assignee] : []);
 
             const isConflict = ev.colCount > 1;
             const colWidthPct = (100 - (ev.colCount - 1) * GAP) / ev.colCount;
             const leftPct = ev.col * (colWidthPct + GAP);
 
-            // Pastel tint bg — matches Figma .mint/.lavender/.peach per role
-            const bgColor = isDark ? rs.dot + '28' : rs.badge;
-            const accentColor = rs.dot;
+            // Category-tinted bg — same palette as WeekView so Day/Week read
+            // as one color system instead of two (was assignee-tinted here).
+            const { bg: bgColor, accent: accentColor } = dayEventStyle((ev as any).category, isDark);
 
             const startMin = timeToMinutes(ev.time) ?? 0;
             const durationMin = (ev as any).durationMinutes ?? 60;
             const endMin = startMin + durationMin;
-            const isTall = ev.height >= 72;  // enough room for subtitle row
             const isShort = ev.height < 44;  // compact: title only, no subtitle
 
-            // Subtitle: location OR who + status
-            const whoLabel = allAssignees.length > 0
-              ? allAssignees.slice(0, 2).map(m => m.name.split(' ')[0]).join(' · ')
-              : null;
-            const subtitle = [
-              ev.location ? `📍 ${ev.location}` : null,
-              whoLabel,
-              (ev as any).status === 'pending' ? 'Needs confirmation' : null,
-            ].filter(Boolean).join('  ·  ');
+            // Subtitle: location + who. A ride event's driver lives in
+            // ev.driverName/driverId, not memberId/memberIds — EventCard.tsx
+            // reads it the same way via eventAssignee(), so mirror that here
+            // instead of only looking at the member-id fields (which was why
+            // "Drop off ... at airport"-style ride events showed no name at
+            // all: they're assigned via driverName, with memberIds empty).
+            // A ride can ALSO have other people coming (the kid being driven,
+            // a helper, etc in memberId/memberIds/helper) — show those too,
+            // not just the driver, so the card doesn't read as "only the
+            // driver is involved" when someone's actually riding along.
+            const driver = eventAssignee(ev);
+            const ridingNames = allAssignees
+              .map(m => m.name.split(' ')[0])
+              .filter(n => n !== driver.name?.split(' ')[0]);
+            if (ev.helper && !ridingNames.includes(ev.helper.split(' ')[0]) && ev.helper !== driver.name) {
+              ridingNames.push(ev.helper.split(' ')[0]);
+            }
+            const whoLabel = ev.driverName
+              ? [ridingNames.length > 0 ? ridingNames.join(', ') : null, `${driver.name?.split(' ')[0]} Driving`]
+                  .filter(Boolean).join('  ·  ')
+              : allAssignees.length > 0
+                ? allAssignees.map(m => m.name.split(' ')[0]).join(' · ')
+                : null;
+            const statusLabel = (ev as any).status === 'pending' ? 'Needs confirmation' : null;
+            const hasSubtitle = !!(ev.location || whoLabel || statusLabel);
 
             return (
               <TouchableOpacity
@@ -217,27 +273,52 @@ export default function DaySlotView({
                   zIndex: 2,
                 }}
               >
-                {/* Time range — small, top */}
+                {/* Time range — small, top — dark for readability against the pastel tint */}
                 {!isShort && (
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: accentColor, letterSpacing: 0.2, marginBottom: 3 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? '#fff' : GEMINI.titleColor, letterSpacing: 0.2, marginBottom: 3 }}>
                     {fmt12h(startMin)} – {fmt12h(endMin)}
                   </Text>
                 )}
 
                 {/* Bold title */}
-                <Text style={{ fontSize: isShort ? 11 : 13, fontWeight: '700', color: isDark ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 16 }} numberOfLines={isShort ? 1 : 2}>
-                  {ev.title}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {!!ev.seriesId && (
+                    <Pressable
+                      onPress={() => router.push({ pathname: '/calendar/series/[seriesId]', params: { seriesId: ev.seriesId! } })}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      style={{ marginRight: 3 }}
+                    >
+                      <Text style={{ fontSize: isShort ? 11 : 13 }} accessibilityLabel="Manage recurring series">🔄</Text>
+                    </Pressable>
+                  )}
+                  <Text style={{ fontSize: isShort ? 11 : 13, fontWeight: '700', color: isDark ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 16 }} numberOfLines={isShort ? 1 : 2}>
+                    {ev.title}
+                  </Text>
+                </View>
 
-                {/* Subtitle — location · who · status */}
-                {isTall && subtitle ? (
+                {/* Subtitle — location · who · status. Shown whenever there's
+                    room for a second line (not gated to tall blocks only
+                    anymore, so person/location metadata is visible on most
+                    default-duration events too). */}
+                {!isShort && hasSubtitle ? (
                   <Text style={{ fontSize: 10, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 3 }} numberOfLines={1}>
-                    {subtitle}
+                    {ev.location ? (
+                      <Text
+                        onPress={() => openInMaps(ev.location!)}
+                        style={{ textDecorationLine: 'underline', color: accentColor, fontWeight: '700' }}
+                      >
+                        📍 {streetOnly(ev.location)}
+                      </Text>
+                    ) : null}
+                    {ev.location && (whoLabel || statusLabel) ? '  ·  ' : null}
+                    {whoLabel}
+                    {whoLabel && statusLabel ? '  ·  ' : null}
+                    {statusLabel}
                   </Text>
                 ) : null}
 
                 {/* Duration chip — bottom-right corner for tall cards */}
-                {isTall && (
+                {ev.height >= 72 && (
                   <View style={{ position: 'absolute', bottom: 6, right: 8, backgroundColor: accentColor + '22', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
                     <Text style={{ fontSize: 9, fontWeight: '700', color: accentColor }}>{fmtDuration(durationMin)}</Text>
                   </View>

@@ -22,6 +22,7 @@ import { MessageSquare, ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { parseDbTime } from '@/lib/dates';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
 
@@ -39,17 +40,29 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
 
   const name = (id?: string) => id ? (members.find(m => m.id === id)?.name?.split(' ')[0] ?? 'Someone') : 'Someone';
 
+  // A reversal request whose 24h co-sign window has passed is no longer
+  // actionable — the server guard (_dispute_guard) already refuses the
+  // co-sign RPC at that point, so leaving it in the "open, needs you" list
+  // forever (nothing server-side auto-transitions disputeStatus once the
+  // window lapses) is misleading. Treat it as resolved here — the original
+  // approval simply stands — same as if the approver had tapped "Stand by."
+  const isExpiredReversal = (c: typeof chores[number]) =>
+    c.disputeStatus === 'reversal_requested' && !!c.disputedAt &&
+    Number.isFinite(parseDbTime(c.disputedAt).getTime()) &&
+    (Date.now() - parseDbTime(c.disputedAt).getTime()) > 24 * 60 * 60 * 1000;
+
   const openRedos = useMemo(() => chores.filter(c => c.status === 'kid_disputed_redo'), [chores]);
-  const openReversals = useMemo(() => chores.filter(c => c.disputeStatus === 'reversal_requested'), [chores]);
+  const openReversals = useMemo(() => chores.filter(c => c.disputeStatus === 'reversal_requested' && !isExpiredReversal(c)), [chores]);
   // "Resolved" — a dispute that left a trail: a chore with disputedById/
-  // reversedById set but no longer in an open dispute state (reversedById
-  // means a reversal actually executed; redo disputes resolve back to
-  // either 'approved' or 'redo_requested', both covered below).
+  // reversedById set but no longer in an open, actionable dispute state
+  // (reversedById means a reversal actually executed; redo disputes
+  // resolve back to either 'approved' or 'redo_requested', both covered
+  // below; an expired, never-co-signed reversal also lands here).
   const resolved = useMemo(() => chores.filter(c =>
     (!!c.disputedById || !!c.reversedById) &&
     c.status !== 'kid_disputed_redo' &&
-    c.disputeStatus !== 'reversal_requested'
-  ).sort((a, b) => (b.reversedAt ?? b.reviewedAt ?? '').localeCompare(a.reversedAt ?? a.reviewedAt ?? '')).slice(0, 8), [chores]);
+    (c.disputeStatus !== 'reversal_requested' || isExpiredReversal(c))
+  ).sort((a, b) => (b.reversedAt ?? b.disputedAt ?? b.reviewedAt ?? '').localeCompare(a.reversedAt ?? a.disputedAt ?? a.reviewedAt ?? '')).slice(0, 8), [chores]);
 
   const openCount = openRedos.length + openReversals.length;
 
@@ -198,6 +211,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
                 </Text>
                 <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {c.reversedById ? `Reversed — coins removed, ${name(c.assignedToId)} notified`
+                    : isExpiredReversal(c) ? `Co-sign window expired — ${name(c.reviewedById)}'s approval stands`
                     : c.status === 'approved' ? `Disputed redo settled — ${name(c.assignedToId)} paid`
                     : `Redo clarified — ${name(c.assignedToId)} notified, no coins awarded`}
                 </Text>

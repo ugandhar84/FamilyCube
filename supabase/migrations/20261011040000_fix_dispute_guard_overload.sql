@@ -1,0 +1,20 @@
+-- 20261011010000_dispute_24h_window.sql added a 4th parameter
+-- (p_check_raise_window boolean default true) to _dispute_guard, but
+-- `create or replace function` only replaces a function with the SAME
+-- parameter signature — adding a parameter (even a defaulted one) creates a
+-- second, overloaded function instead of replacing the original. The old
+-- 3-arg public._dispute_guard(text, text, boolean) from
+-- 20260997000000_approval_dispute_rpcs.sql was left behind, live
+-- side-by-side with the new 4-arg one.
+--
+-- Every caller (flag_approval, request_reversal, stand_by_approval,
+-- cosign_reversal) invokes it with exactly 3 positional args, which is now
+-- ambiguous between "the 3-arg overload" and "the 4-arg overload with its
+-- last param defaulted" — Postgres refuses to pick one and every dispute
+-- action (flag/request reversal/stand by/co-sign) failed with
+-- "function public._dispute_guard(text, text, boolean) is not unique"
+-- [live-reported, screenshot: "Stand by my approval" failing].
+--
+-- Fix: drop the stale 3-arg overload so only the 4-arg version (used by
+-- every live caller) remains.
+drop function if exists public._dispute_guard(text, text, boolean);

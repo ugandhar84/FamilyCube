@@ -118,7 +118,7 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
       {/* Header */}
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: bodyC }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: isDark ? colors.teal : '#3D7A5A' }}>
             {'FAMILY CUBE · GENERATIONS'}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: '600', color: linkC }}>
@@ -135,9 +135,9 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
             </Text>
           </TouchableOpacity>
           <View style={{ width: 52, height: 52, borderRadius: 18,
-            backgroundColor: isDark ? colors.tealLight : '#D1E3D9',
+            backgroundColor: isDark ? 'rgba(95,163,125,0.28)' : '#D1E3D9',
             alignItems: 'center', justifyContent: 'center' }}>
-            <TreePine size={28} color={isDark ? colors.teal : '#3D7A5A'} strokeWidth={2} />
+            <TreePine size={28} color={isDark ? '#5FA37D' : '#3D7A5A'} strokeWidth={2} />
           </View>
         </View>
       </View>

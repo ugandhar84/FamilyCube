@@ -213,7 +213,7 @@ export default function RewardsDashboardScreen({
         {!hideHeader && (
           <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: bodyC }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: isDark ? colors.amber : '#D97706' }}>
                 {'FAMILY CUBE · REWARDS'}
               </Text>
               {!!parentLabel && (

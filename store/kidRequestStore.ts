@@ -322,6 +322,29 @@ async function deleteFromDb(id: string): Promise<boolean> {
   return true;
 }
 
+const FLUSH_AFTER_MS = 15 * 24 * 60 * 60 * 1000; // 15 days
+
+// Kid requests accumulate as clutter — acknowledged (approved/declined/
+// cancelled/expired/completed) or still-unacknowledged (pending), it
+// doesn't matter which; after 15 days from requestedAt it's just noise in
+// the inbox/history tabs. Fire-and-forget DB delete scoped to this family,
+// run once per loadFromStorage — no separate cron/sweeper exists for this
+// store, so "on load" is the natural cleanup point (mirrors this file's
+// own 200-row cap comment above, same clutter concern, different fix).
+async function flushOld(familyId: string): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - FLUSH_AFTER_MS).toISOString();
+    const { error } = await supabase
+      .from('kid_requests')
+      .delete()
+      .eq('family_id', familyId)
+      .lt('requested_at', cutoff);
+    if (error) console.warn('[kidRequestStore] flushOld failed:', error.message);
+  } catch (e: any) {
+    console.warn('[kidRequestStore] flushOld failed:', e?.message);
+  }
+}
+
 async function notifyKidRequest(
   fromMemberId: string,
   type: string,
@@ -438,8 +461,12 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
           .order('requested_at', { ascending: false })
           .limit(200);
         if (!error) {
+          flushOld(familyId); // fire-and-forget — don't block this load on it
+          const cutoff = Date.now() - FLUSH_AFTER_MS;
           // rows may be [] on a fresh family — that's valid, don't fall through to seed
-          const requests: KidRequest[] = (rows ?? []).map((r: any) => {
+          const requests: KidRequest[] = (rows ?? [])
+            .filter((r: any) => new Date(r.requested_at).getTime() >= cutoff)
+            .map((r: any) => {
             const fromDb: KidRequest = {
               id:             r.id,
               type:           r.type,

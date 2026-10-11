@@ -278,6 +278,16 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingTop: 0, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
 
+        {/* Auto-flush notice — requests older than 15 days (answered or not)
+            are cleared automatically so this list doesn't pile up with
+            stale clutter. See flushOld() in kidRequestStore.ts. */}
+        <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 14 }}>🗂️</Text>
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: colors.textSecondary, lineHeight: 17 }}>
+            Requests are cleared automatically 15 days after they're sent, whether or not they were answered.
+          </Text>
+        </View>
+
         {tab === 'awaiting' && (
           <>
             {pending.length === 0 && assigned.length === 0 && (

@@ -27,17 +27,20 @@ import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, previewKidChoreAssignment,
   type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
-import SwipeBackWrapper from '@/components/SwipeBackWrapper';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Edit Quest Modal (parent, unclaimed quests only) ────────────────────────
-export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, editMode = 'full' }: {
+export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, editMode = 'full', ownTopInset = true }: {
   quest: Quest;
   activeMemberId: string;
   onClose: () => void;
   onSave: (id: string, patch: Partial<Quest>) => void;
   onDelete?: (id: string) => void;
   editMode?: 'full' | 'restricted';
+  /** See QuestDetailModal's identical prop — false when the parent already
+   * reserves insets.top (QuestsScreen's SafeAreaView edges={['top']}). */
+  ownTopInset?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
@@ -312,13 +315,16 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={dismiss}>
-      <SwipeBackWrapper onDismiss={dismiss} backgroundColor={canvas}>
+    // FullPageOverlay instead of a real RN <Modal> — same flash-free swap as
+    // QuestDetailModal.tsx (a Modal's bare native backing window shows
+    // through as a white flash while SwipeBackWrapper's content slides away
+    // on close).
+    <FullPageOverlay visible onDismiss={dismiss} zIndex={61} backgroundColor={canvas}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
           {/* ── Top bar: ‹ back + title ── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: (ownTopInset ? insets.top : 0) + 16, paddingBottom: 8 }}>
             <TouchableOpacity onPress={dismiss} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={{ fontSize: 22, color: colors.pink, fontWeight: '400', lineHeight: 26, marginTop: -1 }}>‹</Text>
               <Text style={{ fontSize: 16, fontWeight: '700', color: colors.pink }}>Back</Text>
@@ -963,7 +969,6 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
             </View>
         </KeyboardAvoidingView>
       </View>
-      </SwipeBackWrapper>
-    </Modal>
+    </FullPageOverlay>
   );
 }

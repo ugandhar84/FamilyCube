@@ -1238,6 +1238,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         <EditQuestModal
           quest={editTarget}
           activeMemberId={activeMember?.id ?? ''}
+          ownTopInset={false}
           // Full edit is about whether anything has actually happened yet
           // (status === 'todo' — not claimed/started/submitted), not about
           // whether it's pre-assigned. An AI/voice-created quest is often
@@ -1282,6 +1283,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
           onClose={() => setDetailTarget(null)}
           canEdit={isParent}
           isParent={isParent}
+          ownTopInset={false}
           onDelete={isParent ? () => {
             const q = detailTarget;
             Alert.alert(

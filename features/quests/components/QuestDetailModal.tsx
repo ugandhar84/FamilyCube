@@ -15,7 +15,10 @@ import { EditQuestModal } from './EditQuestModal';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { supabase, uploadChoreProofPhoto } from '@/lib/supabase';
-import SwipeBackWrapper from '@/components/SwipeBackWrapper';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { useUIStore } from '@/store/uiStore';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Live direction: "we should follow the heading styles similar to the
 // hub" — TodayActionGrid.tsx's own section heading (thin 2px accent
@@ -189,12 +192,21 @@ function LogRow({ entry, members, colors, isLast }: {
 }
 
 // ── Main modal ───────────────────────────────────────────────────────────────
-export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }: {
+export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, ownTopInset = true }: {
   quest: Quest;
   onClose: () => void;
   onDelete?: () => void;
   canEdit?: boolean;
   isParent?: boolean;
+  /** Whether this screen's top bar should add its own insets.top padding.
+   * Default true (correct when this is mounted somewhere with no ambient
+   * safe-area reservation, e.g. HubScreen's parent-role View root). Pass
+   * false when the parent already reserves the top inset itself, e.g.
+   * QuestsScreen's SafeAreaView edges={['top']} — otherwise the inset gets
+   * counted twice, pushing the header far down the screen
+   * [live-reported: "see there is any safearea and the paddins are
+   * missin? it stoo odd on the pageheading and the top"]. */
+  ownTopInset?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [dbLog, setDbLog] = useState<ActivityLogRow[]>([]);
@@ -216,6 +228,23 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
     id: string; submitted_at: string; note: string | null; photo_url: string | null;
     redo_round: number; outcome: string | null; reviewed_note: string | null; reviewed_at: string | null;
   }[]>([]);
+
+  // Hide the bottom tab bar while this full-page overlay is on screen —
+  // without this, the tab bar stayed visible under the detail view since
+  // it's opened conditionally from QuestsScreen rather than being its own
+  // route [live-reported: "still not fully covered" — tab bar showing
+  // under the detail screen]. hideTabBar/showTabBar (not just the FAB-only
+  // fullBleedScreenActive flag) is the actual mechanism that animates the
+  // real tab bar away, same as GroceryScreen's sub-pages.
+  useEffect(() => {
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     supabase.from('chore_submissions')
@@ -248,7 +277,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
   // Always read the latest version from the store so edits reflect immediately
   const liveQuest = quests.find(q => q.id === quest.id) ?? quest;
 
-  const canvas  = isDark ? '#0E0C13' : '#FFFFFF';
+  const canvas  = isDark ? '#0E0C13' : GEMINI.canvas;
   const chipBg  = isDark ? '#1E1E2A' : '#EEECF2';
 
   const refreshLog = () => fetchActivityLog('chore', quest.id, 10).then(rows => setDbLog(rows));
@@ -617,32 +646,48 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
   };
   const statusInfo = statusMap[liveQuest.status] ?? { label: liveQuest.status, color: colors.textSecondary };
 
-  // When in edit mode, render EditQuestModal inside the same already-open Modal
+  // When in edit mode, render EditQuestModal — it's its own FullPageOverlay
+  // now, so no outer <Modal> here. Wrapping it in one used to stack a real
+  // native Modal on top of this screen's own still-mounted FullPageOverlay
+  // (QuestDetailModal unmounts its content when `editing` flips, EditQuestModal
+  // mounts fresh inside a second, differently-stacked layer), producing
+  // overlapping/ghosted content from both screens mid-transition
+  // [live-reported: "not fully overlayed" — stray "‹ Back"/"Delete chore"
+  // bleeding through near the top and bottom of the screen].
   if (editing) {
     return (
-      <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setEditing(false)}>
-        <EditQuestModal
-          quest={liveQuest}
-          activeMemberId={activeMemberId}
-          onClose={() => setEditing(false)}
-          onSave={(id, patch) => {
-            updateQuest(id, patch);
-            setEditing(false);
-            setTimeout(refreshLog, 1500); // allow DB write to settle
-          }}
-          onDelete={onDelete ? (_id: string) => { onDelete(); onClose(); } : undefined}
-        />
-      </Modal>
+      <EditQuestModal
+        quest={liveQuest}
+        activeMemberId={activeMemberId}
+        ownTopInset={ownTopInset}
+        onClose={() => setEditing(false)}
+        onSave={(id, patch) => {
+          updateQuest(id, patch);
+          setEditing(false);
+          setTimeout(refreshLog, 1500); // allow DB write to settle
+        }}
+        onDelete={onDelete ? (_id: string) => { onDelete(); onClose(); } : undefined}
+      />
     );
   }
 
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SwipeBackWrapper onDismiss={onClose} backgroundColor={canvas}>
+    // FullPageOverlay instead of a real RN <Modal> — a Modal's own native
+    // backing window has no color of its own, so when SwipeBackWrapper's
+    // content slid away during back-swipe, that bare native window showed
+    // through as a white flash for the ~220ms before onClose actually
+    // unmounted it [live-reported: "when closing with back swipe I notice
+    // briefly white space when it is sliding to close"]. FullPageOverlay
+    // instead stacks as a plain absolute View directly above the real
+    // screen underneath (QuestsScreen/HubScreen), so there's always real
+    // content behind it, plus the same eased slide+fade every other
+    // full-page screen (grocery's sub-pages, etc.) already uses.
+    <>
+    <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
 
         {/* Top bar */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: (ownTopInset ? insets.top : 0) + 12, paddingBottom: 8 }}>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={{ fontSize: 16, fontWeight: '600', color: colors.teal }}>‹ Back</Text>
           </TouchableOpacity>
@@ -893,9 +938,10 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
             return (
               <View style={{ marginBottom: 14 }}>
                 <SectionLabel color={colors.textTertiary}>{submitterLabel}</SectionLabel>
-                <View style={{ backgroundColor: isDark ? colors.surface : colors.card,
+                <View style={{ backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
                   borderRadius: 18, overflow: 'hidden',
-                  borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(44,39,34,0.08)' }}>
+                  borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.08)' : GEMINI.border,
+                  ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
                   {displayPhotoUrl && (
                     <TouchableOpacity onPress={() => setProofViewerUri(displayPhotoUrl)} activeOpacity={0.9}>
                       <Image source={{ uri: displayPhotoUrl }}
@@ -978,7 +1024,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
               {/* Claim (open pool) */}
               {!liveQuest.pendingTerms && actions.canClaim && (
                 <TouchableOpacity onPress={doClaim} disabled={claiming}
-                  style={{ height: 52, borderRadius: 16, backgroundColor: colors.teal,
+                  style={{ height: 52, borderRadius: 16, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                     alignItems: 'center', justifyContent: 'center' }}>
                   {claiming
                     ? <ActivityIndicator color="#fff" />
@@ -989,7 +1035,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
               {/* GP: accept a grandparent quest before working it */}
               {!liveQuest.pendingTerms && actions.canAcceptGp && (
                 <TouchableOpacity onPress={() => startGrandparentQuest(liveQuest.id, activeMemberId)}
-                  style={{ height: 52, borderRadius: 16, backgroundColor: colors.teal,
+                  style={{ height: 52, borderRadius: 16, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                     alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>🙌 I'll take it</Text>
                 </TouchableOpacity>
@@ -1005,7 +1051,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
               {/* Submit / Resubmit — inline compose, replaces the old bottom sheet */}
               {!liveQuest.pendingTerms && !liveQuest.kidDisputedRedo && (actions.canSubmit || actions.canResubmit) && !actions.canAcceptGp && !submitting && (
                 <TouchableOpacity onPress={() => setSubmitting(true)}
-                  style={{ height: 52, borderRadius: 16, backgroundColor: colors.pink,
+                  style={{ height: 52, borderRadius: 16, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                     alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>
                     {actions.canResubmit ? '↩ Revise & resubmit' : 'Submit for review'}
@@ -1069,7 +1115,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                     placeholder="Add a note (optional)…"
                     placeholderTextColor={colors.textTertiary}
                     multiline
-                    style={{ backgroundColor: colors.card, borderRadius: 12, padding: 12,
+                    style={{ backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 12, padding: 12,
                       fontSize: 14, color: colors.textPrimary, minHeight: 56, textAlignVertical: 'top' }}
                   />
                   <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -1079,7 +1125,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                       <Text style={{ fontSize: 13, color: colors.textSecondary }}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={doSubmit} disabled={uploadingProof}
-                      style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: colors.pink,
+                      style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                         alignItems: 'center', justifyContent: 'center' }}>
                       {uploadingProof
                         ? <ActivityIndicator color="#fff" />
@@ -1178,7 +1224,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                     const targetIsKid = target?.role === 'kid' || target?.role === 'teen';
                     if (!targetIsKid || liveQuest.coins > 0) return null;
                     return (
-                      <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 12, gap: 10 }}>
+                      <View style={{ backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 12, padding: 12, gap: 10 }}>
                         <Text style={{ fontSize: 12, color: colors.amber, fontWeight: '600', lineHeight: 17 }}>
                           ⚠ This chore has no coin reward right now — {target?.name.split(' ')[0]} won't earn anything for doing it.
                         </Text>
@@ -1226,8 +1272,8 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                                 keyboardType="number-pad"
                                 placeholder="e.g. 25"
                                 placeholderTextColor={colors.textTertiary}
-                                style={{ flex: 1, backgroundColor: colors.card, borderRadius: 10,
-                                  borderWidth: 1, borderColor: colors.border,
+                                style={{ flex: 1, backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 10,
+                                  borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
                                   paddingHorizontal: 12, paddingVertical: 8,
                                   fontSize: 14, fontWeight: '700', color: colors.amber }}
                               />
@@ -1252,7 +1298,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                     const targetIsAdult = target?.role === 'parent' || target?.role === 'senior';
                     if (!targetIsAdult || liveQuest.coins <= 0) return null;
                     return (
-                      <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 12, gap: 6 }}>
+                      <View style={{ backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 12, padding: 12, gap: 6 }}>
                         <Text style={{ fontSize: 12, color: colors.danger, fontWeight: '600', lineHeight: 17 }}>
                           ⚠ {target?.name.split(' ')[0]} is a {target?.role} — the {liveQuest.coins} coin reward will be removed. Parents/seniors don't earn coins.
                         </Text>
@@ -1266,7 +1312,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                     placeholder="Add a note for them (optional)…"
                     placeholderTextColor={colors.textTertiary}
                     multiline
-                    style={{ backgroundColor: colors.card, borderRadius: 12, padding: 12,
+                    style={{ backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 12, padding: 12,
                       fontSize: 14, color: colors.textPrimary, minHeight: 56, textAlignVertical: 'top' }}
                   />
                   <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -1279,7 +1325,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                       <Text style={{ fontSize: 13, color: colors.textSecondary }}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={doReassignWithNote} disabled={!reassignTargetId || actionBusy === 'reassign'}
-                      style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: colors.amber,
+                      style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                         alignItems: 'center', justifyContent: 'center', opacity: !reassignTargetId ? 0.5 : 1 }}>
                       {actionBusy === 'reassign'
                         ? <ActivityIndicator color="#fff" />
@@ -1357,7 +1403,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                       </View>
                     )}
                     <TouchableOpacity onPress={doApprove} disabled={actionBusy === 'approve'}
-                      style={{ height: 54, borderRadius: 16, backgroundColor: colors.teal,
+                      style={{ height: 54, borderRadius: 16, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                         alignItems: 'center', justifyContent: 'center' }}>
                       {actionBusy === 'approve'
                         ? <ActivityIndicator color="#fff" />
@@ -1423,7 +1469,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
                       : redoPreset === 'CUSTOM' ? 'What needs fixing?' : 'Add a message for them (optional)'}
                     placeholderTextColor={colors.textTertiary}
                     multiline
-                    style={{ backgroundColor: colors.card, borderRadius: 12, padding: 12,
+                    style={{ backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 12, padding: 12,
                       fontSize: 14, color: colors.textPrimary, minHeight: 56, textAlignVertical: 'top' }}
                   />
                   <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -1632,7 +1678,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
           </View>{/* end padded wrapper */}
         </ScrollView>
       </View>
-      </SwipeBackWrapper>
+    </FullPageOverlay>
 
       {/* ── Proof photo viewer — tap-to-enlarge, full screen ──
           Was boxed into a fixed 92%/70% container regardless of the
@@ -1664,6 +1710,6 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
           </TouchableOpacity>
         </Modal>
       )}
-    </Modal>
+    </>
   );
 }

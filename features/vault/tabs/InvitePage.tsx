@@ -20,6 +20,7 @@ import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMemb
 import { localDateStr, fmtDate } from '@/lib/dates';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { PageHeading } from '@/components/PageHeading';
 
 // Gemini rhythm tokens — was its own hardcoded "Figma exact values" palette,
 // out of step with the rest of the app [live-reported: "why this is not
@@ -216,17 +217,21 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
 
-      {/* ── Header ───────────────────────────────────────────────────── */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4, backgroundColor: pageBg }}>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE }}>Parents only</Text>
-        <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: labelClr, marginTop: 4, lineHeight: 36 }}>
-            Invite family member
-          </Text>
-        </Pressable>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: BODY_CLR, marginTop: 6, lineHeight: 18, marginBottom: 4 }}>
-          Add their details, then share the code they'll use to join.
-        </Text>
+      {/* ── Header — same PageHeading shell as Groceries/Generations (accent
+          bar + eyebrow + title + subtitle + pastel icon badge). ── */}
+      <View style={{ backgroundColor: pageBg }}>
+        <View style={{ paddingHorizontal: 24, paddingTop: insets.top + 8 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE }}>Parents only</Text>
+        </View>
+        <PageHeading
+          eyebrow="FAMILY CUBE · FAMILY INVITE"
+          title="Invite family member"
+          subtitle="Add their details, then share the code they'll use to join."
+          accent="teal"
+          Icon={Key}
+          onTitlePress={onClose}
+          topInset={0}
+        />
       </View>
 
       <ScrollView

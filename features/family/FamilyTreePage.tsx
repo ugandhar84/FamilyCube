@@ -24,6 +24,7 @@ import FullPageOverlay from '@/components/FullPageOverlay';
 import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { showToast } from '@/components/AppToast';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
 
 export function FamilyTreePage({ onClose }: { onClose: () => void }) {
   const { colors, isDark } = useTheme();
@@ -109,37 +110,28 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
   // explicit request) [live-requested: "how about tasks and home, chat,
   // family"] — was the older, separate '#F3F5F2' Figma-palette cream.
   const pageBg = isDark ? colors.background : GEMINI.canvas;
-  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
-  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
   const linkC  = isDark ? colors.primary : GEMINI.linkBlue;
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: isDark ? colors.teal : '#3D7A5A' }}>
-            {'FAMILY CUBE · GENERATIONS'}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: linkC }}>
+      {/* Header — same PageHeading shell as Groceries/Home Care (accent bar
+          + eyebrow + title + subtitle + pastel icon badge), replacing the
+          hand-rolled chrome row to match that rhythm exactly. */}
+      <View style={{ backgroundColor: pageBg }}>
+        <View style={{ paddingHorizontal: 24, paddingTop: insets.top + 8 }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: linkC, textAlign: 'right' }}>
             {activeMember?.name ? `${activeMember.name} · ${activeMember.role === 'parent' ? 'Parent / Admin' : activeMember.role}` : 'Family'}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }} style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              Our roots, our people
-            </Text>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: 4, lineHeight: 18 }}>
-              A small tree with a long story. Tap a person's card to see their place in the family.
-            </Text>
-          </TouchableOpacity>
-          <View style={{ width: 52, height: 52, borderRadius: 18,
-            backgroundColor: isDark ? 'rgba(95,163,125,0.28)' : '#D1E3D9',
-            alignItems: 'center', justifyContent: 'center' }}>
-            <TreePine size={28} color={isDark ? '#5FA37D' : '#3D7A5A'} strokeWidth={2} />
-          </View>
-        </View>
+        <PageHeading
+          eyebrow="FAMILY CUBE · GENERATIONS"
+          title="Our roots, our people"
+          subtitle="A small tree with a long story. Tap a person's card to see their place in the family."
+          accent="teal"
+          Icon={TreePine}
+          onTitlePress={onClose}
+          topInset={0}
+        />
       </View>
 
       {/* Tree */}

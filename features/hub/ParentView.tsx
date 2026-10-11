@@ -420,7 +420,12 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // screen's list can't structurally diverge.
   const pendingRedemptionsCount = useRewardStore(s => s.redemptions.filter(r => r.status === 'pending').length);
   const pendingKidRequestsCount = kidRequests.filter((r: any) => r.status === 'pending').length;
-  const pendingReviewCount = getParentReviewDeck().length + actionCount + pendingRedemptionsCount + pendingKidRequestsCount;
+  // Disputes weren't counted here at all — ReviewInboxScreen.tsx's own
+  // pendingDisputesCount uses this exact same chores-array check
+  // ('kid_disputed_redo' status or disputeStatus 'reversal_requested'); this
+  // tile's badge/cascade needs the same source so the two can't disagree.
+  const pendingDisputesCount = chores.filter((c: any) => c.status === 'kid_disputed_redo' || c.disputeStatus === 'reversal_requested').length;
+  const pendingReviewCount = getParentReviewDeck().length + actionCount + pendingRedemptionsCount + pendingKidRequestsCount + pendingDisputesCount;
   // "Add a task" tile's own status counters — pending (todo, assigned but
   // not started), in-progress (claimed/started), unassigned (open pool) —
   // computed straight off the live quests array so they can't drift from
@@ -467,6 +472,20 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
   const conflictEvent = conflictEvents[0] ?? neverDispatchedOverdue[0];
 
+  // Permission requests and SOS/emergency kid requests always need
+  // immediate parent attention — no staleness gate, unlike every other
+  // branch below. Live direction: "if any thing kids permissions and the
+  // SOS related thing it sneed to be showon immediatetly need you" — these
+  // jump the queue ahead of everything else, including a scheduling
+  // conflict, since a kid is actively waiting on a yes/no (permission) or
+  // something urgent/unsafe (emergency) rather than a routine item.
+  const criticalKidRequest = (() => {
+    const r = (kidRequests as any[]).find(req =>
+      req.status === 'pending' && (req.type === 'permission' || req.urgency === 'emergency')
+    );
+    return r ?? null;
+  })();
+
   const pendingApprovalChore = (() => {
     const c = pendingReviews[0] as any;
     if (!c) return null;
@@ -481,6 +500,28 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
     const flagged = r.urgency === 'urgent' || r.urgency === 'emergency';
     const stale = minsAgo(r.requestedAt) > URGENT_WAIT_MS;
     return (flagged || stale) ? r : null;
+  })();
+
+  // Rewards and disputes previously had NO path into this slot at all —
+  // "Needs you" only ever considered chore approvals, so a parent could
+  // have redemptions or a live dispute waiting and never see it surfaced
+  // here, only in the Review inbox's own badge count. Live direction:
+  // "needs you section only considering the chores review pending.. and
+  // ignoring the rewards, kids requests, disputes which are more of parent
+  // attention required.. so we should show each one of the items in needs
+  // you and show the N+ pending." Both gate on staleness the same way
+  // pendingApprovalChore does, so a reward redeemed 10 seconds ago doesn't
+  // instantly steal this slot the same routine-vs-urgent reasoning above
+  // already established for chores.
+  const pendingRedemption = useRewardStore(s => {
+    const r = s.redemptions.find(rd => rd.status === 'pending');
+    if (!r) return null;
+    return minsAgo(r.redeemedAt) > URGENT_WAIT_MS ? r : null;
+  });
+
+  const pendingDispute = (() => {
+    const c = (chores as any[]).find(ch => ch.status === 'kid_disputed_redo' || ch.disputeStatus === 'reversal_requested');
+    return c ?? null;
   })();
 
   // myHelperEvents: events where THIS parent is the assigned driver/helper
@@ -508,7 +549,12 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // date/time, myPendingHelperEvent's raw 24h time string, and the backlog
   // task's raw ISO dueDate were all previously baked straight into the
   // reason text with no formatting, violating the app's 12h/human-date rule.
-  const needsYouItem: NeedsYouItem | null = conflictEvent
+  const needsYouItem: NeedsYouItem | null = criticalKidRequest
+    ? { kind: 'approval',
+        title: criticalKidRequest.type === 'permission' ? (criticalKidRequest.detail ?? 'Permission request') : 'SOS — needs attention now',
+        reason: `${members.find(m => m.id === criticalKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${criticalKidRequest.type === 'permission' ? ' needs a yes/no.' : ' needs you right now.'}`,
+        extraCount: Math.max(0, pendingKidRequestsCount - 1) }
+    : conflictEvent
     ? { kind: 'conflict', title: conflictEvent.title,
         reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.',
         dueDate: conflictEvent.date, dueTime: conflictEvent.time }
@@ -525,7 +571,17 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         // the review but we have seen the only one card here"].
         extraCount: Math.max(0, pendingReviews.length - 1) }
     : pendingKidRequest
-    ? { kind: 'approval', title: pendingKidRequest.detail ?? 'Request from a kid', reason: `${members.find(m => m.id === pendingKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'} is waiting for your response.` }
+    ? { kind: 'approval', title: pendingKidRequest.detail ?? 'Request from a kid',
+        reason: `${members.find(m => m.id === pendingKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'} is waiting for your response.`,
+        extraCount: Math.max(0, pendingKidRequestsCount - 1) }
+    : pendingDispute
+    ? { kind: 'approval', title: pendingDispute.title ?? 'Dispute needs a second look',
+        reason: pendingDispute.status === 'kid_disputed_redo' ? 'A redo request is being disputed.' : 'Another parent is asking to reverse an approval.',
+        extraCount: Math.max(0, pendingDisputesCount - 1) }
+    : pendingRedemption
+    ? { kind: 'approval', title: pendingRedemption.rewardTitle ?? 'Reward redemption',
+        reason: `${members.find(m => m.id === pendingRedemption.memberId)?.name?.split(' ')[0] ?? pendingRedemption.memberName ?? 'A family member'} redeemed this and is waiting on you.`,
+        extraCount: Math.max(0, pendingRedemptionsCount - 1) }
     : myPendingHelperEvent
     ? { kind: 'approval', title: myPendingHelperEvent.title,
         reason: `You're assigned${myPendingHelperEvent.location ? ` · ${myPendingHelperEvent.location}` : ''} — confirm you can make it.`,

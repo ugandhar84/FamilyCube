@@ -887,41 +887,41 @@ export default function ChatScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: canvas }} edges={['top']}>
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-        {/* Header */}
-        <PageHeading
-          eyebrow="FAMILY CUBE · CHAT"
-          title="Messages"
-          subtitle={`${members.length} people · tap a name to start a thread`}
-          accent="pink"
-          topInset={0}
-        />
+        {/* Header + Channel / DM list — header now scrolls with the content
+            instead of being pinned, and bottom padding clears the floating
+            tab bar (~insets.bottom + 74 tall, see HubScreen/QuestsScreen). */}
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · CHAT"
+            title="Messages"
+            subtitle={`${members.length} people · tap a name to start a thread`}
+            accent="pink"
+            topInset={0}
+          />
 
-        {/* Presence card — Figma: pinkLight rounded card with family faces */}
-        {members.length > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-            marginHorizontal: 20, marginTop: 12, marginBottom: 4,
-            padding: 12, borderRadius: 18,
-            backgroundColor: isDark ? colors.surface : colors.pinkLight }}>
-            <View style={{ flexDirection: 'row' }}>
-              {members.slice(0, 5).map((m, i) => (
-                <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i,
-                  width: 28, height: 28, borderRadius: 14,
-                  borderWidth: 2, borderColor: isDark ? colors.surface : colors.pinkLight, overflow: 'hidden' }}>
-                  <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
-                    siblings={[]} size={24}
-                    ringColor={m.role === 'parent' ? colors.teal : colors.amber}
-                    ringWidth={0} bgColor={(m.role === 'parent' ? colors.teal : colors.amber) + '44'} />
-                </View>
-              ))}
+          {/* Presence card — Figma: pinkLight rounded card with family faces */}
+          {members.length > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+              marginHorizontal: 20, marginTop: 12, marginBottom: 4,
+              padding: 12, borderRadius: 18,
+              backgroundColor: isDark ? colors.surface : colors.pinkLight }}>
+              <View style={{ flexDirection: 'row' }}>
+                {members.slice(0, 5).map((m, i) => (
+                  <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i,
+                    width: 28, height: 28, borderRadius: 10,
+                    borderWidth: 2, borderColor: isDark ? colors.surface : colors.pinkLight, overflow: 'hidden' }}>
+                    <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+                      siblings={[]} size={24}
+                      ringColor={m.role === 'parent' ? colors.teal : colors.amber}
+                      ringWidth={0} bgColor={(m.role === 'parent' ? colors.teal : colors.amber) + '44'} />
+                  </View>
+                ))}
+              </View>
+              <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '500' }}>
+                {members.length} people active today
+              </Text>
             </View>
-            <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '500' }}>
-              {members.length} people active today
-            </Text>
-          </View>
-        )}
-
-        {/* Channel / DM list */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
+          )}
           {/* Group channels section */}
           <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, letterSpacing: 0.7,
             paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 }}>CHANNELS</Text>
@@ -1060,7 +1060,7 @@ export default function ChatScreen() {
                   padding: 14, borderRadius: 18,
                   backgroundColor: isDark ? colors.card : dmLight }}>
                 {/* Avatar in white circle */}
-                <View style={{ width: 48, height: 48, borderRadius: 24,
+                <View style={{ width: 48, height: 48, borderRadius: 16,
                   backgroundColor: isDark ? colors.surface : '#FFFFFF', overflow: 'hidden', flexShrink: 0,
                   alignItems: 'center', justifyContent: 'center' }}>
                   <FamilyAvatar name={other?.name ?? ch.label} emoji={other?.emoji}

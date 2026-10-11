@@ -38,6 +38,7 @@ import { RedoDisputeReviewScreen } from './parent/RedoDisputeReviewScreen';
 import { ApprovalDetailScreen } from './parent/ApprovalDetailScreen';
 import { RewardReviewScreen } from './parent/RewardReviewScreen';
 import HelpDispatchQueue from './HelpDispatchQueue';
+import { KidRequestDetailScreen } from '@/features/hub/parent/KidRequestDetailScreen';
 import RequestHelpModal from './RequestHelpModal';
 import GroceryScreen from '@/features/grocery/GroceryScreen';
 import MealsScreen from '@/features/vault/tabs/MealsScreen';
@@ -131,6 +132,7 @@ export default function HubScreen() {
   const [showChoresQueue, setShowChoresQueue] = useState(false);
   const [showRedemptionsQueue, setShowRedemptionsQueue] = useState(false);
   const [showHelpQueue, setShowHelpQueue] = useState(false);
+  const [activeKidRequestId, setActiveKidRequestId] = useState<string | null>(null);
   // Live direction: "we are going to have 2 duplicate cards ... better to
   // consolidate and use all richer elements ... make this the rich feature
   // screen" — ChoreProofReviewScreen/QuestReviewScreen (thinner, newer,
@@ -780,7 +782,14 @@ export default function HubScreen() {
         {reviewRedemptionId ? <RewardReviewScreen redemptionId={reviewRedemptionId} onClose={() => setReviewRedemptionId(null)} /> : null}
       </FullPageOverlay>
       <FullPageOverlay visible={showHelpQueue} onDismiss={() => setShowHelpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
-        <HelpDispatchQueue onRequestHelpOpen={() => setShowRequestHelp(true)} onClose={() => setShowHelpQueue(false)} />
+        <HelpDispatchQueue
+          onRequestHelpOpen={() => setShowRequestHelp(true)}
+          onClose={() => setShowHelpQueue(false)}
+          onOpenDetail={(id) => setActiveKidRequestId(id)}
+        />
+      </FullPageOverlay>
+      <FullPageOverlay visible={!!activeKidRequestId} onDismiss={() => setActiveKidRequestId(null)} zIndex={52} backgroundColor={hubCanvas}>
+        <KidRequestDetailScreen requestId={activeKidRequestId ?? ''} onClose={() => setActiveKidRequestId(null)} />
       </FullPageOverlay>
       <RequestHelpModal
         visible={showRequestHelp}

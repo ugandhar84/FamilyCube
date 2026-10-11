@@ -56,8 +56,9 @@ export function GroceryRequestCard({
       }>
       {decodedGrocery && (
         <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
-          backgroundColor: isDark ? '#1e293b' : '#fff',
-          borderLeftWidth: 3, borderLeftColor: accent }}>
+          backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
+          borderLeftWidth: 3, borderLeftColor: accent,
+          ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {decodedGrocery.name}{decodedGrocery.qty ? ` × ${decodedGrocery.qty}` : ''}
           </Text>
@@ -68,8 +69,9 @@ export function GroceryRequestCard({
       )}
       {rawDetailText && (
         <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
-          backgroundColor: isDark ? '#1e293b' : '#fff',
-          borderLeftWidth: 3, borderLeftColor: accent }}>
+          backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
+          borderLeftWidth: 3, borderLeftColor: accent,
+          ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
           <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             "{rawDetailText}"
           </Text>
@@ -81,7 +83,7 @@ export function GroceryRequestCard({
           <View style={{ gap: 6, marginBottom: 8 }}>
             {req.items.map((item: any) => (
               <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                backgroundColor: colors.surface, borderRadius: 10, padding: 10 }}>
+                backgroundColor: isDark ? colors.surface : GEMINI.cardBg, borderRadius: 10, padding: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{item.name}</Text>
                   {item.qty ? <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Qty: {item.qty}</Text> : null}
@@ -128,7 +130,7 @@ export function GroceryRequestCard({
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Approve" on "${req.detail}" (id=${req.id}) → approveRequest [features/hub/parent/GroceryRequestCard.tsx:126]`); approveRequest(req.id, active.id); }}
-            style={{ flex: 1, backgroundColor: accent, borderRadius: 10,
+            style={{ flex: 1, backgroundColor: isDark ? colors.primary : GEMINI.blue, borderRadius: 10,
               paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <Check size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve</Text>

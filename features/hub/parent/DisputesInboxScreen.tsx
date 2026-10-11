@@ -15,14 +15,15 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, TouchableOpacity, Platform, StyleSheet,
+  View, Text, ScrollView, Pressable, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, MessageSquare, ShieldCheck } from 'lucide-react-native';
+import { MessageSquare, ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
 
 export type DisputeKind = 'redo' | 'reversal';
 
@@ -52,8 +53,9 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
 
   const openCount = openRedos.length + openReversals.length;
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
-  const cardWhiteBg = isDark ? colors.card : '#FFFFFF';
+  const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
+  const cardWhiteBg = isDark ? colors.card : GEMINI.cardBg;
+  const cardShadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
   const cardPeachBg = isDark ? '#1E1210' : '#FFE8E3';
   const cardMintBg  = isDark ? '#0D1F18' : '#DDF5EC';
   const mintText    = isDark ? colors.teal : '#16705F';
@@ -67,30 +69,15 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <View style={{
-        paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : GEMINI.border,
-        backgroundColor: canvas, gap: 8,
-      }}>
-        <View style={{ gap: 4 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Review inbox</Text>
-          </TouchableOpacity>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              A fair second look
-            </Text>
-            <Pressable
-              onPress={onClose}
-              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
-            >
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
+      <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
+        <PageHeading
+          title="Disputes"
+          subtitle={openCount > 0 ? `${openCount} dispute${openCount !== 1 ? 's' : ''} need a second look` : 'No open disputes'}
+          onTitlePress={onClose}
+          topInset={insets.top}
+        />
 
-        <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 14, padding: 4, gap: 4 }}>
+        <View style={{ marginHorizontal: 20, flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 14, padding: 4, gap: 4 }}>
           {([
             { key: 'open', label: `Open · ${openCount}` },
             { key: 'resolved', label: 'Resolved' },
@@ -130,10 +117,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
         {showRedos && (
           <View style={{
             backgroundColor: cardWhiteBg, borderRadius: RADIUS, padding: 16, gap: 12,
-            ...Platform.select({
-              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.18 : 0.07, shadowRadius: 8 },
-              android: { elevation: 2 },
-            }),
+            ...cardShadow,
           }}>
             <Text style={sectionLabel}>DISPUTED REDO · {openRedos.length}</Text>
             {openRedos.map((c, i) => (

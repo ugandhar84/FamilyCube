@@ -18,16 +18,17 @@
 import React, { useMemo } from 'react';
 import { router } from 'expo-router';
 import {
-  View, Text, ScrollView, Pressable, TouchableOpacity, Platform, StyleSheet,
+  View, Text, ScrollView, Pressable, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, ClipboardCheck, Gift, HelpCircle, ChevronRight, Scale } from 'lucide-react-native';
+import { ClipboardCheck, Gift, HelpCircle, ChevronRight, Scale, Inbox } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
 
 export type ReviewCategory = 'chores' | 'redemptions' | 'requests' | 'disputes';
 
@@ -92,9 +93,10 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
     ).slice(0, 5),
   [chores]);
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
-  const cardWhiteBg = isDark ? colors.card : '#FFFFFF';
-  const linkBlue = colors.teal;
+  const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
+  const cardWhiteBg = isDark ? colors.card : GEMINI.cardBg;
+  const cardShadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
+  const linkBlue = isDark ? colors.teal : GEMINI.blue;
   const RADIUS = 16;
   const sectionLabel = { fontSize: 11 as const, fontWeight: '800' as const, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: colors.textTertiary };
 
@@ -127,43 +129,19 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
-      {/* ── Header ── */}
-      <View style={{
-        paddingHorizontal: 20,
-        paddingTop: insets.top + 12,
-        paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : GEMINI.border,
-        backgroundColor: canvas,
-        gap: 8,
-      }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 15 }}>
-            {familyName?.toUpperCase() ?? 'FAMILY SPACE'}
-          </Text>
-          {activeMember && (
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>
-              {activeMember.name}
-            </Text>
-          )}
-        </View>
-
-        <View style={{ gap: 4 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Hub</Text>
-          </TouchableOpacity>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              Review inbox
-            </Text>
-            <Pressable
-              onPress={onClose}
-              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
-            >
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
+      {/* ── Header — same PageHeading shell as Home Care/Groceries (eyebrow +
+          title + subtitle + pastel icon badge), tap title to go back, per
+          the Gemini-rhythm header convention used app-wide. ── */}
+      <View style={{ backgroundColor: canvas }}>
+        <PageHeading
+          eyebrow={activeMember ? `${familyName?.toUpperCase() ?? 'FAMILY SPACE'} · ${activeMember.name}` : (familyName?.toUpperCase() ?? 'FAMILY SPACE')}
+          title="Review inbox"
+          subtitle={totalPending > 0 ? `${totalPending} waiting on you` : 'All caught up'}
+          accent="pink"
+          Icon={Inbox}
+          onTitlePress={onClose}
+          topInset={insets.top}
+        />
       </View>
 
       <ScrollView
@@ -175,10 +153,7 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
         {totalPending === 0 && (
           <View style={{
             backgroundColor: cardWhiteBg, borderRadius: RADIUS, padding: 16,
-            ...Platform.select({
-              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.18 : 0.07, shadowRadius: 8 },
-              android: { elevation: 2 },
-            }),
+            ...cardShadow,
           }}>
             <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
               Nothing pending right now. Check back when the family needs you!
@@ -233,10 +208,7 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
         {decidedChores.length > 0 && (
           <View style={{
             backgroundColor: cardWhiteBg, borderRadius: RADIUS, padding: 16, gap: 12,
-            ...Platform.select({
-              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.18 : 0.07, shadowRadius: 8 },
-              android: { elevation: 2 },
-            }),
+            ...cardShadow,
           }}>
             <Text style={sectionLabel}>RECENTLY DECIDED</Text>
             {decidedChores.map((chore, i) => {

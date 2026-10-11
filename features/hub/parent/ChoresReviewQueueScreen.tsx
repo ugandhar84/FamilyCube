@@ -20,14 +20,15 @@
  */
 import React from 'react';
 import {
-  View, Text, ScrollView, Pressable, TouchableOpacity, Image, Platform, StyleSheet,
+  View, Text, ScrollView, Pressable, Image, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Camera, ImageOff, Sparkles, Heart, Briefcase, ClipboardCheck } from 'lucide-react-native';
+import { ImageOff, Sparkles, Heart, Briefcase, ClipboardCheck } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
 
 function relativeTime(iso?: string): string {
   if (!iso) return '';
@@ -66,34 +67,22 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
     );
   }, [chores]);
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
-  const cardWhiteBg = isDark ? colors.card : '#FFFFFF';
-  const accentColor = colors.teal;
+  const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
+  const cardWhiteBg = isDark ? colors.card : GEMINI.cardBg;
+  const cardShadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
+  const rowShadow = isDark
+    ? { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.14, shadowRadius: 6 }
+    : GEMINI.cardShadow;
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <View style={{
-        paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : GEMINI.border,
-        backgroundColor: canvas, gap: 8,
-      }}>
-        <View style={{ gap: 4 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: accentColor, lineHeight: 18 }}>← Review inbox</Text>
-          </TouchableOpacity>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              Chores & Quests
-            </Text>
-            <Pressable
-              onPress={onClose}
-              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
-            >
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
+      <View style={{ backgroundColor: canvas }}>
+        <PageHeading
+          title="Chores & Quests"
+          subtitle={rows.length > 0 ? `${rows.length} chore${rows.length !== 1 ? 's' : ''} need${rows.length === 1 ? 's' : ''} your review` : 'All chores reviewed'}
+          onTitlePress={onClose}
+          topInset={insets.top}
+        />
       </View>
 
       <ScrollView
@@ -104,10 +93,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
         {rows.length === 0 ? (
           <View style={{
             backgroundColor: cardWhiteBg, borderRadius: 16, padding: 16,
-            ...Platform.select({
-              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.18 : 0.07, shadowRadius: 8 },
-              android: { elevation: 2 },
-            }),
+            ...cardShadow,
           }}>
             <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>
               Nothing pending right now.
@@ -135,10 +121,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
                   flexDirection: 'row', gap: 12,
                   backgroundColor: cardWhiteBg, borderRadius: 16, padding: 14,
                   opacity: pressed ? 0.8 : 1,
-                  ...Platform.select({
-                    ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.14 : 0.06, shadowRadius: 6 },
-                    android: { elevation: 1 },
-                  }),
+                  ...rowShadow,
                 })}
               >
                 {/* Photo thumbnail, or a flagged empty state when one was

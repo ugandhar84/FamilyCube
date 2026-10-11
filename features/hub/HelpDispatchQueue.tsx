@@ -17,6 +17,8 @@ import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -250,11 +252,12 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
     setProcessingWithdraw(p => ({ ...p, [id]: false }));
   };
 
-  const cardBg   = colors.card;
-  const divider = colors.border;
   const allReqs  = [...pending, ...assigned, ...completed];
 
-  const canvas = isDark ? '#0E0C13' : '#FFFFFF';
+  const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
+  const subtitle = pending.length > 0
+    ? `${pending.length} request${pending.length !== 1 ? 's' : ''} need${pending.length === 1 ? '' : 's'} a decision${assigned.length > 0 ? ` · ${assigned.length} in progress` : ''}`
+    : `No open requests${assigned.length > 0 ? ` · ${assigned.length} in progress` : ''}`;
   const sectionLabel = (text: string, count: number, color: string) => (
     <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.7, color, marginTop: 6 }}>
       {text} · {count}
@@ -263,25 +266,19 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 14, gap: 6,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: divider, backgroundColor: canvas }}>
-        {onClose && (
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Back</Text>
-          </TouchableOpacity>
-        )}
-        <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.6, color: colors.textTertiary }}>FAMILY CUBE · KID REQUESTS</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-          <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary }}>Kid requests</Text>
-          <TouchableOpacity style={[q.askBtn, { backgroundColor: colors.pink, marginBottom: 4 }]} onPress={onRequestHelpOpen}>
-            <PlusIcon color="#fff" size={14} />
-            <Text style={q.askBtnText}>Ask for help</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={{ fontSize: 14, color: colors.textSecondary }}>
-          {pending.length > 0 ? `${pending.length} waiting on you` : 'Nothing waiting on you'}
-          {assigned.length > 0 ? ` · ${assigned.length} in progress` : ''}
-        </Text>
+      <View style={{ backgroundColor: canvas }}>
+        <PageHeading
+          title="Kid requests"
+          subtitle={subtitle}
+          onTitlePress={onClose}
+          topInset={insets.top}
+          right={(
+            <TouchableOpacity style={[q.askBtn, { backgroundColor: colors.pink }]} onPress={onRequestHelpOpen}>
+              <PlusIcon color="#fff" size={14} />
+              <Text style={q.askBtnText}>Ask for help</Text>
+            </TouchableOpacity>
+          )}
+        />
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>

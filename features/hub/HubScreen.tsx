@@ -738,8 +738,11 @@ export default function HubScreen() {
       <FullPageOverlay visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <ReviewCategoryQueueScreen
           title="Rewards"
+          subtitle={(() => {
+            const n = reviewRedemptions.filter(r => r.status === 'pending').length;
+            return n > 0 ? `${n} redemption${n !== 1 ? 's' : ''} waiting on you` : 'No reward requests waiting';
+          })()}
           accentColor={colors.amber}
-          accentBg={colors.amberLight}
           onClose={() => setShowRedemptionsQueue(false)}
           rows={reviewRedemptions.filter(r => r.status === 'pending').map((r): QueueRow => {
             // Was a flat "Name · N coins" with no sense of how long it's

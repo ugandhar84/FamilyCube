@@ -486,38 +486,20 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
     return r ?? null;
   })();
 
-  const pendingApprovalChore = (() => {
-    const c = pendingReviews[0] as any;
-    if (!c) return null;
-    const overdue = c.dueDate && c.dueDate < localDateStr(new Date());
-    const stale = minsAgo(c.submittedAt) > URGENT_WAIT_MS;
-    return (overdue || stale) ? c : null;
-  })();
+  // Live direction (after seeing only the Disputes card show while chores/
+  // kid requests/rewards were also pending): "i still see entry from
+  // dispute only." The overdue/stale/flagged gates below were a leftover
+  // from the OLD single-slot design, where a fresh routine item couldn't
+  // be allowed to hog the one card. That reasoning no longer applies now
+  // that every category gets its own card — a category with ANY pending
+  // item now always gets a card; urgency is communicated via the
+  // urgentCount badge on the card itself (computed further below), not by
+  // hiding the card until something inside it is stale/flagged.
+  const pendingApprovalChore = (pendingReviews[0] as any) ?? null;
 
-  const pendingKidRequest = (() => {
-    const r = (kidRequests as any[]).find(req => req.status === 'pending');
-    if (!r) return null;
-    const flagged = r.urgency === 'urgent' || r.urgency === 'emergency';
-    const stale = minsAgo(r.requestedAt) > URGENT_WAIT_MS;
-    return (flagged || stale) ? r : null;
-  })();
+  const pendingKidRequest = (kidRequests as any[]).find(req => req.status === 'pending') ?? null;
 
-  // Rewards and disputes previously had NO path into this slot at all —
-  // "Needs you" only ever considered chore approvals, so a parent could
-  // have redemptions or a live dispute waiting and never see it surfaced
-  // here, only in the Review inbox's own badge count. Live direction:
-  // "needs you section only considering the chores review pending.. and
-  // ignoring the rewards, kids requests, disputes which are more of parent
-  // attention required.. so we should show each one of the items in needs
-  // you and show the N+ pending." Both gate on staleness the same way
-  // pendingApprovalChore does, so a reward redeemed 10 seconds ago doesn't
-  // instantly steal this slot the same routine-vs-urgent reasoning above
-  // already established for chores.
-  const pendingRedemption = useRewardStore(s => {
-    const r = s.redemptions.find(rd => rd.status === 'pending');
-    if (!r) return null;
-    return minsAgo(r.redeemedAt) > URGENT_WAIT_MS ? r : null;
-  });
+  const pendingRedemption = useRewardStore(s => s.redemptions.find(rd => rd.status === 'pending') ?? null);
 
   const pendingDispute = (() => {
     const c = (chores as any[]).find(ch => ch.status === 'kid_disputed_redo' || ch.disputeStatus === 'reversal_requested');
@@ -585,6 +567,8 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   }
 
   if (pendingApprovalChore) {
+    const choreIsOverdue = pendingApprovalChore.dueDate && pendingApprovalChore.dueDate < localDateStr(new Date());
+    const choreIsStale = minsAgo(pendingApprovalChore.submittedAt) > URGENT_WAIT_MS;
     const urgentChoresCount = (pendingReviews as any[]).filter((c: any) =>
       (c.dueDate && c.dueDate < localDateStr(new Date())) || minsAgo(c.submittedAt) > URGENT_WAIT_MS
     ).length;
@@ -592,9 +576,11 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
       item: {
         kind: 'approval',
         title: pendingApprovalChore.title ?? 'Chore awaiting review',
-        reason: (pendingApprovalChore.dueDate && pendingApprovalChore.dueDate < localDateStr(new Date()))
+        reason: choreIsOverdue
           ? 'Overdue — a family member completed this and is waiting for your approval.'
-          : 'Waiting a while — a family member completed this and is waiting for your approval.',
+          : choreIsStale
+          ? 'Waiting a while — a family member completed this and is waiting for your approval.'
+          : 'A family member completed this and is waiting for your approval.',
         dueDate: pendingApprovalChore.dueDate, dueTime: pendingApprovalChore.dueTime,
         extraCount: Math.max(0, pendingReviews.length - 1),
         urgentCount: urgentChoresCount,

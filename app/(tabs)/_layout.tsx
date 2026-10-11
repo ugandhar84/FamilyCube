@@ -130,7 +130,7 @@ function CustomTabBar({ state, navigation }: any) {
   const { deviceClass } = useDeviceClass();
   const isKioskMode = deviceClass === 'kitchenHub';
   const chatUnreadCounts = useChatStore(s => s.unreadCounts);
-  const hasUnreadChat = Object.values(chatUnreadCounts).some(n => n > 0);
+  const totalChatUnread = Object.values(chatUnreadCounts).reduce((sum, n) => sum + n, 0);
   const lastNavTime = useRef(0);
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId);
@@ -246,7 +246,6 @@ function CustomTabBar({ state, navigation }: any) {
         {TABS.map(({ name, label }, index) => {
           const focused = activeTabIndex === index;
           const route   = state.routes.find((r: any) => r.name === name);
-          const showBadge = name === 'chat' && hasUnreadChat;
 
           return (
             <Pressable
@@ -273,7 +272,13 @@ function CustomTabBar({ state, navigation }: any) {
                     activeColor={activeColor}
                     inactiveColor={inactiveColor}
                   />
-                  {showBadge && <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />}
+                  {name === 'chat' && totalChatUnread > 0 && (
+                    <View
+                      accessibilityLabel={`${totalChatUnread} unread`}
+                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: NAV_BAR_BG }]}>
+                      <Text style={styles.countBadgeText}>{totalChatUnread > 99 ? '99+' : totalChatUnread}</Text>
+                    </View>
+                  )}
                   {name === 'tasks' && overdueCount > 0 && (
                     <Animated.View
                       accessibilityLabel={`${overdueCount} overdue`}

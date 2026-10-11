@@ -1157,9 +1157,9 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                 (activeMember?.role === 'parent' || activeMember?.role === 'senior') &&
                 liveQuest.status === 'todo' && !submitting && !reassigning && (
                 <TouchableOpacity onPress={() => setReassigning(true)}
-                  style={{ height: 44, borderRadius: 14, borderWidth: 1.5, borderColor: colors.pink,
+                  style={{ height: 44, borderRadius: 14, backgroundColor: colors.pink,
                     alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink }}>↔ Reassign to someone else</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>↔ Reassign to someone else</Text>
                 </TouchableOpacity>
               )}
 

@@ -472,16 +472,18 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
   const conflictEvent = conflictEvents[0] ?? neverDispatchedOverdue[0];
 
-  // Permission requests and SOS/emergency kid requests always need
-  // immediate parent attention — no staleness gate, unlike every other
-  // branch below. Live direction: "if any thing kids permissions and the
-  // SOS related thing it sneed to be showon immediatetly need you" — these
-  // jump the queue ahead of everything else, including a scheduling
-  // conflict, since a kid is actively waiting on a yes/no (permission) or
+  // Permission requests, Questions, and SOS/emergency kid requests always
+  // need immediate parent attention — no staleness gate, unlike every
+  // other branch below. Live direction: "if any thing kids permissions and
+  // the SOS related thing it sneed to be showon immediatetly need you" /
+  // "there is permission from child it is an urgent request, there is a
+  // Question from child that is also urget" — these jump the queue ahead
+  // of everything else, including a scheduling conflict, since a kid is
+  // actively waiting on a yes/no (permission), an answer (question), or
   // something urgent/unsafe (emergency) rather than a routine item.
   const criticalKidRequest = (() => {
     const r = (kidRequests as any[]).find(req =>
-      req.status === 'pending' && (req.type === 'permission' || req.urgency === 'emergency')
+      req.status === 'pending' && (req.type === 'permission' || req.type === 'question' || req.urgency === 'emergency')
     );
     return r ?? null;
   })();
@@ -550,15 +552,22 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   if (criticalKidRequest || pendingKidRequest) {
     const r = criticalKidRequest ?? pendingKidRequest!;
     const urgentKidRequestsCount = (kidRequests as any[]).filter(req =>
-      req.status === 'pending' && (req.type === 'permission' || req.urgency === 'urgent' || req.urgency === 'emergency')
+      req.status === 'pending' && (req.type === 'permission' || req.type === 'question' || req.urgency === 'urgent' || req.urgency === 'emergency')
     ).length;
     needsYouCards.push({
       item: {
         kind: 'approval',
         title: criticalKidRequest
-          ? (criticalKidRequest.type === 'permission' ? (criticalKidRequest.detail ?? 'Permission request') : 'SOS — needs attention now')
+          ? (criticalKidRequest.type === 'permission' || criticalKidRequest.type === 'question'
+              ? (criticalKidRequest.detail ?? (criticalKidRequest.type === 'permission' ? 'Permission request' : 'Question from a kid'))
+              : 'SOS — needs attention now')
           : (r.detail ?? 'Request from a kid'),
-        reason: `${members.find(m => m.id === r.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${criticalKidRequest?.type === 'permission' ? ' needs a yes/no.' : criticalKidRequest ? ' needs you right now.' : ' is waiting for your response.'}`,
+        reason: `${members.find(m => m.id === r.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${
+          criticalKidRequest?.type === 'permission' ? ' needs a yes/no.'
+          : criticalKidRequest?.type === 'question' ? ' is waiting on your answer.'
+          : criticalKidRequest ? ' needs you right now.'
+          : ' is waiting for your response.'
+        }`,
         extraCount: Math.max(0, pendingKidRequestsCount - 1),
         urgentCount: urgentKidRequestsCount,
       },

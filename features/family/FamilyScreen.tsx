@@ -460,7 +460,9 @@ export default function FamilyScreen() {
           same as every other full-page screen (was a bare tab route with
           no entrance animation before). */}
       <FullPageOverlay visible={showFamilyTree} onDismiss={() => setShowFamilyTree(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
-        <FamilyTreePage onClose={() => setShowFamilyTree(false)} />
+        {(requestAnimatedClose) => (
+          <FamilyTreePage onClose={requestAnimatedClose} />
+        )}
       </FullPageOverlay>
 
       {/* Family Invite — same InvitePage used inside Family Tree's own
@@ -469,7 +471,9 @@ export default function FamilyScreen() {
           rename as family invite.. and then link that family invite
           page"]. */}
       <FullPageOverlay visible={showInvite} onDismiss={() => setShowInvite(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
-        <InvitePage onClose={() => setShowInvite(false)} />
+        {(requestAnimatedClose) => (
+          <InvitePage onClose={requestAnimatedClose} />
+        )}
       </FullPageOverlay>
 
       {/* Home care full-page overlay — same '__overlay:*' sentinel pattern

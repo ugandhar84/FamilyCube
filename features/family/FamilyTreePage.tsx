@@ -12,7 +12,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { UserPlus } from 'lucide-react-native';
+import { UserPlus, TreePine } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
@@ -20,6 +20,7 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { FamilyTreeView } from '@/features/vault/tabs/FamilyTreeView';
 import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
 import { InvitePage } from '@/features/vault/tabs/InvitePage';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { showToast } from '@/components/AppToast';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -116,18 +117,29 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
     <View style={{ flex: 1, backgroundColor: pageBg }}>
       {/* Header */}
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>← Family</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: linkC, marginTop: 12 }}>
-          {activeMember?.name ? `${activeMember.name} · ${activeMember.role === 'parent' ? 'Parent / Admin' : activeMember.role}` : 'Family'}
-        </Text>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
-          Our roots, our people
-        </Text>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: 4, marginBottom: 4, lineHeight: 18 }}>
-          A small tree with a long story. Tap a person's card to see their place in the family.
-        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: bodyC }}>
+            {'FAMILY CUBE · GENERATIONS'}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: linkC }}>
+            {activeMember?.name ? `${activeMember.name} · ${activeMember.role === 'parent' ? 'Parent / Admin' : activeMember.role}` : 'Family'}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }} style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+              Our roots, our people
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: 4, lineHeight: 18 }}>
+              A small tree with a long story. Tap a person's card to see their place in the family.
+            </Text>
+          </TouchableOpacity>
+          <View style={{ width: 52, height: 52, borderRadius: 18,
+            backgroundColor: isDark ? colors.tealLight : '#D1E3D9',
+            alignItems: 'center', justifyContent: 'center' }}>
+            <TreePine size={28} color={isDark ? colors.teal : '#3D7A5A'} strokeWidth={2} />
+          </View>
+        </View>
       </View>
 
       {/* Tree */}
@@ -178,11 +190,11 @@ export function FamilyTreePage({ onClose }: { onClose: () => void }) {
       )}
 
       {/* Invite full-page overlay */}
-      {showInvitePage && (
-        <View style={StyleSheet.absoluteFillObject}>
-          <InvitePage onClose={() => setShowInvitePage(false)} />
-        </View>
-      )}
+      <FullPageOverlay visible={showInvitePage} onDismiss={() => setShowInvitePage(false)} zIndex={50} backgroundColor={isDark ? colors.background : undefined}>
+        {(requestAnimatedClose) => (
+          <InvitePage onClose={requestAnimatedClose} />
+        )}
+      </FullPageOverlay>
     </View>
   );
 }

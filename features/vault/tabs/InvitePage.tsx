@@ -218,13 +218,12 @@ export function InvitePage({ onClose }: { onClose: () => void }) {
 
       {/* ── Header ───────────────────────────────────────────────────── */}
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4, backgroundColor: pageBg }}>
-        <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE }}>← Family</Text>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE }}>Parents only</Text>
+        <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+          <Text style={{ fontSize: 29, fontWeight: '700', color: labelClr, marginTop: 4, lineHeight: 36 }}>
+            Invite family member
+          </Text>
         </Pressable>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: BLUE, marginTop: 12 }}>Parents only</Text>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: labelClr, marginTop: 4, lineHeight: 36 }}>
-          Invite family member
-        </Text>
         <Text style={{ fontSize: 13, fontWeight: '500', color: BODY_CLR, marginTop: 6, lineHeight: 18, marginBottom: 4 }}>
           Add their details, then share the code they'll use to join.
         </Text>

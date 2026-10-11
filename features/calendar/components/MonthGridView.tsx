@@ -134,7 +134,7 @@ export function DayEventsSummaryCard({
                     {ev.title}
                   </Text>
                   {subtitle ? (
-                    <Text style={{ fontSize: 11, color: '#707688', marginTop: 3 }} numberOfLines={1}>
+                    <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : '#707688', marginTop: 3 }} numberOfLines={1}>
                       {subtitle}
                     </Text>
                   ) : null}
@@ -142,7 +142,7 @@ export function DayEventsSummaryCard({
 
                 {/* Action column — "Review" link for conflicts */}
                 {hasConflict && (
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#5C6EB5' }}>Review</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#99B3FF' : '#5C6EB5' }}>Review</Text>
                 )}
               </TouchableOpacity>
             );

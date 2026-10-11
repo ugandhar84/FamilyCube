@@ -1493,10 +1493,10 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 }}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
-                    color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
+                    color: openToGrandparents ? (isDark ? '#F5A85A' : '#92400E') : colors.textPrimary }}>
                     👴👵 Grandparents Welcome
                   </Text>
-                  <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? '#B45309' : colors.textSecondary }}>
+                  <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? (isDark ? '#F5A85A' : '#B45309') : colors.textSecondary }}>
                     {openToGrandparents
                       ? 'Enters voluntary pool — grandparents can claim or pass, no pressure'
                       : 'Off · private between parents only'}
@@ -1536,10 +1536,10 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
                 }}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
-                    color: openToTeens ? '#3730A3' : colors.textPrimary }}>
+                    color: openToTeens ? (isDark ? '#A78BC9' : '#3730A3') : colors.textPrimary }}>
                     🧑 Teens Welcome
                   </Text>
-                  <Text style={{ fontSize: TYPO.label, color: openToTeens ? '#4338CA' : colors.textSecondary }}>
+                  <Text style={{ fontSize: TYPO.label, color: openToTeens ? (isDark ? '#A78BC9' : '#4338CA') : colors.textSecondary }}>
                     {openToTeens
                       ? 'Enters voluntary pool — a teen with a car can cover this'
                       : 'Off · not offered to teens'}
@@ -2382,8 +2382,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
               {event.helperRequestedBy && (
-                <View style={{ backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#C7D2FE' }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#4338CA' }}>
+                <View style={{ backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: isDark ? '#3730A3' : '#C7D2FE' }}>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isDark ? '#A78BC9' : '#4338CA' }}>
                     🙋 Requested by {event.helperRequestedBy}
                   </Text>
                 </View>
@@ -2787,10 +2787,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       backgroundColor: editGPOpen ? (isDark ? '#2D1800' : colors.warningLight) : fieldBg,
                     }}>
                     <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editGPOpen ? '#92400E' : colors.textPrimary }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editGPOpen ? (isDark ? '#F5A85A' : '#92400E') : colors.textPrimary }}>
                         👴👵 Grandparents Welcome
                       </Text>
-                      <Text style={{ fontSize: TYPO.label, color: editGPOpen ? '#B45309' : colors.textSecondary }}>
+                      <Text style={{ fontSize: TYPO.label, color: editGPOpen ? (isDark ? '#F5A85A' : '#B45309') : colors.textSecondary }}>
                         {editGPOpen
                           ? (event.category === 'Study'
                               ? 'GP can help with tutoring/escort, or pass'
@@ -2823,10 +2823,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         backgroundColor: editTeenOpen ? (isDark ? '#1E1B4B' : '#EEF2FF') : fieldBg,
                       }}>
                       <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editTeenOpen ? '#3730A3' : colors.textPrimary }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editTeenOpen ? (isDark ? '#A78BC9' : '#3730A3') : colors.textPrimary }}>
                           🧑 Teens Welcome
                         </Text>
-                        <Text style={{ fontSize: TYPO.label, color: editTeenOpen ? '#4338CA' : colors.textSecondary }}>
+                        <Text style={{ fontSize: TYPO.label, color: editTeenOpen ? (isDark ? '#A78BC9' : '#4338CA') : colors.textSecondary }}>
                           {editTeenOpen
                             ? (event.category === 'Ride' ? 'Teen can drive · set coins below' : 'Enters voluntary pool — a teen with a car can cover this')
                             : 'Off · not offered to teens'}

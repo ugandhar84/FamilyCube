@@ -331,7 +331,9 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
           {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && !itemRequest && (
             <View style={{ gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.amber }}>Assign Tutor / Helper or Decline:</Text>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.amber }}>
+                  {req.type === 'tutor' ? 'Assign Tutor / Helper or Decline:' : 'Respond:'}
+                </Text>
                 <TouchableOpacity onPress={() => setDeclineOpen(v => !v)}>
                   <Text style={{ fontSize: 12, fontWeight: '900', color: colors.danger }}>❌ Decline Request</Text>
                 </TouchableOpacity>
@@ -381,7 +383,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
                     </TouchableOpacity>
                   </View>
                 </View>
-              ) : (
+              ) : req.type === 'tutor' ? (
                 <View style={{ gap: 8 }}>
                   <TouchableOpacity
                     style={{ borderRadius: 14, padding: 13, backgroundColor: colors.teal, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: processingAssign ? 0.5 : 1 }}
@@ -443,6 +445,16 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
                     />
                   )}
                 </View>
+              ) : (
+                <TouchableOpacity
+                  style={{ borderRadius: 14, padding: 13, backgroundColor: colors.teal, alignItems: 'center', opacity: processingAssign ? 0.5 : 1 }}
+                  onPress={doSelfAssign}
+                  disabled={processingAssign}
+                >
+                  {processingAssign
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>I'll handle this ({activeMember?.name?.split(' ')[0]})</Text>}
+                </TouchableOpacity>
               )}
             </View>
           )}
@@ -457,9 +469,11 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
               ) : null}
 
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  Assigned: <Text style={{ fontWeight: '900', color: colors.pink }}>{req.assignedHelper ? helperName(req.assignedHelper) : 'Parent'}</Text>
-                </Text>
+                {req.type === 'tutor' ? (
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                    Assigned: <Text style={{ fontWeight: '900', color: colors.pink }}>{req.assignedHelper ? helperName(req.assignedHelper) : 'Parent'}</Text>
+                  </Text>
+                ) : <View />}
                 {(isParentOrSenior || req.assignedHelper === activeMemberId || req.fromMemberId === activeMemberId) && (
                   <TouchableOpacity
                     style={{ backgroundColor: colors.pink, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 4, opacity: processingComplete ? 0.5 : 1 }}
@@ -473,7 +487,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
                 )}
               </View>
 
-              {isParentOrSenior && (
+              {isParentOrSenior && req.type === 'tutor' && (
                 <View style={{ backgroundColor: colors.pinkLight, borderRadius: 12, padding: 10, gap: 8 }}>
                   <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                     <Text style={{ fontSize: 12, fontWeight: '800', color: colors.pink }}>Reassign Tutor:</Text>

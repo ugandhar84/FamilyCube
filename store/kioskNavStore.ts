@@ -118,5 +118,18 @@ export function navigateFromNotification(
     useUIStore.getState().setOpenRewardsScreenRequested(true);
     return;
   }
+  // Same interception — '/(tabs)/memories' is kept only for stale deep
+  // links; normal navigation opens the Hub-owned FullPageOverlay instead.
+  // A memory_posted/memory_liked push carries ?memoryId=... as a route
+  // param on `dest`, which has no router screen to land on anymore — carry
+  // it over to pendingMemoryFocusId so MemoriesScreen can still scroll to
+  // the right card once opened.
+  if (pathname === '/(tabs)/memories') {
+    const memoryId = typeof dest === 'object' ? dest.params?.memoryId : undefined;
+    router.push('/(tabs)' as any);
+    if (memoryId) useUIStore.getState().setPendingMemoryFocusId(memoryId);
+    useUIStore.getState().setOpenMemoriesScreenRequested(true);
+    return;
+  }
   router.push(dest as any);
 }

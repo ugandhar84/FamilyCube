@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import { tabBarAnim, showTabBar, hideTabBar } from '@/lib/tabBarVisibility';
+import { tabBarAnim, showTabBar, hideTabBar, forceShowTabBar } from '@/lib/tabBarVisibility';
 import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
 import { useChatStore } from '@/store/chatStore';
@@ -187,6 +187,17 @@ function CustomTabBar({ state, navigation }: any) {
     if (activeTabIndex < 0) return;
     showTabBar();
   }, [activeTabIndex, activeRouteName]);
+
+  // Hard reset on the tab shell's own first mount — a cold-boot
+  // notification-driven overlay flag (grocery/memories/rewards) can call
+  // hideTabBar() from HubScreen's first effect pass with no guaranteed
+  // ordering against the plain showTabBar() above, which only decrements a
+  // count. This runs once, unconditionally, to guarantee the bar starts
+  // visible regardless of how that race resolved [live-reported: bottom
+  // nav sometimes invisible on cold app startup].
+  useEffect(() => {
+    forceShowTabBar();
+  }, []);
 
   const floatBottom = (insets.bottom || 16) + 10;
   const [barHeight, setBarHeight] = useState(0);

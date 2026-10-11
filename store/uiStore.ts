@@ -51,6 +51,21 @@ interface UIState {
   openMealsScreenRequested: boolean;
   setOpenGroceryScreenRequested: (v: boolean) => void;
   setOpenMealsScreenRequested: (v: boolean) => void;
+  // Same one-shot FullPageOverlay pattern as openGroceryScreenRequested —
+  // Memories was a real (hidden) Expo Router tab route, reached via
+  // router.push from AppsQuickAccessPills/FamilyScreen, which doesn't get
+  // the FullPageOverlay swipe-back gesture or PageHeading header rhythm
+  // every other Hub-launched feature now has.
+  openMemoriesScreenRequested: boolean;
+  setOpenMemoriesScreenRequested: (v: boolean) => void;
+  // One-shot, carried alongside openMemoriesScreenRequested — a
+  // memory_posted/memory_liked push tap used to deep-link via
+  // router.push('/(tabs)/memories?memoryId=...') query params, which the
+  // FullPageOverlay path doesn't have a router screen to receive. Set right
+  // before setOpenMemoriesScreenRequested(true); MemoriesScreen reads+clears
+  // it once on open to scroll to that card, same as the old memoryId param.
+  pendingMemoryFocusId: string | undefined;
+  setPendingMemoryFocusId: (v: string | undefined) => void;
   // Same one-shot pattern as openGroceryScreenRequested/openMealsScreenRequested
   // above — Rewards (app/(tabs)/store.tsx) is a real-but-hidden Expo Router
   // tab route (no longer in TABS_DEFAULT/TABS_SENIOR, "moved to Hub pills"),
@@ -138,6 +153,10 @@ export const useUIStore = create<UIState>((set) => ({
   openMealsScreenRequested: false,
   setOpenGroceryScreenRequested: (v) => set({ openGroceryScreenRequested: v }),
   setOpenMealsScreenRequested: (v) => set({ openMealsScreenRequested: v }),
+  openMemoriesScreenRequested: false,
+  setOpenMemoriesScreenRequested: (v) => set({ openMemoriesScreenRequested: v }),
+  pendingMemoryFocusId: undefined,
+  setPendingMemoryFocusId: (v) => set({ pendingMemoryFocusId: v }),
   openRewardsScreenRequested: false,
   setOpenRewardsScreenRequested: (v) => set({ openRewardsScreenRequested: v }),
   pendingChatChannelId: null,

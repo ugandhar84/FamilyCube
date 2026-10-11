@@ -20,6 +20,7 @@ import HealthPeoplePage from '@/features/vault/tabs/health/HealthPeoplePage';
 import SchoolScreen from '@/features/vault/tabs/SchoolScreen';
 import FindFamScreen from '@/features/gps/FindFamScreen';
 import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
+import MemoriesScreen from '@/features/vault/tabs/MemoriesScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { AccountSection } from '@/features/profile/AccountSection';
 import { useTheme } from '@/lib/ThemeContext';
@@ -113,6 +114,7 @@ export default function FamilyScreen() {
   const [showSchool, setShowSchool] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
+  const [showMemories, setShowMemories] = useState(false);
   const familySubtitle = `${members.length} ${members.length === 1 ? 'person' : 'people'} · ${parentCount} parent${parentCount === 1 ? '' : 's'}${kidCount > 0 ? `, ${kidCount} kid${kidCount === 1 ? '' : 's'}` : ''}. Everyone in one place.`;
   const activeMember = members.find(m => (m as any).id === activeMemberId) ?? members[0];
   const familyName = (members[0] as any)?.familyName ?? 'Family';
@@ -229,6 +231,11 @@ export default function FamilyScreen() {
     // goes through uiStore's openRewardsScreenRequested flag, which closes
     // back to Hub — correct for those, since Hub is what's underneath them.
     if (tool.route === '/(tabs)/store') { setShowRewards(true); return; }
+    // Same reasoning as Rewards above — Memories opened from the Family
+    // tab stays owned by FamilyScreen itself so swipe-back lands on
+    // Family, not Hub. Every other entry point (Hub pill, etc.) still goes
+    // through uiStore's openMemoriesScreenRequested flag.
+    if (tool.route === '/(tabs)/memories') { setShowMemories(true); return; }
     router.push(tool.route as any);
   };
 
@@ -503,6 +510,9 @@ export default function FamilyScreen() {
         {(requestAnimatedClose) => (
           <RewardsDashboardScreen onClose={requestAnimatedClose} />
         )}
+      </FullPageOverlay>
+      <FullPageOverlay visible={showMemories} onDismiss={() => setShowMemories(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <MemoriesScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
     </View>
   );

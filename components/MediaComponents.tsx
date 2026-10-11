@@ -17,10 +17,15 @@ const MEDIA_RADIUS = 0;
 function AutoplayVideoBase({ uri, id, globalMuted, onToggleMute, onExpand, onDoubleTap }: {
   uri: string; id: string; globalMuted: boolean; onToggleMute: () => void; onExpand?: () => void; onDoubleTap?: () => void;
 }) {
+  // loop left false on the player itself — a hard loop restarts the instant
+  // playback reaches the end, no breathing room between plays. The
+  // playToEnd listener below pauses on end and restarts after a 2s gap
+  // instead [live-requested: "auto play in loop for a 2 sec gap"].
   const player = useVideoPlayer(uri, p => { p.loop = false; p.muted = globalMuted; });
   const [isVisible, setIsVisible] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const viewRef = useRef<View>(null);
+  const loopGapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     registerVideo(id, viewRef, setIsVisible);
@@ -34,6 +39,7 @@ function AutoplayVideoBase({ uri, id, globalMuted, onToggleMute, onExpand, onDou
       }
       player.play();
     } else {
+      if (loopGapTimer.current) { clearTimeout(loopGapTimer.current); loopGapTimer.current = null; }
       player.pause();
     }
   }, [isVisible, player]);
@@ -44,6 +50,26 @@ function AutoplayVideoBase({ uri, id, globalMuted, onToggleMute, onExpand, onDou
     const sub = player.addListener('playingChange', (e: { isPlaying: boolean }) => setIsPlaying(e.isPlaying));
     return () => sub.remove();
   }, [player]);
+
+  // Restart from the top after a 2s pause on the last frame, instead of
+  // looping instantly — only while still the visible/active slide, so a
+  // swiped-away or scrolled-off card doesn't quietly restart itself in the
+  // background and resume the very moment it's visible again.
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => {
+      player.pause();
+      loopGapTimer.current = setTimeout(() => {
+        loopGapTimer.current = null;
+        if (!isVisible) return;
+        player.currentTime = 0;
+        player.play();
+      }, 2000);
+    });
+    return () => {
+      sub.remove();
+      if (loopGapTimer.current) { clearTimeout(loopGapTimer.current); loopGapTimer.current = null; }
+    };
+  }, [player, isVisible]);
 
   const togglePlay = () => {
     if (player.currentTime >= player.duration - 0.05 && player.duration > 0) {

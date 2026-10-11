@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
 import { todayLocal } from '@/lib/dates';
 import { markNetworkOffline, markNetworkOnline, isNetworkError } from '@/lib/networkStore';
 
@@ -594,12 +595,22 @@ export async function uploadFamilyMemoryVideo(
   }
 
   const path = `${session.user.id}/${familyId}/memories/${Date.now()}${suffix !== undefined ? `_${suffix}` : ''}.mp4`;
-  const blob = await fetch(compressedUri).then(r => r.blob());
-  if (blob.size === 0) throw new Error('Encoded video upload is 0 bytes — the source file may be empty or unreadable.');
+  // fetch(uri).blob() silently produced 0-byte video uploads in this app
+  // (confirmed live: Supabase storage returned the upload as "ok" with a
+  // real signed URL, but the stored object had content-length: 0, so
+  // nothing ever decoded in the feed) — same failure uploadSocialVideo's
+  // own comment already documented and fixed for the social-video upload
+  // path. Read the compressed file as base64 instead (expo-file-system,
+  // not fetch) and hand Supabase a real ArrayBuffer.
+  const base64 = await FileSystem.readAsStringAsync(compressedUri, { encoding: 'base64' });
+  const binary = atob(base64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  if (bytes.byteLength === 0) throw new Error('Encoded video upload is 0 bytes — the source file may be empty or unreadable.');
 
   const { error: upErr } = await supabase.storage
     .from(MEMORIES_BUCKET)
-    .upload(path, blob, { upsert: false, contentType: 'video/mp4' });
+    .upload(path, bytes.buffer, { upsert: false, contentType: 'video/mp4' });
   if (upErr) throw new Error(upErr.message);
 
   let signed: { signedUrl: string } | null = null;

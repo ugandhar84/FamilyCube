@@ -20,6 +20,7 @@ import { useCalendarSync, PROVIDER_LABEL } from '@/lib/useCalendarSync';
 import type { CalendarProvider, CalendarPurpose } from '@/lib/calendarOAuth';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useTheme } from '@/lib/ThemeContext';
+import { PageHeading } from '@/components/PageHeading';
 
 // This screen is NOT one of the named "Gemini rhythm" warm-cream exception
 // screens (CLAUDE.md rule 6) — it follows the app-wide default: pure white
@@ -270,18 +271,19 @@ export function ConnectCalendarPage({ onClose }: { onClose: () => void }) {
   return (
       <View style={{ flex: 1, backgroundColor: pal.pageBg }}>
 
-        {/* ── Header ── */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: pal.pageBg }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: pal.blue }}>‹ Family</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: pal.blue, marginTop: 12 }}>Family tools</Text>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: pal.titleClr, marginTop: 4, lineHeight: 36 }}>
-            Calendars
-          </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: pal.bodyClr, marginTop: 4, lineHeight: 18 }}>
-            Connect work, personal, and Apple calendars so the whole family sees everything in one place.
-          </Text>
+        {/* ── Header — same PageHeading shell as Groceries/Generations/
+            Family Invite (accent bar + eyebrow + title + subtitle + pastel
+            icon badge). ── */}
+        <View style={{ backgroundColor: pal.pageBg }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · CALENDARS"
+            title="Calendars"
+            subtitle="Connect work, personal, and Apple calendars so the whole family sees everything in one place."
+            accent="sky"
+            Icon={Calendar}
+            onTitlePress={onClose}
+            topInset={insets.top}
+          />
         </View>
 
         {loading ? (

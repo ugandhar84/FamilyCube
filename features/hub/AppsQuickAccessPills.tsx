@@ -348,6 +348,14 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
                   useUIStore.getState().setOpenRewardsScreenRequested(true);
                   return;
                 }
+                // Memories is a real-but-hidden tab route kept only for
+                // stale deep links — this pill is rendered inside
+                // HubScreen, which already owns the FullPageOverlay
+                // (showMemories) this flag opens.
+                if (p.id === 'memories') {
+                  useUIStore.getState().setOpenMemoriesScreenRequested(true);
+                  return;
+                }
                 router.push(PILL_ROUTES[p.id] as any);
               }}
               onLongPress={() => setEditing(true)}

@@ -321,6 +321,21 @@ function RootNavigator() {
             destination = '/(tabs)';
           }
           pendingWidgetTap.current = false;
+          // Heading into (tabs) with familyStore still unresolved guaranteed
+          // a double paint: CustomTabBar/HubScreen both read members/
+          // activeMemberId from familyStore on first render (default empty
+          // state), then again once loadFromStorage() resolves a moment
+          // later — the live-reported "card rendering is janky, hitting
+          // hard" on cold startup. loadFromStorage() itself already starts
+          // from (tabs)/_layout.tsx's own mount effect, so this just waits
+          // for that same bounded fetch/retry loop to reach its terminal
+          // 'confirmed' state (see familyStore.ts's own comment on why
+          // 'confirmed', never 'loaded' alone, is the right gate) before the
+          // splash fades — bounded by the store's own retry budget, so this
+          // can't hang boot indefinitely on a dead network.
+          if (destination === '/(tabs)') {
+            await useFamilyStore.getState().loadFromStorage();
+          }
           // Always navigate BEFORE dismissing splash to prevent the screen
           // from loading behind the fading overlay (causes animation jank).
           router.replace(destination as any);

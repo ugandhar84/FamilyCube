@@ -326,26 +326,26 @@ const styles = StyleSheet.create({
   cancelBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   cancelText: { fontSize: 14, fontWeight: '600' },
 
-  titleSection: { alignItems: 'center', gap: 6, marginTop: 24, marginBottom: 36 },
-  titleEmoji: { fontSize: 44 },
-  title: { fontSize: 24, fontWeight: '800', marginTop: 6 },
-  prompt: { fontSize: 14, marginTop: 4, textAlign: 'center', paddingHorizontal: 32 },
+  titleSection: { alignItems: 'center', gap: 4, marginTop: 12, marginBottom: 20 },
+  titleEmoji: { fontSize: 32 },
+  title: { fontSize: 18, fontWeight: '800', marginTop: 2 },
+  prompt: { fontSize: 13, marginTop: 2, textAlign: 'center', paddingHorizontal: 24 },
 
-  dotsRow: { flexDirection: 'row', gap: 20, marginBottom: 16 },
-  dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2 },
+  dotsRow: { flexDirection: 'row', gap: 14, marginBottom: 12 },
+  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2 },
 
-  errorWrap: { height: 22, marginBottom: 12 },
-  errorText: { fontSize: 13, fontWeight: '600' },
+  errorWrap: { height: 18, marginBottom: 8 },
+  errorText: { fontSize: 12, fontWeight: '600' },
 
-  pad: { width: '100%', paddingHorizontal: 32, gap: 12 },
-  padRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  pad: { width: '100%', paddingHorizontal: 24, gap: 8 },
+  padRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   keyWrap: { flex: 1 },
-  key: { height: 68, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  keyText: { fontSize: 24, fontWeight: '600' },
+  key: { height: 50, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  keyText: { fontSize: 18, fontWeight: '600' },
   keyPlaceholder: { flex: 1 },
 
-  hint: { fontSize: 12, marginTop: 20, textAlign: 'center', paddingHorizontal: 32 },
+  hint: { fontSize: 11, marginTop: 14, textAlign: 'center', paddingHorizontal: 24 },
 
   tabletScrim: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24 },
-  tabletCard: { width: 420, maxWidth: '100%', maxHeight: '85%', borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', paddingTop: 16, paddingBottom: 24, overflow: 'hidden' },
+  tabletCard: { width: 300, maxWidth: '100%', maxHeight: '85%', borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', paddingTop: 12, paddingBottom: 16, overflow: 'hidden' },
 });

@@ -68,7 +68,7 @@ const PAGE_BG   = GEMINI.canvas;
 const TITLE_CLR = GEMINI.titleColor;
 const BODY_CLR  = GEMINI.bodyColor;
 const BODY_CLR_LIGHT = GEMINI.bodyColorLight;
-const BLUE      = GEMINI.blue;
+const BLUE      = '#5872C4'; // dimmed CTA blue, local override (not GEMINI.blue — that's shared app-wide)
 const LINK_BLUE = GEMINI.linkBlue;
 const BORDER    = GEMINI.border;
 const CARD_BG   = GEMINI.cardBg;
@@ -123,8 +123,6 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
     hr.setVaxMemberFilter([initialMemberId]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMemberId]);
-
-  const familySurname = familyName?.replace(/^the\s+/i, '').replace(/\s+family$/i, '').trim();
 
   // ── Overlay-trigger state — ALL owned here, rendered as siblings of
   // this screen's own ScrollView below (never nested inside a child that's
@@ -236,20 +234,16 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
       {!hideHeader && (
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: pageBg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: bodyC, textTransform: 'uppercase' }}>
-              Family Cube{familySurname ? ` / ${familySurname}` : ''}
+        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: pageBg, gap: 10 }}>
+          <Pressable onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+              Health records
             </Text>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? bodyC : LINK_BLUE }}>
-              {activeMember?.name ?? 'You'} · {kidView ? 'Your records' : 'Permitted review'}
-            </Text>
-          </View>
-          <Pressable onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 12 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Family</Text>
           </Pressable>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
-            Health records
+          <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>
+            {kidView
+              ? 'Only you and your parents can see these records.'
+              : `Visible to ${activeMember?.name ?? 'you'} and other parents in the family.`}
           </Text>
         </View>
       )}
@@ -280,13 +274,14 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {SEGMENTS.map(seg => {
               const active = tab === seg.key;
+              const segColor = seg.key === 'vax' ? colors.pink : colors.amber;
               return (
                 <TouchableOpacity key={seg.key} onPress={() => setTab(seg.key)} activeOpacity={0.85}
                   style={{
                     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                     borderRadius: 12, paddingVertical: 10,
-                    backgroundColor: active ? BLUE : cardBg,
-                    borderWidth: 1, borderColor: active ? BLUE : border,
+                    backgroundColor: active ? segColor : cardBg,
+                    borderWidth: 1, borderColor: active ? segColor : border,
                   }}>
                   <seg.Icon size={14} color={active ? '#FFFFFF' : bodyC} />
                   <Text style={{ fontSize: 12, fontWeight: '700', color: active ? '#FFFFFF' : bodyC }}>
@@ -422,62 +417,67 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
           matching the "Bring in a document"/"Hide private details"/"Check
           the findings" mockup, is a larger follow-up task). ── */}
       <FullPageOverlay visible={showDocuments} onDismiss={() => setShowDocuments(false)} zIndex={49}>
-        <View style={{ flex: 1, backgroundColor: pageBg }}>
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-            <TouchableOpacity onPress={() => setShowDocuments(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 10, lineHeight: 36 }}>
-              Health documents
-            </Text>
+        {(requestAnimatedClose) => (
+          <View style={{ flex: 1, backgroundColor: pageBg }}>
+            <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
+              <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+                  Health documents
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <RecordsTabComp colors={colors} isDark={isDark} />
           </View>
-          <RecordsTabComp colors={colors} isDark={isDark} />
-        </View>
+        )}
       </FullPageOverlay>
 
       <FullPageOverlay visible={showFilter} onDismiss={() => setShowFilter(false)} zIndex={50}>
-        <HealthFilterScreen
-          colors={colors} isDark={isDark} members={members}
-          healthTab={tab === 'vax' ? 'vax' : 'meds'}
-          draftMed={hr.draftMed} setDraftMed={hr.setDraftMed}
-          draftVax={hr.draftVax} setDraftVax={hr.setDraftVax}
-          resetFilters={hr.resetFilters}
-          applyFilters={hr.applyFilters}
-          meds={hr.meds} vaxes={hr.vaxes}
-          memberName={hr.memberName}
-          onClose={() => setShowFilter(false)}
-          lockedMemberId={initialMemberId}
-        />
+        {(requestAnimatedClose) => (
+          <HealthFilterScreen
+            colors={colors} isDark={isDark} members={members}
+            healthTab={tab === 'vax' ? 'vax' : 'meds'}
+            draftMed={hr.draftMed} setDraftMed={hr.setDraftMed}
+            draftVax={hr.draftVax} setDraftVax={hr.setDraftVax}
+            resetFilters={hr.resetFilters}
+            applyFilters={hr.applyFilters}
+            meds={hr.meds} vaxes={hr.vaxes}
+            memberName={hr.memberName}
+            onClose={requestAnimatedClose}
+            lockedMemberId={initialMemberId}
+          />
+        )}
       </FullPageOverlay>
 
       <FullPageOverlay visible={showPdfExport} onDismiss={() => setShowPdfExport(false)} zIndex={51}>
-        <HealthPdfExportReview
-          visible={showPdfExport}
-          onClose={() => setShowPdfExport(false)}
-          vaxes={hr.vaxes}
-          familyName={familyName}
-          memberName={hr.memberName}
-          colors={colors} isDark={isDark}
-          onGenerate={async (memberIds) => {
-            try {
-              const byMember = new Map<string, Vaccine[]>();
-              for (const v of hr.vaxes) {
-                if (!memberIds.includes(v.member_id)) continue;
-                const list = byMember.get(v.member_id) ?? [];
-                list.push(v);
-                byMember.set(v.member_id, list);
+        {(requestAnimatedClose) => (
+          <HealthPdfExportReview
+            visible={showPdfExport}
+            onClose={requestAnimatedClose}
+            vaxes={hr.vaxes}
+            familyName={familyName}
+            memberName={hr.memberName}
+            colors={colors} isDark={isDark}
+            onGenerate={async (memberIds) => {
+              try {
+                const byMember = new Map<string, Vaccine[]>();
+                for (const v of hr.vaxes) {
+                  if (!memberIds.includes(v.member_id)) continue;
+                  const list = byMember.get(v.member_id) ?? [];
+                  list.push(v);
+                  byMember.set(v.member_id, list);
+                }
+                await shareVaccineRecordsPdf({
+                  familyName: familyName ?? 'Family Cube',
+                  members: Array.from(byMember.entries()).map(([memberId, vaccines]) => ({
+                    memberId, memberName: hr.memberName(memberId), vaccines,
+                  })),
+                });
+              } catch (e: any) {
+                showAlert('Could not share PDF', e?.message ?? 'Something went wrong generating the file.');
               }
-              await shareVaccineRecordsPdf({
-                familyName: familyName ?? 'Family Cube',
-                members: Array.from(byMember.entries()).map(([memberId, vaccines]) => ({
-                  memberId, memberName: hr.memberName(memberId), vaccines,
-                })),
-              });
-            } catch (e: any) {
-              showAlert('Could not share PDF', e?.message ?? 'Something went wrong generating the file.');
-            }
-          }}
-        />
+            }}
+          />
+        )}
       </FullPageOverlay>
 
       {/* Scan Rx / Vaccine — still its own internal Modal (ScanReviewSheet

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator, ScrollView,
-  StyleSheet, Animated, Easing,
+  StyleSheet, Animated, Easing, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, Send, ShoppingBag } from 'lucide-react-native';
@@ -12,6 +12,8 @@ import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Recipe Detail — full-page overlay ────────────────────────────────────────
+
+const { width: SCREEN_W } = Dimensions.get('window');
 
 export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGrocery, senderId, colors, isDark, hideAddToGrocery }: {
   meal: Meal | null; visible: boolean; onClose: () => void;
@@ -30,19 +32,32 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
 
-  // Animation
-  const slideAnim = useRef(new Animated.Value(60)).current;
+  // Animation — slide in/out from the right, matching FullPageOverlay's
+  // rhythm (every other full-page screen in the app), instead of the old
+  // vertical slide-up this component hand-rolled on its own.
+  const slideAnim = useRef(new Animated.Value(SCREEN_W)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const closing   = useRef(false);
   useEffect(() => {
     if (visible) {
+      closing.current = false;
       setCartDone(false);
-      slideAnim.setValue(60); fadeAnim.setValue(0);
+      slideAnim.setValue(SCREEN_W); fadeAnim.setValue(0);
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         Animated.timing(fadeAnim,  { toValue: 1, duration: 220, easing: Easing.out(Easing.quad),  useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
+
+  const animatedClose = () => {
+    if (closing.current) return;
+    closing.current = true;
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: SCREEN_W, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(fadeAnim,  { toValue: 0,         duration: 200, easing: Easing.in(Easing.quad),  useNativeDriver: true }),
+    ]).start(({ finished }) => { if (finished) onClose(); });
+  };
 
   if (!meal || !visible) return null;
 
@@ -61,20 +76,20 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
     await onAddToGrocery(meal.ingredients);
     setAddingCart(false);
     setCartDone(true);
-    closeTimer.current = setTimeout(() => onClose(), 1200);
+    closeTimer.current = setTimeout(() => animatedClose(), 1200);
   };
 
   const shareRecipe = () => {
     const msg = `@[Everyone|everyone] 🍽️ *${meal.title}* ${meal.emoji ?? ''}\n⏱ ${meal.prep_minutes ?? '?'} min\n\n*Ingredients:*\n${meal.ingredients.map(i => `• ${i}`).join('\n')}\n\n*Steps:*\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
     useChatStore.getState().sendMessage('all', senderId, msg);
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    onClose();
+    animatedClose();
   };
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60 }}>
-      <SwipeBackWrapper onDismiss={onClose}>
-        <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <SwipeBackWrapper onDismiss={onClose} backgroundColor={isDark ? colors.background : GEMINI.canvas}>
+        <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
           <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
 
             {/* ── Header — canvas + "tap title to go back" pattern, same as
@@ -109,7 +124,7 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
                 )}
               </View>
 
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <TouchableOpacity onPress={animatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
                 <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {meal.title}
                 </Text>

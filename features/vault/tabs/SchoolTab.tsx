@@ -14,7 +14,7 @@
  */
 import SchoolHomeScreen from './SchoolHomeScreen';
 
-export default function SchoolTab({ colors, isDark, isKid, isTeen }: {
+export default function SchoolTab({ colors, isDark, isKid, isTeen, onClose }: {
   colors: any; isDark: boolean; isKid: boolean;
   /** Widened alongside isKid — a teen sees the same own-schedule-only view
    *  a kid gets, not the parent's whole-family list [live-requested: "it
@@ -27,6 +27,7 @@ export default function SchoolTab({ colors, isDark, isKid, isTeen }: {
    *  rendered through this component, so nothing else needs these. */
   onEditModalVisibilityChange?: (open: boolean) => void;
   renderEditModal?: (props: { visible: boolean; onClose: () => void; memberId: string; memberName: string; isParent: boolean }) => import('react').ReactNode;
+  onClose?: () => void;
 }) {
-  return <SchoolHomeScreen colors={colors} isDark={isDark} isKid={isKid} isTeen={isTeen} />;
+  return <SchoolHomeScreen colors={colors} isDark={isDark} isKid={isKid} isTeen={isTeen} onClose={onClose} />;
 }

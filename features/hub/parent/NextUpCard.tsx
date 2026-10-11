@@ -107,9 +107,9 @@ export function NextUpTimeline({
       <View style={{
         marginTop: 11,
         paddingHorizontal: 16, paddingVertical: shown.length === 0 ? 18 : 5, borderRadius: 22,
-        backgroundColor: colors.card,
-        borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
-        shadowColor: colors.navy, shadowOffset: { width: 0, height: 7 }, shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
+        backgroundColor: isDark ? colors.card : GEMINI.cardBg,
+        borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
       }}>
         {shown.length === 0 ? (
           <Text style={{ color: colors.textTertiary, fontSize: 13, textAlign: 'center' }}>Nothing scheduled — enjoy the clear {periodWord}</Text>

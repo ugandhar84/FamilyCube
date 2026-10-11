@@ -78,7 +78,7 @@ export default function MealsWeekPage({
   // Early-return: show add/edit form as a full standalone page with swipe-back support
   if (formState) {
     return (
-      <SwipeBackWrapper onDismiss={formState.onClose}>
+      <SwipeBackWrapper onDismiss={formState.onClose} backgroundColor={canvas}>
         <MealFormSheet
           visible
           day={formState.addDay}

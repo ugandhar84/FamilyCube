@@ -81,7 +81,7 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
       <View style={{
         paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderBottomColor: isDark ? colors.border : GEMINI.border,
         backgroundColor: canvas, gap: 8,
       }}>
         <View style={{ gap: 4 }}>

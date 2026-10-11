@@ -600,6 +600,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 
       {/* List sub-screen */}
       <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
+        {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
@@ -616,7 +617,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
                 [live-requested: "lets add the click on the name go to
                 back - we didn't need the back mention on module
                 landing"]. */}
-            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Shared groceries
               </Text>
@@ -724,10 +725,12 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             isKid={isKid} colors={colors} P={P}
           />
         </View>
+        )}
       </FullPageOverlay>
 
       {/* Runs sub-screen */}
       <FullPageOverlay visible={tab === 'runs'} onDismiss={() => setTab(null)} zIndex={41}>
+        {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
@@ -738,7 +741,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Shopping Trips
               </Text>
@@ -754,10 +757,12 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             />
           </ScrollView>
         </View>
+        )}
       </FullPageOverlay>
 
       {/* History sub-screen */}
       <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
+        {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
@@ -768,7 +773,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Purchase History
               </Text>
@@ -776,10 +781,12 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           </View>
           <HistoryTab familyId={familyId} memberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
         </View>
+        )}
       </FullPageOverlay>
 
       {/* Insights sub-screen */}
       <FullPageOverlay visible={tab === 'insights'} onDismiss={() => setTab(null)} zIndex={43}>
+        {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
@@ -790,7 +797,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               </Text>
               {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
             </View>
-            <Pressable onPress={() => setTab(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Insights
               </Text>
@@ -798,6 +805,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           </View>
           <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
         </View>
+        )}
       </FullPageOverlay>
 
       {/* Full-page overlays (no Modals) */}

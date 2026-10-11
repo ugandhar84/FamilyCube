@@ -12,7 +12,7 @@ const CANVAS = '#ECE6DE';
 const TITLE_CLR = '#0D1210';
 const BODY_CLR = '#3D4D47';
 const BODY_CLR_LIGHT = '#4E5C56';
-const BLUE = '#3B5FE4';
+const BLUE = '#5872C4';
 const LINK_BLUE = '#23352B';
 const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
@@ -78,15 +78,15 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
+      {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Home care</Text>
+          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+              A little care, recorded
+            </Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
-            A little care, recorded
-          </Text>
           {/* Status badge */}
           <View style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
             borderRadius: 8, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
@@ -199,7 +199,7 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity onPress={close}
+            <TouchableOpacity onPress={requestAnimatedClose}
               style={{ height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
                 borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: isDark ? BLUE : LINK_BLUE }}>
@@ -208,7 +208,7 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
             </TouchableOpacity>
 
             {!done && (
-              <TouchableOpacity onPress={close}
+              <TouchableOpacity onPress={requestAnimatedClose}
                 style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 14, color: bodyC }}>Cancel</Text>
               </TouchableOpacity>
@@ -216,6 +216,7 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
+      )}
     </FullPageOverlay>
   );
 }

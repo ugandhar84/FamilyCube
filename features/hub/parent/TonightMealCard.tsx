@@ -87,8 +87,8 @@ export function TonightMealCard({
         marginHorizontal: 20, marginTop: 14, marginBottom: 20,
         flexDirection: 'row', gap: 0,
         borderRadius: 22, overflow: 'hidden',
-        backgroundColor: colors.card,
-        borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
+        backgroundColor: isDark ? colors.card : GEMINI.cardBg,
+        borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
         shadowColor: colors.navy, shadowOffset: { width: 0, height: 7 },
         shadowOpacity: isDark ? 0 : 0.055, shadowRadius: 24,
       }}>
@@ -96,12 +96,12 @@ export function TonightMealCard({
       <View style={{
         width: 110, minHeight: 145,
         alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-        backgroundColor: hasMeals ? colors.tealLight : colors.surface,
+        backgroundColor: hasMeals ? colors.tealLight : colors.amberLight,
       }}>
         {foodImage ? (
           <Image source={{ uri: foodImage }} style={{ width: 110, height: '100%' as any }} resizeMode="cover" />
         ) : (
-          <Text style={{ fontSize: 38, opacity: hasMeals ? 1 : 0.35 }}>🍽️</Text>
+          <Text style={{ fontSize: 38, opacity: hasMeals ? 1 : 0.6 }}>🍽️</Text>
         )}
         {hasMeals && meals!.length > 1 && (
           <View style={{ position: 'absolute', bottom: 6 }}>

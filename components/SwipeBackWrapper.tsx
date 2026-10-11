@@ -23,11 +23,22 @@ const EDGE_WIDTH = 24;
 const DISMISS_THRESHOLD = SCREEN_W * 0.3;
 
 export default function SwipeBackWrapper({
-  onDismiss, children, disabled,
+  onDismiss, children, disabled, backgroundColor,
 }: {
   onDismiss: () => void;
   children: React.ReactNode;
   disabled?: boolean;
+  /** Opaque background painted on this wrapper's own absolute-fill layer,
+   * BEHIND whatever `children` renders. Without this, a real RN <Modal>
+   * (QuestDetailModal.tsx, EditQuestModal.tsx, etc.) can show a one-frame
+   * white flash on open — the modal's native backing view has no color of
+   * its own, and this wrapper was fully transparent, so there was nothing
+   * opaque painted until the child content's own background View mounted
+   * a frame or two later [live-reported: "when the task details page is
+   * slideout this is showing white screen first"]. Optional and omitted
+   * everywhere else (defaults to the previous fully-transparent
+   * behavior) — only pass it where a caller has confirmed this flash. */
+  backgroundColor?: string;
 }) {
   const translateX = useSharedValue(0);
   // Avoids a double-fire if the gesture's onEnd and a fast re-tap both
@@ -69,7 +80,7 @@ export default function SwipeBackWrapper({
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
+      <Animated.View style={[StyleSheet.absoluteFill, backgroundColor ? { backgroundColor } : null, animatedStyle]}>
         {children}
       </Animated.View>
     </GestureDetector>

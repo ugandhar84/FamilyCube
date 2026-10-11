@@ -57,9 +57,9 @@ function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
               onChangeText={setCoins}
               keyboardType="number-pad"
               style={{
-                backgroundColor: colors.surface, borderRadius: 12, padding: 12,
+                backgroundColor: isDark ? colors.surface : GEMINI.canvas, borderRadius: 12, padding: 12,
                 fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
-                borderWidth: 1, borderColor: 'rgba(223,97,60,0.15)',
+                borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
               }}
               placeholderTextColor={colors.textTertiary}
               placeholder="10"
@@ -113,7 +113,7 @@ function ProposalCard({ chore, members, activeMemberId, isQuest }: {
 
   return (
     <>
-      <View style={[s.proposalCard, { backgroundColor: bgColor, borderColor: 'rgba(223,97,60,0.10)' }]}>
+      <View style={[s.proposalCard, { backgroundColor: bgColor, borderColor: (isQuest ? colors.pink : colors.teal) + '30' }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: accentColor, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>{proposerInitial}</Text>
@@ -179,7 +179,7 @@ export function KidProposalReviewScreen({ onClose }: { onClose: () => void }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
       {/* ── Fixed page header ── */}
-      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
             {familyName?.toUpperCase() ?? 'FAMILY'}

@@ -28,7 +28,7 @@ const CANVAS = '#ECE6DE';
 const TITLE_CLR = '#0D1210';
 const BODY_CLR = '#3D4D47';
 const BODY_CLR_LIGHT = '#4E5C56';
-const BLUE = '#3B5FE4';
+const BLUE = '#5872C4';
 const LINK_BLUE = '#23352B';
 const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
@@ -169,15 +169,15 @@ export function BuildPeriodsScreen({ visible, colors, isDark, draft, onClose, on
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
+      {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ School</Text>
+          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+              Build {DAY_FULL[activeDay]}'s periods
+            </Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
-            Build {DAY_FULL[activeDay]}'s periods
-          </Text>
         </View>
 
         {/* Day-tab strip — only chosen days */}
@@ -353,6 +353,7 @@ export function BuildPeriodsScreen({ visible, colors, isDark, draft, onClose, on
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
+      )}
     </FullPageOverlay>
   );
 }

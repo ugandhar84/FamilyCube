@@ -178,19 +178,13 @@ export default function HealthPdfExportReview({
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
       {/* ── Header ── */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: pageBg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: bodyC, textTransform: 'uppercase' }}>
-            Family Cube{familyName ? ` / ${familyName}` : ''}
+      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: pageBg, gap: 10 }}>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }} style={{ alignSelf: 'flex-start' }}>
+          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+            PDF export review
           </Text>
-        </View>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 12, alignSelf: 'flex-start' }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
-          PDF export review
-        </Text>
-        <View style={{ marginTop: 10 }}>
+        <View>
           <StatusPill label="Step 1 · before export" bg={colors.skyLight} fg={colors.sky} />
         </View>
       </View>

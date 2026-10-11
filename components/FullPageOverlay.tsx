@@ -33,7 +33,7 @@ import SwipeBackWrapper from './SwipeBackWrapper';
 const { width: SCREEN_W } = Dimensions.get('window');
 
 export default function FullPageOverlay({
-  visible, onDismiss, zIndex = 50, children,
+  visible, onDismiss, zIndex = 50, children, backgroundColor,
 }: {
   visible: boolean;
   onDismiss: () => void;
@@ -45,6 +45,13 @@ export default function FullPageOverlay({
    *  does, instead of calling onDismiss (prop) directly and vanishing
    *  instantly. */
   children: React.ReactNode | ((requestAnimatedClose: () => void) => React.ReactNode);
+  /** Forwarded to the internal SwipeBackWrapper's own absolute-fill layer —
+   * without it, every screen opened through this overlay (all of HubScreen's
+   * parent full-page screens) shows a one-frame white flash during the
+   * edge-swipe-back gesture, same root cause SwipeBackWrapper's own
+   * backgroundColor doc describes [live-reported: "backswipe produce white
+   * color all over the parent screens"]. Pass the screen's own canvas color. */
+  backgroundColor?: string;
 }) {
   const slideAnim = useRef(new Animated.Value(visible ? 0 : SCREEN_W)).current;
   const fadeAnim  = useRef(new Animated.Value(visible ? 1 : 0)).current;
@@ -75,7 +82,7 @@ export default function FullPageOverlay({
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex }}>
-      <SwipeBackWrapper onDismiss={onDismiss}>
+      <SwipeBackWrapper onDismiss={onDismiss} backgroundColor={backgroundColor}>
         <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
           {typeof children === 'function' ? children(requestAnimatedClose) : children}
         </Animated.View>

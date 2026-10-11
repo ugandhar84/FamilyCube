@@ -14,7 +14,7 @@ import { fetchActivityLog, type ActivityLogRow } from '@/lib/activityLog';
 import { EditQuestModal } from './EditQuestModal';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadChoreProofPhoto } from '@/lib/supabase';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
 // Live direction: "we should follow the heading styles similar to the
@@ -362,12 +362,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
       setUploadingProof(true);
       try {
         const familyId = activeMember?.familyId ?? '';
-        const path = `chore-proofs/${familyId || 'unknown'}/${liveQuest.id}-${Date.now()}.jpg`;
-        const blob = await (await fetch(submitPhotoUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-        photoUrl = urlData.publicUrl;
+        photoUrl = await uploadChoreProofPhoto(familyId || 'unknown', liveQuest.id, submitPhotoUri);
       } catch (e) {
         console.warn('[QuestDetailModal] proof photo upload failed', e);
         setUploadingProof(false);
@@ -643,7 +638,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SwipeBackWrapper onDismiss={onClose}>
+      <SwipeBackWrapper onDismiss={onClose} backgroundColor={canvas}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
 
         {/* Top bar */}
@@ -1639,14 +1634,28 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent }
       </View>
       </SwipeBackWrapper>
 
-      {/* ── Proof photo viewer — tap-to-enlarge, full screen ── */}
+      {/* ── Proof photo viewer — tap-to-enlarge, full screen ──
+          Was boxed into a fixed 92%/70% container regardless of the
+          photo's real aspect ratio, so a tall or wide photo rendered
+          letterboxed/shrunk well below the actual screen size instead of
+          filling it [live-requested: "the enlarge should open the
+          original photo size.. i mean if it is full pic show that"].
+          Full-bleed width/height (minus safe-area insets) + resizeMode
+          "contain" now gives the image the maximum possible space while
+          still respecting its own aspect ratio — never cropped, never
+          stretched, just no longer artificially capped. ── */}
       {proofViewerUri && (
         <Modal visible animationType="fade" transparent onRequestClose={() => setProofViewerUri(null)}>
           <TouchableOpacity activeOpacity={1} onPress={() => setProofViewerUri(null)}
-            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: proofViewerUri }}
-              style={{ width: '92%', height: '70%', borderRadius: 16 }}
-              resizeMode="contain" />
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)' }}>
+            <View style={{
+              flex: 1, alignItems: 'center', justifyContent: 'center',
+              paddingTop: insets.top + 56, paddingBottom: insets.bottom + 24,
+            }}>
+              <Image source={{ uri: proofViewerUri }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="contain" />
+            </View>
             <TouchableOpacity onPress={() => setProofViewerUri(null)}
               style={{ position: 'absolute', top: insets.top + 16, right: 20, width: 36, height: 36, borderRadius: 18,
                 backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>

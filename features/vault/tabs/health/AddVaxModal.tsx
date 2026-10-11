@@ -180,23 +180,18 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
   // from the old wizard is kept, just regrouped into section cards.
   return (
     <FullPageOverlay visible={visible} onDismiss={handleClose} zIndex={60}>
+      {(requestAnimatedClose) => (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: pageBg }}>
         <View style={{ flex: 1 }}>
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: bodyC, textTransform: 'uppercase' }}>
-                Family Cube
-              </Text>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: linkC }}>
-                {activeMember?.name ?? 'Member'} · Record owner
-              </Text>
-            </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 12 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>‹ Health records</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
-              {editing ? 'Edit vaccine' : 'Log vaccine'}
+          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4, gap: 10 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: linkC, alignSelf: 'flex-end' }}>
+              {activeMember?.name ?? 'Member'} · Record owner
             </Text>
+            <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+                {editing ? 'Edit vaccine' : 'Log vaccine'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
@@ -477,7 +472,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
                       {editing ? 'Save vaccine changes' : 'Save vaccine'}
                     </Text>}
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleClose} style={{ alignItems: 'center', paddingVertical: 6 }}>
+              <TouchableOpacity onPress={requestAnimatedClose} style={{ alignItems: 'center', paddingVertical: 6 }}>
                 <Text style={{ fontSize: 14, fontWeight: '600', color: linkC }}>
                   Cancel · back to vaccines
                 </Text>
@@ -486,6 +481,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+      )}
     </FullPageOverlay>
   );
 }

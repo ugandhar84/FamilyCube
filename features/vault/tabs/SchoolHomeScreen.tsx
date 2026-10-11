@@ -21,11 +21,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera } from 'lucide-react-native';
+import { Camera, GraduationCap } from 'lucide-react-native';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useSchoolStore, type ClassPeriod } from '@/store/schoolStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import FlyerScannerModal from '@/components/FlyerScannerModal';
+import { PageHeading } from '@/components/PageHeading';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { CreateScheduleScreen, type ScheduleDraft } from './school/CreateScheduleScreen';
 import { BuildPeriodsScreen } from './school/BuildPeriodsScreen';
@@ -40,7 +41,7 @@ const CANVAS = '#ECE6DE';
 const TITLE_CLR = '#0D1210';
 const BODY_CLR = '#3D4D47';
 const BODY_CLR_LIGHT = '#4E5C56';
-const BLUE = '#3B5FE4';
+const BLUE = '#5872C4';
 const LINK_BLUE = '#23352B';
 const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
@@ -145,8 +146,8 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
   );
 }
 
-export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
-  colors: any; isDark: boolean; isKid: boolean; isTeen?: boolean;
+export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClose }: {
+  colors: any; isDark: boolean; isKid: boolean; isTeen?: boolean; onClose?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
@@ -166,9 +167,6 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
   }, [members, activeMemberId, isOwnScheduleOnly]);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const parentLabel = activeMember ? `${activeMember.name.split(' ')[0]} · ${
-    activeMember.role === 'parent' ? 'Parent' : activeMember.role === 'teen' ? 'Teen' : activeMember.role === 'senior' ? 'Grandparent' : 'Kid'
-  }` : '';
 
   const [mainTab, setMainTab] = useState<MainTab>('today');
   const [openDayMemberId, setOpenDayMemberId] = useState<string | null>(null);
@@ -196,35 +194,36 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen }: {
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
-        {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: isDark ? bodyC : BODY_CLR_LIGHT, textTransform: 'uppercase' }}>
-              FAMILY CUBE / {(activeMember?.familyId ? 'FAMILY' : 'HOME').toUpperCase()}
-            </Text>
-            {!!parentLabel && (
-              <Text style={{ fontSize: 12, fontWeight: '800', color: titleC }}>{parentLabel.toUpperCase()}</Text>
-            )}
-          </View>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE, marginTop: 10 }}>‹ Family</Text>
-          <Text style={{ fontSize: 32, fontWeight: '800', color: titleC, marginTop: 8, lineHeight: 38, letterSpacing: -0.5 }}>
-            School
-          </Text>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: bodyC, marginTop: 4, lineHeight: 20 }}>{subtitle}</Text>
-
-          {/* Segmented tabs — fully pill-shaped (half of row height), not
-              just rounded-rect, matching the Gemini rhythm's chip style. */}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
-            {([['today', 'Today'], ['week', 'Week'], ['schedules', 'Schedules']] as [MainTab, string][]).map(([key, label]) => (
-              <TouchableOpacity key={key} onPress={() => setMainTab(key)}
-                style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 999,
-                  backgroundColor: mainTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE) }}>
-                <Text style={{ fontSize: 13, fontWeight: '700',
-                  color: mainTab === key ? '#FFFFFF' : bodyC }}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Header — same PageHeading shell as Grocery/Home Care (eyebrow +
+            title + subtitle + pastel icon badge), title-tap plays the same
+            slide-out-right animation as the rest of the app instead of the
+            old non-tappable breadcrumb/title text. */}
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · SCHOOL"
+            title="School"
+            subtitle={subtitle}
+            accent="amber"
+            Icon={GraduationCap}
+            onTitlePress={onClose}
+            topInset={insets.top}
+          />
         </View>
+
+        {/* Segmented tabs — fully pill-shaped (half of row height), not
+            just rounded-rect, matching the Gemini rhythm's chip style. */}
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, paddingHorizontal: 20 }}>
+          {([['today', 'Today'], ['week', 'Week'], ['schedules', 'Schedules']] as [MainTab, string][]).map(([key, label]) => (
+            <TouchableOpacity key={key} onPress={() => setMainTab(key)}
+              style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 999,
+                backgroundColor: mainTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE) }}>
+              <Text style={{ fontSize: 13, fontWeight: '700',
+                color: mainTab === key ? '#FFFFFF' : bodyC }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={{ height: 12 }} />
 
         {/* Kid cards */}
         <View style={{ paddingHorizontal: 20, paddingTop: 14, gap: 12 }}>

@@ -439,7 +439,7 @@ export default function AiSuggestionsPage({
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60 }}>
-      <SwipeBackWrapper onDismiss={onClose}>
+      <SwipeBackWrapper onDismiss={onClose} backgroundColor={canvas}>
         <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           <View style={{ flex: 1, backgroundColor: canvas }}>
 

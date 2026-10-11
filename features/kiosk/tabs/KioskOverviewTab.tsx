@@ -109,7 +109,7 @@ import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadChoreReceiptPhoto } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime, localDateStr } from '@/lib/dates';
@@ -1087,12 +1087,7 @@ export function KioskOverviewTab({
     if (receiptPhotoUri) {
       setIsSubmittingReceipt(true);
       try {
-        const path = `chore-proofs/${familyId ?? 'unknown'}/receipt-${receiptChoreId}-${Date.now()}.jpg`;
-        const blob = await (await fetch(receiptPhotoUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-        receiptPhotoUrl = urlData.publicUrl;
+        receiptPhotoUrl = await uploadChoreReceiptPhoto(familyId ?? 'unknown', receiptChoreId, receiptPhotoUri);
       } catch (e) {
         console.warn('[KioskOverviewTab] receipt photo upload failed', e);
         setIsSubmittingReceipt(false);

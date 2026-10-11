@@ -35,7 +35,7 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
   const initial = (member?.name ?? '?')[0].toUpperCase();
   const firstName = member?.name?.split(' ')[0] ?? 'them';
 
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
 
   const handleApprove = () => {
     if (activeMemberId) approveRedemption(redemptionId, activeMemberId);
@@ -64,7 +64,7 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
       {/* ── Fixed page header ── */}
-      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
             {familyName?.toUpperCase() ?? 'FAMILY'}

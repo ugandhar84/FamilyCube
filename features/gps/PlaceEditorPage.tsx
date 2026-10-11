@@ -123,15 +123,12 @@ export function PlaceEditorPage({ place, initialCenter, defaultKind = 'other', i
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ paddingTop: insets.top + 8, backgroundColor: canvas, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-        <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ alignSelf: 'flex-start', paddingHorizontal: 20 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Locations</Text>
-        </Pressable>
         <PageHeading
-          eyebrow="FAMILY CUBE · PLACES"
           title={place ? 'Edit place' : 'Add a place'}
           subtitle="Your family gets a check-in whenever someone arrives or leaves."
           accent={kind === 'home' ? 'teal' : kind === 'school' ? 'sky' : kind === 'work' ? 'amber' : 'pink'}
-          Icon={meta.Icon}
+          onTitlePress={onClose}
+          topInset={0}
         />
       </View>
 

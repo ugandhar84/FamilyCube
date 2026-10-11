@@ -1476,25 +1476,27 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
       {/* Places — Home/School/Work/Other pins + real device geofencing,
           previously fully built but unreachable from anywhere in the app. */}
       <FullPageOverlay visible={showPlaces} onDismiss={() => setShowPlaces(false)} zIndex={55}>
-        <PlacesPage
-          onClose={() => setShowPlaces(false)}
-          onAdd={(kind) => { setNewPlaceKind(kind); setEditingPlace('new'); }}
-          onEdit={(place) => setEditingPlace(place)}
-          onShow={(place) => {
-            setShowPlaces(false);
-            mapRef.current?.animateToRegion({
-              latitude: place.latitude, longitude: place.longitude,
-              latitudeDelta: 0.01, longitudeDelta: 0.01,
-            }, 650);
-          }}
-        />
+        {(requestAnimatedClose) => (
+          <PlacesPage
+            onClose={requestAnimatedClose}
+            onAdd={(kind) => { setNewPlaceKind(kind); setEditingPlace('new'); }}
+            onEdit={(place) => setEditingPlace(place)}
+            onShow={(place) => {
+              requestAnimatedClose();
+              mapRef.current?.animateToRegion({
+                latitude: place.latitude, longitude: place.longitude,
+                latitudeDelta: 0.01, longitudeDelta: 0.01,
+              }, 650);
+            }}
+          />
+        )}
       </FullPageOverlay>
 
       <FullPageOverlay visible={!!editingPlace} onDismiss={() => setEditingPlace(null)} zIndex={56}>
-        {editingPlace === 'new' ? (
-          <PlaceEditorPage defaultKind={newPlaceKind} onClose={() => setEditingPlace(null)} />
+        {(requestAnimatedClose) => editingPlace === 'new' ? (
+          <PlaceEditorPage defaultKind={newPlaceKind} onClose={requestAnimatedClose} />
         ) : editingPlace ? (
-          <PlaceEditorPage place={editingPlace} onClose={() => setEditingPlace(null)} />
+          <PlaceEditorPage place={editingPlace} onClose={requestAnimatedClose} />
         ) : null}
       </FullPageOverlay>
     </View>

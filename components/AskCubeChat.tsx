@@ -1312,7 +1312,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           : { flex: 1 }
       }>
         {isKiosk ? chatContent : (
-          <SwipeBackWrapper onDismiss={onClose}>
+          <SwipeBackWrapper onDismiss={onClose} backgroundColor={colors.background}>
             {chatContent}
           </SwipeBackWrapper>
         )}

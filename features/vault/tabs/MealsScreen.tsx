@@ -513,9 +513,11 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
         onDismiss={() => setShowWeekPlan(false)}
         zIndex={50}
       >
-        <MealsWeekPage
-          onClose={() => setShowWeekPlan(false)}
-        />
+        {(requestAnimatedClose) => (
+          <MealsWeekPage
+            onClose={requestAnimatedClose}
+          />
+        )}
       </FullPageOverlay>
 
       {/* ── Family recipe book overlay ── */}
@@ -524,7 +526,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
         onDismiss={() => setShowRecipes(false)}
         zIndex={50}
       >
-        <FamilyRecipeBookPage onClose={() => setShowRecipes(false)} />
+        {(requestAnimatedClose) => <FamilyRecipeBookPage onClose={requestAnimatedClose} />}
       </FullPageOverlay>
 
       {/* ── A little inspiration — single page handles both generate + results ── */}
@@ -533,6 +535,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
         onDismiss={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setCacheLoading(false); }}
         zIndex={60}
       >
+        {(requestAnimatedClose) => (
         <AiSuggestionsPage
           visible={showInspirationPage}
           pendingOptions={pendingOptions ?? []}
@@ -552,10 +555,11 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
           confirmPlan={confirmPlan}
           existingMeals={[]}
           weekRange={weekOf()}
-          onClose={() => { setShowInspirationPage(false); setPendingOptions(null); setSelected({}); setCacheLoading(false); }}
+          onClose={requestAnimatedClose}
           colors={colors}
           isDark={isDark}
         />
+        )}
       </FullPageOverlay>
 
     </View>

@@ -64,10 +64,11 @@ export function RidesStatusCard({
       onPress={onPress}
       style={({ pressed }) => ({
         marginHorizontal: 20, marginTop: 14,
-        backgroundColor: isDark ? colors.card : '#FFFFFF',
+        backgroundColor: isDark ? colors.card : GEMINI.cardBg,
         borderRadius: 16, padding: 16, gap: 10,
-        borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
         opacity: pressed ? 0.85 : 1,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
       })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -134,7 +135,7 @@ export function RidesStatusCard({
             <View key={s.phase} style={{ flex: 1, gap: 6 }}>
               <View style={{
                 height: 4, borderRadius: 2,
-                backgroundColor: i <= stageIndex ? colors.sky : (isDark ? colors.border : '#DFE5EF'),
+                backgroundColor: i <= stageIndex ? colors.sky : (isDark ? colors.border : GEMINI.border),
               }} />
               <Text style={{ fontSize: 9, color: i <= stageIndex ? colors.sky : colors.textTertiary }} numberOfLines={1}>
                 {s.label}

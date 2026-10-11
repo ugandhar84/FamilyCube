@@ -368,7 +368,7 @@ export default function JustDescribeItScreen({
   if (!visible) return null;
 
   return (
-    <SwipeBackWrapper onDismiss={handleClose}>
+    <SwipeBackWrapper onDismiss={handleClose} backgroundColor={canvasBg}>
     <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
     <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

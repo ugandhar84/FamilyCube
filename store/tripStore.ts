@@ -103,8 +103,20 @@ interface TripState {
   // the old `activeTrip` field when at most one trip is active.
   activeTrip: Trip | null;
   loaded: boolean;
+  // Separate from activeTrips by design — a trip that completes is REMOVED
+  // from activeTrips (see ensureRealtime's `trip.completedAt ? withoutThis
+  // : ...`) and the initial load query only ever fetches
+  // `completed_at IS NULL`, so activeTrips structurally can never contain a
+  // finished ride. RidesControlRoomScreen's "History" tab was filtering
+  // activeTrips for completedAt anyway, which could never find anything
+  // [live-reported: "i just completed one ride but it is not showing
+  // history"]. loadCompletedTrips below fetches the real completed rows on
+  // demand (History tab only, not needed for the live/active views).
+  completedTrips: Trip[];
+  completedTripsLoaded: boolean;
 
   loadFromStorage: (familyId: string) => Promise<void>;
+  loadCompletedTrips: (familyId: string, limit?: number) => Promise<void>;
   dispatch: (params: {
     familyId: string; driverMemberId: string;
     pickupMemberId?: string; etaMinutes: number; eventId?: string;
@@ -220,6 +232,25 @@ export const useTripStore = create<TripState>((set, get) => ({
   activeTrips: [],
   activeTrip: null,
   loaded: false,
+  completedTrips: [],
+  completedTripsLoaded: false,
+
+  loadCompletedTrips: async (familyId, limit = 30) => {
+    const { data, error } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('family_id', familyId)
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.warn('[tripStore] loadCompletedTrips failed', error.message);
+      set({ completedTripsLoaded: true });
+      return;
+    }
+    const trips = (data ?? []).map(row => fromRow(row as TripRow));
+    set({ completedTrips: trips, completedTripsLoaded: true });
+  },
 
   loadFromStorage: async (familyId) => {
     try {

@@ -5,7 +5,7 @@
  */
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { ChevronRight, Plus, Info } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { PageHeading } from '@/components/PageHeading';
 import { SectionHeading } from '@/components/SectionHeading';
@@ -45,14 +45,18 @@ export function PlacesPage({ onClose, onAdd, onEdit, onShow }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ paddingTop: insets.top + 8, backgroundColor: canvas, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-        <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ alignSelf: 'flex-start', paddingHorizontal: 20 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Locations</Text>
-        </Pressable>
-        <PageHeading eyebrow="FAMILY CUBE · PLACES" title="Places" subtitle={subtitle} accent="teal"
-          Icon={placeKindMeta('home', colors).Icon} />
+        <PageHeading title="Places" subtitle={subtitle} accent="teal"
+          onTitlePress={onClose} topInset={0} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: colors.tealLight,
+          borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginHorizontal: 20, marginTop: 18 }}>
+          <Info size={16} color={colors.teal} style={{ marginTop: 1 }} />
+          <Text style={{ flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+            Pinned places give your family an automatic check-in whenever someone arrives or leaves.
+          </Text>
+        </View>
         {isParent && !home && (
           <Pressable onPress={() => onAdd('home')}
             style={{ marginHorizontal: 20, marginTop: 18, borderRadius: 20, padding: 18, backgroundColor: colors.tealLight, flexDirection: 'row', alignItems: 'center', gap: 14,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet,
 } from 'react-native';
@@ -42,7 +42,7 @@ function ProgressTrack({ phase }: { phase: TripPhase }) {
         {PHASE_STAGES.map((s, i) => (
           <View key={s.phase} style={{
             flex: 1, height: 4, borderRadius: 2,
-            backgroundColor: i < current ? colors.teal : i === current ? colors.primary : colors.surface,
+            backgroundColor: i < current ? colors.teal : i === current ? colors.primary : (isDark ? colors.surface : GEMINI.border),
           }} />
         ))}
       </View>
@@ -81,7 +81,7 @@ function TripCard({ trip, members, onSelect }: {
   const { colors, isDark } = useTheme();
   const driver = members.find(m => m.id === trip.driverMemberId);
   const pickup = members.find(m => m.id === trip.pickupMemberId);
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
   const status = tripStatusCopy(trip, colors, isDark);
   const driverFirst = driver?.name?.split(' ')[0] ?? 'Someone';
   const pickupFirst = pickup?.name?.split(' ')[0];
@@ -112,7 +112,7 @@ function TripCard({ trip, members, onSelect }: {
   return (
     <Pressable
       onPress={() => onSelect(trip.id)}
-      style={[s.card, { backgroundColor: colors.card, borderColor }]}
+      style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
@@ -149,7 +149,7 @@ function EventCard({ event, members, onDispatch }: {
   const { colors, isDark } = useTheme();
   const driverId = event.driverId ?? event.helperId;
   const driver = driverId ? members.find(m => m.id === driverId) : undefined;
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
 
   // Was a static "Upcoming" pill + ProgressTrack hard-coded to phase=
   // "assigned" on EVERY card, even one with no driver at all — a ride that
@@ -164,11 +164,11 @@ function EventCard({ event, members, onDispatch }: {
     : `No driver yet${event.time ? ` — ${event.time}` : ''}${event.location ? ` at ${event.location}` : ''}. Set one up before it's needed.`;
 
   return (
-    <View style={[s.card, { backgroundColor: colors.card, borderColor }]}>
+    <View style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{
           width: 36, height: 36, borderRadius: 18,
-          backgroundColor: driverId ? colors.teal : colors.surface,
+          backgroundColor: driverId ? colors.teal : (isDark ? colors.surface : '#F0EDE6'),
           alignItems: 'center', justifyContent: 'center',
         }}>
           <Text style={{ fontSize: 14, fontWeight: '700', color: driverId ? '#FFFFFF' : colors.textTertiary }}>
@@ -208,7 +208,7 @@ export function RidesControlRoomScreen({
   const { colors, isDark } = useTheme();
   const [filter, setFilter] = useState<FilterKey>('active');
 
-  const { activeTrips } = useTripStore();
+  const { activeTrips, completedTrips, loadCompletedTrips } = useTripStore();
   const events   = useEventStore(s => s.events);
   const members  = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
@@ -225,14 +225,19 @@ export function RidesControlRoomScreen({
     [allEvents, activeTripEventIds],
   );
 
-  const completedTrips = useMemo(
-    () => [...activeTrips].filter(t => !!t.completedAt)
-      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
-    [activeTrips],
-  );
+  // completedTrips comes from its own store fetch, NOT activeTrips —
+  // activeTrips structurally never contains a finished ride (it's removed
+  // the moment completedAt is set, both in the initial load query and the
+  // realtime handler), so filtering it for completedAt could never surface
+  // anything [live-reported: "i just completed one ride but it is not
+  // showing history"]. Loaded on demand when this screen mounts, since
+  // history isn't needed for the Active/Upcoming tabs.
+  useEffect(() => {
+    if (activeMember?.familyId) loadCompletedTrips(activeMember.familyId);
+  }, [activeMember?.familyId]);
 
   const firstLive = liveTrips[0];
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
 
   const pills: { key: FilterKey; label: string; count: number }[] = [
     { key: 'active',   label: 'Active',   count: liveTrips.length },
@@ -241,9 +246,9 @@ export function RidesControlRoomScreen({
   ];
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top', 'bottom']}>
       {/* ── Fixed page header ── */}
-      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
             {familyName?.toUpperCase() ?? 'FAMILY'}
@@ -263,7 +268,7 @@ export function RidesControlRoomScreen({
               Family rides
             </Text>
           </View>
-          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? colors.surface : '#F0EDE6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
             <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
           </Pressable>
         </View>
@@ -305,7 +310,7 @@ export function RidesControlRoomScreen({
             tall. Was a content-width pill row (borderRadius:100, tinted
             active bg) reused from elsewhere — different shape entirely
             from the spec's actual segmented control. */}
-        <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 14, padding: 4, gap: 4 }}>
+        <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#F0EDE6', borderRadius: 14, padding: 4, gap: 4 }}>
           {pills.map(p => {
             const isActive = p.key === filter;
             return (
@@ -313,7 +318,7 @@ export function RidesControlRoomScreen({
                 key={p.key}
                 onPress={() => setFilter(p.key)}
                 style={{ flex: 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isActive ? colors.card : 'transparent' }}
+                  backgroundColor: isActive ? (isDark ? colors.card : GEMINI.cardBg) : 'transparent' }}
               >
                 <Text style={{ fontSize: 13, fontWeight: isActive ? '700' : '400', color: isActive ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                   {p.label}{p.count > 0 ? ` · ${p.count}` : ''}
@@ -358,9 +363,10 @@ export function RidesControlRoomScreen({
           completedTrips.length === 0
             ? <Text style={{ color: colors.textTertiary, fontSize: 15, textAlign: 'center', paddingVertical: 32 }}>No ride history yet</Text>
             : completedTrips.map(trip => (
-                <View key={trip.id} style={[s.card, { backgroundColor: colors.card, borderColor }]}>
+                <Pressable key={trip.id} onPress={() => onSelectTrip?.(trip.id)}
+                  style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? colors.surface : '#F0EDE6', alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textTertiary }}>
                         {memberInitial(trip.driverMemberId, members)}
                       </Text>
@@ -378,7 +384,7 @@ export function RidesControlRoomScreen({
                     </View>
                   </View>
                   <ProgressTrack phase="arrived" />
-                </View>
+                </Pressable>
               ))
         )}
 

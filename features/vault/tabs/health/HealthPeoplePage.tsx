@@ -30,7 +30,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Pill, Syringe, Shield, HeartPulse, AlertCircle } from 'lucide-react-native';
+import { Pill, Syringe, Shield, HeartPulse, AlertCircle, Stethoscope } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import FullPageOverlay from '@/components/FullPageOverlay';
@@ -40,6 +40,7 @@ import { medicationAdherenceHistory, formatDoseTime, today } from './types';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { PageHeading } from '@/components/PageHeading';
 
 // "Gemini rhythm" tokens (CLAUDE.md rule 6 exception) — imported from
 // the shared module instead of redeclared locally
@@ -86,16 +87,16 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>‹ Family</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 10, lineHeight: 36 }}>
-          Whose records?
-        </Text>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC, marginTop: 4 }}>
-          Medications, vaccines, and records — pick a family member.
-        </Text>
+      <View style={{ backgroundColor: pageBg }}>
+        <PageHeading
+          eyebrow="FAMILY CUBE · HEALTH"
+          title="Whose records?"
+          subtitle="Medications, vaccines, and records — pick a family member."
+          accent="sky"
+          Icon={Stethoscope}
+          onTitlePress={handleClose}
+          topInset={insets.top}
+        />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}
@@ -286,8 +287,8 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
           ScrollView (same containment rule as every other converted
           module this session). */}
       <FullPageOverlay visible={!!openMemberId} onDismiss={() => setOpenMemberId(null)} zIndex={55}>
-        {openMemberId && (
-          <HealthRecordsScreen onClose={() => setOpenMemberId(null)} initialMemberId={openMemberId} skipTabBarEffect />
+        {(requestAnimatedClose) => openMemberId && (
+          <HealthRecordsScreen onClose={requestAnimatedClose} initialMemberId={openMemberId} skipTabBarEffect />
         )}
       </FullPageOverlay>
     </View>

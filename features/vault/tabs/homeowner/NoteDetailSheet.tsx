@@ -13,7 +13,7 @@ const CANVAS = '#ECE6DE';
 const TITLE_CLR = '#0D1210';
 const BODY_CLR = '#3D4D47';
 const BODY_CLR_LIGHT = '#4E5C56';
-const BLUE = '#3B5FE4';
+const BLUE = '#5872C4';
 const LINK_BLUE = '#23352B';
 const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
@@ -100,13 +100,11 @@ export function NoteDetailSheet({ visible, note, colors, isDark, onClose, onEdit
 
   return (
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={zIndex}>
+      {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Home care</Text>
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
             <TouchableOpacity onPress={onEdit}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7,
                 borderRadius: 10, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
@@ -115,13 +113,14 @@ export function NoteDetailSheet({ visible, note, colors, isDark, onClose, onEdit
             </TouchableOpacity>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+          <TouchableOpacity onPress={requestAnimatedClose}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
             <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? colors.surface : SURFACE,
               alignItems: 'center', justifyContent: 'center' }}>
               <CatIcon size={18} color={overdue ? colors.danger : colors.teal} strokeWidth={2} />
             </View>
             <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{note.title}</Text>
-          </View>
+          </TouchableOpacity>
 
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
             <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
@@ -220,11 +219,12 @@ export function NoteDetailSheet({ visible, note, colors, isDark, onClose, onEdit
             <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE }}>Edit note</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onClose} style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <TouchableOpacity onPress={requestAnimatedClose} style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: bodyC }}>Close</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
+      )}
     </FullPageOverlay>
   );
 }

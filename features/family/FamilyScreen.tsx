@@ -21,6 +21,7 @@ import SchoolScreen from '@/features/vault/tabs/SchoolScreen';
 import FindFamScreen from '@/features/gps/FindFamScreen';
 import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { AccountSection } from '@/features/profile/AccountSection';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { PageHeading } from '@/components/PageHeading';
@@ -417,9 +418,18 @@ export default function FamilyScreen() {
             })}
           </SectionCard>
 
+          {/* ── Account — Subscription + Sign Out + Delete account, moved
+              here in full from ProfileSettingsScreen.tsx (no longer
+              rendered there) [live-requested: "lets add the purchase here
+              in the family tab one section.. and the singout delete
+              too.."]. ── */}
+          <AnimatedCard index={12}>
+            <AccountSection colors={colors} isDark={isDark} />
+          </AnimatedCard>
+
           {/* ── Closing link — Family settings & permissions, last thing on
               the page [live-requested: "end should be settings"]. ── */}
-          <AnimatedCard index={12}>
+          <AnimatedCard index={13}>
             <AnimatedPressable onPress={() => router.push('/profile-settings' as any)}
               style={{ borderRadius: 16, borderWidth: 1.5, borderColor: isDark ? colors.border : GEMINI.border,
                 paddingVertical: 14, alignItems: 'center' }}>
@@ -442,14 +452,14 @@ export default function FamilyScreen() {
           animation + edge-swipe-to-dismiss), same as every other full-page
           screen in this app; ConnectCalendarPage no longer hand-rolls its
           own slide animation/PanResponder. */}
-      <FullPageOverlay visible={showCalendarPage} onDismiss={() => setShowCalendarPage(false)} zIndex={51}>
+      <FullPageOverlay visible={showCalendarPage} onDismiss={() => setShowCalendarPage(false)} zIndex={51} backgroundColor={isDark ? colors.background : PAGE_BG}>
         <ConnectCalendarPage onClose={() => setShowCalendarPage(false)} />
       </FullPageOverlay>
 
       {/* Family tree full-page overlay — slide-in/out via FullPageOverlay,
           same as every other full-page screen (was a bare tab route with
           no entrance animation before). */}
-      <FullPageOverlay visible={showFamilyTree} onDismiss={() => setShowFamilyTree(false)} zIndex={50}>
+      <FullPageOverlay visible={showFamilyTree} onDismiss={() => setShowFamilyTree(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
         <FamilyTreePage onClose={() => setShowFamilyTree(false)} />
       </FullPageOverlay>
 
@@ -458,32 +468,34 @@ export default function FamilyScreen() {
           screen's tool grid [live-requested: "for the people in family
           rename as family invite.. and then link that family invite
           page"]. */}
-      <FullPageOverlay visible={showInvite} onDismiss={() => setShowInvite(false)} zIndex={50}>
+      <FullPageOverlay visible={showInvite} onDismiss={() => setShowInvite(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
         <InvitePage onClose={() => setShowInvite(false)} />
       </FullPageOverlay>
 
       {/* Home care full-page overlay — same '__overlay:*' sentinel pattern
           as Calendars/Family Tree above. */}
-      <FullPageOverlay visible={showSchool} onDismiss={() => setShowSchool(false)} zIndex={50}>
-        <SchoolScreen onClose={() => setShowSchool(false)} />
+      <FullPageOverlay visible={showSchool} onDismiss={() => setShowSchool(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <SchoolScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
-      <FullPageOverlay visible={showHomeCare} onDismiss={() => setShowHomeCare(false)} zIndex={50}>
-        <HomeownerNotesScreen onClose={() => setShowHomeCare(false)} />
+      <FullPageOverlay visible={showHomeCare} onDismiss={() => setShowHomeCare(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <HomeownerNotesScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
       {/* Parent sees the person-picker landing page first [live-requested:
           "landing page with the persons/family members"] — a kid/teen/
           senior skips straight to their own records (HealthRecordsScreen
           already restricts them via kidView, so a person-picker would be
           meaningless for them). */}
-      <FullPageOverlay visible={showHealth} onDismiss={() => { showTabBar(); setShowHealth(false); }} zIndex={50}>
-        {activeMember?.role === 'parent'
-          ? <HealthPeoplePage onClose={() => { showTabBar(); setShowHealth(false); }} />
-          : <HealthRecordsScreen onClose={() => setShowHealth(false)} />}
+      <FullPageOverlay visible={showHealth} onDismiss={() => { showTabBar(); setShowHealth(false); }} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => (
+          activeMember?.role === 'parent'
+            ? <HealthPeoplePage onClose={requestAnimatedClose} />
+            : <HealthRecordsScreen onClose={requestAnimatedClose} />
+        )}
       </FullPageOverlay>
-      <FullPageOverlay visible={showLocations} onDismiss={() => setShowLocations(false)} zIndex={50}>
+      <FullPageOverlay visible={showLocations} onDismiss={() => setShowLocations(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
         {(requestAnimatedClose) => <FindFamScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
-      <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50}>
+      <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
         <RewardsDashboardScreen onClose={() => setShowRewards(false)} backLabel="Family" />
       </FullPageOverlay>
     </View>

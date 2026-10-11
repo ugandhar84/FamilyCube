@@ -625,7 +625,7 @@ export default function JustDescribeItEventScreen({
   if (!visible) return null;
 
   return (
-    <SwipeBackWrapper onDismiss={handleClose}>
+    <SwipeBackWrapper onDismiss={handleClose} backgroundColor={canvasBg}>
     <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
     <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top']}>
 

@@ -5,13 +5,11 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import SchoolTabComp from './SchoolTab';
 
-// hideHeader/onClose are now unused — kept as accepted (never required)
-// props so every existing caller (app/(tabs)/school.tsx, FamilyScreen.tsx)
-// keeps compiling unchanged. The new School rebuild's own top-level screen
-// (SchoolHomeScreen.tsx, rendered via SchoolTabComp below) renders its own
-// full Figma header (eyebrow/breadcrumb/title/subtitle) — this screen no
-// longer renders a separate PageHeading on top of it, which would have
-// stacked two headers.
+// hideHeader is now unused — kept as an accepted (never required) prop so
+// every existing caller (app/(tabs)/school.tsx, FamilyScreen.tsx) keeps
+// compiling unchanged. onClose is forwarded down to SchoolHomeScreen.tsx's
+// own breadcrumb/title so title-tap plays the same slide-out-right
+// animation as Grocery's landing header, instead of vanishing instantly.
 export default function SchoolScreen({ hideHeader = false, onClose }: { hideHeader?: boolean; onClose?: () => void }) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
@@ -26,7 +24,7 @@ export default function SchoolScreen({ hideHeader = false, onClose }: { hideHead
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? colors.background : '#FFFFFF' }}>
-      <SchoolTabComp colors={colors} isDark={isDark} isKid={isKid} isTeen={isTeen} />
+      <SchoolTabComp colors={colors} isDark={isDark} isKid={isKid} isTeen={isTeen} onClose={onClose} />
     </View>
   );
 }

@@ -47,4 +47,20 @@ export const GEMINI = {
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
+  /** Dark-mode equivalent — a black shadow is invisible against an
+   * already-dark background, so this uses `elevation` (Android draws its
+   * own tonal shadow regardless of shadowColor) plus a faint white glow
+   * (iOS has no elevation concept — shadowColor/Opacity is the only way to
+   * lift a card there) so cards still read as floating, not flat, in dark
+   * mode too [live-requested: "it should be visible even in the dark
+   * theme nicely"]. Use `GEMINI.cardShadowDark` wherever `GEMINI.cardShadow`
+   * is used, spread under `isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow`
+   * instead of the old `isDark ? null : GEMINI.cardShadow` pattern. */
+  cardShadowDark: {
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
 } as const;

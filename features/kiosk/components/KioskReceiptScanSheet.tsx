@@ -32,7 +32,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { Camera, Image as ImageIcon, FileText, ScanLine, Check } from 'lucide-react-native';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadReceiptScanPhoto } from '@/lib/supabase';
 import { compressImage } from '@/lib/compressImage';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -83,12 +83,10 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
     try {
       let imageUrl: string | undefined;
       if (localUri) {
-        const path = `receipts/${familyId}/${Date.now()}.jpg`;
-        const blob = await (await fetch(localUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-          imageUrl = urlData.publicUrl;
+        try {
+          imageUrl = await uploadReceiptScanPhoto(familyId, base64);
+        } catch (e) {
+          console.warn('[KioskReceiptScanSheet] receipt photo upload failed', e);
         }
       }
       const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {

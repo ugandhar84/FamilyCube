@@ -517,7 +517,13 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         reason: (pendingApprovalChore.dueDate && pendingApprovalChore.dueDate < localDateStr(new Date()))
           ? 'Overdue — a family member completed this and is waiting for your approval.'
           : 'Waiting a while — a family member completed this and is waiting for your approval.',
-        dueDate: pendingApprovalChore.dueDate, dueTime: pendingApprovalChore.dueTime }
+        dueDate: pendingApprovalChore.dueDate, dueTime: pendingApprovalChore.dueTime,
+        // This card only ever surfaces ONE most-urgent item — without a
+        // count, a parent had no way to tell "this is the only thing
+        // pending" from "there are several more behind it"
+        // [live-reported via screenshot: "i've multiple items inside for
+        // the review but we have seen the only one card here"].
+        extraCount: Math.max(0, pendingReviews.length - 1) }
     : pendingKidRequest
     ? { kind: 'approval', title: pendingKidRequest.detail ?? 'Request from a kid', reason: `${members.find(m => m.id === pendingKidRequest.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'} is waiting for your response.` }
     : myPendingHelperEvent

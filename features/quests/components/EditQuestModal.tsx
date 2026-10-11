@@ -313,7 +313,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={dismiss}>
-      <SwipeBackWrapper onDismiss={dismiss}>
+      <SwipeBackWrapper onDismiss={dismiss} backgroundColor={canvas}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 

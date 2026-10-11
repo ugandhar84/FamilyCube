@@ -19,7 +19,7 @@ const CANVAS = '#ECE6DE';
 const TITLE_CLR = '#0D1210';
 const BODY_CLR = '#3D4D47';
 const BODY_CLR_LIGHT = '#4E5C56';
-const BLUE = '#3B5FE4';
+const BLUE = '#5872C4';
 const LINK_BLUE = '#23352B';
 const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
@@ -191,15 +191,15 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
 
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
+      {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Home care</Text>
+          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+              {mode === 'presets' ? 'Start with a suggestion' : 'Add a home care note'}
+            </Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
-            {mode === 'presets' ? 'Start with a suggestion' : 'Add a home care note'}
-          </Text>
           {mode === 'presets' && (
             <Text style={{ fontSize: 14, color: bodyC, marginTop: 6, lineHeight: 20 }}>
               Choose a starting point, then edit the title, interval and note for your home.
@@ -302,7 +302,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
                 borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: isDark ? BLUE : LINK_BLUE }}>Start blank</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={close} style={{ marginHorizontal: 20,
+            <TouchableOpacity onPress={requestAnimatedClose} style={{ marginHorizontal: 20,
               height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
               borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
               <Text style={{ fontSize: 15, fontWeight: '600', color: bodyC }}>Cancel · back to home care</Text>
@@ -509,7 +509,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={close}
+              <TouchableOpacity onPress={requestAnimatedClose}
                 style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? BLUE : LINK_BLUE }}>
                   Cancel · back to home care
@@ -519,6 +519,7 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
           </KeyboardAvoidingView>
         )}
       </View>
+      )}
     </FullPageOverlay>
   );
 }

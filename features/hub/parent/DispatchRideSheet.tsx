@@ -80,9 +80,9 @@ function MemberChip({ name, selected, roleColor, onPress, colors, isDark }: Memb
       style={[
         styles.memberChip,
         {
-          borderColor: selected ? roleColor : `rgba(223,97,60,0.10)`,
+          borderColor: selected ? roleColor : (isDark ? colors.border : GEMINI.border),
           borderWidth: selected ? 2 : 1,
-          backgroundColor: selected ? colors.primaryLight : colors.surface,
+          backgroundColor: selected ? colors.primaryLight : (isDark ? colors.surface : '#F0EDE6'),
         },
       ]}>
       <View
@@ -221,14 +221,12 @@ export function DispatchRideSheet({
 
   // ── Color helpers ─────────────────────────────────────────────────────────
 
-  const cardBorder = isDark
-    ? `rgba(223,97,60,0.12)`
-    : `rgba(223,97,60,0.10)`;
+  const cardBorder = isDark ? colors.border : GEMINI.border;
 
   const cardStyle = [
     styles.card,
     {
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? colors.card : GEMINI.cardBg,
       borderColor: cardBorder,
     },
   ];
@@ -286,7 +284,7 @@ export function DispatchRideSheet({
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
 
         {/* ── Fixed page header ── */}
-        <View style={[styles.pageHeader, { borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)' }]}>
+        <View style={[styles.pageHeader, { borderBottomColor: isDark ? colors.border : GEMINI.border }]}>
           <View style={styles.householdRow}>
             <Text style={[styles.householdFamily, { color: colors.textTertiary }]}>
               {familyName?.toUpperCase() ?? 'FAMILY'}

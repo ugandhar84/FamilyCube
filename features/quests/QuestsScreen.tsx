@@ -39,7 +39,7 @@ import { todayLocal, parseLocalDate, withinLast24h, parseTimeInput } from '@/lib
 import { countOverdueChores } from '@/lib/overdue';
 import { useChatStore } from '@/store/chatStore';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadChoreProofPhoto } from '@/lib/supabase';
 import { AiEngineBanner, AiTool } from './components/AiEngineBanner';
 import { QuestFilters, TabStatus } from './components/QuestFilters';
 import { QuestSearchBar, type DateRange } from './components/QuestSearchBar';
@@ -290,12 +290,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
       setIsUploadingProof(true);
       try {
         const familyId = activeMember?.familyId;
-        const path = `chore-proofs/${familyId ?? 'unknown'}/${submitTarget.id}-${Date.now()}.jpg`;
-        const blob = await (await fetch(submissionPhotoUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-        photoUrl = urlData.publicUrl;
+        photoUrl = await uploadChoreProofPhoto(familyId ?? 'unknown', submitTarget.id, submissionPhotoUri);
       } catch (e) {
         console.warn('[QuestsScreen] proof photo upload failed', e);
         setIsUploadingProof(false);

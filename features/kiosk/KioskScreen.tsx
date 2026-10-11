@@ -74,7 +74,7 @@ import { KioskStoreTab } from './tabs/KioskStoreTab';
 import { KioskMemoriesTab } from './tabs/KioskMemoriesTab';
 import { KioskSchoolTab } from './tabs/KioskSchoolTab';
 import { KioskHealthTab } from './tabs/KioskHealthTab';
-import { EditMyProfileSheet } from '@/features/profile/ProfileSettingsScreen';
+import { EditMyProfileScreen } from '@/features/profile/EditMyProfileScreen';
 import { KioskProfileTab } from './tabs/KioskProfileTab';
 import { useTheme } from '@/lib/ThemeContext';
 
@@ -104,7 +104,7 @@ export default function KioskScreen() {
   const [intercomOpen, setIntercomOpen] = useState(false);
   const [standbyPinned, setStandbyPinned] = useState(false);
   // Long-press on the sidebar's own identity card (ParentStatsColumn /
-  // KioskKidTeenStatsColumn) opens the same real EditMyProfileSheet the
+  // KioskKidTeenStatsColumn) opens the same real EditMyProfileScreen the
   // phone's Profile screen uses — replaces that screen's own hero card as
   // the entry point on kiosk, since the identity is already always
   // visible here [live-requested: "remove the heroin the profile as we
@@ -456,7 +456,7 @@ export default function KioskScreen() {
               profile as we aalready have it in the static side bar we can
               add that fuctionality long press"]. */}
           {active && (
-            <EditMyProfileSheet
+            <EditMyProfileScreen
               visible={showEditMyProfile}
               onClose={() => setShowEditMyProfile(false)}
               member={active}

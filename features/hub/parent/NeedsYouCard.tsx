@@ -13,9 +13,18 @@ import { GEMINI } from '@/constants/geminiRhythm';
 // own top card. Keeping them structured lets the card format them properly
 // (fmtHumanDateShort/fmtTime) instead of trusting whatever string shape the
 // caller happened to build.
+// extraCount: how many OTHER items are also waiting in this same category
+// (e.g. other pending chore approvals) beyond the single one shown here.
+// This card is deliberately a single-most-urgent-item slot, not a list —
+// but with nothing on the card itself, a parent had no way to tell "this
+// is the only thing" from "there are 3 more behind it"
+// [live-reported via screenshot: "i've multiple items inside for the
+// review but we have seen the only one card here — how do we handle this
+// scenario?"]. Optional and omitted for kinds that aren't naturally
+// multi-item (conflict).
 export type NeedsYouItem =
   | { kind: 'conflict'; title: string; reason: string; dueDate?: string; dueTime?: string }
-  | { kind: 'approval'; title: string; reason: string; dueDate?: string; dueTime?: string }
+  | { kind: 'approval'; title: string; reason: string; dueDate?: string; dueTime?: string; extraCount?: number }
   | { kind: 'backlog'; title: string; reason: string; dueDate?: string; dueTime?: string };
 
 // Was a full-width "Review options" / "Review & approve" / "See task" CTA
@@ -50,9 +59,10 @@ export function NeedsYouCard({
         marginHorizontal: 20, marginTop: 14,
         flexDirection: 'row', alignItems: 'center', gap: 12,
         padding: 16,
-        borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.12)',
+        borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
         borderRadius: 22,
         backgroundColor: colors.amberLight,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
       }}
     >
       <View style={{
@@ -83,6 +93,11 @@ export function NeedsYouCard({
             <CalendarDays size={12} color={colors.textTertiary} />
             <Text style={{ color: colors.textTertiary, fontSize: 12, fontWeight: '600' }}>{dueLabel}</Text>
           </View>
+        )}
+        {item.kind === 'approval' && !!item.extraCount && (
+          <Text style={{ color: colors.amber, fontSize: 12, fontWeight: '700', marginTop: dueLabel ? 4 : 2 }}>
+            +{item.extraCount} more awaiting review
+          </Text>
         )}
       </View>
       <ChevronRight size={20} color={colors.textTertiary} />

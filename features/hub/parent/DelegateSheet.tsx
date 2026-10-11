@@ -29,7 +29,7 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
   const isGPOpen = !!liveChore?.inviteGrandparents;
   const [note, setNote] = useState('');
   const hasGrandparents = members.some(m => m.role === 'senior');
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
   // Delegating to a parent/senior strips the coin reward (adults don't earn
   // coins) — that's a real, silent data loss on a single tap if committed
   // immediately, so a coin-bearing chore stops here and asks for an
@@ -200,13 +200,13 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
             <View style={{
               width: 44, height: 44, borderRadius: 22,
               borderWidth: 2,
-              borderColor: isGPOpen ? GP_VIOLET : (isDark ? colors.border : 'rgba(223,97,60,0.20)'),
+              borderColor: isGPOpen ? GP_VIOLET : (isDark ? colors.border : GEMINI.border),
               backgroundColor: isGPOpen ? GP_VIOLET : 'transparent',
               alignItems: 'center', justifyContent: 'center',
             }}>
               {isGPOpen
                 ? <Check size={20} color="#fff" />
-                : <HeartHandshake size={20} color={isDark ? colors.textTertiary : 'rgba(223,97,60,0.40)'} />
+                : <HeartHandshake size={20} color={isDark ? colors.textTertiary : GEMINI.bodyColorLight} />
               }
             </View>
             <View style={{ flex: 1 }}>

@@ -120,10 +120,11 @@ export function TodayActionGrid({
             flexBasis: '47%', flexGrow: 1,
             minHeight: 116,
             borderRadius: 20,
-            borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.09)',
+            borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
             padding: 15,
             backgroundColor: colors.pinkLight,
             justifyContent: 'space-between',
+            ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 10 }}>
@@ -154,10 +155,11 @@ export function TodayActionGrid({
                 flexBasis: '47%', flexGrow: 1,
                 minHeight: 116,
                 borderRadius: 20,
-                borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.09)',
+                borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
                 padding: 15,
                 justifyContent: 'flex-start',
                 backgroundColor: t.bg,
+                ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

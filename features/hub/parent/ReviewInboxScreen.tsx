@@ -133,7 +133,7 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
         paddingTop: insets.top + 12,
         paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderBottomColor: isDark ? colors.border : GEMINI.border,
         backgroundColor: canvas,
         gap: 8,
       }}>

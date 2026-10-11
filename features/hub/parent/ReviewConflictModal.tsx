@@ -36,13 +36,13 @@ export function ReviewConflictModal({
     ...relatedContext,
   ];
 
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
         {/* ── Fixed page header ── */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', gap: 8 }}>
+        <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
               {familyName?.toUpperCase() ?? 'FAMILY'}
@@ -76,7 +76,7 @@ export function ReviewConflictModal({
             <Text style={[s.overline, { color: colors.textTertiary }]}>SCHEDULE CONFLICT</Text>
             {rows.map((r, i) => (
               <View key={`${r.title}-${i}`}>
-                {i > 0 && <View style={{ height: 1, backgroundColor: isDark ? colors.border : 'rgba(44,39,34,0.06)' }} />}
+                {i > 0 && <View style={{ height: 1, backgroundColor: isDark ? colors.border : GEMINI.border }} />}
                 <View style={{ paddingVertical: 14, gap: 4 }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{r.title}</Text>
                   {r.detail ? <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{r.detail}</Text> : null}

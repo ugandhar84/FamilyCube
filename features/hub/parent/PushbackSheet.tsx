@@ -33,7 +33,7 @@ export function PushbackSheet({ target, onClose, respondToParentQuest }: {
 
   const dismiss = () => { Keyboard.dismiss(); setDetail(''); onClose(); };
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
-  const borderColor = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const borderColor = isDark ? colors.border : GEMINI.border;
 
   const ACTIONS = [
     { action: 'SNOOZE',  label: 'Snooze 48h',   Icon: Clock,         tint: colors.pink    },

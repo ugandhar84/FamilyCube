@@ -578,7 +578,7 @@ export default function EventDetailScreen({
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <SwipeBackWrapper onDismiss={onClose}>
+    <SwipeBackWrapper onDismiss={onClose} backgroundColor={canvas}>
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
         {/* ── Top bar ── */}

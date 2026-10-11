@@ -17,7 +17,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { showToast } from '@/components/AppToast';
 import {
-  CheckCircle, XCircle, ChevronRight, ShoppingBag, Flame,
+  CheckCircle, XCircle, ChevronRight, ShoppingBag, Flame, Coins,
 } from 'lucide-react-native';
 import NotificationPanel from '@/components/NotificationPanel';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
@@ -112,16 +112,9 @@ function Divider({ colors, isDark }: { colors: any; isDark: boolean }) {
 export default function RewardsDashboardScreen({
   hideHeader = false,
   onClose,
-  backLabel = 'Hub',
 }: {
   hideHeader?: boolean;
   onClose?: () => void;
-  /** Text after the "‹" in the top-left back link — defaults to 'Hub'
-   *  (opened from HubScreen's coin pill/quick-access pill/kid cards), but
-   *  FamilyScreen passes 'Family' when it opens this as its own
-   *  FullPageOverlay so the visible breadcrumb matches where swipe-back/
-   *  onClose actually lands. */
-  backLabel?: string;
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -210,7 +203,9 @@ export default function RewardsDashboardScreen({
       <NotificationPanel visible={notifOpen} onClose={() => setNotifOpen(false)} />
 
       <FullPageOverlay visible={storeOpen} onDismiss={() => setStoreOpen(false)} zIndex={60}>
-        <StoreScreen hideHeader={false} />
+        {(requestAnimatedClose) => (
+          <StoreScreen hideHeader={false} onClose={requestAnimatedClose} />
+        )}
       </FullPageOverlay>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -218,28 +213,30 @@ export default function RewardsDashboardScreen({
         {!hideHeader && (
           <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: bodyC }}>
-                FAMILY CUBE / {familyName.toUpperCase()}
+              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: bodyC }}>
+                {'FAMILY CUBE · REWARDS'}
               </Text>
               {!!parentLabel && (
                 <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{parentLabel}</Text>
               )}
             </View>
-            {onClose && (
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE, marginTop: 10 }}>
-                  ‹ {backLabel}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
+              <TouchableOpacity activeOpacity={0.7} onPress={onClose} disabled={!onClose} style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+                  {canRedeemSelf ? 'You earned a choice' : 'Family Rewards'}
+                </Text>
+                <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>
+                  {canRedeemSelf
+                    ? "Spend your coins on perks you've earned."
+                    : 'Review requests, track redemptions, and manage the perks store.'}
                 </Text>
               </TouchableOpacity>
-            )}
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
-              {canRedeemSelf ? 'You earned a choice' : 'Family Rewards'}
-            </Text>
-            <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>
-              {canRedeemSelf
-                ? "Spend your coins on perks you've earned."
-                : 'Review requests, track redemptions, and manage the perks store.'}
-            </Text>
+              <View style={{ width: 52, height: 52, borderRadius: 18,
+                backgroundColor: isDark ? colors.amberLight : '#FDF3D8',
+                alignItems: 'center', justifyContent: 'center' }}>
+                <Coins size={28} color={isDark ? colors.amber : AMBER_TXT} strokeWidth={2} />
+              </View>
+            </View>
           </View>
         )}
 

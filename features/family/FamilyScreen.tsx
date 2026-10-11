@@ -496,7 +496,9 @@ export default function FamilyScreen() {
         {(requestAnimatedClose) => <FindFamScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
       <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
-        <RewardsDashboardScreen onClose={() => setShowRewards(false)} backLabel="Family" />
+        {(requestAnimatedClose) => (
+          <RewardsDashboardScreen onClose={requestAnimatedClose} />
+        )}
       </FullPageOverlay>
     </View>
   );

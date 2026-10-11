@@ -820,7 +820,9 @@ export default function HubScreen() {
       </FullPageOverlay>
 
       <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50} backgroundColor={hubCanvas}>
-        <RewardsDashboardScreen onClose={() => setShowRewards(false)} />
+        {(requestAnimatedClose) => (
+          <RewardsDashboardScreen onClose={requestAnimatedClose} />
+        )}
       </FullPageOverlay>
 
       {/* Senior Hub's own En Route flow still uses the picker modal — it has

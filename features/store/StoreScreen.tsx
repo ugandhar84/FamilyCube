@@ -39,7 +39,6 @@ const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8,
 const FORM_TITLE_CLR = TITLE_CLR;
 const FORM_BODY_CLR  = BODY_CLR;
 const FORM_BLUE      = BLUE_BTN;
-const FORM_LINK_BLUE = '#23352B';
 const FORM_BORDER    = BORDER;
 const FORM_CARD_BG   = '#FFFFFF';
 const FORM_SURFACE   = '#F0EDE6';
@@ -291,20 +290,18 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
 
   return (
     <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
+      {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? FORM_BLUE : FORM_LINK_BLUE }}>‹ Store</Text>
-          </TouchableOpacity>
-
           {reward && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
               <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? colors.surface : FORM_SURFACE,
                 alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 18 }}>{reward.emoji ?? '🎁'}</Text>
               </View>
               <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{reward.title}</Text>
-            </View>
+            </TouchableOpacity>
           )}
 
           {reward && (
@@ -368,6 +365,7 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
           </ScrollView>
         )}
       </View>
+      )}
     </FullPageOverlay>
   );
 }
@@ -419,25 +417,25 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
     }
   }, [visible, editing]);
 
-  const submit = () => {
-    if (!name.trim()) { showToast('Perk title is required'); return; }
-    onSave({ title: name.trim(), description: desc.trim() || undefined,
-      cost: parseInt(cost) || 50, emoji, category: cat });
-    onClose();
-  };
-
   return (
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={70}>
+      {(requestAnimatedClose) => {
+        const submit = () => {
+          if (!name.trim()) { showToast('Perk title is required'); return; }
+          onSave({ title: name.trim(), description: desc.trim() || undefined,
+            cost: parseInt(cost) || 50, emoji, category: cat });
+          requestAnimatedClose();
+        };
+        return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
           {/* Header */}
           <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? FORM_BLUE : FORM_LINK_BLUE }}>‹ Store</Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={requestAnimatedClose}>
+              <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
+                {editing ? 'Edit Perk' : 'New Perk'}
+              </Text>
             </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 8, lineHeight: 36 }}>
-              {editing ? 'Edit Perk' : 'New Perk'}
-            </Text>
             <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>
               {editing ? 'Update perk details below.' : 'Build a new reward for your family.'}
             </Text>
@@ -529,6 +527,8 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+        );
+      }}
     </FullPageOverlay>
   );
 }
@@ -696,8 +696,6 @@ export default function StoreScreen({
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   const canvas = isDark ? colors.background : PAGE_BG;
-  const familyName = (members[0] as any)?.familyName ?? 'Family';
-  const P = colors.primary;
 
   // Pulsing dot for AI banner
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -731,11 +729,8 @@ export default function StoreScreen({
           backgroundColor: canvas,
           gap: 6,
         }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
-              FAMILY CUBE / {familyName.toUpperCase()}
-            </Text>
-            {canRedeemSelf && (
+          {canRedeemSelf && (
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                 paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99,
                 backgroundColor: isDark ? colors.card : '#FDF3D8' }}>
@@ -745,17 +740,14 @@ export default function StoreScreen({
                 </Text>
                 <Text style={{ fontSize: 13 }}>🪙</Text>
               </View>
-            )}
-          </View>
-          {onClose && (
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Rewards</Text>
-            </TouchableOpacity>
+            </View>
           )}
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34,
-            letterSpacing: -0.5, color: colors.textPrimary }}>
-            Perks Store
-          </Text>
+          <TouchableOpacity activeOpacity={0.7} onPress={onClose} disabled={!onClose}>
+            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34,
+              letterSpacing: -0.5, color: colors.textPrimary }}>
+              Perks Store
+            </Text>
+          </TouchableOpacity>
           <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
             {isParent
               ? 'Manage your family perks catalog.'

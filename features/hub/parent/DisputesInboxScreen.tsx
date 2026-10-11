@@ -105,6 +105,18 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* 24h eligibility notice — a parent-vs-parent approval dispute (flag
+            or reversal request) can only be RAISED within 24h of the
+            approval, and once a reversal is requested, the other parent has
+            24h from THAT to co-sign it or it goes stale. Doesn't apply to
+            kid-redo disputes (separate mechanism, no time limit). */}
+        <View style={{ backgroundColor: colors.amberLight, borderRadius: 14, padding: 12, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 14 }}>⏱️</Text>
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: colors.textSecondary, lineHeight: 17 }}>
+            Approval disputes (flag or reversal) must be raised within 24 hours of the approval, and a requested reversal must be co-signed within 24 hours or it expires.
+          </Text>
+        </View>
+
         {openCount === 0 && resolved.length === 0 && (
           <View style={{ backgroundColor: cardWhiteBg, borderRadius: RADIUS, padding: 16 }}>
             <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 25 }}>

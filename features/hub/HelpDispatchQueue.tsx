@@ -1,70 +1,33 @@
 /**
- * HelpDispatchQueue
- * 100% port of gemini-code HelpDispatchQueue.tsx to React Native.
- * Pending → Assigned → Completed sections with full RBAC actions.
+ * HelpDispatchQueue — Kid Requests list surface.
+ *
+ * Redesigned (Part E of the Kid Requests review-screen plan) from the old
+ * bulky inline-action-card layout into a 3-tab (Awaiting Review / Rejected /
+ * History) list of compact tappable summary rows. All the actual lifecycle
+ * actions (decline, self-assign, assign helper, complete, reassign,
+ * withdraw, per-item grocery/supplies approve/reject) have been relocated
+ * to features/hub/parent/KidRequestDetailScreen.tsx (Part F) — tapping a row
+ * calls onOpenDetail(requestId) instead of expanding inline.
  */
-import React, { useState, useMemo } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
-import type { KidRequest, KidRequestItem } from '@/store/kidRequestStore';
-import { useGroceryStore } from '@/store/groceryStore';
+import type { KidRequest } from '@/store/kidRequestStore';
 import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView';
-import { BRAND } from '@/components/FamilyCubeLogo';
-import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
+import { fmtDateShort, fmtTime } from '@/lib/dates';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
-function HelpCircleIcon({ color, size = 18 }: { color: string; size?: number }) {
+function ChevronRight({ color, size = 18 }: { color: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} stroke={color} strokeWidth={2} fill="none" />
-      <Path d="M9,9 C9,6.2 15,6.2 15,9 C15,11 13,11.5 12,13" stroke={color} strokeWidth={2} strokeLinecap="round" fill="none" />
-      <Circle cx={12} cy={17} r={1} fill={color} />
-    </Svg>
-  );
-}
-
-function CheckCircle({ color, size = 14 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} stroke={color} strokeWidth={2} fill="none" />
-      <Path d="M8,13 L11,16 L16,8" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-
-function UserCheckIcon({ color, size = 13 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M16,21 V19 C16,16.8 14.2,15 12,15 H5 C2.8,15 1,16.8 1,19 V21" stroke={color} strokeWidth={2} strokeLinecap="round" fill="none" />
-      <Circle cx={8.5} cy={7} r={4} stroke={color} strokeWidth={2} fill="none" />
-      <Path d="M17,11 L19,13 L23,9" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-
-function ShieldCheck({ color, size = 11 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M12,22 C12,22 4,18 4,12 V5 L12,2 L20,5 V12 C20,18 12,22 12,22 Z" stroke={color} strokeWidth={2} fill="none" strokeLinejoin="round" />
-      <Path d="M9,12 L11,14 L15,10" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-
-function ClockIcon({ color, size = 12 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} stroke={color} strokeWidth={2} fill="none" />
-      <Path d="M12,7 L12,12 L16,14" stroke={color} strokeWidth={2} strokeLinecap="round" fill="none" />
+      <Path d="M9,6 L16,12 L9,18" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </Svg>
   );
 }
@@ -80,189 +43,202 @@ function PlusIcon({ color, size = 14 }: { color: string; size?: number }) {
 // ─── Urgency helpers ──────────────────────────────────────────────────────────
 
 const URGENCY_LABEL: Record<string, string> = {
-  urgent:    'High',
-  soon:      'Medium',
-  normal:    'Low',
-  emergency: 'High',
+  urgent:    'Urgent',
+  soon:      'Soon',
+  normal:    'Normal',
+  emergency: 'Emergency',
 };
 
-// ─── Preset decline reasons ───────────────────────────────────────────────────
+// Per-item approval panel covers real grocery/supplies requests, plus any
+// legacy delegation-typed row still carrying items (pre-migration data).
+export const isItemRequest = (req: KidRequest): boolean =>
+  req.type === 'grocery' || req.type === 'supplies' ||
+  (req.type === 'delegation' && !!req.items && req.items.length > 0);
 
-const DECLINE_PRESETS = [
-  'Kid playing with system',
-  'Do homework first',
-  'Ask again after chores',
-  'Parents busy right now',
-];
+// Returns a human-readable summary for grocery/supplies requests — real
+// types carry plain-text detail already; only legacy delegation-typed
+// rows need the old prefix-encoded decode.
+export const humanDetail = (req: KidRequest): string => {
+  if (req.type !== 'delegation') return req.detail;
+  if (req.detail.startsWith(GROCERY_PREFIX)) {
+    const p = decodeGroceryRequest(req.detail);
+    if (!p) return req.detail;
+    return `🛒 Grocery: ${p.name}${p.qty ? ` × ${p.qty}` : ''} [${p.category}]${p.notes ? ` — "${p.notes}"` : ''}`;
+  }
+  if (req.detail.startsWith(SUPPLIES_PREFIX)) {
+    try {
+      const p = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string; urgency: string };
+      const list = p.items.map(i => `${i.name}${i.qty ? ` ×${i.qty}` : ''}`).join(', ');
+      return `📚 School Supplies: ${list}${p.notes ? ` — "${p.notes}"` : ''}`;
+    } catch { return req.detail; }
+  }
+  return req.detail;
+};
+
+// Add approved items to the grocery store
+export const addApprovedItemsToStore = (
+  req: KidRequest,
+  activeMember: { id?: string; familyId?: string } | undefined,
+  members: { id: string; name: string; familyId?: string }[],
+  approvedItemIds?: Set<string>,
+) => {
+  if (req.type !== 'delegation' && req.type !== 'grocery' && req.type !== 'supplies') return;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { useGroceryStore } = require('@/store/groceryStore');
+  const addGroceryItem = useGroceryStore.getState().addItem;
+  const familyId     = activeMember?.familyId ?? members[0]?.familyId ?? 'family-1';
+  const memberName    = (id: string) => members.find(m => m.id === id)?.name ?? id;
+  const approverName  = memberName(activeMember?.id ?? '');
+  const approvedNote  = `Approved by ${approverName} · Requested by ${memberName(req.fromMemberId)}`;
+
+  if (req.items && req.items.length > 0) {
+    req.items
+      .filter(it => !approvedItemIds || approvedItemIds.has(it.id))
+      .forEach(item => {
+        addGroceryItem({
+          familyId,
+          name: item.name,
+          quantity: item.qty || undefined,
+          category: item.category,
+          addedBy: req.fromMemberId,
+          notes: approvedNote,
+        });
+      });
+  } else if (req.detail.startsWith(GROCERY_PREFIX)) {
+    const parsed = decodeGroceryRequest(req.detail);
+    if (parsed) addGroceryItem({ familyId, name: parsed.name, quantity: parsed.qty || undefined, category: parsed.category, addedBy: req.fromMemberId, notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined });
+  } else if (req.detail.startsWith(SUPPLIES_PREFIX)) {
+    try {
+      const parsed = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string };
+      parsed.items.forEach(item => addGroceryItem({ familyId, name: item.name, quantity: item.qty || undefined, category: 'School Supplies', addedBy: req.fromMemberId, notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined }));
+    } catch { /* ignore */ }
+  }
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
   onRequestHelpOpen: () => void;
   onClose?: () => void;
+  onOpenDetail: (requestId: string) => void;
 }
 
-export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props) {
+export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDetail }: Props) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const members = useFamilyStore(s => s.members);
-  const activeMemberId = useFamilyStore(s => s.activeMemberId);
-  const {
-    requests, declineRequest, assignRequest, completeRequest,
-    approveItems, rejectItems, approveAllItems, rejectAllItems,
-  } = useKidRequestStore();
-  const { addItem: addGroceryItem } = useGroceryStore();
+  const requests = useKidRequestStore(s => s.requests);
 
-  const activeMember = members.find(m => m.id === activeMemberId);
-  const isParentOrSenior = activeMember?.role === 'parent' || activeMember?.role === 'senior';
+  const [tab, setTab] = useState<'awaiting' | 'rejected' | 'history'>('awaiting');
 
-  const pending   = useMemo(() => requests.filter(r => r.status === 'pending'),    [requests]);
-  const assigned  = useMemo(() => requests.filter(r => r.status === 'approved'),   [requests]);
-  const completed = useMemo(() => requests.filter(r => r.status === 'completed').slice(0, 3), [requests]);
-
-  const adultHelpers = [
-    ...members.filter(m => m.role === 'parent' || m.role === 'senior'),
-    { id: 'ai-tutor', name: '🤖 AI Family Tutor', role: 'parent', emoji: '🤖' } as any,
-  ];
-
-  // Per-card state
-  const [declineOpen,    setDeclineOpen]    = useState<Record<string, boolean>>({});
-  const [declineReason,  setDeclineReason]  = useState<Record<string, string>>({});
-  const [selectedHelper, setSelectedHelper] = useState<Record<string, string>>({});
-  const [assignNote,     setAssignNote]     = useState<Record<string, string>>({});
-  const [helperOpen,     setHelperOpen]     = useState<Record<string, boolean>>({});
-
-  const [processingDecline,  setProcessingDecline]  = useState<Record<string, boolean>>({});
-  const [processingAssign,   setProcessingAssign]   = useState<Record<string, boolean>>({});
-  const [processingComplete, setProcessingComplete] = useState<Record<string, boolean>>({});
-  const [processingWithdraw, setProcessingWithdraw] = useState<Record<string, boolean>>({});
-
-  // Per-item approval state (keyed by requestId)
-  const [itemNote,      setItemNote]      = useState<Record<string, string>>({});    // requestId → shared comment
-  const [itemExpanded,  setItemExpanded]  = useState<Record<string, boolean>>({});   // requestId → show item list
+  const pending   = useMemo(() => requests.filter(r => r.status === 'pending'),  [requests]);
+  const assigned  = useMemo(() => requests.filter(r => r.status === 'approved'), [requests]);
+  const rejected  = useMemo(() => requests.filter(r => r.status === 'declined'), [requests]);
+  const history   = useMemo(() => requests.filter(r =>
+    r.status === 'completed' || r.status === 'cancelled' || r.status === 'expired' || r.status === 'partial'
+  ), [requests]);
 
   const memberName = (id: string) => members.find(m => m.id === id)?.name ?? id;
   const helperName = (id: string) => id === 'ai-tutor' ? 'AI Family Tutor' : memberName(id);
-
-  // Per-item approval panel covers real grocery/supplies requests, plus any
-  // legacy delegation-typed row still carrying items (pre-migration data).
-  const isItemRequest = (req: KidRequest): boolean =>
-    req.type === 'grocery' || req.type === 'supplies' ||
-    (req.type === 'delegation' && !!req.items && req.items.length > 0);
-
-  // Returns a human-readable summary for grocery/supplies requests — real
-  // types carry plain-text detail already; only legacy delegation-typed
-  // rows need the old prefix-encoded decode.
-  const humanDetail = (req: KidRequest): string => {
-    if (req.type !== 'delegation') return req.detail;
-    if (req.detail.startsWith(GROCERY_PREFIX)) {
-      const p = decodeGroceryRequest(req.detail);
-      if (!p) return req.detail;
-      return `🛒 Grocery: ${p.name}${p.qty ? ` × ${p.qty}` : ''} [${p.category}]${p.notes ? ` — "${p.notes}"` : ''}`;
-    }
-    if (req.detail.startsWith(SUPPLIES_PREFIX)) {
-      try {
-        const p = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string; urgency: string };
-        const list = p.items.map(i => `${i.name}${i.qty ? ` ×${i.qty}` : ''}`).join(', ');
-        return `📚 School Supplies: ${list}${p.notes ? ` — "${p.notes}"` : ''}`;
-      } catch { return req.detail; }
-    }
-    return req.detail;
-  };
-
-  // Add approved items to the grocery store
-  const addApprovedItemsToStore = (req: KidRequest, approvedItemIds?: Set<string>) => {
-    if (req.type !== 'delegation' && req.type !== 'grocery' && req.type !== 'supplies') return;
-    const familyId    = activeMember?.familyId ?? members[0]?.familyId ?? 'family-1';
-    const approverName = memberName(activeMemberId ?? '');
-    const approvedNote = `Approved by ${approverName} · Requested by ${memberName(req.fromMemberId)}`;
-
-    if (req.items && req.items.length > 0) {
-      // New multi-item format — only add the approved subset
-      req.items
-        .filter(it => !approvedItemIds || approvedItemIds.has(it.id))
-        .forEach(item => {
-          addGroceryItem({
-            familyId,
-            name: item.name,
-            quantity: item.qty || undefined,
-            category: item.category,
-            addedBy: req.fromMemberId,
-            notes: approvedNote,
-          });
-        });
-    } else if (req.detail.startsWith(GROCERY_PREFIX)) {
-      const parsed = decodeGroceryRequest(req.detail);
-      if (parsed) addGroceryItem({ familyId, name: parsed.name, quantity: parsed.qty || undefined, category: parsed.category, addedBy: req.fromMemberId, notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined });
-    } else if (req.detail.startsWith(SUPPLIES_PREFIX)) {
-      try {
-        const parsed = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string };
-        parsed.items.forEach(item => addGroceryItem({ familyId, name: item.name, quantity: item.qty || undefined, category: 'School Supplies', addedBy: req.fromMemberId, notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined }));
-      } catch { /* ignore */ }
-    }
-  };
-
-  // Legacy single-approve (non-item requests)
-  const handleGroceryApproval = (req: KidRequest, approverId: string) => addApprovedItemsToStore(req);
-
-  const doDecline = async (id: string) => {
-    if (processingDecline[id]) return;
-    setProcessingDecline(p => ({ ...p, [id]: true }));
-    await new Promise(r => setTimeout(r, 700));
-    declineRequest(id, activeMemberId ?? '', declineReason[id] || 'Request dismissed by parent');
-    setDeclineOpen(p => ({ ...p, [id]: false }));
-    setProcessingDecline(p => ({ ...p, [id]: false }));
-  };
-
-  const doSelfAssign = async (id: string) => {
-    if (!activeMemberId || processingAssign[id]) return;
-    setProcessingAssign(p => ({ ...p, [id]: true }));
-    await new Promise(r => setTimeout(r, 800));
-    const req = requests.find(r => r.id === id);
-    if (req) handleGroceryApproval(req, activeMemberId);
-    assignRequest(id, activeMemberId, assignNote[id], activeMemberId);
-    setProcessingAssign(p => ({ ...p, [id]: false }));
-  };
-
-  const doAssignHelper = async (id: string, helperId?: string) => {
-    const hId = helperId ?? selectedHelper[id];
-    if (!hId || processingAssign[id]) return;
-    setProcessingAssign(p => ({ ...p, [id]: true }));
-    await new Promise(r => setTimeout(r, 800));
-    const req = requests.find(r => r.id === id);
-    if (req) handleGroceryApproval(req, hId);
-    assignRequest(id, hId, assignNote[id], activeMemberId ?? undefined);
-    setProcessingAssign(p => ({ ...p, [id]: false }));
-    setHelperOpen(p => ({ ...p, [id]: false }));
-  };
-
-  const doComplete = async (id: string) => {
-    if (processingComplete[id]) return;
-    setProcessingComplete(p => ({ ...p, [id]: true }));
-    await new Promise(r => setTimeout(r, 800));
-    completeRequest(id, activeMemberId ?? '');
-    setProcessingComplete(p => ({ ...p, [id]: false }));
-  };
-
-  const doWithdraw = async (id: string) => {
-    if (processingWithdraw[id]) return;
-    setProcessingWithdraw(p => ({ ...p, [id]: true }));
-    await new Promise(r => setTimeout(r, 700));
-    useKidRequestStore.getState().cancelRequest(id);
-    setProcessingWithdraw(p => ({ ...p, [id]: false }));
-  };
-
-  const allReqs  = [...pending, ...assigned, ...completed];
 
   const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
   const subtitle = pending.length > 0
     ? `${pending.length} request${pending.length !== 1 ? 's' : ''} need${pending.length === 1 ? '' : 's'} a decision${assigned.length > 0 ? ` · ${assigned.length} in progress` : ''}`
     : `No open requests${assigned.length > 0 ? ` · ${assigned.length} in progress` : ''}`;
+
   const sectionLabel = (text: string, count: number, color: string) => (
     <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.7, color, marginTop: 6 }}>
       {text} · {count}
     </Text>
   );
+
+  // ── Compact tappable summary row ──────────────────────────────────────────
+  function RequestRow({ req, inHistory }: { req: KidRequest; inHistory?: boolean }) {
+    const meta      = REQUEST_META[req.type];
+    const requester = members.find(m => m.id === req.fromMemberId);
+    const itemRequest = isItemRequest(req);
+
+    let secondary: React.ReactNode = null;
+    if (req.type === 'ride' || req.type === 'appointment') {
+      if (req.scheduledDate || req.scheduledTime) {
+        const dateStr = req.scheduledDate ? fmtDateShort(req.scheduledDate) : '';
+        const timeStr = req.scheduledTime ? fmtTime(req.scheduledTime) : '';
+        secondary = (
+          <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>
+            {[dateStr, timeStr].filter(Boolean).join(' · ')}
+          </Text>
+        );
+      }
+    } else if (itemRequest && req.items && req.items.length > 0) {
+      secondary = (
+        <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>
+          {req.items.length} item{req.items.length === 1 ? '' : 's'}
+        </Text>
+      );
+    }
+    if (!secondary) {
+      const urgLabel = URGENCY_LABEL[req.urgency] ?? 'Normal';
+      const urgColor = req.urgency === 'urgent' || req.urgency === 'emergency' ? colors.danger
+        : req.urgency === 'soon' ? colors.amber : colors.textTertiary;
+      secondary = (
+        <View style={[styles.urgChip, { backgroundColor: urgColor + '18' }]}>
+          <Text style={[styles.urgChipText, { color: urgColor }]}>{urgLabel}</Text>
+        </View>
+      );
+    }
+
+    let outcomeTag: string | null = null;
+    if (inHistory) {
+      outcomeTag = req.status === 'completed' ? 'Completed'
+        : req.status === 'cancelled' ? 'Cancelled'
+        : req.status === 'expired' ? 'Expired'
+        : req.status === 'partial' ? 'Partial'
+        : null;
+    }
+
+    return (
+      <TouchableOpacity
+        onPress={() => onOpenDetail(req.id)}
+        activeOpacity={0.7}
+        style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+      >
+        <View style={[styles.badgeCircle, { backgroundColor: meta.bgColor }]}>
+          <Text style={{ fontSize: 20 }}>{meta.emoji}</Text>
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[styles.rowTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+            {(requester?.name?.split(' ')[0] ?? 'Member')} · {meta.label}
+          </Text>
+          <Text style={[styles.rowPreview, { color: colors.textSecondary }]} numberOfLines={2}>
+            {humanDetail(req)}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+            {secondary}
+            {!!req.rewardCoins && req.rewardCoins > 0 && (
+              <View style={[styles.coinPill, { backgroundColor: colors.amberLight }]}>
+                <Text style={[styles.coinPillText, { color: colors.amber }]}>+{req.rewardCoins} 🪙</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        {inHistory ? (
+          outcomeTag ? (
+            <View style={[styles.outcomeTag, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.outcomeTagText, { color: colors.textSecondary }]}>{outcomeTag}</Text>
+            </View>
+          ) : null
+        ) : (
+          <ChevronRight color={colors.textTertiary} />
+        )}
+      </TouchableOpacity>
+    );
+  }
+
+  const tabs: { key: typeof tab; label: string }[] = [
+    { key: 'awaiting', label: 'Awaiting Review' },
+    { key: 'rejected',  label: 'Rejected' },
+    { key: 'history',   label: 'History' },
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
@@ -273,455 +249,75 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
           onTitlePress={onClose}
           topInset={insets.top}
           right={(
-            <TouchableOpacity style={[q.askBtn, { backgroundColor: colors.pink }]} onPress={onRequestHelpOpen}>
+            <TouchableOpacity style={[styles.askBtn, { backgroundColor: colors.pink }]} onPress={onRequestHelpOpen}>
               <PlusIcon color="#fff" size={14} />
-              <Text style={q.askBtnText}>Ask for help</Text>
+              <Text style={styles.askBtnText}>Ask for help</Text>
             </TouchableOpacity>
           )}
         />
+
+        {/* Segmented tab switcher — same inline pill pattern as DisputesInboxScreen */}
+        <View style={{ marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 14, padding: 4, gap: 4 }}>
+          {tabs.map(t => {
+            const active = tab === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                onPress={() => setTab(t.key)}
+                style={{ flex: 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: active ? colors.card : 'transparent' }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: active ? '700' : '400', color: active ? colors.teal : colors.textSecondary }} numberOfLines={1}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingTop: 0, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
 
-      {/* Empty state */}
-      {allReqs.length === 0 && (
-        <View style={[q.emptyBox, { backgroundColor: colors.surface }]}>
-          <Text style={[q.emptyText, { color: colors.textTertiary }]}>
-            No requests right now. When a kid asks for help, it shows up here.
-          </Text>
-        </View>
-      )}
-
-      {pending.length > 0 && sectionLabel('NEEDS YOU', pending.length, colors.amber)}
-      {/* ── Pending requests ── */}
-      {pending.map(req => {
-        const meta      = REQUEST_META[req.type];
-        const requester = members.find(m => m.id === req.fromMemberId);
-        const urgLabel  = URGENCY_LABEL[req.urgency] ?? 'Normal';
-        const isDeclineOpen = declineOpen[req.id];
-        const selHelper = selectedHelper[req.id];
-        const isSelf    = selHelper === activeMemberId;
-
-        return (
-          <View key={req.id} style={[q.reqCard, { backgroundColor: colors.amberLight, borderColor: 'transparent' }]}>
-            {/* Top row */}
-            <View style={q.reqTop}>
-              <View style={{ flex: 1 }}>
-                <View style={q.badges}>
-                  <Text style={[q.reqName, { color: colors.amber }]}>
-                    🙋 {requester?.name ?? 'Member'} needs help:
-                  </Text>
-                  <View style={[q.badge, { backgroundColor: colors.amberLight }]}>
-                    <Text style={[q.badgeText, { color: colors.amber }]}>{meta.label}</Text>
-                  </View>
-                  {req.urgency === 'urgent' || req.urgency === 'emergency' ? (
-                    <View style={[q.badge, { backgroundColor: colors.dangerLight ?? colors.surface }]}>
-                      <Text style={[q.badgeText, { color: colors.danger }]}>🔴 Urgent</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={[q.reqDetail, { color: colors.textPrimary }]}>"{humanDetail(req)}"</Text>
-              </View>
-              {req.rewardCoins ? (
-                <View style={[q.coinBadge, { backgroundColor: BRAND.amber + '33' }]}>
-                  <Text style={[q.coinText, { color: BRAND.amber }]}>+{req.rewardCoins} 🪙</Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* ── Per-item approval panel (grocery/supplies with items[]) ── */}
-            {isParentOrSenior && isItemRequest(req) && req.items && req.items.length > 0 && (
-              <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '33', paddingTop: 10, gap: 8 }}>
-                {/* Bulk actions header */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: colors.amber }}>
-                    📦 {req.items.length} items requested by {memberName(req.fromMemberId)}:
-                  </Text>
-                  <TouchableOpacity onPress={() => setItemExpanded(p => ({ ...p, [req.id]: !p[req.id] }))}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>
-                      {itemExpanded[req.id] ? '▲ collapse' : '▼ review items'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {itemExpanded[req.id] && (
-                  <>
-                    {/* Per-item rows */}
-                    {req.items.map(item => {
-                      const isPending  = item.status === 'pending';
-                      const isApproved = item.status === 'approved';
-                      const isRejected = item.status === 'rejected';
-                      return (
-                        <View key={item.id} style={{
-                          borderRadius: 10, borderWidth: 1.5, padding: 8, gap: 4,
-                          backgroundColor: isApproved ? '#10B98112' : isRejected ? '#EF444412' : (colors.surface),
-                          borderColor: isApproved ? '#10B98150' : isRejected ? '#EF444450' : colors.border,
-                        }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={{ fontSize: 13 }}>{item.emoji ?? '🛒'}</Text>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
-                                {item.name}{item.qty ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.qty}</Text> : null}
-                              </Text>
-                              <Text style={{ fontSize: 12, color: colors.textTertiary }}>{item.category}</Text>
-                            </View>
-                            {isPending ? (
-                              <View style={{ flexDirection: 'row', gap: 6 }}>
-                                <TouchableOpacity
-                                  onPress={() => { approveItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore({ ...req, items: [item] }); }}
-                                  style={{ borderRadius: 8, backgroundColor: colors.teal, paddingHorizontal: 10, paddingVertical: 5 }}>
-                                  <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>✓ OK</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  onPress={() => rejectItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id])}
-                                  style={{ borderRadius: 8, backgroundColor: colors.danger, paddingHorizontal: 10, paddingVertical: 5 }}>
-                                  <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>✗ No</Text>
-                                </TouchableOpacity>
-                              </View>
-                            ) : (
-                              <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
-                                backgroundColor: isApproved ? '#10B98120' : '#EF444420' }}>
-                                <Text style={{ fontSize: 12, fontWeight: '900', color: isApproved ? '#10B981' : '#EF4444' }}>
-                                  {isApproved ? '✓ Approved' : '✗ Rejected'}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                          {(item.parentNote) && (
-                            <Text style={{ fontSize: 12, fontStyle: 'italic', color: colors.textTertiary, paddingLeft: 20 }}>
-                              "{item.parentNote}"
-                            </Text>
-                          )}
-                        </View>
-                      );
-                    })}
-
-                    {/* Comment for this batch */}
-                    <TextInput
-                      style={[q.noteInput, { color: colors.textPrimary, borderColor: colors.amber, backgroundColor: colors.surface }]}
-                      placeholder="Comment for all items (optional)…"
-                      placeholderTextColor={colors.textTertiary}
-                      maxLength={150}
-                      value={itemNote[req.id] ?? ''}
-                      onChangeText={v => setItemNote(p => ({ ...p, [req.id]: v }))}
-                    />
-
-                    {/* Bulk approve / reject all pending */}
-                    {req.items.some(it => it.status === 'pending') && (
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <TouchableOpacity
-                          onPress={() => { approveAllItems(req.id, activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore(req, new Set(req.items!.filter(i => i.status === 'pending').map(i => i.id))); }}
-                          style={{ flex: 1, borderRadius: 12, backgroundColor: colors.teal, paddingVertical: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✓ Approve All</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => rejectAllItems(req.id, activeMemberId ?? '', itemNote[req.id])}
-                          style={{ flex: 1, borderRadius: 12, backgroundColor: colors.danger, paddingVertical: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✗ Reject All</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </>
-                )}
+        {tab === 'awaiting' && (
+          <>
+            {pending.length === 0 && assigned.length === 0 && (
+              <View style={[styles.emptyBox, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.emptyText, { color: colors.textTertiary }]}>
+                  No requests right now. When a kid asks for help, it shows up here.
+                </Text>
               </View>
             )}
+            {pending.length > 0 && sectionLabel('NEEDS A DECISION', pending.length, colors.amber)}
+            {pending.map(req => <RequestRow key={req.id} req={req} />)}
+            {assigned.length > 0 && sectionLabel('IN PROGRESS', assigned.length, colors.pink)}
+            {assigned.map(req => <RequestRow key={req.id} req={req} />)}
+          </>
+        )}
 
-            {/* Parent actions */}
-            {isParentOrSenior && !(isItemRequest(req) && req.items && req.items.length > 0) ? (
-              <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33' }]}>
-                <View style={q.actionHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <ShieldCheck color={colors.amber} />
-                    <Text style={[q.actionHeaderText, { color: colors.amber }]}>
-                      Assign Tutor / Helper or Decline:
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setDeclineOpen(p => ({ ...p, [req.id]: !p[req.id] }))}>
-                    <Text style={q.declineLink}>❌ Decline Request</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Decline panel */}
-                {isDeclineOpen && (
-                  <View style={[q.declinePanel, { backgroundColor: colors.dangerLight ?? colors.surface, borderColor: colors.border }]}>
-                    <Text style={[q.declinePanelTitle, { color: colors.danger }]}>
-                      Select or Type Reason to Decline:
-                    </Text>
-                    <View style={q.presets}>
-                      {DECLINE_PRESETS.map(preset => (
-                        <TouchableOpacity
-                          key={preset}
-                          style={[q.presetChip,
-                            declineReason[req.id] === preset
-                              ? { backgroundColor: colors.danger, borderColor: '#EF4444' }
-                              : { backgroundColor: colors.surface, borderColor: isDark ? '#374151' : '#D1D5DB' }
-                          ]}
-                          onPress={() => setDeclineReason(p => ({ ...p, [req.id]: preset }))}
-                        >
-                          <Text style={[q.presetText, { color: declineReason[req.id] === preset ? '#fff' : colors.textSecondary }]}>
-                            {preset}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <TextInput
-                      style={[q.declineInput, { color: colors.textPrimary, borderColor: isDark ? '#374151' : '#D1D5DB', backgroundColor: colors.surface }]}
-                      placeholder="Custom reason (max 150 chars)..."
-                      placeholderTextColor={colors.textTertiary}
-                      maxLength={150}
-                      value={declineReason[req.id] ?? ''}
-                      onChangeText={v => setDeclineReason(p => ({ ...p, [req.id]: v.slice(0, 150) }))}
-                    />
-                    <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
-                      <TouchableOpacity
-                        style={[q.declineBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => setDeclineOpen(p => ({ ...p, [req.id]: false }))}
-                      >
-                        <Text style={[q.declineBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[q.declineBtn, { backgroundColor: colors.danger, opacity: processingDecline[req.id] ? 0.5 : 1 }]}
-                        onPress={() => doDecline(req.id)}
-                        disabled={processingDecline[req.id]}
-                      >
-                        {processingDecline[req.id]
-                          ? <ActivityIndicator color="#fff" size="small" />
-                          : <Text style={[q.declineBtnText, { color: '#fff' }]}>Confirm Decline</Text>}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Self-assign + helper selector */}
-                {!isDeclineOpen && (
-                  <View style={{ gap: 8 }}>
-                    <TouchableOpacity
-                      style={[q.selfAssignBtn, { opacity: processingAssign[req.id] ? 0.5 : 1 }]}
-                      onPress={() => doSelfAssign(req.id)}
-                      disabled={processingAssign[req.id]}
-                    >
-                      {processingAssign[req.id]
-                        ? <><ActivityIndicator color="#fff" size="small" /><Text style={q.selfAssignText}>Assigning...</Text></>
-                        : <Text style={q.selfAssignText}>⚡ Self-Assign ({activeMember?.name?.split(' ')[0]})</Text>}
-                    </TouchableOpacity>
-
-                    {/* Helper picker row */}
-                    <View style={{ position: 'relative' }}>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <TouchableOpacity
-                          style={[q.helperTrigger, { borderColor: isDark ? '#78350F' : '#F59E0B', backgroundColor: colors.surface, flex: 1 }]}
-                          onPress={() => setHelperOpen(p => ({ ...p, [req.id]: !p[req.id] }))}
-                        >
-                          <Text style={[q.helperTriggerText, { color: selHelper ? colors.textPrimary : colors.textTertiary }]} numberOfLines={1}>
-                            {selHelper ? helperName(selHelper) : 'Assign helper...'}
-                          </Text>
-                          <Text style={{ color: colors.textTertiary }}>▾</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[q.assignBtn, { opacity: (!selHelper || processingAssign[req.id]) ? 0.4 : 1 }]}
-                          onPress={() => doAssignHelper(req.id)}
-                          disabled={!selHelper || processingAssign[req.id]}
-                        >
-                          {processingAssign[req.id]
-                            ? <ActivityIndicator color="#fff" size="small" />
-                            : <Text style={q.assignBtnText}>Assign</Text>}
-                        </TouchableOpacity>
-                      </View>
-
-                      {helperOpen[req.id] && (
-                        <View style={withAndroidShadowFix([q.helperDropdown, { backgroundColor: isDark ? '#131927' : '#fff', borderColor: colors.surface }])}>
-                          {adultHelpers
-                            .filter(h => h.id !== req.assignedHelper)
-                            .map(h => (
-                              <TouchableOpacity
-                                key={h.id}
-                                style={[q.helperOption, selHelper === h.id && { backgroundColor: BRAND.purple + '18' }]}
-                                onPress={() => { setSelectedHelper(p => ({ ...p, [req.id]: h.id })); setHelperOpen(p => ({ ...p, [req.id]: false })); }}
-                              >
-                                <Text style={[q.helperOptionText, { color: selHelper === h.id ? BRAND.purple : colors.textPrimary }]}>
-                                  {h.emoji ?? '👤'} {h.name}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Notes input — only when assigning to someone else */}
-                    {selHelper && selHelper !== activeMemberId && (
-                      <View>
-                        <TextInput
-                          style={[q.noteInput, { color: colors.textPrimary, borderColor: colors.amber, backgroundColor: colors.surface }]}
-                          placeholder={`Reason / Note for ${helperName(selHelper)} (optional)...`}
-                          placeholderTextColor={colors.textTertiary}
-                          maxLength={150}
-                          value={assignNote[req.id] ?? ''}
-                          onChangeText={v => setAssignNote(p => ({ ...p, [req.id]: v.slice(0, 150) }))}
-                        />
-                        <Text style={[q.charCount, { color: BRAND.purple }]}>{(assignNote[req.id] ?? '').length}/150 chars</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
+        {tab === 'rejected' && (
+          <>
+            {rejected.length === 0 ? (
+              <View style={[styles.emptyBox, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No rejected requests.</Text>
               </View>
-            ) : null}
-
-            {/* Kid view — waiting / withdraw */}
-            {!isParentOrSenior && (
-              <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <ClockIcon color={colors.amber} />
-                  <Text style={[q.waitText, { color: colors.amber }]}>Waiting for parent approval...</Text>
-                </View>
-                {req.fromMemberId === activeMemberId && (
-                  <TouchableOpacity
-                    onPress={() => doWithdraw(req.id)}
-                    disabled={processingWithdraw[req.id]}
-                    style={{ opacity: processingWithdraw[req.id] ? 0.5 : 1 }}
-                  >
-                    {processingWithdraw[req.id]
-                      ? <ActivityIndicator color="#EF4444" size="small" />
-                      : <Text style={q.withdrawText}>🗑️ Withdraw Request</Text>}
-                  </TouchableOpacity>
-                )}
-              </View>
+            ) : (
+              rejected.map(req => <RequestRow key={req.id} req={req} />)
             )}
-          </View>
-        );
-      })}
+          </>
+        )}
 
-      {assigned.length > 0 && sectionLabel('IN PROGRESS', assigned.length, colors.pink)}
-      {/* ── Assigned / In-Progress ── */}
-      {assigned.map(req => {
-        const requester   = members.find(m => m.id === req.fromMemberId);
-        const aHelper     = req.assignedHelper;
-        const selHelper   = selectedHelper[req.id];
-        const canComplete = isParentOrSenior || req.assignedHelper === activeMemberId || req.fromMemberId === activeMemberId;
-
-        return (
-          <View key={req.id} style={[q.reqCard, { backgroundColor: colors.pinkLight, borderColor: 'transparent' }]}>
-            <View style={q.reqTop}>
-              <View style={{ flex: 1 }}>
-                <View style={q.badges}>
-                  <Text style={[q.reqName, { color: colors.pink }]}>
-                    🤝 {requester?.name ?? 'Member'}'s Request
-                  </Text>
-                  <View style={[q.badge, { backgroundColor: colors.pinkLight }]}>
-                    <Text style={[q.badgeText, { color: colors.pink }]}>In Progress</Text>
-                  </View>
-                </View>
-                <Text style={[q.reqDetail, { color: colors.textPrimary }]}>"{humanDetail(req)}"</Text>
+        {tab === 'history' && (
+          <>
+            {history.length === 0 ? (
+              <View style={[styles.emptyBox, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.emptyText, { color: colors.textTertiary }]}>Nothing here yet.</Text>
               </View>
-            </View>
+            ) : (
+              history.map(req => <RequestRow key={req.id} req={req} inHistory />)
+            )}
+          </>
+        )}
 
-            {req.parentNote ? (
-              <View style={[q.noteBox, { backgroundColor: BRAND.purple + '20' }]}>
-                <Text style={[q.noteBoxText, { color: colors.pink }]}>📝 Note: "{req.parentNote}"</Text>
-              </View>
-            ) : null}
-
-            <View style={[q.actionsWrap, { borderTopColor: BRAND.purple + '30', gap: 10 }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <UserCheckIcon color="#10B981" />
-                  <Text style={[q.assignedText, { color: colors.textSecondary }]}>
-                    Assigned:{' '}
-                    <Text style={{ fontWeight: '900', color: colors.pink }}>
-                      {aHelper ? helperName(aHelper) : 'Parent'}
-                    </Text>
-                  </Text>
-                </View>
-                {canComplete && (
-                  <TouchableOpacity
-                    style={[q.completeBtn, { opacity: processingComplete[req.id] ? 0.5 : 1 }]}
-                    onPress={() => doComplete(req.id)}
-                    disabled={processingComplete[req.id]}
-                  >
-                    {processingComplete[req.id]
-                      ? <ActivityIndicator color="#fff" size="small" />
-                      : <><CheckCircle color="#fff" size={12} /><Text style={q.completeBtnText}>Mark Completed</Text></>}
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Reassign — parents only */}
-              {isParentOrSenior && (
-                <View style={[q.reassignBox, { backgroundColor: BRAND.purple + '15', borderRadius: 12, padding: 10, gap: 8 }]}>
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                    <Text style={[q.reassignLabel, { color: colors.pink }]}>Reassign Tutor:</Text>
-                    <View style={{ flex: 1, position: 'relative' }}>
-                      <TouchableOpacity
-                        style={[q.helperTrigger, { borderColor: isDark ? '#4C1D95' : '#A78BFA', backgroundColor: colors.surface, flex: 1 }]}
-                        onPress={() => setHelperOpen(p => ({ ...p, [req.id]: !p[req.id] }))}
-                      >
-                        <Text style={[q.helperTriggerText, { color: selHelper ? colors.textPrimary : colors.textTertiary, flex: 1 }]} numberOfLines={1}>
-                          {selHelper ? helperName(selHelper) : 'Reassign to...'}
-                        </Text>
-                        <Text style={{ color: colors.textTertiary }}>▾</Text>
-                      </TouchableOpacity>
-                      {helperOpen[req.id] && (
-                        <View style={withAndroidShadowFix([q.helperDropdown, { top: 36, backgroundColor: isDark ? '#131927' : '#fff', borderColor: colors.surface }])}>
-                          {adultHelpers.filter(h => h.id !== aHelper).map(h => (
-                            <TouchableOpacity
-                              key={h.id}
-                              style={[q.helperOption, selHelper === h.id && { backgroundColor: BRAND.purple + '18' }]}
-                              onPress={() => { setSelectedHelper(p => ({ ...p, [req.id]: h.id })); setHelperOpen(p => ({ ...p, [req.id]: false })); }}
-                            >
-                              <Text style={[q.helperOptionText, { color: selHelper === h.id ? BRAND.purple : colors.textPrimary }]}>
-                                {h.emoji ?? '👤'} {h.name}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                    <TouchableOpacity
-                      style={[q.assignBtn, { opacity: !selHelper ? 0.4 : 1 }]}
-                      onPress={() => doAssignHelper(req.id)}
-                      disabled={!selHelper}
-                    >
-                      <Text style={q.assignBtnText}>Reassign</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {selHelper && selHelper !== aHelper && (
-                    <View>
-                      <TextInput
-                        style={[q.noteInput, { color: colors.textPrimary, borderColor: isDark ? '#4C1D95' : '#A78BFA', backgroundColor: colors.surface }]}
-                        placeholder={`Reason / Note for ${helperName(selHelper)} (optional)...`}
-                        placeholderTextColor={colors.textTertiary}
-                        maxLength={150}
-                        value={assignNote[req.id] ?? ''}
-                        onChangeText={v => setAssignNote(p => ({ ...p, [req.id]: v.slice(0, 150) }))}
-                      />
-                      <Text style={[q.charCount, { color: BRAND.purple }]}>{(assignNote[req.id] ?? '').length}/150 chars</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
-          </View>
-        );
-      })}
-
-      {completed.length > 0 && sectionLabel('RECENTLY DONE', completed.length, colors.teal)}
-      {/* ── Completed (last 3) ── */}
-      {completed.map(req => {
-        const requester = members.find(m => m.id === req.fromMemberId);
-        return (
-          <View key={req.id} style={[q.completedRow, { backgroundColor: colors.tealLight, borderColor: 'transparent' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <CheckCircle color="#10B981" size={14} />
-              <Text style={[q.completedText, { color: colors.teal }]} numberOfLines={1}>
-                <Text style={{ fontWeight: '800' }}>{requester?.name ?? 'Member'}:</Text>
-                {' '}"{humanDetail(req)}"
-              </Text>
-            </View>
-            <Text style={[q.helperTag, { color: colors.teal }]}>
-              ✓ Helper: {req.assignedHelper ? helperName(req.assignedHelper) : '—'}
-            </Text>
-          </View>
-        );
-      })}
       </ScrollView>
     </View>
   );
@@ -729,78 +325,24 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const q = StyleSheet.create({
-  card:        { borderRadius: 24, borderWidth: 1, padding: 14, gap: 10, marginHorizontal: 14, marginBottom: 12 },
-  header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingBottom: 10, borderBottomWidth: 1 },
-  iconWrap:    { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  title:       { fontSize: 13, fontWeight: '900' },
-  subtitle:    { fontSize: 10, marginTop: 1 },
+const styles = StyleSheet.create({
   askBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20 },
   askBtnText:  { color: '#fff', fontSize: 13, fontWeight: '900' },
   emptyBox:    { padding: 20, borderRadius: 18, alignItems: 'center' },
   emptyText:   { fontSize: 14, textAlign: 'center' },
 
-  reqCard:     { borderRadius: 18, borderWidth: 0, padding: 16, gap: 12 },
-  reqTop:      { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
-  badges:      { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 4 },
-  reqName:     { fontSize: 14, fontWeight: '900' },
-  reqDetail:   { fontSize: 15, fontWeight: '600', marginTop: 2, lineHeight: 21 },
-  badge:       { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
-  badgeText:   { fontSize: 11, fontWeight: '900' },
-  coinBadge:   { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  coinText:    { fontSize: 14, fontWeight: '900' },
+  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 18, borderWidth: 1, padding: 14 },
+  badgeCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  rowTitle:    { fontSize: 14, fontWeight: '700' },
+  rowPreview:  { fontSize: 13, lineHeight: 18 },
 
-  actionsWrap: { borderTopWidth: 1, paddingTop: 10, gap: 8 },
-  actionHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  actionHeaderText: { fontSize: 12, fontWeight: '900' },
-  declineLink: { fontSize: 12, fontWeight: '900', color: '#C54A27' },
+  urgChip:     { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  urgChipText: { fontSize: 11, fontWeight: '700' },
+  secondaryText: { fontSize: 12, fontWeight: '600' },
 
-  declinePanel:{ borderRadius: 14, borderWidth: 1, padding: 10, gap: 8, marginTop: 4 },
-  declinePanelTitle: { fontSize: 12, fontWeight: '900' },
-  presets:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  presetChip:  { borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
-  presetText:  { fontSize: 11, fontWeight: '700' },
-  declineInput:{ borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14 },
-  declineBtn:  { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  declineBtnText: { fontSize: 13, fontWeight: '900' },
+  coinPill:     { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  coinPillText: { fontSize: 11, fontWeight: '800' },
 
-  selfAssignBtn:  { borderRadius: 14, padding: 13, backgroundColor: '#3D7A5A', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  selfAssignText: { color: '#fff', fontSize: 14, fontWeight: '900' },
-
-  helperTrigger:     { borderWidth: 1, borderRadius: 14, padding: 13, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  helperTriggerText: { fontSize: 13, fontWeight: '700' },
-  // Was elevation:20 with no iOS shadow at all — absurdly high for a small
-  // inline dropdown (this app's own Modal-based overlays top out around
-  // 16-24, and THOSE render in their own native Android window/surface, so
-  // they don't compete for stacking with page content the way this one
-  // does). Rendered inline inside a scrollable help-request queue (not a
-  // Modal), elevation:20 gave Android a real paint-order stacking context
-  // that let this dropdown float visually above unrelated rows below it as
-  // the list scrolled. Brought down to a sane inline-dropdown elevation and
-  // added the missing iOS shadow to match.
-  helperDropdown:    { position: 'absolute', top: 44, left: 0, right: 0, borderWidth: 1, borderRadius: 12, zIndex: 999,
-                       elevation: 6, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8 },
-  helperOption:      { padding: 10 },
-  helperOptionText:  { fontSize: 14, fontWeight: '600' },
-
-  assignBtn:     { backgroundColor: BRAND.purple, borderRadius: 14, padding: 13, alignItems: 'center', justifyContent: 'center', minWidth: 72, flexDirection: 'row', gap: 4 },
-  assignBtnText: { color: '#fff', fontSize: 13, fontWeight: '900' },
-
-  noteInput:   { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14, marginTop: 2 },
-  charCount:   { fontSize: 11, textAlign: 'right', marginTop: 2, fontWeight: '500' },
-  waitText:    { fontSize: 12, fontWeight: '700' },
-  withdrawText:{ fontSize: 12, fontWeight: '700', color: '#C54A27' },
-
-  noteBox:     { borderRadius: 14, padding: 12 },
-  noteBoxText: { fontSize: 13, fontWeight: '600', fontStyle: 'italic' },
-
-  assignedText:  { fontSize: 13, fontWeight: '600' },
-  completeBtn:   { backgroundColor: BRAND.purple, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  completeBtnText: { color: '#fff', fontSize: 12, fontWeight: '900' },
-  reassignBox:   {},
-  reassignLabel: { fontSize: 12, fontWeight: '800', whiteSpace: 'nowrap' } as any,
-
-  completedRow:  { borderRadius: 18, borderWidth: 0, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  completedText: { fontSize: 13, fontWeight: '600', flex: 1 },
-  helperTag:     { fontSize: 12, fontWeight: '900', marginLeft: 8 },
+  outcomeTag:     { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'center' },
+  outcomeTagText: { fontSize: 11, fontWeight: '700' },
 });

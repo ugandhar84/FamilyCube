@@ -63,7 +63,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
   const members = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const {
-    requests, declineRequest, assignRequest, completeRequest,
+    requests, approveRequest, declineRequest, assignRequest, completeRequest,
     approveItems, rejectItems, approveAllItems, rejectAllItems,
   } = useKidRequestStore();
 
@@ -110,6 +110,12 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
   const [processingWithdraw, setProcessingWithdraw] = useState(false);
 
   const [itemNote, setItemNote] = useState('');
+
+  // Permission grant/decline comment, and free-text question answer.
+  const [permComment, setPermComment] = useState('');
+  const [answerText,  setAnswerText]  = useState('');
+  const [processingPerm,   setProcessingPerm]   = useState(false);
+  const [processingAnswer, setProcessingAnswer] = useState(false);
 
   if (!req) {
     return (
@@ -174,6 +180,31 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
     await new Promise(r => setTimeout(r, 700));
     useKidRequestStore.getState().cancelRequest(req.id);
     setProcessingWithdraw(false);
+  };
+
+  const doGrantPermission = async () => {
+    if (processingPerm) return;
+    setProcessingPerm(true);
+    await new Promise(r => setTimeout(r, 700));
+    approveRequest(req.id, activeMemberId ?? '', permComment || undefined);
+    setProcessingPerm(false);
+  };
+
+  const doDeclinePermission = async () => {
+    if (processingPerm) return;
+    setProcessingPerm(true);
+    await new Promise(r => setTimeout(r, 700));
+    declineRequest(req.id, activeMemberId ?? '', permComment || 'Not approved');
+    setProcessingPerm(false);
+  };
+
+  const doAnswerQuestion = async (text?: string) => {
+    const answer = text ?? answerText;
+    if (!answer.trim() || processingAnswer) return;
+    setProcessingAnswer(true);
+    await new Promise(r => setTimeout(r, 700));
+    approveRequest(req.id, activeMemberId ?? '', answer.trim());
+    setProcessingAnswer(false);
   };
 
   const chipBg = isDark ? '#1E1E2A' : '#EEECF2';
@@ -327,8 +358,84 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
             </View>
           ) : null}
 
-          {/* Parent/senior actions — pending, non-item type */}
-          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && !itemRequest && (
+          {/* Parent/senior actions — permission request, pending → Grant / Decline with comment */}
+          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && req.type === 'permission' && (
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: colors.amber }}>Grant or Decline:</Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.card }]}
+                placeholder="Comment for your kid (optional)..."
+                placeholderTextColor={colors.textTertiary}
+                maxLength={150}
+                value={permComment}
+                onChangeText={v => setPermComment(v.slice(0, 150))}
+              />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, borderRadius: 14, padding: 13, backgroundColor: colors.teal, alignItems: 'center', opacity: processingPerm ? 0.5 : 1 }}
+                  onPress={doGrantPermission}
+                  disabled={processingPerm}
+                >
+                  {processingPerm
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✓ Grant Permission</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, borderRadius: 14, padding: 13, backgroundColor: colors.danger, alignItems: 'center', opacity: processingPerm ? 0.5 : 1 }}
+                  onPress={doDeclinePermission}
+                  disabled={processingPerm}
+                >
+                  {processingPerm
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✗ Decline</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Parent/senior actions — question, pending → free-text answer + Yes/No shortcuts */}
+          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && req.type === 'question' && (
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: colors.amber }}>Answer:</Text>
+              <TextInput
+                style={[styles.noteInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.card, minHeight: 60 }]}
+                placeholder="Type your answer..."
+                placeholderTextColor={colors.textTertiary}
+                maxLength={300}
+                multiline
+                value={answerText}
+                onChangeText={v => setAnswerText(v.slice(0, 300))}
+              />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, borderRadius: 14, padding: 13, backgroundColor: colors.teal, alignItems: 'center', opacity: processingAnswer ? 0.5 : 1 }}
+                  onPress={() => doAnswerQuestion('Yes')}
+                  disabled={processingAnswer}
+                >
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>Yes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, borderRadius: 14, padding: 13, backgroundColor: colors.danger, alignItems: 'center', opacity: processingAnswer ? 0.5 : 1 }}
+                  onPress={() => doAnswerQuestion('No')}
+                  disabled={processingAnswer}
+                >
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>No</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, borderRadius: 14, padding: 13, backgroundColor: colors.pink, alignItems: 'center', opacity: (processingAnswer || !answerText.trim()) ? 0.4 : 1 }}
+                  onPress={() => doAnswerQuestion()}
+                  disabled={processingAnswer || !answerText.trim()}
+                >
+                  {processingAnswer
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>Send</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Parent/senior actions — pending, non-item type (excludes permission/question, handled above) */}
+          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && !itemRequest && req.type !== 'permission' && req.type !== 'question' && (
             <View style={{ gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontWeight: '900', color: colors.amber }}>

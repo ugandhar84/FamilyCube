@@ -1134,13 +1134,12 @@ export default function ChatScreen() {
           sibling subtree without matching zIndex/elevation of its own,
           especially on Android. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.background : GEMINI.canvas), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
-        {/* Back to inbox — same rhythm as every other converted module's
-            "tap to go back" link, now sharing the channel-name row instead
-            of its own separate line above it. */}
-        <Pressable onPress={() => setThreadOpen(false)} hitSlop={8}>
+        {/* Back to inbox — tap target now covers the chevron AND the
+            channel-name row (was chevron-only, ~24px wide, too small to
+            reliably hit [live-reported: "touch area too less"]). */}
+        <Pressable onPress={() => setThreadOpen(false)} hitSlop={8}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 17, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹</Text>
-        </Pressable>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <ShieldCheck size={13} color="#10b981" />
           <Text style={{ fontSize: 17, fontWeight: '800', letterSpacing: -0.2, color: openCoupleChannel ? (colors.pink ?? colors.accent) : (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>{channelLabel}</Text>
           {/* A DM's participant count/avatars must be scoped to the 2
@@ -1154,7 +1153,7 @@ export default function ChatScreen() {
               for a moment on a fresh app open before settling to the real
               count. */}
           {!dmOtherId && loaded && <Text style={{ fontSize: 10, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>· {currentChannelMemberIds.length} members</Text>}
-        </View>
+        </Pressable>
 
         {/* Avatar cluster — solid separator border so no ring bleed */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>

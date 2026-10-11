@@ -24,7 +24,6 @@ import { Modal, View, Text, Pressable, StyleSheet, Animated, Vibration } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { supabase } from '@/lib/supabase';
-import { useDeviceClass } from '@/lib/useDeviceClass';
 import { KIOSK_RADIUS } from '@/features/kiosk/kioskTheme';
 import { useCoupleChannelStore } from '@/store/coupleChannelStore';
 
@@ -95,8 +94,6 @@ interface Props {
 
 export default function CouplePinModal({ visible, mode, channelId, otherMemberId, onSuccess, onCancel }: Props) {
   const { colors, isDark } = useTheme();
-  const { deviceClass } = useDeviceClass();
-  const isTablet = deviceClass === 'kitchenHub';
   const accentColor = colors.accent;
 
   const [entered, setEntered] = useState('');
@@ -309,29 +306,22 @@ export default function CouplePinModal({ visible, mode, channelId, otherMemberId
     </>
   );
 
-  if (isTablet) {
-    return (
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-        <Pressable style={styles.tabletScrim} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close">
-          <Pressable style={[styles.tabletCard, { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            {content}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    );
-  }
-
+  // Centered popup on every device — was a sliding bottom pageSheet on
+  // phone and this same centered card on tablet; the bottom sheet read
+  // poorly for a quick PIN entry [live-reported: "not good just open a
+  // pop for the pin"]. Now both share one presentation.
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onCancel}>
-      <View style={[styles.sheet, { backgroundColor: isDark ? colors.surface : colors.background }]}>
-        {content}
-      </View>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={styles.tabletScrim} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close">
+        <Pressable style={[styles.tabletCard, { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+          {content}
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheet: { flex: 1, alignItems: 'center', paddingTop: 16 },
   header: { width: '100%', flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 20, marginBottom: 8 },
   cancelBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   cancelText: { fontSize: 14, fontWeight: '600' },

@@ -947,7 +947,14 @@ export default function ChatScreen() {
             if (chAny.lock && !isParent) return null;
             const unread = unreadCounts[ch.id] ?? 0;
             const isPinned = pinnedChannels.includes(ch.id);
-            const lastMsg = (channels[ch.id]?.messages ?? [])[0];
+            // Just Us is PIN-locked for privacy — its last-message preview
+            // must stay hidden on the inbox row too, not just behind the
+            // PIN when opening it, or the "private" channel leaks its
+            // content to anyone looking at the list [live-reported:
+            // "i still see it displaying the last chat from just us as
+            // preview dont do that it is adults matter"].
+            const isLockedCouple = chAny.isCoupleChannel && !isCoupleChannelUnlocked(ch.id);
+            const lastMsg = isLockedCouple ? null : (channels[ch.id]?.messages ?? [])[0];
             const lastSender = lastMsg ? (memberMap[lastMsg.senderId]?.name?.split(' ')[0] ?? '') : null;
             const lastText = lastMsg?.text
               ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
@@ -994,7 +1001,9 @@ export default function ChatScreen() {
                     </Text>
                     {isPinned && <Pin size={10} color={chAccent} fill={chAccent} />}
                   </View>
-                  {lastText
+                  {isLockedCouple
+                    ? <Text style={{ fontSize: 13, color: colors.textTertiary, marginTop: 2 }}>🔒 PIN required to view</Text>
+                    : lastText
                     ? <Text style={{ fontSize: 13, color: unread > 0 ? colors.textPrimary : colors.textSecondary,
                         fontWeight: unread > 0 ? '600' : '400', marginTop: 2 }} numberOfLines={1}>
                         {lastSender ? `${lastSender}: ` : ''}{lastText}

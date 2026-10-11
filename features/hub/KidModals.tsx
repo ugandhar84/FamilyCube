@@ -306,9 +306,7 @@ export function GroceryModal({ visible, onClose, active }: {
     }));
     // Append to existing pending grocery request if one exists
     const existing = requests.find(r =>
-      r.fromMemberId === active.id && r.status === 'pending' &&
-      r.type === 'delegation' && (r.items?.length ?? 0) > 0 &&
-      !r.detail.startsWith(SUPPLIES_PREFIX)
+      r.fromMemberId === active.id && r.status === 'pending' && r.type === 'grocery'
     );
     if (existing) {
       appendItems(existing.id, newItems);
@@ -316,10 +314,10 @@ export function GroceryModal({ visible, onClose, active }: {
       Alert.alert('Added! 🛒', `${newItems.length} item${newItems.length > 1 ? 's' : ''} added to your existing grocery request.`);
     } else {
       sendRequest({
-        type: 'delegation',
+        type: 'grocery',
         fromMemberId: active.id,
         urgency: 'normal',
-        detail: encodeGroceryRequest({ name: validLines.map(l => l.name.trim()).join(', '), qty: '', category: 'Multi', notes: notes.trim() }),
+        detail: validLines.map(l => l.name.trim()).join(', ') + (notes.trim() ? ` — ${notes.trim()}` : ''),
         items: newItems,
       });
       dismiss();
@@ -530,8 +528,7 @@ export function SuppliesModal({ visible, onClose, active }: {
     }));
     // Append to existing pending supplies request if one exists
     const existing = requests.find(r =>
-      r.fromMemberId === active.id && r.status === 'pending' &&
-      r.type === 'delegation' && r.detail.startsWith(SUPPLIES_PREFIX)
+      r.fromMemberId === active.id && r.status === 'pending' && r.type === 'supplies'
     );
     if (existing) {
       appendToRequest(existing.id, newItems);
@@ -539,8 +536,8 @@ export function SuppliesModal({ visible, onClose, active }: {
       Alert.alert('Added! 📚', `${newItems.length} item${newItems.length > 1 ? 's' : ''} added to your existing supplies request.`);
     } else {
       sendRequest({
-        type: 'delegation', fromMemberId: active.id, urgency,
-        detail: `${SUPPLIES_PREFIX}${JSON.stringify({ items: validItems, notes: notes.trim(), urgency })}`,
+        type: 'supplies', fromMemberId: active.id, urgency,
+        detail: validItems.map(i => i.name.trim()).join(', ') + (notes.trim() ? ` — ${notes.trim()}` : ''),
         items: newItems,
       });
       dismiss();
@@ -873,27 +870,27 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
               </View>
             ) : myRequests.map(req => {
               const isExpanded  = expanded.has(req.id);
-              const isSupplies  = req.detail.startsWith(SUPPLIES_PREFIX);
-              const isGrocery   = req.type === 'delegation' && !isSupplies;
+              // TODO: once pre-migration delegation-typed rows have aged out
+              // of the DB, the legacy SUPPLIES_PREFIX/decodeGroceryRequest
+              // fallback branches below can be deleted — grocery/supplies
+              // are now real RequestTypes, not detail-string-encoded.
+              const isLegacySupplies = req.type === 'delegation' && req.detail.startsWith(SUPPLIES_PREFIX);
+              const isLegacyGrocery  = req.type === 'delegation' && !isLegacySupplies && !!decodeGroceryRequest(req.detail);
+              const isSupplies  = req.type === 'supplies' || isLegacySupplies;
+              const isGrocery   = req.type === 'grocery' || isLegacyGrocery;
               const isRideLate  = req.detail.startsWith(RIDE_LATE_PREFIX);
               const hasItems    = (req.items?.length ?? 0) > 0;
               const approvedCount = req.items?.filter(i => i.status === 'approved').length ?? 0;
               const rejectedCount = req.items?.filter(i => i.status === 'rejected').length ?? 0;
               const pendingCount  = req.items?.filter(i => i.status === 'pending').length ?? 0;
 
-              // Every request type whose `detail` is a JSON-encoded internal
-              // payload (SUPPLIES_REQUEST:/GROCERY_REQUEST:/RIDE_LATE:) needs
-              // decoding for display here — this list previously only
-              // decoded the Supplies case, so Grocery requests and "driver
-              // hasn't arrived" alerts both rendered their literal encoded
-              // string instead of readable text.
-              const suppliesDetail = isSupplies ? (() => {
+              const suppliesDetail = isLegacySupplies ? (() => {
                 try {
                   const p = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length));
                   const names = (p.items as { name: string }[]).map(i => i.name).join(', ');
                   return names || req.detail;
                 } catch { return req.detail; }
-              })() : isGrocery ? (() => {
+              })() : isLegacyGrocery ? (() => {
                 const g = decodeGroceryRequest(req.detail);
                 if (!g) return req.detail;
                 return [g.name, g.notes].filter(Boolean).join(' — ');

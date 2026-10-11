@@ -1,6 +1,6 @@
 /**
  * kidRequestStore — real-time kid → parent requests.
- * Types: ride, tutor, cheer, emergency, question, permission, appointment
+ * Types: ride, tutor, cheer, emergency, question, permission, appointment, grocery, supplies
  * Status lifecycle: pending → approved | declined | cancelled | expired
  */
 import { create } from 'zustand';
@@ -141,7 +141,18 @@ const memberName = (memberId: string | undefined | null): string => {
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
-export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal';
+export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal' | 'grocery' | 'supplies';
+export type RequestEventType = 'created' | 'approved' | 'declined' | 'assigned' | 'reassigned' | 'completed' | 'cancelled' | 'gp_toggled' | 'read' | 'items_approved' | 'items_rejected' | 'items_appended';
+
+export interface KidRequestEvent {
+  id:         string;
+  requestId:  string;
+  eventType:  RequestEventType;
+  actorId:    string;
+  note?:      string;
+  meta?:      Record<string, unknown>;
+  createdAt:  string;
+}
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled' | 'expired' | 'completed' | 'partial';
 export type RequestUrgency = 'normal' | 'soon' | 'urgent' | 'emergency';
 export type ItemStatus = 'pending' | 'approved' | 'rejected';
@@ -204,6 +215,8 @@ export const REQUEST_META: Record<RequestType, { emoji: string; label: string; c
   // purposes (assignedHelper reward-tagging, appointment scheduling), so
   // this reuses them rather than adding new columns/fields.
   quest_proposal: { emoji: '🧩', label: 'Quest Idea',      color: '#9261C7', bgColor: '#F0E8FA' },
+  grocery:     { emoji: '🛒', label: 'Grocery Run',        color: '#16A34A', bgColor: '#DCFCE7' },
+  supplies:    { emoji: '📚', label: 'School Supplies',    color: '#0891B2', bgColor: '#E0F7FA' },
 };
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -238,6 +251,8 @@ interface KidRequestState {
   getForMember:         (memberId: string) => KidRequest[];
   getUnread:            () => KidRequest[];
   getByType:            (type: RequestType) => KidRequest[];
+
+  getEventsForRequest: (requestId: string) => Promise<KidRequestEvent[]>;
 }
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
@@ -340,6 +355,54 @@ async function notifyMember(memberId: string, type: string, payload: Record<stri
   }
 }
 
+// Append-only audit log — fire-and-forget like notifyKidRequest/notifyMember,
+// since a slow/failed log insert must never block the real lifecycle action.
+async function logEvent(
+  requestId: string,
+  eventType: RequestEventType,
+  actorId: string,
+  note?: string,
+  meta?: Record<string, unknown>,
+) {
+  try {
+    const familyId = getFamilyId();
+    if (!familyId) return;
+    supabase.from('kid_request_events').insert({
+      request_id: requestId,
+      family_id:  familyId,
+      event_type: eventType,
+      actor_id:   actorId,
+      note:       note ?? null,
+      meta:       meta ?? null,
+    }).then(({ error }) => {
+      if (error) console.warn('[kidRequestStore] logEvent failed:', error.message);
+    });
+  } catch (e: any) {
+    console.warn('[kidRequestStore] logEvent error:', e?.message);
+  }
+}
+
+async function getEventsForRequest(requestId: string): Promise<KidRequestEvent[]> {
+  const { data, error } = await supabase
+    .from('kid_request_events')
+    .select('*')
+    .eq('request_id', requestId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.warn('[kidRequestStore] getEventsForRequest failed:', error.message);
+    return [];
+  }
+  return (data ?? []).map((r: any) => ({
+    id:        r.id,
+    requestId: r.request_id,
+    eventType: r.event_type,
+    actorId:   r.actor_id,
+    note:      r.note ?? undefined,
+    meta:      r.meta ?? undefined,
+    createdAt: r.created_at,
+  }));
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useKidRequestStore = create<KidRequestState>((set, get) => ({
@@ -440,6 +503,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       location: request.location, scheduledDate: request.scheduledDate,
       scheduledTime: request.scheduledTime,
     });
+    logEvent(request.id, 'created', request.fromMemberId);
     return request;
   },
 
@@ -464,6 +528,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'approved', note, fromMemberId: req.fromMemberId,
     });
+    logEvent(id, 'approved', respondedBy, note);
   },
 
   declineRequest: async (id, respondedBy, note) => {
@@ -478,6 +543,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'declined', note, fromMemberId: req.fromMemberId,
     });
+    logEvent(id, 'declined', respondedBy, note);
   },
 
   assignRequest: async (id, helperId, note, assignedBy) => {
@@ -506,6 +572,8 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         byName: memberName(assignedBy), byMemberId: assignedBy, memberId: helperId, note,
       });
     }
+    const wasAssigned = !!req.assignedHelper;
+    logEvent(id, wasAssigned && req.assignedHelper !== helperId ? 'reassigned' : 'assigned', assignedBy ?? helperId, note, { helperId });
   },
 
   completeRequest: async (id, respondedBy) => {
@@ -525,6 +593,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         fromMemberId: req.fromMemberId, byMemberId: respondedBy, byName: memberName(respondedBy),
       });
     }
+    logEvent(id, 'completed', respondedBy);
   },
 
   cancelRequest: async (id) => {
@@ -535,6 +604,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(id, 'cancelled', req.fromMemberId);
   },
 
   toggleGPWelcome: async (id, value) => {
@@ -545,6 +615,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(id, 'gp_toggled', req.respondedBy ?? req.fromMemberId, undefined, { value });
   },
 
   markRead: async (id) => {
@@ -555,6 +626,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(id, 'read', req.fromMemberId);
   },
 
   deleteRequest: async (id) => {
@@ -592,6 +664,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         decision: 'approved', itemNames: names, note, fromMemberId: before.fromMemberId,
       });
     }
+    logEvent(requestId, 'items_approved', approvedBy, note, { itemIds });
   },
 
   rejectItems: async (requestId, itemIds, rejectedBy, note) => {
@@ -618,6 +691,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         decision: 'rejected', itemNames: names, note, fromMemberId: before.fromMemberId,
       });
     }
+    logEvent(requestId, 'items_rejected', rejectedBy, note, { itemIds });
   },
 
   approveAllItems: async (requestId, approvedBy, note) => {
@@ -642,6 +716,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === requestId ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(requestId, 'items_appended', req.fromMemberId, undefined, { count: newItems.length });
   },
 
   clearResolved: () => {
@@ -665,4 +740,6 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   getForMember:   (memberId) => get().requests.filter(r => r.fromMemberId === memberId),
   getUnread:      () => get().requests.filter(r => r.status === 'pending' && !r.readAt),
   getByType:      (type) => get().requests.filter(r => r.type === type),
+
+  getEventsForRequest: (requestId) => getEventsForRequest(requestId),
 }));

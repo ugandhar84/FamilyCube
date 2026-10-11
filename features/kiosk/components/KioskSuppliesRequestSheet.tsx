@@ -6,16 +6,11 @@
  *   • KidRequestItem[] from non-blank rows: id `item-${Date.now()}-${i}`,
  *     trimmed name/qty, category 'Supplies', status 'pending', requestedBy
  *     active.id.
- *   • appendItems() onto an existing PENDING delegation request from this
- *     member whose detail startsWith SUPPLIES_PREFIX, rather than opening
- *     a second one — same predicate.
- *   • otherwise sendRequest({ type:'delegation', urgency, detail:
- *     `SUPPLIES_REQUEST:${JSON.stringify({ items: validItems, notes,
- *     urgency })}`, items }) — byte-identical encoding, including the fact
- *     that `items` inside the JSON is the raw {name, qty} rows (NOT the
- *     KidRequestItem[]), which is what the parent's decoder reads.
- *   • urgency 'normal' | 'soon' is carried both on the request and inside
- *     the encoded detail, exactly as the phone does.
+ *   • appendItems() onto an existing PENDING 'supplies'-type request from
+ *     this member, rather than opening a second one — same predicate.
+ *   • otherwise sendRequest({ type:'supplies', urgency, detail: joined
+ *     item names, items }) — same real RequestType the parent's
+ *     HelpDispatchQueue/history render natively.
  *
  * The phone's per-row mic (useVoiceDictation) is deliberately not ported —
  * see KioskGroceryRequestSheet's header for the reasoning. Quick picks are
@@ -41,9 +36,6 @@ import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
-
-/** Must stay byte-identical to KidModals.tsx's SUPPLIES_PREFIX — wire format. */
-const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
 
 // Same names/emoji as KidModals.tsx's SUPPLIES_SUGGESTIONS.
 const SUGGESTIONS: { name: string; emoji: string }[] = [
@@ -122,8 +114,7 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
       requestedBy: active.id,
     }));
     const existing = requests.find(r =>
-      r.fromMemberId === active.id && r.status === 'pending' &&
-      r.type === 'delegation' && r.detail.startsWith(SUPPLIES_PREFIX)
+      r.fromMemberId === active.id && r.status === 'pending' && r.type === 'supplies'
     );
     const n = newItems.length;
     const plural = n > 1 ? 's' : '';
@@ -134,10 +125,10 @@ export function KioskSuppliesRequestSheet({ visible, onClose, active }: {
         Alert.alert('Added! 📚', `${n} item${plural} added to your existing supplies request.`);
       } else {
         await sendRequest({
-          type: 'delegation',
+          type: 'supplies',
           fromMemberId: active.id,
           urgency,
-          detail: `${SUPPLIES_PREFIX}${JSON.stringify({ items: validItems, notes: notes.trim(), urgency })}`,
+          detail: validItems.map(i => i.name.trim()).join(', ') + (notes.trim() ? ` — ${notes.trim()}` : ''),
           items: newItems,
         });
         dismiss();

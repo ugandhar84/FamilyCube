@@ -142,7 +142,15 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
   const memberName = (id: string) => members.find(m => m.id === id)?.name ?? id;
   const helperName = (id: string) => id === 'ai-tutor' ? 'AI Family Tutor' : memberName(id);
 
-  // Returns a human-readable summary for grocery/supplies delegation requests
+  // Per-item approval panel covers real grocery/supplies requests, plus any
+  // legacy delegation-typed row still carrying items (pre-migration data).
+  const isItemRequest = (req: KidRequest): boolean =>
+    req.type === 'grocery' || req.type === 'supplies' ||
+    (req.type === 'delegation' && !!req.items && req.items.length > 0);
+
+  // Returns a human-readable summary for grocery/supplies requests — real
+  // types carry plain-text detail already; only legacy delegation-typed
+  // rows need the old prefix-encoded decode.
   const humanDetail = (req: KidRequest): string => {
     if (req.type !== 'delegation') return req.detail;
     if (req.detail.startsWith(GROCERY_PREFIX)) {
@@ -162,7 +170,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
 
   // Add approved items to the grocery store
   const addApprovedItemsToStore = (req: KidRequest, approvedItemIds?: Set<string>) => {
-    if (req.type !== 'delegation') return;
+    if (req.type !== 'delegation' && req.type !== 'grocery' && req.type !== 'supplies') return;
     const familyId    = activeMember?.familyId ?? members[0]?.familyId ?? 'family-1';
     const approverName = memberName(activeMemberId ?? '');
     const approvedNote = `Approved by ${approverName} · Requested by ${memberName(req.fromMemberId)}`;
@@ -325,7 +333,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
             </View>
 
             {/* ── Per-item approval panel (grocery/supplies with items[]) ── */}
-            {isParentOrSenior && req.type === 'delegation' && req.items && req.items.length > 0 && (
+            {isParentOrSenior && isItemRequest(req) && req.items && req.items.length > 0 && (
               <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '33', paddingTop: 10, gap: 8 }}>
                 {/* Bulk actions header */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -422,7 +430,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose }: Props)
             )}
 
             {/* Parent actions */}
-            {isParentOrSenior && !(req.type === 'delegation' && req.items && req.items.length > 0) ? (
+            {isParentOrSenior && !(isItemRequest(req) && req.items && req.items.length > 0) ? (
               <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33' }]}>
                 <View style={q.actionHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>

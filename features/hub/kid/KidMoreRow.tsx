@@ -1,59 +1,75 @@
 import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
-import { PiggyBank, Gift, ClipboardList, Calendar, Trophy, PartyPopper } from 'lucide-react-native';
+import { ClipboardCheck, MessageCircle, PiggyBank, Gift, ArrowUpRight } from 'lucide-react-native';
 import { KID } from './kidTheme';
 import { useUIStore } from '@/store/uiStore';
+import { KidSectionHeader } from './KidSectionHeader';
 
-// Row wraps to two lines of 3 (rather than 6-in-a-row, which got cramped)
-// once Leaderboard/Cheer Squad joined Piggy Bank/Rewards/My Requests/Full
-// Calendar as entries here — both used to be their own always-visible
-// blocks; now they're one tap away from this row instead of permanently
-// occupying scroll space.
-export function KidMoreRow({ onPiggyBank, onHistory, onLeaderboard, onCheerSquad, cheerBadge, colors, isDark }: {
-  onPiggyBank: () => void; onHistory: () => void;
-  onLeaderboard: () => void; onCheerSquad: () => void;
-  /** Count badge on the Cheer Squad tile — sibling wins still waiting on a cheer. */
-  cheerBadge?: number;
+// KidActionGrid — figma's "Quick actions" block: a 2x2 grid of pastel
+// cards, each with an icon chip + arrow-up-right affordance in the header
+// row, then a title + one-line status/subtitle underneath (not a bare
+// icon+label tile) ["this kids figma rythem ... inspiring the parents hub
+// rythms"]. Check-in quick taps (I'm Home!/Running Late) moved to their
+// own compact row below this grid (see KidCheckinRow), matching the mock's
+// separate "Quick check-ins" strip under the 2x2 action cards.
+export function KidActionGrid({ onAskParent, onPiggyBank, myChoresSubtitle, colors, isDark }: {
+  onAskParent: () => void;
+  onPiggyBank: () => void;
+  /** e.g. "2 of 3 approved today" — figma's chore-inbox tile subtitle. */
+  myChoresSubtitle?: string;
   colors: any; isDark: boolean;
 }) {
-  // Same brand tokens as ParentQuickActions — no off-palette hex (was
-  // BRAND.amber/purple/teal plus two bare local hex constants for Rewards
-  // pink and Cheer Squad green that didn't exist anywhere else in the app).
-  const tiles: { Icon: typeof PiggyBank; label: string; color: string; onPress: () => void; badge?: number }[] = [
-    { Icon: PiggyBank,     label: 'Piggy Bank',    color: colors.kid,    onPress: onPiggyBank },
-    { Icon: Gift,          label: 'Rewards',       color: colors.accent, onPress: () => useUIStore.getState().setOpenRewardsScreenRequested(true) },
-    // colors.danger previously tinted this tile — a fun competitive
-    // feature rendered in the same alarm/red color as "Running Late" and
-    // decline actions elsewhere on this screen. colors.primary isn't used
-    // by any sibling tile in this row and reads naturally as "achievement".
-    { Icon: Trophy,        label: 'Leaderboard',   color: colors.primary, onPress: onLeaderboard },
-    { Icon: PartyPopper,   label: 'Cheer Squad',   color: colors.parent, onPress: onCheerSquad, badge: cheerBadge },
-    { Icon: ClipboardList, label: 'My Requests',   color: colors.accent, onPress: onHistory },
-    { Icon: Calendar,      label: 'Full Calendar', color: colors.parent, onPress: () => router.push('/(tabs)/calendar') },
+  const tiles: { Icon: typeof ClipboardCheck; title: string; subtitle: string; bg: string; iconColor: string; onPress: () => void }[] = [
+    { Icon: ClipboardCheck, title: 'My Chores',  subtitle: myChoresSubtitle ?? 'See what\'s left today', bg: colors.pinkLight,   iconColor: colors.pink,   onPress: onAskParent },
+    { Icon: MessageCircle,  title: 'Ask Parent', subtitle: 'Permission, questions & more', bg: colors.pinkLight,   iconColor: colors.pink,   onPress: onAskParent },
+    { Icon: PiggyBank,      title: 'Piggy Bank', subtitle: 'Track your savings',           bg: colors.tealLight,   iconColor: colors.teal,   onPress: onPiggyBank },
+    { Icon: Gift,           title: 'Rewards',    subtitle: 'Spend your coins',             bg: colors.amberLight,  iconColor: colors.amber,  onPress: () => useUIStore.getState().setOpenRewardsScreenRequested(true) },
   ];
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-      {tiles.map(({ Icon, label, color, onPress, badge }) => (
-        <Pressable key={label} onPress={onPress}
-          style={{ flexBasis: '31%', flexGrow: 1, borderRadius: 16, paddingVertical: 15, alignItems: 'center', gap: 7,
-            backgroundColor: isDark ? color + '22' : color + '1E', borderWidth: 1, borderColor: color + (isDark ? '38' : '2C') }}>
-          {/* Solid-tint icon chip with a white icon — matches the Parent
-              Hub's quick-action tile treatment instead of a bare icon
-              floating directly on the tinted wash. */}
-          <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: color }}>
-            <Icon size={19} color="#fff" />
-            {!!badge && badge > 0 && (
-              <View style={{ position: 'absolute', top: -6, right: -8, backgroundColor: color, borderRadius: 9,
-                minWidth: 16, height: 16, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1.5, borderColor: colors.card }}>
-                <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{badge}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={{ fontSize: KID.tiny, fontWeight: '800', color, textAlign: 'center' }}>{label}</Text>
-        </Pressable>
-      ))}
+    <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+      <KidSectionHeader label="QUICK ACTIONS" accent={colors.pink} colors={colors} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        {tiles.map(({ Icon, title, subtitle, bg, iconColor, onPress }) => (
+          <Pressable key={title} onPress={onPress}
+            style={{ flexBasis: '47%', flexGrow: 1, borderRadius: 22, padding: 16, gap: 14,
+              backgroundColor: bg, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Icon size={22} color={iconColor} strokeWidth={2} />
+              <ArrowUpRight size={15} color={colors.textTertiary} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{title}</Text>
+              <Text style={{ fontSize: KID.tiny, color: colors.textSecondary, marginTop: 3 }} numberOfLines={2}>{subtitle}</Text>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Quick check-ins — figma's compact 3-pill strip under the action grid ──
+export function KidCheckinRow({ onCheckin, colors }: {
+  onCheckin: (type: 'home' | 'ready' | 'late') => void;
+  colors: any;
+}) {
+  const pills: { label: string; type: 'home' | 'ready' | 'late' }[] = [
+    { label: "I'm Home", type: 'home' },
+    { label: "I'm Ready", type: 'ready' },
+    { label: 'Running Late', type: 'late' },
+  ];
+  return (
+    <View style={{ paddingHorizontal: 16, marginBottom: 14, gap: 8 }}>
+      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>Quick check-in</Text>
+      <View style={{ flexDirection: 'row', gap: 7 }}>
+        {pills.map(({ label, type }) => (
+          <Pressable key={type} onPress={() => onCheckin(type)}
+            style={{ flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
+              backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }

@@ -1,12 +1,10 @@
-import { View, Text, Pressable } from 'react-native';
-import { Zap, Target, CheckCircle2, Calendar, Flame } from 'lucide-react-native';
+import { View, Text } from 'react-native';
+import { CheckCircle2, Calendar, Flame } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import FamilyAvatar from '@/components/FamilyAvatar';
 import { KID } from './kidTheme';
+import { KidSectionHeader } from './KidSectionHeader';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
-import { withAndroidShadowFix } from '@/lib/androidShadowFix';
-import { useUIStore } from '@/store/uiStore';
 
 // Money-green — "goal met" positive accent on the quest-progress bar; also
 // matches the "ride" accent used throughout the Kid Hub (KidNeedsYouSection's
@@ -20,20 +18,11 @@ const MONEY_GREEN = '#10B981';
 // comes from shape, color, and a game-HUD-style avatar ring/coin pill
 // instead of a flat enclosing container.
 export function KidHeroCard({
-  active, colors, isDark, mainCoins, gpCoins, streak, level, xp, xpIntoLevel, xpForNext, xpPct,
+  active, colors, isDark, mainCoins, gpCoins, streak, level,
   doneToday, questGoal, questPct, confirmedRide, rideCountdown, members, nextEvent, nextCountdown,
 }: {
   active: FamilyMember; colors: any; isDark: boolean;
   mainCoins: number; gpCoins: number; streak: number; level: number;
-  // xpIntoLevel is xp already-earned-within-the-current-level (KidView.tsx's
-  // cumulative-progression formula) — NOT the same as raw total `xp`, which
-  // is kept here only because a couple of other call sites still read it.
-  // The progress-bar text below was using `xp % xpForNext` as a shortcut,
-  // which only happens to equal xpIntoLevel at level 1 — past that it
-  // visibly disagreed with the bar fill (itself correctly driven by xpPct,
-  // which IS derived from xpIntoLevel), e.g. showing "150/200" text next
-  // to a bar only 25% full.
-  xp: number; xpIntoLevel: number; xpForNext: number; xpPct: number;
   doneToday: number; questGoal: number; questPct: number;
   confirmedRide: FamilyEvent | undefined;
   // The single most time-sensitive fact belongs right here in the
@@ -45,111 +34,74 @@ export function KidHeroCard({
   nextEvent: FamilyEvent | undefined; nextCountdown: number | null;
 }) {
   const goalMet = doneToday >= questGoal;
+  // "My Pulse" — the Kid Hub's own instance of the Parent Hub's
+  // FamilyPulseCard shell (features/hub/parent/FamilyPulseCard.tsx): same
+  // card geometry (gradient-tinted card, 24px radius, eyebrow+headline+body
+  // on the left, a 70x70 ringed stat dial on the right) ["why can't we use
+  // the parent family pulse hero as the My Pulse and show the ring to show
+  // the Quest progress and the COINS, for kids"] — the ring shows quest
+  // completion (an arc, not a static count) instead of the parent card's
+  // sharing-count ring, and coins sit inside the ring's center label
+  // instead of the parent card's "N/M sharing" text.
+  const encouragement = goalMet ? "You're on fire today! 🔥" : `${questGoal - doneToday} quest${questGoal - doneToday === 1 ? '' : 's'} to go — you've got this!`;
+  const pct = Math.max(0, Math.min(1, questPct));
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 20, gap: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <View style={withAndroidShadowFix({
-          shadowColor: colors.kid, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
-        })}>
-          {/* Was a hardcoded active.emoji-or-fallback Text glyph, never
-              reading avatarUrl at all — every other avatar in the app
-              (AppHeader, PersonaSwitcherDropdown) uses FamilyAvatar's
-              emoji→photo→initials tiering, so a kid with a real photo but
-              no emoji set (the common case) showed a generic silhouette
-              here specifically. Live-reported: "are we not using family's
-              avatar in hero card." */}
-          <FamilyAvatar
-            name={active.name}
-            emoji={active.emoji}
-            avatarUrl={active.avatarUrl}
-            siblings={(members ?? []).filter(m => m.id !== active.id).map(m => m.name)}
-            size={64}
-            ringColor={colors.kid}
-            ringWidth={3}
-            bgColor={colors.kidLight}
-          />
-          <View style={{
-            position: 'absolute', bottom: -4, alignSelf: 'center',
-            backgroundColor: colors.kid, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
-            borderWidth: 2, borderColor: isDark ? colors.background : '#fff',
-            flexDirection: 'row', alignItems: 'center', gap: 2,
-          }}>
-            <Zap size={9} color="#fff" fill="#fff" />
-            <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{level}</Text>
-          </View>
-        </View>
+    <View style={{
+      marginHorizontal: 16, marginBottom: 16,
+      flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 20,
+      borderWidth: 1, borderColor: colors.border, borderRadius: 24,
+      backgroundColor: colors.tealLight,
+      shadowColor: colors.teal, shadowOffset: { width: 0, height: 12 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 30,
+    }}>
+      <View style={{ flex: 1, minWidth: 180 }}>
+        <KidSectionHeader label="MY PULSE" accent={colors.teal} colors={colors} />
 
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: KID.title + 3, fontWeight: '900', color: colors.textPrimary }} numberOfLines={1}>
-            Hey {active.name.split(' ')[0]}! 👋
-          </Text>
-          {streak > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5, alignSelf: 'flex-start',
-              backgroundColor: '#F9731618', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
-              <Flame size={12} color="#F97316" fill="#F97316" />
-              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#F97316' }}>{streak}-day streak!</Text>
-            </View>
-          )}
-        </View>
+        <Text style={{ fontSize: 21, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, marginTop: 6, marginBottom: 6 }}>
+          {encouragement}
+        </Text>
 
-        <Pressable onPress={() => { useUIStore.getState().setOpenRewardsScreenRequested(true); }}
-          style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
-          <View style={{
-            backgroundColor: isDark ? BRAND.amber + '26' : BRAND.amber + '18',
-            borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9,
-            flexDirection: 'row', alignItems: 'center', gap: 6,
-            borderWidth: 1.5, borderColor: BRAND.amber + '60',
-          }}>
-            <Text style={{ fontSize: KID.body }}>🪙</Text>
-            <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }} numberOfLines={1}>{mainCoins}</Text>
+        {streak > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <Flame size={15} color="#F97316" fill="#F97316" />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>{streak}-day streak!</Text>
           </View>
-          {/* Given a tinted pill like every other secondary badge on this
-              screen — was bare unboxed text under the main coin pill, easy
-              to miss entirely against everything else here getting a
-              background chip. */}
+        )}
+
+        {/* Coin balances — same role as the parent card's status line,
+            now showing the kid's two balances instead of a sentence. */}
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+          <Text style={{ fontSize: 26, fontWeight: '700', color: colors.textPrimary }}>{mainCoins}</Text>
+          <Text style={{ fontSize: 14, color: colors.textSecondary }}>coins</Text>
           {gpCoins > 0 && (
             <View style={{ backgroundColor: isDark ? BRAND.purple + '20' : BRAND.purple + '16',
-              borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+              borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 2 }}>
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.purple }}>+{gpCoins} ⭐ GP</Text>
             </View>
           )}
-        </Pressable>
+        </View>
+        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }}>Level {level} · tap your coins to see rewards</Text>
       </View>
 
-      <View style={{ gap: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.accent + '20', alignItems: 'center', justifyContent: 'center' }}>
-              <Zap size={10} color={colors.accent} fill={colors.accent} />
-            </View>
-            <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>XP to level {level + 1}</Text>
-          </View>
-          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.accent }}>{Math.max(0, Math.round(xpIntoLevel))}/{xpForNext}</Text>
-        </View>
-        <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.accent + '15', overflow: 'hidden' }}>
-          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(xpPct * 100))}%` as any, backgroundColor: colors.accent }} />
-        </View>
-      </View>
-
-      <View style={{ gap: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: (goalMet ? MONEY_GREEN : colors.teal) + '20', alignItems: 'center', justifyContent: 'center' }}>
-              <Target size={10} color={goalMet ? MONEY_GREEN : colors.teal} />
-            </View>
-            <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>Today's quest goal</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            {goalMet && <CheckCircle2 size={14} color={MONEY_GREEN} />}
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: goalMet ? MONEY_GREEN : colors.textPrimary }}>
-              {goalMet ? 'All done! 🎉' : `${doneToday}/${questGoal}`}
-            </Text>
-          </View>
-        </View>
-        <View style={{ height: 10, borderRadius: 5, backgroundColor: (goalMet ? MONEY_GREEN : colors.teal) + '15', overflow: 'hidden' }}>
-          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(questPct * 100))}%` as any, backgroundColor: goalMet ? MONEY_GREEN : colors.teal }} />
-        </View>
+      {/* Quest-progress ring — same 70x70/5px-border geometry as
+          FamilyPulseCard's sharing-ring, but the border's top-arc color
+          swaps to the done/goal-met accent so the ring itself reads as a
+          progress dial, not just a static badge. RN can't stroke a true
+          partial-arc border, so goalMet flips the whole ring to solid
+          money-green as the "full" state — matching the hero's own
+          CheckCircle2 "All done!" treatment elsewhere in this file. */}
+      <View style={{
+        width: 70, height: 70, borderRadius: 35,
+        borderWidth: 5, borderColor: colors.teal + '2E',
+        borderTopColor: goalMet ? MONEY_GREEN : colors.teal,
+        borderRightColor: pct > 0.5 ? (goalMet ? MONEY_GREEN : colors.teal) : colors.teal + '2E',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        {goalMet && <CheckCircle2 size={14} color={MONEY_GREEN} style={{ marginBottom: 1 }} />}
+        <Text style={{ fontSize: 16, fontWeight: '700', color: goalMet ? MONEY_GREEN : colors.textPrimary }}>
+          {doneToday}/{questGoal}
+        </Text>
+        <Text style={{ fontSize: 10, color: colors.textTertiary }}>quests</Text>
       </View>
 
       {/* A confirmed ride gets its own full row (with confirm/dismiss/send-
@@ -160,7 +112,7 @@ export function KidHeroCard({
           next-event fallback now, for whatever's coming up that ISN'T
           already covered by a Needs You ride row. */}
       {!confirmedRide && nextEvent && nextCountdown !== null && nextCountdown > 0 && (
-        <View style={{ borderRadius: 16, backgroundColor: colors.tealLight,
+        <View style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : '#fff',
           padding: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
           <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.teal + '25', alignItems: 'center', justifyContent: 'center' }}>
             <Calendar size={15} color={colors.teal} />

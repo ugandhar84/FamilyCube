@@ -11,7 +11,8 @@ import { KidSectionHeader } from './KidSectionHeader';
 // rythms"]. Check-in quick taps (I'm Home!/Running Late) moved to their
 // own compact row below this grid (see KidCheckinRow), matching the mock's
 // separate "Quick check-ins" strip under the 2x2 action cards.
-export function KidActionGrid({ onAskParent, onPiggyBank, myChoresSubtitle, colors, isDark }: {
+export function KidActionGrid({ onMyChores, onAskParent, onPiggyBank, myChoresSubtitle, colors, isDark }: {
+  onMyChores: () => void;
   onAskParent: () => void;
   onPiggyBank: () => void;
   /** e.g. "2 of 3 approved today" — figma's chore-inbox tile subtitle. */
@@ -19,7 +20,7 @@ export function KidActionGrid({ onAskParent, onPiggyBank, myChoresSubtitle, colo
   colors: any; isDark: boolean;
 }) {
   const tiles: { Icon: typeof ClipboardCheck; title: string; subtitle: string; bg: string; iconColor: string; onPress: () => void }[] = [
-    { Icon: ClipboardCheck, title: 'My Chores',  subtitle: myChoresSubtitle ?? 'See what\'s left today', bg: colors.pinkLight,   iconColor: colors.pink,   onPress: onAskParent },
+    { Icon: ClipboardCheck, title: 'My Chores',  subtitle: myChoresSubtitle ?? 'See what\'s left today', bg: colors.pinkLight,   iconColor: colors.pink,   onPress: onMyChores },
     { Icon: MessageCircle,  title: 'Ask Parent', subtitle: 'Permission, questions & more', bg: colors.pinkLight,   iconColor: colors.pink,   onPress: onAskParent },
     { Icon: PiggyBank,      title: 'Piggy Bank', subtitle: 'Track your savings',           bg: colors.tealLight,   iconColor: colors.teal,   onPress: onPiggyBank },
     { Icon: Gift,           title: 'Rewards',    subtitle: 'Spend your coins',             bg: colors.amberLight,  iconColor: colors.amber,  onPress: () => useUIStore.getState().setOpenRewardsScreenRequested(true) },

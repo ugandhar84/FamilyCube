@@ -31,8 +31,9 @@ import { KidHeroCard } from './kid/KidHeroCard';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { KidTodaySection } from './kid/KidTodaySection';
 import { MyQuestsSection } from './kid/MyQuestsSection';
+import { MyChoresScreen } from './kid/MyChoresScreen';
 import { KidActionGrid, KidCheckinRow } from './kid/KidMoreRow';
-import { PiggyBankSheet } from './kid/PiggyBankSheet';
+import { PiggyBankScreen } from './kid/PiggyBankScreen';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { AskParentHubScreen, type AskParentDestination } from './kid/AskParentHubScreen';
@@ -103,6 +104,12 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // same stacked-overlay shape HubScreen.tsx uses for its own nested
   // full-page screens (e.g. showReviewInbox + reviewQuestDetailId).
   const [askParentDestination, setAskParentDestination] = useState<null | AskParentDestination>(null);
+  // My Chores — full-page landing (banner "Propose a Chore" + To Do/Pending
+  // Review/Completed groups), same shell shape as Piggy Bank below
+  // [live-requested: "We must convert all of them to dedicated overlay
+  // pages like parents view" + "chores tile ... banner propose a chore
+  // and down to that todo pending review completed"].
+  const [showMyChores, setShowMyChores] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [declineQuest,    setDeclineQuest]    = useState<ChoreTask | null>(null);
   // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
@@ -124,11 +131,11 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // floating FAB) and the hide/show calls stay balanced exactly one per
   // open/close transition.
   useEffect(() => {
-    const anyFullBleedOpen = showAskParentHub || !!askParentDestination;
+    const anyFullBleedOpen = showAskParentHub || !!askParentDestination || showMyChores || piggyBankModal;
     useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
     if (anyFullBleedOpen) hideTabBar(); else showTabBar();
     return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
-  }, [showAskParentHub, askParentDestination]);
+  }, [showAskParentHub, askParentDestination, showMyChores, piggyBankModal]);
 
   // Dismiss state for the "Needs You" list — DB-backed (dismissed_hub_items
   // table), not AsyncStorage: survives reinstall and syncs across a
@@ -568,6 +575,7 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
           essential daily actions. */}
       <Animated.View style={{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }}>
         <KidActionGrid
+          onMyChores={() => setShowMyChores(true)}
           onAskParent={() => setAskParentHubFromTile(true)}
           onPiggyBank={() => setPiggyBankModal(true)}
           colors={colors} isDark={isDark}
@@ -591,11 +599,38 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
         onClose={() => setSubmitProofQuest(null)}
         submitQuest={submitQuest}
       />
-      <PiggyBankSheet
-        visible={piggyBankModal} onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
-        mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
-        doneToday={doneToday} streak={streak} level={level} memberId={active.id}
-      />
+      <FullPageOverlay visible={piggyBankModal} onDismiss={() => setPiggyBankModal(false)} zIndex={50} backgroundColor={kidAskCanvas}>
+        <PiggyBankScreen
+          onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
+          mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
+          doneToday={doneToday} streak={streak} level={level} memberId={active.id}
+        />
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={showMyChores} onDismiss={() => setShowMyChores(false)} zIndex={50} backgroundColor={kidAskCanvas}>
+        <MyChoresScreen
+          onClose={() => setShowMyChores(false)}
+          active={active} members={members} familyId={familyId ?? ''}
+          todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
+          declinedQuests={declinedQuests} approvedQuests={approvedQuests} allQuests={quests}
+          colors={colors} isDark={isDark}
+          onClaim={(id) => claimQuest(id, active.id, (reason) => {
+            Alert.alert(
+              reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
+              reason === 'deleted'
+                ? 'This chore was just removed by a parent.'
+                : 'Someone else already claimed this chore — check the pool for others.',
+            );
+          })}
+          onStart={(id) => submitQuest(id, undefined, active.id)}
+          onSubmit={handleSubmitTap}
+          onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
+          onDeclineGpQuest={(q) => {
+            const chore = useChoreStore.getState().chores.find(c => c.id === q.id);
+            if (chore) setDeclineQuest(chore);
+          }}
+        />
+      </FullPageOverlay>
 
       {/* Ask Parent — full-page landing hub (replaces AskParentSheet's
           bottom-sheet picker), stacked as a sibling per the

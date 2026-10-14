@@ -11,6 +11,10 @@ interface ParseRequest {
   scannedById: string;
   imageBase64: string;
   store?: string;
+  // Client now tells us which of the two scan flows this is, instead of
+  // the AI re-guessing every call [live-requested: "we send that receipt
+  // / list tag in the request as these are 2 separate call pages"].
+  source?: 'receipt' | 'photo';
 }
 
 interface ExtractedItem {
@@ -34,7 +38,8 @@ serve(async (req) => {
   }
 
   try {
-    const { familyId, scannedById, imageBase64, store, imageUrl } = (await req.json()) as ParseRequest & { imageUrl?: string };
+    const { familyId, scannedById, imageBase64, store, imageUrl, source } = (await req.json()) as ParseRequest & { imageUrl?: string };
+    const scanSource: 'receipt' | 'photo' = source === 'photo' ? 'photo' : 'receipt';
 
     if (!familyId || !scannedById || !imageBase64) {
       return new Response(
@@ -68,7 +73,33 @@ serve(async (req) => {
                   },
                 },
                 {
-                  text: `You are a grocery receipt parser. First check what this image is.
+                  text: scanSource === 'photo' ? `You read a PHOTO OF ACTUAL GROCERY/HOUSEHOLD ITEMS (e.g. items on a counter, in a fridge/pantry, in a cart or bag, or a stack of products) — no receipt is involved, the user snapped a photo of their groceries to add them to a shopping/pantry list.
+
+STEP 1 — Does this image show real grocery/household/retail items (food, drinks, toiletries, cleaning supplies, produce, packaged goods, clothing, etc.)?
+If it does NOT (a selfie, a random landscape, a document/ID with no products, a screenshot unrelated to shopping, etc.), return ONLY:
+{"notAReceipt": true, "reason": "one sentence explaining what it actually is"}
+
+STEP 2 — Extract items. Return ONLY valid JSON (no markdown, no code fences, no explanation):
+{
+  "store": "${store ? store : "brand/packaging hints if visible, else Unknown"}",
+  "date": "YYYY-MM-DD",
+  "items": [
+    {
+      "name": "item name",
+      "quantity": 1,
+      "unit": "each",
+      "unitPrice": 0.00,
+      "totalPrice": 0.00,
+      "category": "Produce|Dairy|Meat|Seafood|Bakery|Frozen|Snacks|Beverages|Grains|Cleaning|Personal Care|Supplies|Clothing|Other"
+    }
+  ]
+}
+
+Rules for extraction:
+- Identify each distinct visible item by name; set unitPrice and totalPrice to 0.00 (no price is knowable from a photo) and estimate quantity from what's visibly shown (e.g. a 6-pack shown once is quantity 1 unit "6-pack", not 6 separate items unless clearly separate products)
+- category must be EXACTLY one of the listed values, spelled and capitalized exactly as shown (e.g. "Produce" not "produce")
+- School/office/household supplies (notebooks, pens, batteries, paper towels not used for cleaning) go in "Supplies"; clothing/apparel (shirts, socks, shoes) go in "Clothing"
+- Output raw JSON only — no \`\`\` fences, no markdown` : `You are a grocery receipt parser. First check what this image is.
 
 STEP 1 — Is this a receipt at all?
 If the image is NOT a receipt (selfie, landscape, document, ID, etc.), return ONLY:
@@ -97,7 +128,7 @@ STEP 3 — Extract items. Return ONLY valid JSON (no markdown, no code fences, n
 }
 
 Rules for extraction:
-- Skip tax lines, subtotals, discounts, payment method lines — only real products
+- Skip tax lines, subtotals, discounts, payment method lines — only real products, with real prices from the receipt.
 - If quantity is unclear use 1; if price is unclear use 0
 - category must be EXACTLY one of the listed values, spelled and capitalized exactly as shown (e.g. "Produce" not "produce")
 - School/office/household supplies (notebooks, pens, batteries, paper towels not used for cleaning) go in "Supplies"; clothing/apparel (shirts, socks, shoes) go in "Clothing" — these are common on Target/Walmart/department-store receipts alongside groceries
@@ -236,6 +267,7 @@ Rules for extraction:
         receipt_date: receiptDate,
         total: receiptTotal,
         ai_raw_json: geminiData,
+        source: scanSource,
         ...(imageUrl ? { image_url: imageUrl } : {}),
       })
       .select("id")

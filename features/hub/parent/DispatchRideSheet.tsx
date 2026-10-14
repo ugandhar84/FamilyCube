@@ -22,7 +22,7 @@ import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useTripStore } from '@/store/tripStore';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, selectKnownEventById } from '@/store/eventStore';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { PinStoreLocationSheet } from '@/features/grocery/components/PinStoreLocationSheet';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -121,14 +121,17 @@ export function DispatchRideSheet({
   const familyName = useFamilyStore(s => s.familyName);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const activeMember = members.find(m => m.id === activeMemberId);
-  const events = useEventStore(s => s.events);
+  // Looked up by id directly (not via a whole-array selector) so this
+  // stays a stable reference across renders unless the row itself
+  // changes — selectAllKnownEvents returns a brand-new array every call,
+  // which made `linkedEvent` a new object every render and threw this
+  // screen into an infinite update loop via the effect below.
+  const linkedEvent = useEventStore(s => selectKnownEventById(s, seedEventId));
 
   // Member role groups
   const ridableKids = members.filter(m => (m.role === 'kid' || m.role === 'teen') && !m.deletedAt);
   const driverCandidates = members.filter(m => m.role === 'parent' && !m.deletedAt);
 
-  // Linked event (if seedEventId provided)
-  const linkedEvent = seedEventId ? events.find(e => e.id === seedEventId) : undefined;
   const eventPending = linkedEvent?.approvalPending ?? false;
 
   // Form state
@@ -626,8 +629,10 @@ export function DispatchRideSheet({
       <PinStoreLocationSheet
         visible={showPinSheet}
         store={fromText.trim() || 'Pickup location'}
+        pinnedStores={{}}
         onClose={() => setShowPinSheet(false)}
-        onPin={(lat, lng) => setPickupCoords({ lat, lng })}
+        onPin={(_storeName, lat, lng, _address) => setPickupCoords({ lat, lng })}
+        onUnpin={() => {}}
       />
     </Modal>
   );

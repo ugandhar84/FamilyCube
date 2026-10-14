@@ -84,7 +84,7 @@ export function navigateFromNotification(
   if (isKiosk) {
     const kioskTab = PHONE_ROUTE_TO_KIOSK_TAB[pathname] ?? 'hub';
     useKioskNavStore.getState().setPendingTab(kioskTab);
-    router.push('/(tabs)' as any);
+    router.navigate('/(tabs)' as any);
     return;
   }
   // '/(tabs)/grocery' and '/(tabs)/meals' are no longer real tab routes —
@@ -99,12 +99,12 @@ export function navigateFromNotification(
   // on Hub first, then flip the one-shot uiStore flag HubScreen consumes
   // to open the matching overlay.
   if (pathname === '/(tabs)/grocery') {
-    router.push('/(tabs)' as any);
+    router.navigate('/(tabs)' as any);
     useUIStore.getState().setOpenGroceryScreenRequested(true);
     return;
   }
   if (pathname === '/(tabs)/meals') {
-    router.push('/(tabs)' as any);
+    router.navigate('/(tabs)' as any);
     useUIStore.getState().setOpenMealsScreenRequested(true);
     return;
   }
@@ -114,7 +114,7 @@ export function navigateFromNotification(
   // app/(tabs)/store.tsx's own header comment for why: a hidden tab route
   // got neither swipe-back nor a reliable tab-bar hide on repeat visits).
   if (pathname === '/(tabs)/store') {
-    router.push('/(tabs)' as any);
+    router.navigate('/(tabs)' as any);
     useUIStore.getState().setOpenRewardsScreenRequested(true);
     return;
   }
@@ -126,10 +126,16 @@ export function navigateFromNotification(
   // the right card once opened.
   if (pathname === '/(tabs)/memories') {
     const memoryId = typeof dest === 'object' ? dest.params?.memoryId : undefined;
-    router.push('/(tabs)' as any);
+    router.navigate('/(tabs)' as any);
     if (memoryId) useUIStore.getState().setPendingMemoryFocusId(memoryId);
     useUIStore.getState().setOpenMemoriesScreenRequested(true);
     return;
   }
-  router.push(dest as any);
+  // navigate (not push) — a sibling-tab path reached via push lands a beat
+  // behind the bottom-tab navigator's own state.index, leaving
+  // CustomTabBar's highlight stuck on the previous tab while the new
+  // screen's content is already visible [live-reported: tab bar "stuck on
+  // the different pages sometimes"]. navigate() reuses the tab navigator's
+  // own transition, same as tapping the bar directly.
+  router.navigate(dest as any);
 }

@@ -4,10 +4,25 @@ import { Ionicons } from '@expo/vector-icons';
 
 // ─── CubeAI Grocery Banner — Figma white card style ──────────────────────────
 
-export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLoaded, priceLoading }: {
+export function GroceryAiBanner({
+  isDark, colors, onPriceCheck, pricesLoaded, priceLoading,
+  cartTotal, cartItemCount, canCheckPrices,
+}: {
   isDark: boolean; colors: any;
-  onScan: () => void; onPriceCheck: () => void;
+  onPriceCheck: () => void;
   pricesLoaded: boolean; priceLoading: boolean;
+  // Estimated total — was its own separate pill below this banner;
+  // merged in here next to the Price Check action so the total and the
+  // button that produces it live in one place [live-requested: "we
+  // should have the estimated price in the banner with the check price
+  // AI button"].
+  cartTotal: number;
+  cartItemCount: number;
+  // false hides the Price Check button entirely — nothing new for it to
+  // do (every unbought item already priced, and the last check was
+  // within 24h) [live-requested: "if there is no new items added or we
+  // ran last 24hs display the button for ai query"].
+  canCheckPrices: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const pulseScale   = useRef(new Animated.Value(1)).current;
@@ -61,26 +76,35 @@ export function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLo
 
       {/* Expanded tools */}
       {expanded && (
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-          <Pressable onPress={onScan}
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              gap: 6, paddingVertical: 12, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#FFFFFF',
-              borderWidth: 1, borderColor: colors.border }}>
-            <Ionicons name="receipt-outline" size={16} color={P} />
-            <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Scan Receipt</Text>
-          </Pressable>
-          <Pressable onPress={onPriceCheck} disabled={priceLoading}
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              gap: 6, paddingVertical: 12, borderRadius: 14,
-              backgroundColor: pricesLoaded ? colors.tealLight : '#FFFFFF',
-              borderWidth: 1, borderColor: pricesLoaded ? colors.teal : colors.border }}>
-            {priceLoading
-              ? <ActivityIndicator size="small" color={P} />
-              : <Ionicons name="pricetag-outline" size={16} color={pricesLoaded ? colors.teal : P} />}
-            <Text style={{ fontSize: 13, fontWeight: '700', color: pricesLoaded ? colors.teal : P }}>
-              {pricesLoaded ? 'Prices ✓' : 'Price Check'}
-            </Text>
-          </Pressable>
+        <View style={{ marginTop: 14, gap: 10 }}>
+          {cartTotal > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              backgroundColor: colors.primaryLight, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="pricetag-outline" size={14} color={P} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
+                  Estimated total · {cartItemCount} item{cartItemCount !== 1 ? 's' : ''}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: P }}>${cartTotal.toFixed(2)}</Text>
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {canCheckPrices && (
+              <Pressable onPress={onPriceCheck} disabled={priceLoading}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, paddingVertical: 12, borderRadius: 14,
+                  backgroundColor: pricesLoaded ? colors.tealLight : '#FFFFFF',
+                  borderWidth: 1, borderColor: pricesLoaded ? colors.teal : colors.border }}>
+                {priceLoading
+                  ? <ActivityIndicator size="small" color={P} />
+                  : <Ionicons name="pricetag-outline" size={16} color={pricesLoaded ? colors.teal : P} />}
+                <Text style={{ fontSize: 13, fontWeight: '700', color: pricesLoaded ? colors.teal : P }}>
+                  {pricesLoaded ? 'Prices ✓' : 'Price Check'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       )}
     </View>

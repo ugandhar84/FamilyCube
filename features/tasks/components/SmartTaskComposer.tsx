@@ -394,7 +394,10 @@ export default function SmartTaskComposer({
       confidence: 90,
       title: task.title,
       when: task.startAt ? { date: task.startAt.slice(0, 10), time: task.startAt.length > 10 ? task.startAt.slice(11, 16) : null, returnTime: null } : { date: null, time: null, returnTime: null },
-      locations: { pickup: null, dropoff: null },
+      // AI-extracted pickup/dropoff only populate for category: 'transport'
+      // (see family-ai edge function's extract_responsibility prompt) — null
+      // for every other category, same as before.
+      locations: { pickup: task.pickupLocation ?? null, dropoff: task.dropoffLocation ?? null },
       memberNames: names,
       amount: null,
       // Older cached responses (before recurrence/urgency were added to the
@@ -409,6 +412,7 @@ export default function SmartTaskComposer({
       driverName: null,
       driverId: null,
       alertCall: task.alertCall ?? false,
+      rideDirection: task.rideDirection ?? null,
     });
     // family-ai's `requirements` is exactly "what the AI inferred beyond
     // the structured fields" — surface it into Notes and open the toggle

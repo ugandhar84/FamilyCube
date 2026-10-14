@@ -17,7 +17,7 @@ export function GroceryItemsSection({
   setDetailItem, handleBuyItem, setEditingItem, setShowAddItem, removeItem,
   isKid, members, colors, isDark,
   pinnedStores, onPinStore, onUnpinStore, onAutoScroll,
-  familyId, activeMemberId,
+  familyId, activeMemberId, groupBy = 'category',
 }: {
   groceryItems: GroceryItem[];
   groupedItems: [string, GroceryItem[]][];
@@ -55,6 +55,11 @@ export function GroceryItemsSection({
   // into family_store_preferences (live-requested).
   familyId: string;
   activeMemberId: string;
+  // 'category' (default, unchanged) groups by Produce/Dairy/etc; 'store'
+  // groups by item.storePreference instead [live-requested: "we should
+  // have option to see the store wise list also right"] — same card/row
+  // rendering either way, only the grouping key and heading change.
+  groupBy?: 'category' | 'store';
 }) {
   const P = colors.primary;
   const updateItem = useGroceryStore(s => s.updateItem);
@@ -231,31 +236,71 @@ export function GroceryItemsSection({
 
   // Group items by category (Figma: Produce / Dairy & Eggs / Bakery / Pantry / Other)
   // Falls back to local keyword guesser if item has no stored category.
+  // In 'store' mode, group by storePreference instead (groupedItems' own
+  // grouping already does this, but it includes bought items unsorted —
+  // recompute here so bought items get their own trailing section like
+  // category mode does).
   const CATEGORY_ORDER = ['Produce', 'Dairy & Eggs', 'Meat', 'Bakery', 'Frozen', 'Snacks', 'Pantry', 'Household', 'Pharmacy', 'Pet Store', 'Clothing', 'Other'];
   const byCat: Record<string, GroceryItem[]> = {};
   for (const item of groceryItems.filter(i => !i.isBought)) {
-    const cat = item.category ?? guessCategory(item.name);
-    if (!byCat[cat]) byCat[cat] = [];
-    byCat[cat].push(item);
+    const key = groupBy === 'store' ? (item.storePreference || 'Any store') : (item.category ?? guessCategory(item.name));
+    if (!byCat[key]) byCat[key] = [];
+    byCat[key].push(item);
   }
   const boughtItems = groceryItems.filter(i => i.isBought);
-  const catEntries: [string, GroceryItem[]][] = CATEGORY_ORDER
-    .filter(c => byCat[c]?.length)
-    .map(c => [c, byCat[c]]);
-  // Any category not in the ordered list goes at the end
-  for (const [cat, items] of Object.entries(byCat)) {
-    if (!CATEGORY_ORDER.includes(cat)) catEntries.push([cat, items]);
+  let catEntries: [string, GroceryItem[]][];
+  if (groupBy === 'store') {
+    catEntries = Object.entries(byCat).sort(([a], [b]) => a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b));
+  } else {
+    catEntries = CATEGORY_ORDER
+      .filter(c => byCat[c]?.length)
+      .map(c => [c, byCat[c]]);
+    // Any category not in the ordered list goes at the end
+    for (const [cat, items] of Object.entries(byCat)) {
+      if (!CATEGORY_ORDER.includes(cat)) catEntries.push([cat, items]);
+    }
   }
   if (boughtItems.length > 0) catEntries.push(['✓ Bought', boughtItems]);
 
   return (
     <>
-      {catEntries.map(([cat, catItems]) => (
+      {catEntries.map(([cat, catItems]) => {
+        // Which stores this category's items reference, in appearance
+        // order — used to show a pin affordance on the category card
+        // itself [live-reported: "i want the pin store on the groceries
+        // landing page stacked card"]. Only shown when at least one item
+        // actually names a store (categories made entirely of "Any
+        // store" items show nothing, same as before this was added).
+        // In store mode the heading IS the store already, so show the pin
+        // chip for just that one store instead of per-item chips.
+        const catStores = groupBy === 'store'
+          ? (cat !== 'Any store' && cat !== '✓ Bought' ? [cat] : [])
+          : (Array.from(new Set(catItems.map(i => i.storePreference).filter(Boolean))) as string[]);
+        return (
         <View key={cat} style={{ marginBottom: 4 }} ref={(ref) => registerSectionLayout(cat, ref)}>
           {/* Figma: plain bold category heading */}
-          <Text style={{ fontSize: 20, fontWeight: '700', color: cat === '✓ Bought' ? colors.textTertiary : colors.textPrimary, marginBottom: 8, marginTop: 8 }}>
-            {cat}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, marginTop: 8 }}>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: cat === '✓ Bought' ? colors.textTertiary : colors.textPrimary }}>
+              {cat}
+            </Text>
+            {!isKid && catStores.length > 0 && (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {catStores.map(store => {
+                  const isPinned = !!pinnedStores?.[store];
+                  return (
+                    <Pressable key={store} hitSlop={8}
+                      onPress={() => isPinned ? onUnpinStore?.(store) : onPinStore?.(store)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Ionicons name={isPinned ? 'location' : 'location-outline'} size={13} color={isPinned ? colors.primary : colors.textTertiary} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isPinned ? colors.primary : colors.textTertiary }} numberOfLines={1}>
+                        {store}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
           {/* Figma: card wrapping all rows in the category */}
           <View style={{
             backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
@@ -296,7 +341,8 @@ export function GroceryItemsSection({
             ))}
           </View>
         </View>
-      ))}
+        );
+      })}
 
       <StorePickerSheet
         visible={!!pickerTarget}

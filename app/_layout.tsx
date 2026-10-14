@@ -13,7 +13,6 @@ import { StatusBar } from 'expo-status-bar';
 import AppAlert from '@/components/AppAlert';
 import AppToast from '@/components/AppToast';
 import OfflineBanner from '@/components/OfflineBanner';
-import RecoveryBackfillBanner from '@/components/RecoveryBackfillBanner';
 import * as SplashScreen from 'expo-splash-screen';
 import { supabase } from '@/lib/supabase';
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
@@ -173,16 +172,16 @@ function RootNavigator() {
           updateStreak(session.user.id).catch(() => {});
           awardCoins(session.user.id, 'daily_login').catch(() => {});
         }
-        // Resumable chat-recovery backfill continuation — also kicked off
-        // on cold start, not just subsequent foregrounds (the AppState
+        // Resumable family-key-rotation continuation — also kicked off on
+        // cold start, not just subsequent foregrounds (the AppState
         // 'active' transition this same call is wired into below doesn't
-        // reliably fire for the very first launch on every platform).
-        const familyIdForColdStartBackfill = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
-        if (familyIdForColdStartBackfill) {
-          import('@/lib/deviceRegistry').then(({ runChatRecoveryBackfillInBackground }) => {
-            runChatRecoveryBackfillInBackground(familyIdForColdStartBackfill).catch(() => {});
-          });
-        }
+        // reliably fire for the very first launch on every platform). This
+        // only ever resumes a job on the device that started it (see
+        // lib/familyKeyRotation.ts's resumeRotationIfPending); every other
+        // device no-ops instantly.
+        import('@/lib/familyKeyRotation').then(({ resumeRotationIfPending }) => {
+          resumeRotationIfPending().catch(() => {});
+        });
       }
       // Hold native splash until auth + profile check finishes. The overlay
       // calls hideAsync once painted, then hideSplashThen fades it out.
@@ -941,19 +940,14 @@ function RootNavigator() {
       // whatever gap is causing the live listener to miss real answers.
       checkLastAnsweredCallOnColdStart();
 
-      // Resumable chat-recovery backfill continuation (lib/deviceRegistry.ts) —
-      // a large family's full message history may take more than one pass
-      // to fully cover with a recovery-key wrap, so this picks up wherever
-      // a previous app session left off. No-ops instantly if no recovery
-      // key is set up, or if everything's already backfilled.
-      {
-        const familyIdForBackfill = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
-        if (familyIdForBackfill) {
-          import('@/lib/deviceRegistry').then(({ runChatRecoveryBackfillInBackground }) => {
-            runChatRecoveryBackfillInBackground(familyIdForBackfill).catch(() => {});
-          });
-        }
-      }
+      // Resumable family-key-rotation continuation (lib/familyKeyRotation.ts) —
+      // a large family's full message/record history may take more than one
+      // pass to fully re-encrypt after a rotation, so this picks up wherever
+      // a previous app session left off. No-ops instantly if no rotation is
+      // pending, or if this isn't the device that started it.
+      import('@/lib/familyKeyRotation').then(({ resumeRotationIfPending }) => {
+        resumeRotationIfPending().catch(() => {});
+      });
 
       // Live-reported: "i see the address still showing the encrypted
       // wrong key" — ensureLocationKeyWrapped only ever runs as a side
@@ -1249,6 +1243,25 @@ function RootNavigator() {
     return () => { cancelled = true; clearInterval(id); };
   }, [activeMemberId]);
 
+  // Kid-request lifecycle sweep — a checkin ("I'm Home!"/"Running Late")
+  // stays visibly 'pending' for an hour after a parent acknowledges it, and
+  // an 'approved' request (ride/tutor/cheer/etc.) stays in that state for
+  // an hour after approval too, before either moves into
+  // History/All ('completed'). Nothing pushes this transition, so it has
+  // to be swept locally — same reason the calendar poll above exists.
+  // Checked every minute (cheap local array scan, no network call unless
+  // something's actually due) so the move to history feels prompt without
+  // needing the app to be foregrounded exactly on the hour.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const SWEEP_INTERVAL_MS = 60_000;
+    useKidRequestStore.getState().finalizeAckedCheckins().catch(() => {});
+    const id = setInterval(() => {
+      useKidRequestStore.getState().finalizeAckedCheckins().catch(() => {});
+    }, SWEEP_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [activeMemberId]);
+
   // Store-proximity geofences (lib/storeGeofencing.ts) — was ONLY ever
   // registered from GroceryScreen.tsx (on mount, and after pinning a new
   // store), unlike background GPS tracking's own cold-start re-check a few
@@ -1528,7 +1541,6 @@ export default function RootLayout() {
         <AppAlert />
         <AppToast />
         <OfflineBanner />
-        <RecoveryBackfillBanner />
       </ThemeProvider>
     </QueryClientProvider>
   );

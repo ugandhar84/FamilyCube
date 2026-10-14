@@ -368,7 +368,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     if (!pendingRecord || !pendingAnalysis) return;
     setApproving(true);
     try {
-      const encryptedBlob = await encryptAnalysis(familyId, pendingAnalysis, actorId);
+      const encryptedBlob = await encryptAnalysis(familyId, pendingAnalysis);
       const { error } = await supabase.from('medical_records').update({
         ai_summary: pendingAnalysis.summary,
         ai_tags: pendingAnalysis.tags ?? [],

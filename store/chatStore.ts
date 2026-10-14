@@ -12,11 +12,9 @@ import { supabase } from '@/lib/supabase';
 import {
   encryptMessage, decryptMessage,
   buildBlindIndex, hashQuery,
-  getDeviceId, encryptForDevices, decryptFromDevice,
-  RECOVERY_DEVICE_ID,
+  encryptWithFamilyKey, decryptWithFamilyKey,
 } from '@/lib/chatCrypto';
-import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
-import { isFeatureEnabled } from '@/lib/featureFlags';
+import { isFamilyKeyStale } from '@/lib/familyKeyRotation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -332,75 +330,26 @@ async function ensureGroupChannelRow(channelId: string, senderId: string): Promi
   }
 }
 
-// Device registration/directory lookup moved to lib/deviceRegistry.ts so
-// lib/locationTracking.ts (location's own per-device envelope) can reuse
-// the exact same logic instead of duplicating it. Entirely inert while
-// per_device_e2e is off.
-
 /**
- * Resolve the plaintext for one message. When per_device_e2e is on and this
- * device has its own chat_message_keys row for the message, decrypt via the
- * multi-device envelope (looking up the sender's public key to re-derive
- * the ECDH shared secret). Otherwise falls back to the legacy single
- * shared-key decrypt — covers both "flag is off" and "this is an older
- * message sent before the flag was enabled" without a separate migration.
+ * Resolve the plaintext for one message using the shared family key
+ * (lib/chatCrypto.ts's decryptWithFamilyKey, which itself falls back
+ * through any older codes this device has been given). Falls back to the
+ * legacy single shared-key decrypt only for messages written before this
+ * scheme existed, or if this device has no family key at all yet.
  */
 async function resolveMessageText(row: DBRow): Promise<string> {
   const cipher = row.ciphertext ?? row.text ?? '';
-  if (!isFeatureEnabled('per_device_e2e')) return decryptMessage(cipher);
+  const { useFamilyStore } = require('./familyStore');
+  const familyId = (useFamilyStore.getState().members as any[]).find((m: any) => m.id === row.sender_id)?.familyId
+    ?? useFamilyStore.getState().activeFamilyId;
+  if (!familyId) return decryptMessage(cipher);
   try {
-    const deviceId = await getDeviceId();
-    let { data: keyRow } = await supabase
-      .from('chat_message_keys')
-      .select('wrapped_key')
-      .eq('message_id', row.id)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-    // A brand-new device has its OWN real identity registered (only new
-    // messages sent after that get wrapped for it), but a message from
-    // BEFORE this device existed was only ever wrapped for the sentinel
-    // 'recovery' device_id (backfillChatRecoveryWraps) — never for this
-    // device's own real device_id, since that id didn't exist yet when
-    // the backfill ran. decryptFromDevice already tries the recovered
-    // keypair before falling back to the real identity, but that's moot
-    // if the envelope lookup above never finds a row to decrypt in the
-    // first place. [live-reported: fresh Android install, entered the
-    // family recovery code, chat still "wrong key or corrupted" — traced
-    // to exactly this: 154 messages wrapped for 'recovery', 0 of them
-    // ever looked up because the query only checked this device's own id]
-    if (!keyRow) {
-      const { data: recoveryKeyRow } = await supabase
-        .from('chat_message_keys')
-        .select('wrapped_key')
-        .eq('message_id', row.id)
-        .eq('device_id', RECOVERY_DEVICE_ID)
-        .maybeSingle();
-      keyRow = recoveryKeyRow;
-    }
-    if (!keyRow || !row.sender_device_id) return decryptMessage(cipher); // legacy message, no envelope for this device
-    // device_keys is one row per (family, device, member) — a shared
-    // device (parent's phone also used by PIN-switched kids) has one row
-    // per member who's used it, all with the same device_id. Scope by the
-    // message's actual sender too, not just device_id, or this can match
-    // more than one row and .maybeSingle() throws.
-    const { data: senderDevice } = await supabase
-      .from('device_keys')
-      .select('public_key')
-      .eq('device_id', row.sender_device_id)
-      .eq('member_id', row.sender_id)
-      .maybeSingle();
-    if (!senderDevice) return decryptMessage(cipher);
-    // familyId matters here so a device that recovered THIS family's
-    // passcode (a family-scoped key, see chatCrypto.ts's installRecoveredKeyPair
-    // doc) tries that recovered key rather than only ever trying this
-    // device's own real identity — without it, a recovered device could
-    // never actually read what it just recovered.
-    const { useFamilyStore } = require('./familyStore');
-    const familyId = (useFamilyStore.getState().members as any[]).find(m => m.id === row.sender_id)?.familyId
-      ?? useFamilyStore.getState().activeFamilyId;
-    return decryptFromDevice(cipher, keyRow.wrapped_key, senderDevice.public_key, familyId);
-  } catch (e: any) {
-    console.warn('[chatStore] resolveMessageText envelope decrypt failed, falling back', e?.message ?? e);
+    return await decryptWithFamilyKey(familyId, cipher);
+  } catch {
+    // No family key set on this device yet — fall back to the legacy
+    // decrypt rather than throwing out of a message-list render; the
+    // top-level chat lock screen (isFamilyKeyStale) is what actually
+    // prompts the user to enter a code, not this per-message call site.
     return decryptMessage(cipher);
   }
 }
@@ -995,47 +944,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     const blind_index  = await buildBlindIndex(text);
 
-    // Per-device envelope (feature-flagged, see lib/chatCrypto.ts's design
-    // doc) — encrypt once with a fresh session key, wrap that key once per
-    // recipient device. Falls back to the legacy single shared-key encrypt
-    // when the flag is off, so this is fully inert until explicitly enabled.
-    let ciphertext: string;
-    let senderDeviceId: string | undefined;
-    let wrappedKeysToInsert: { deviceId: string; wrappedKey: string }[] = [];
-    if (isFeatureEnabled('per_device_e2e')) {
-      try {
-        const { useFamilyStore } = require('./familyStore');
-        const members: any[] = useFamilyStore.getState().members;
-        const sender = members.find(m => m.id === senderId);
-        const familyId = sender?.familyId;
-        if (familyId) {
-          await ensureDeviceRegistered(familyId, senderId);
-          // One entry per physical device, not per (device, profile) pair —
-          // chat_message_keys is keyed (message_id, device_id) with no
-          // column for "which profile," so a device shared across more
-          // than one member profile produced multiple wrapped-key rows
-          // sharing one device_id for the SAME message, and the insert
-          // below hit Postgres' "ON CONFLICT DO UPDATE command cannot
-          // affect row a second time" — confirmed live as chat_message_keys
-          // sitting at zero rows despite real messages being sent, for any
-          // family with even one shared device (see getUniqueWrapTargets'
-          // own doc for the full history).
-          const directory = await getUniqueWrapTargets(familyId);
-          const myDeviceId = await getDeviceId();
-          senderDeviceId = myDeviceId;
-          const envelope = await encryptForDevices(text, directory, familyId);
-          ciphertext = envelope.ciphertext;
-          wrappedKeysToInsert = envelope.wrappedKeys;
-        } else {
-          ciphertext = await encryptMessage(text);
-        }
-      } catch (e: any) {
-        console.warn('[chatStore] per-device envelope encrypt failed, falling back to legacy', e?.message ?? e);
-        ciphertext = await encryptMessage(text);
-      }
-    } else {
-      ciphertext = await encryptMessage(text);
+    // Shared family key (lib/chatCrypto.ts's encryptWithFamilyKey) —
+    // throws if this device has never been given the current family code,
+    // which the caller must treat as "blocked, show the key-entry lock
+    // screen" rather than silently falling back (falling back to the
+    // legacy single-key scheme here would produce ciphertext no other
+    // device could read, the exact bug this replacement exists to fix).
+    const { useFamilyStore } = require('./familyStore');
+    const members: any[] = useFamilyStore.getState().members;
+    const sender = members.find(m => m.id === senderId);
+    const familyId = sender?.familyId;
+    if (!familyId) throw new Error('Could not determine family for this message.');
+    if (await isFamilyKeyStale(familyId)) {
+      throw new Error('Your family security code is out of date — enter the new code to send messages.');
     }
+    const ciphertext = await encryptWithFamilyKey(familyId, text);
 
     // Generate UUID client-side — don't rely on DB default in case column was added later
     const msgId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -1067,7 +990,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id:          msgId,
         channel_id:  dbChannelId,
         sender_id:   senderId,
-        sender_device_id: senderDeviceId ?? null,
         text:        ciphertext,
         blind_index,
         timestamp:   now,
@@ -1099,12 +1021,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       const { error } = await supabase.from('chat_messages').insert(row);
       if (error) throw error;
-      if (wrappedKeysToInsert.length > 0) {
-        const { error: keysError } = await supabase.from('chat_message_keys').insert(
-          wrappedKeysToInsert.map(k => ({ message_id: msgId, device_id: k.deviceId, wrapped_key: k.wrappedKey })),
-        );
-        if (keysError) console.warn('[chatStore] chat_message_keys insert failed', keysError.message);
-      }
       // Fire mention-notify if message contains @mentions.
       //
       // Real, pre-existing bug found here: this used to match /@(\w+)/g —

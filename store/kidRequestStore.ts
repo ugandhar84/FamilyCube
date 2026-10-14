@@ -142,6 +142,18 @@ const memberName = (memberId: string | undefined | null): string => {
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal' | 'grocery' | 'supplies';
+
+// Auto-expire window for request types with no inherent urgency gate — a
+// pending checkin/question a parent never acts on shouldn't sit forever.
+// checkin: a time-sensitive status ping ("I'm ready for pickup") — stale
+// after a few hours. question: open-ended, no urgency — longer grace
+// period so a real question isn't dropped just because a parent was busy
+// for a day. Other types keep their existing approve/decline-only
+// lifecycle (no default here = never auto-expires).
+const DEFAULT_EXPIRY_MS: Partial<Record<RequestType, number>> = {
+  checkin:  3 * 60 * 60_000,       // 3 hours
+  question: 36 * 60 * 60_000,      // 36 hours
+};
 export type RequestEventType = 'created' | 'approved' | 'declined' | 'assigned' | 'reassigned' | 'completed' | 'cancelled' | 'gp_toggled' | 'read' | 'items_approved' | 'items_rejected' | 'items_appended';
 
 export interface KidRequestEvent {
@@ -231,13 +243,28 @@ interface KidRequestState {
   approveRequest:  (id: string, respondedBy: string, note?: string) => Promise<void>;
   declineRequest:  (id: string, respondedBy: string, note?: string) => Promise<void>;
   assignRequest:   (id: string, helperId: string, note?: string, assignedBy?: string) => Promise<void>;
-  completeRequest: (id: string, respondedBy: string) => Promise<void>;
+  completeRequest: (id: string, respondedBy: string, note?: string) => Promise<void>;
+  // Check-in ("I'm home!" / "Running Late") ack — distinct from
+  // completeRequest: keeps status 'pending' (so it still reads as a live,
+  // recent fact — not silently erased into history the instant a parent
+  // taps "Got it") but stamps respondedAt/respondedBy so the request
+  // leaves the Needs-You/Action-Needed queue right away. finalizeAckedCheckins
+  // sweeps it into 'completed' once respondedAt is over an hour old.
+  acknowledgeCheckin: (id: string, respondedBy: string, note?: string) => Promise<void>;
+  // Sweeps two cases into 'completed' (History/All) once their respondedAt
+  // is over an hour old: acknowledged-but-still-pending checkins
+  // (acknowledgeCheckin keeps status 'pending' on purpose) and any
+  // 'approved' request (approveRequest/assignRequest) — both get the same
+  // one-hour grace window before leaving the active queue for good. Call on
+  // an interval (app/_layout.tsx) and on app foreground; cheap no-op when
+  // nothing qualifies.
+  finalizeAckedCheckins: () => Promise<void>;
   cancelRequest:   (id: string) => Promise<void>;
   toggleGPWelcome: (id: string, value: boolean) => Promise<void>;
   markRead:        (id: string) => Promise<void>;
   deleteRequest:   (id: string) => Promise<void>;
   clearResolved:   () => void;
-  expireStale:     () => void;
+  expireStale:     () => Promise<void>;
 
   // Per-item approval for grocery/supplies requests
   approveItems:    (requestId: string, itemIds: string[], approvedBy: string, note?: string) => Promise<void>;
@@ -510,12 +537,14 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   },
 
   sendRequest: async (req) => {
+    const defaultExpiryMs = DEFAULT_EXPIRY_MS[req.type];
     const request: KidRequest = {
       ...req,
       id:          generateId(),
       urgency:     req.urgency ?? (req.type === 'emergency' ? 'emergency' : 'normal'),
       requestedAt: new Date().toISOString(),
       status:      'pending',
+      expiresAt:   req.expiresAt ?? (defaultExpiryMs ? new Date(Date.now() + defaultExpiryMs).toISOString() : undefined),
     };
     // DB-is-truth: await the write before adding it to local state — was
     // optimistic (added immediately, no rollback if the write failed).
@@ -603,10 +632,10 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     logEvent(id, wasAssigned && req.assignedHelper !== helperId ? 'reassigned' : 'assigned', assignedBy ?? helperId, note, { helperId });
   },
 
-  completeRequest: async (id, respondedBy) => {
+  completeRequest: async (id, respondedBy, note) => {
     const req = get().requests.find(r => r.id === id);
     if (!req) return;
-    const updated: KidRequest = { ...req, status: 'completed', respondedAt: new Date().toISOString(), respondedBy };
+    const updated: KidRequest = { ...req, status: 'completed', respondedAt: new Date().toISOString(), respondedBy, parentNote: note ?? req.parentNote };
     const ok = await upsertToDb(updated);
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
@@ -620,7 +649,39 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         fromMemberId: req.fromMemberId, byMemberId: respondedBy, byName: memberName(respondedBy),
       });
     }
-    logEvent(id, 'completed', respondedBy);
+    logEvent(id, 'completed', respondedBy, note);
+  },
+
+  acknowledgeCheckin: async (id, respondedBy, note) => {
+    const req = get().requests.find(r => r.id === id);
+    if (!req || req.status !== 'pending') return;
+    const updated: KidRequest = { ...req, respondedAt: new Date().toISOString(), respondedBy, parentNote: note ?? req.parentNote };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
+    set({ requests: all }); save(all);
+    logEvent(id, 'approved', respondedBy, note);
+  },
+
+  finalizeAckedCheckins: async () => {
+    const oneHourAgo = Date.now() - 3_600_000;
+    // Checkins: acknowledgeCheckin stamps respondedAt but leaves status
+    // 'pending' for an hour. Everything else: approveRequest/assignRequest
+    // already set status 'approved' with its own respondedAt — "Approved"
+    // also moves to History/All an hour after that same timestamp, same
+    // one-hour grace window, just starting from a different status.
+    const due = get().requests.filter(r =>
+      r.respondedAt && new Date(r.respondedAt).getTime() < oneHourAgo &&
+      ((r.type === 'checkin' && r.status === 'pending') || r.status === 'approved')
+    );
+    for (const req of due) {
+      const updated: KidRequest = { ...req, status: 'completed' };
+      const ok = await upsertToDb(updated);
+      if (!ok) continue;
+      const all = get().requests.map(r => r.id === req.id ? updated : r);
+      set({ requests: all }); save(all);
+      logEvent(req.id, 'completed', req.respondedBy ?? req.fromMemberId);
+    }
   },
 
   cancelRequest: async (id) => {
@@ -751,13 +812,21 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     set({ requests: all }); save(all);
   },
 
-  expireStale: () => {
+  // Client-side lazy sweep — catches requests that went stale between
+  // sweeper cron ticks (kid-request-expire-sweep runs hourly server-side;
+  // this closes the gap on app open so the UI doesn't show a dead
+  // checkin/question as "pending" for up to an hour after it expired).
+  // Persists to DB like every other status transition in this store, not
+  // just local state — was previously local-only, so a stale row would
+  // un-expire itself on the next realtime/refetch from the DB.
+  expireStale: async () => {
     const now = new Date().toISOString();
-    const all = get().requests.map(r =>
-      r.status === 'pending' && r.expiresAt && r.expiresAt < now
-        ? { ...r, status: 'expired' as RequestStatus }
-        : r
-    );
+    const stale = get().requests.filter(r => r.status === 'pending' && r.expiresAt && r.expiresAt < now);
+    if (stale.length === 0) return;
+    const updates = stale.map(r => ({ ...r, status: 'expired' as RequestStatus }));
+    await Promise.all(updates.map(u => upsertToDb(u)));
+    const byId = new Map(updates.map(u => [u.id, u]));
+    const all = get().requests.map(r => byId.get(r.id) ?? r);
     set({ requests: all }); save(all);
   },
 

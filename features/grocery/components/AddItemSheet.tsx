@@ -12,6 +12,7 @@ import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { showToast } from '@/components/AppToast';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { FieldCard } from '@/features/hub/kid/forms/shared/FieldCard';
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
@@ -24,6 +25,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
   const addItem = useGroceryStore(s => s.addItem);
   const pastStores = useGroceryStore(s => s.pastStores);
   const pastItemNames = useGroceryStore(s => s.pastItemNames);
+  const pinnedStores = useGroceryStore(s => s.pinnedStores);
   const isEdit = !!editItem;
   const nameRef = useRef<TextInput>(null);
 
@@ -134,14 +136,16 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
-  // Same two sources AskCubeProposalCard's own store picker and
-  // AddQuestGrocerySection's inline chips both pull from — real past runs
-  // first (what this family actually shops at), the app's generic default
-  // list filling in the rest. Filtered by typed text, own current value
-  // excluded so it doesn't suggest re-picking what's already typed.
-  const storePool = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])];
+  // Pinned stores (a real mapped location the family explicitly saved)
+  // first, then past runs, then the app's generic default list filling in
+  // the rest [live-requested: "these pinned location should store on the
+  // shopping store list as a suggestion as prefernce in first place along
+  // with other store"]. Filtered by typed text, own current value excluded
+  // so it doesn't suggest re-picking what's already typed.
+  const storePool = [...new Set([...Object.keys(pinnedStores), ...pastStores, ...DEFAULT_GROCERY_STORES])];
   const storeSuggestions = storePool
     .filter(s => s.toLowerCase() !== store.trim().toLowerCase() && (store.trim().length === 0 || s.toLowerCase().includes(store.toLowerCase())))
+    .sort((a, b) => Number(!!pinnedStores[b]) - Number(!!pinnedStores[a]))
     .slice(0, 8);
 
   if (!visible) return null;
@@ -182,7 +186,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
           )}
 
           {/* Name field — Figma "active field" style when focused */}
-          <FieldCard label="Item name" focused={name.length > 0} colors={colors}>
+          <FieldCard label="Item name" focused={name.length > 0} colors={colors} isDark={isDark}>
             <TextInput
               ref={nameRef}
               style={{ fontSize: 14, color: colors.textPrimary, lineHeight: 24 }}
@@ -220,7 +224,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
           )}
 
           {/* Qty field */}
-          <FieldCard label="Quantity" focused={qty.length > 0} colors={colors}>
+          <FieldCard label="Quantity" focused={qty.length > 0} colors={colors} isDark={isDark}>
             <TextInput
               style={{ fontSize: 14, color: colors.textPrimary, lineHeight: 24 }}
               placeholder="e.g. 2 kg, 1 dozen"
@@ -230,7 +234,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
           </FieldCard>
 
           {/* Store field */}
-          <FieldCard label="Store" focused={storeFocused || store.length > 0} colors={colors}>
+          <FieldCard label="Store" focused={storeFocused || store.length > 0} colors={colors} isDark={isDark}>
             <TextInput
               style={{ fontSize: 14, color: colors.textPrimary, lineHeight: 24 }}
               placeholder="e.g. Costco, Any store"
@@ -246,19 +250,25 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="always" style={{ marginTop: -4 }}>
               <View style={{ flexDirection: 'row', gap: 7 }}>
-                {storeSuggestions.map(s => (
-                  <Pressable key={s} onPress={() => setStore(s)}
-                    style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
-                      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>{s}</Text>
-                  </Pressable>
-                ))}
+                {storeSuggestions.map(s => {
+                  const pinned = !!pinnedStores[s];
+                  return (
+                    <Pressable key={s} onPress={() => setStore(s)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                        paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
+                        backgroundColor: pinned ? colors.tealLight : colors.surface,
+                        borderWidth: 1, borderColor: pinned ? colors.teal : colors.border }}>
+                      {pinned && <Ionicons name="star" size={11} color={colors.teal} />}
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: pinned ? colors.teal : colors.textSecondary }}>{s}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </ScrollView>
           )}
 
           {/* Category field */}
-          <FieldCard label="Category" focused={!!cat} colors={colors}>
+          <FieldCard label="Category" focused={!!cat} colors={colors} isDark={isDark}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ flexDirection: 'row', gap: 7 }}>
                 {CATEGORIES.map(c => (
@@ -276,7 +286,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
           </FieldCard>
 
           {/* Notes field */}
-          <FieldCard label="Notes (optional)" focused={notes.length > 0} colors={colors}>
+          <FieldCard label="Notes (optional)" focused={notes.length > 0} colors={colors} isDark={isDark}>
             <TextInput
               style={{ fontSize: 14, color: colors.textPrimary, lineHeight: 24, minHeight: 48 }}
               placeholder="e.g. organic only, from Patel's"
@@ -304,23 +314,5 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
           </Pressable>
       </ScrollView>
     </Pressable>
-  );
-}
-
-// ─── Figma "Labeled field" card ───────────────────────────────────────────────
-function FieldCard({ label, focused, children, colors }: { label: string; focused?: boolean; children: React.ReactNode; colors: any }) {
-  return (
-    <View style={{
-      backgroundColor: colors.card,
-      borderRadius: 14,
-      borderWidth: focused ? 2 : 1,
-      borderColor: focused ? colors.primary : colors.border,
-      padding: 14,
-      minHeight: 88,
-      gap: 4,
-    }}>
-      <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 2 }}>{label}</Text>
-      {children}
-    </View>
   );
 }

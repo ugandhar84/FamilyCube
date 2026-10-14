@@ -16,6 +16,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest, QuestCheer } from '@/store/questStore';
+import { KidSectionHeader } from './KidSectionHeader';
 
 // Money-green — positive/confirmed accent used throughout this section
 // (approved quest, cheer, confirmed pickup, en-route trip). Not
@@ -302,8 +303,13 @@ export function KidNeedsYouSection({
     // marginBottom bumped from 4 to 14 — these cards sat almost flush
     // against the action-tile row directly below (KidTodaySection),
     // reading as if they were part of the same group rather than two
-    // distinct sections.
-    <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 14 }}>
+    // distinct sections. Eyebrow header added to match the Parent Hub's
+    // "NEEDS YOU" rhythm — only the outer shell changed here, every row
+    // component below (NeedsYouRow/NeedsYouRideRow/NeedsYouTripRow) is
+    // untouched to avoid regressing the merged-alert-list/ride-state-
+    // machine/dismissal logic they own.
+    <View style={{ paddingHorizontal: 16, gap: 8, marginTop: 14, marginBottom: 14 }}>
+      <KidSectionHeader label="NEEDS YOU" accent={colors.pink} colors={colors} />
       {showConfirmedRide && (
         <NeedsYouRideRow
           ev={confirmedRide!} rideCountdown={rideCountdown!} colors={colors} isDark={isDark}

@@ -12,12 +12,13 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Pressable,
   Animated, Easing, ActivityIndicator,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore, findLikelyDuplicateChore } from '@/store/choreStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -332,6 +333,18 @@ export default function JustDescribeItScreen({
   };
 
   const isListening = dictation.state === 'listening';
+  const micPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isListening) { micPulse.setValue(1); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(micPulse, { toValue: 1.18, duration: 550, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(micPulse, { toValue: 1, duration: 550, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isListening]);
   const hasInput = input.trim().length >= MIN_CHARS;
   const detected = detection;
   const catLabel = detected
@@ -351,12 +364,16 @@ export default function JustDescribeItScreen({
     ? members.find(m => m.name.split(' ')[0].toLowerCase() === displayAssignee.toLowerCase() || m.name.toLowerCase() === displayAssignee.toLowerCase())
     : null;
 
-  // Figma tokens
-  const canvasBg    = isDark ? '#0E0C13' : '#FFFFFF';
-  const fieldBg     = isDark ? colors.surface : '#FFFFFF';
-  const fieldBorder = isDark ? colors.border : '#DFE5EF';
+  // Gemini-rhythm tokens (warm cream canvas, bright cards, forest-slate text)
+  const canvasBg    = isDark ? colors.background : GEMINI.canvas;
+  const fieldBg     = isDark ? colors.surface : GEMINI.cardBg;
+  const fieldBorder = isDark ? colors.border : GEMINI.border;
   const activeBlue  = colors.pink;
+  const ctaBlue     = '#5872C4'; // dimmed CTA blue (Home Care/Health button pattern) — distinct from the pink role accent above, not GEMINI.blue
   const detCardBg   = isDark ? colors.surface : colors.pinkLight;
+  const titleC      = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC       = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const tertiaryC   = isDark ? colors.textTertiary : GEMINI.bodyColorLight;
   const COIN_OPTIONS = [10, 20, 30, 50, 100];
   const RECUR_OPTIONS: Array<{ label: string; value: typeof questRecurrence }> = [
     { label: 'Once', value: 'once' },
@@ -382,23 +399,14 @@ export default function JustDescribeItScreen({
           >
             <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
 
-              {/* ── Nav row: ‹ Today · · · UGANDHAR ── */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <TouchableOpacity onPress={handleClose} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ fontSize: 17, color: activeBlue }}>‹</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '500', color: activeBlue }}>{backLabel}</Text>
-                </TouchableOpacity>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 }}>
-                  {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
-                </Text>
-              </View>
-
-              {/* ── Page title ── */}
+              {/* ── Page title — tap to close (same pattern as Health's sub-pages) ── */}
               <View style={{ gap: 6 }}>
-                <Text style={{ fontSize: 34, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, lineHeight: 40 }}>
-                  Just describe it
-                </Text>
-                <Text style={{ fontSize: 15, fontWeight: '400', color: colors.textSecondary, lineHeight: 22 }}>
+                <Pressable onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                  <Text style={{ fontSize: 28, fontWeight: '800', color: titleC, letterSpacing: -0.5, lineHeight: 34 }}>
+                    Just describe your task
+                  </Text>
+                </Pressable>
+                <Text style={{ fontSize: 15, fontWeight: '400', color: bodyC, lineHeight: 22 }}>
                   Type a thought. Speak a thought. Make it a plan.
                 </Text>
               </View>
@@ -412,7 +420,7 @@ export default function JustDescribeItScreen({
                   borderColor: inputFocused || isListening ? activeBlue : colors.border,
                   padding: 20, gap: 12,
                 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>
                     {isListening ? 'Editable transcript · listening' : 'What needs doing?'}
                   </Text>
                   <TextInput
@@ -425,12 +433,12 @@ export default function JustDescribeItScreen({
                     placeholder="Something on your mind?"
                     placeholderTextColor={colors.textTertiary}
                     multiline
-                    style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 30 }}
+                    style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: titleC, minHeight: 30 }}
                   />
                   {/* Tools row */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                      <Text style={{ fontSize: 12, color: tertiaryC }}>
                         {isListening ? 'Recording…' : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
                       </Text>
                       {hasInput && !isListening && (
@@ -446,14 +454,21 @@ export default function JustDescribeItScreen({
                         </TouchableOpacity>
                       )}
                     </View>
-                    <TouchableOpacity
-                      onPress={isListening ? handleStopVoice : () => dictation.start()}
-                      style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      {isListening
-                        ? <Square size={16} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
-                        : <Mic size={16} color={colors.textSecondary} strokeWidth={1.8} />}
-                    </TouchableOpacity>
+                    <Animated.View style={{ transform: [{ scale: micPulse }] }}>
+                      <TouchableOpacity
+                        onPress={isListening ? handleStopVoice : () => dictation.start()}
+                        style={{
+                          width: 48, height: 48, borderRadius: 24,
+                          backgroundColor: colors.pinkLight,
+                          borderWidth: isListening ? 2 : 0, borderColor: activeBlue,
+                          alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        {isListening
+                          ? <Square size={20} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
+                          : <Mic size={22} color={activeBlue} strokeWidth={1.8} />}
+                      </TouchableOpacity>
+                    </Animated.View>
                   </View>
                 </View>
 
@@ -472,7 +487,7 @@ export default function JustDescribeItScreen({
                         <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Cancel</Text>
                       </TouchableOpacity>
                     </View>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                    <Text style={{ fontSize: 12, color: bodyC, lineHeight: 17 }}>
                       Audio stays private until you tap on-demand AI.
                     </Text>
                   </View>
@@ -487,7 +502,7 @@ export default function JustDescribeItScreen({
                           backgroundColor: isDark ? colors.card : colors.navy,
                           borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 }}>
                           {catEmoji ? <Text style={{ fontSize: 14 }}>{catEmoji}</Text> : null}
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : '#FFFFFF' }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? titleC : '#FFFFFF' }}>
                             {catLabel}
                             {detected.category.kw.length > 0 ? `  · from "${detected.category.kw[0]}"` : ''}
                           </Text>
@@ -498,7 +513,7 @@ export default function JustDescribeItScreen({
                           backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
                           borderWidth: 1, borderColor: colors.border }}>
                           <Text style={{ fontSize: 13 }}>🕐</Text>
-                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>{timeLabel}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: titleC }}>{timeLabel}</Text>
                         </View>
                       )}
                       {loadingSuggestion && (
@@ -506,7 +521,7 @@ export default function JustDescribeItScreen({
                           backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
                           borderWidth: 1, borderColor: colors.border }}>
                           <ActivityIndicator size="small" color={activeBlue} />
-                          <Text style={{ fontSize: 13, color: colors.textSecondary }}>Suggesting…</Text>
+                          <Text style={{ fontSize: 13, color: bodyC }}>Suggesting…</Text>
                         </View>
                       )}
                       {displayAssignee && !loadingSuggestion && (
@@ -514,7 +529,7 @@ export default function JustDescribeItScreen({
                           backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
                           borderWidth: 1, borderColor: colors.border }}>
                           <Text style={{ fontSize: 13 }}>👤</Text>
-                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: titleC }}>
                             {displayAssignee}{suggestion && !detectedMemberName ? ' · Suggested' : ''}
                           </Text>
                         </View>
@@ -530,7 +545,7 @@ export default function JustDescribeItScreen({
                         </View>
                       )}
                     </View>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Detected · adjust in the form below</Text>
+                    <Text style={{ fontSize: 12, color: bodyC }}>Detected · adjust in the form below</Text>
                   </View>
                 )}
 
@@ -539,31 +554,31 @@ export default function JustDescribeItScreen({
                   <>
                     {/* "One sentence is enough" — pinkLight card */}
                     <View style={{ backgroundColor: colors.pinkLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
-                      <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, lineHeight: 24 }}>One sentence is enough</Text>
+                      <Text style={{ fontSize: 18, fontWeight: '700', color: titleC, lineHeight: 24 }}>One sentence is enough</Text>
                       <Text style={{ fontSize: 14, fontWeight: '600', color: colors.pink, lineHeight: 20 }}>
-                        "water the plants every Monday" or "Jaswi finish homework by 7 PM"
+                        "water the plants every Monday" or "Sarah finish homework by 7 PM"
                       </Text>
-                      <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 2 }}>
+                      <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19, marginTop: 2 }}>
                         We can suggest category, time and person. You confirm the details before anything is saved.
                       </Text>
                     </View>
 
-                    {/* Speak your task — outlined primary button */}
+                    {/* Speak your task — filled primary CTA (Home Care blue fill) */}
                     <TouchableOpacity
                       onPress={() => dictation.start()}
                       style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                        borderWidth: 1.5, borderColor: activeBlue, backgroundColor: colors.card }}
+                        backgroundColor: ctaBlue }}
                     >
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: activeBlue }}>Speak your task</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Speak your task</Text>
                     </TouchableOpacity>
 
                     {/* Privacy — tealLight card */}
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
+                    <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
                       Your own wording comes first. Use type or voice—there's no extra create menu.
                     </Text>
                     <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 6 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: colors.teal }}>Your privacy</Text>
-                      <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
+                      <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19 }}>
                         Detection runs entirely on your device. Nothing is sent anywhere until you tap on-demand AI.
                       </Text>
                     </View>
@@ -575,7 +590,7 @@ export default function JustDescribeItScreen({
                   detected.category.kind === 'quest' ? (
                     <TouchableOpacity
                       onPress={openInlineQuestForm}
-                      style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                      style={{ height: 52, borderRadius: 16, backgroundColor: ctaBlue, alignItems: 'center', justifyContent: 'center' }}
                     >
                       <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up chore →</Text>
                     </TouchableOpacity>
@@ -594,7 +609,7 @@ export default function JustDescribeItScreen({
                         });
                         reset();
                       }}
-                      style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                      style={{ height: 52, borderRadius: 16, backgroundColor: ctaBlue, alignItems: 'center', justifyContent: 'center' }}
                     >
                       <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
                     </TouchableOpacity>
@@ -605,7 +620,7 @@ export default function JustDescribeItScreen({
                 {!isListening && hasInput && !detected && (
                   <TouchableOpacity
                     onPress={() => { onOpenFullForm('quest', { title: input.trim() }); reset(); }}
-                    style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                    style={{ height: 52, borderRadius: 16, backgroundColor: ctaBlue, alignItems: 'center', justifyContent: 'center' }}
                   >
                     <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Open full form →</Text>
                   </TouchableOpacity>
@@ -625,14 +640,14 @@ export default function JustDescribeItScreen({
                       {/* Section label */}
                       <View style={{ gap: 6 }}>
                         <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
-                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHAT'S THE CHORE</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: tertiaryC }}>WHAT'S THE CHORE</Text>
                       </View>
                       <TextInput
                         value={questTitle}
                         onChangeText={setQuestTitle}
                         placeholder="Chore title"
                         placeholderTextColor={colors.textTertiary}
-                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontWeight: '500', color: colors.textPrimary }}
+                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontWeight: '500', color: titleC }}
                       />
                       <TextInput
                         value={questDescription}
@@ -640,7 +655,7 @@ export default function JustDescribeItScreen({
                         placeholder="What does done look like? (optional)"
                         placeholderTextColor={colors.textTertiary}
                         multiline
-                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: colors.textPrimary, minHeight: 80, textAlignVertical: 'top' }}
+                        style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, color: titleC, minHeight: 80, textAlignVertical: 'top' }}
                       />
                       {/* Photo proof toggle */}
                       <TouchableOpacity
@@ -651,14 +666,14 @@ export default function JustDescribeItScreen({
                           paddingHorizontal: 16, paddingVertical: 14 }}
                       >
                         <View style={{ gap: 2 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>📸 Require photo proof</Text>
-                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>Kid must submit a photo to mark done</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: titleC }}>📸 Require photo proof</Text>
+                          <Text style={{ fontSize: 11, color: bodyC }}>Kid must submit a photo to mark done</Text>
                         </View>
                         <View style={{ width: 36, height: 22, borderRadius: 11,
                           backgroundColor: questRequiresProof ? colors.pink : colors.surface,
                           alignItems: questRequiresProof ? 'flex-end' : 'flex-start',
                           paddingHorizontal: 2, justifyContent: 'center' }}>
-                          <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: questRequiresProof ? '#FFFFFF' : colors.textTertiary }} />
+                          <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: questRequiresProof ? '#FFFFFF' : tertiaryC }} />
                         </View>
                       </TouchableOpacity>
                     </View>
@@ -670,7 +685,7 @@ export default function JustDescribeItScreen({
                       shadowColor: colors.teal, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
                       <View style={{ gap: 6 }}>
                         <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.teal, opacity: 0.6 }} />
-                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHEN</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: tertiaryC }}>WHEN</Text>
                       </View>
 
                       {/* Date + time row */}
@@ -680,19 +695,19 @@ export default function JustDescribeItScreen({
                           style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                         >
                           <Text style={{ fontSize: 15 }}>📅</Text>
-                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmtDate(questDueDate)}</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: titleC }}>{fmtDate(questDueDate)}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => setQuestShowTimePick(true)}
                           style={{ flex: 1, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                         >
                           <Text style={{ fontSize: 15 }}>🕐</Text>
-                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textPrimary }}>{fmt12h(questDueTime)}</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: titleC }}>{fmt12h(questDueTime)}</Text>
                         </TouchableOpacity>
                       </View>
 
                       {/* Repeat chips */}
-                      <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeat</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC, letterSpacing: 0.3 }}>Repeat</Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         {RECUR_OPTIONS.map(opt => (
                           <TouchableOpacity
@@ -702,7 +717,7 @@ export default function JustDescribeItScreen({
                               backgroundColor: questRecurrence === opt.value ? colors.teal : colors.card,
                               borderWidth: 1, borderColor: questRecurrence === opt.value ? colors.teal : colors.border }}
                           >
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: questRecurrence === opt.value ? '#FFFFFF' : colors.textPrimary }}>{opt.label}</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: questRecurrence === opt.value ? '#FFFFFF' : titleC }}>{opt.label}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
@@ -710,7 +725,7 @@ export default function JustDescribeItScreen({
                       {/* Day-of-week chips — weekly only */}
                       {questRecurrence === 'weekly' && (
                         <>
-                          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Repeats on</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC, letterSpacing: 0.3 }}>Repeats on</Text>
                           <View style={{ flexDirection: 'row', gap: 6 }}>
                             {['S','M','T','W','T','F','S'].map((label, idx) => {
                               const sel = questRecurrenceDays.includes(idx);
@@ -722,7 +737,7 @@ export default function JustDescribeItScreen({
                                     backgroundColor: sel ? colors.teal : colors.card,
                                     borderWidth: 1, borderColor: sel ? colors.teal : colors.border }}
                                 >
-                                  <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textPrimary }}>{label}</Text>
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : titleC }}>{label}</Text>
                                 </TouchableOpacity>
                               );
                             })}
@@ -732,13 +747,13 @@ export default function JustDescribeItScreen({
 
                       {questRecurrence !== 'once' && (
                         <>
-                          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.3 }}>Ends on (optional)</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC, letterSpacing: 0.3 }}>Ends on (optional)</Text>
                           <TouchableOpacity
                             onPress={() => setQuestShowEndDatePick(true)}
                             style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                           >
                             <Text style={{ fontSize: 15 }}>🏁</Text>
-                            <Text style={{ fontSize: 14, color: questEndDate ? colors.textPrimary : colors.textTertiary }}>
+                            <Text style={{ fontSize: 14, color: questEndDate ? titleC : tertiaryC }}>
                               {questEndDate ? fmtDate(questEndDate) : 'No end date'}
                             </Text>
                           </TouchableOpacity>
@@ -754,7 +769,7 @@ export default function JustDescribeItScreen({
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <View style={{ gap: 6 }}>
                           <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.amber, opacity: 0.6 }} />
-                          <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>WHO'S ON IT</Text>
+                          <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: tertiaryC }}>WHO'S ON IT</Text>
                         </View>
                         {/* Pool toggle pill */}
                         <TouchableOpacity
@@ -763,7 +778,7 @@ export default function JustDescribeItScreen({
                             backgroundColor: questIsPool ? colors.amber : colors.card,
                             borderWidth: 1, borderColor: questIsPool ? colors.amber : colors.border }}
                         >
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: questIsPool ? '#FFFFFF' : colors.textSecondary }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: questIsPool ? '#FFFFFF' : bodyC }}>
                             ⚡ Pool
                           </Text>
                         </TouchableOpacity>
@@ -814,7 +829,7 @@ export default function JustDescribeItScreen({
                             );
                           })}
                           {questAssigneeIds.length === 0 && (
-                            <Text style={{ fontSize: 12, color: colors.textTertiary, alignSelf: 'center', paddingTop: 8 }}>Tap to assign · or enable Pool ⚡</Text>
+                            <Text style={{ fontSize: 12, color: tertiaryC, alignSelf: 'center', paddingTop: 8 }}>Tap to assign · or enable Pool ⚡</Text>
                           )}
                         </View>
                       )}
@@ -827,7 +842,7 @@ export default function JustDescribeItScreen({
                       shadowColor: colors.pink, shadowOpacity: isDark ? 0 : 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }}>
                       <View style={{ gap: 6 }}>
                         <View style={{ height: 2, width: 28, borderRadius: 1, backgroundColor: colors.pink, opacity: 0.6 }} />
-                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>REWARD</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: tertiaryC }}>REWARD</Text>
                       </View>
 
                       {/* Coin presets */}
@@ -840,7 +855,7 @@ export default function JustDescribeItScreen({
                               backgroundColor: questCoins === c && !questCustomCoins ? colors.amber : colors.card,
                               borderWidth: 1, borderColor: questCoins === c && !questCustomCoins ? colors.amber : colors.border }}
                           >
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: questCoins === c && !questCustomCoins ? '#FFFFFF' : colors.textPrimary }}>🪙 {c}</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: questCoins === c && !questCustomCoins ? '#FFFFFF' : titleC }}>🪙 {c}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
@@ -856,11 +871,11 @@ export default function JustDescribeItScreen({
                           placeholder="Custom coins…"
                           placeholderTextColor={colors.textTertiary}
                           keyboardType="number-pad"
-                          style={{ flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontWeight: '600', color: questCustomCoins ? colors.amber : colors.textPrimary }}
+                          style={{ flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontWeight: '600', color: questCustomCoins ? colors.amber : titleC }}
                         />
                         {questCustomCoins ? (
                           <TouchableOpacity onPress={() => setQuestCustomCoins('')} style={{ paddingHorizontal: 16 }}>
-                            <Text style={{ fontSize: 13, color: colors.textTertiary }}>✕</Text>
+                            <Text style={{ fontSize: 13, color: tertiaryC }}>✕</Text>
                           </TouchableOpacity>
                         ) : null}
                       </View>
@@ -872,14 +887,14 @@ export default function JustDescribeItScreen({
                           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 }}
                         >
                           <View style={{ gap: 2 }}>
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>⭐ Bonus reward</Text>
-                            <Text style={{ fontSize: 11, color: colors.textSecondary }}>Extra coins for early or exceptional finish</Text>
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: titleC }}>⭐ Bonus reward</Text>
+                            <Text style={{ fontSize: 11, color: bodyC }}>Extra coins for early or exceptional finish</Text>
                           </View>
                           <View style={{ width: 36, height: 22, borderRadius: 11,
                             backgroundColor: questBonusEnabled ? colors.amber : colors.surface,
                             alignItems: questBonusEnabled ? 'flex-end' : 'flex-start',
                             paddingHorizontal: 2, justifyContent: 'center' }}>
-                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: questBonusEnabled ? '#FFFFFF' : colors.textTertiary }} />
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: questBonusEnabled ? '#FFFFFF' : tertiaryC }} />
                           </View>
                         </TouchableOpacity>
                         {questBonusEnabled && (
@@ -902,7 +917,7 @@ export default function JustDescribeItScreen({
 
                     {/* PREVIEW CARD — always visible, mirrors real QuestCard collapsed header */}
                     <View style={{ gap: 8 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.5, textTransform: 'uppercase' }}>Card preview</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: tertiaryC, letterSpacing: 0.5, textTransform: 'uppercase' }}>Card preview</Text>
                       <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: fieldBorder,
                         paddingHorizontal: 16, paddingVertical: 14, gap: 8,
                         shadowColor: '#000', shadowOpacity: isDark ? 0.25 : 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
@@ -911,10 +926,10 @@ export default function JustDescribeItScreen({
                         <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44 }}>
                           {/* Title + status line */}
                           <View style={{ flex: 1, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? colors.textPrimary : colors.textTertiary }} numberOfLines={1}>
+                            <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? titleC : tertiaryC }} numberOfLines={1}>
                               {questTitle.trim() || 'Chore title…'}
                             </Text>
-                            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                            <Text style={{ fontSize: 12, color: bodyC, marginTop: 2 }}>
                               {questIsPool
                                 ? 'Open — claim it'
                                 : questAssigneeIds.length > 1
@@ -958,7 +973,7 @@ export default function JustDescribeItScreen({
                                     })
                                   : (
                                     <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
-                                      <Text style={{ fontSize: 12, color: colors.textTertiary }}>?</Text>
+                                      <Text style={{ fontSize: 12, color: tertiaryC }}>?</Text>
                                     </View>
                                   )
                               }
@@ -975,7 +990,7 @@ export default function JustDescribeItScreen({
                         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
                           {questDueDate && (
                             <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>
+                              <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC }}>
                                 📅 {fmtDate(questDueDate)} · {fmt12h(questDueTime)}
                               </Text>
                             </View>
@@ -997,7 +1012,7 @@ export default function JustDescribeItScreen({
                         </View>
 
                         {questDescription.trim() ? (
-                          <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }} numberOfLines={2}>{questDescription}</Text>
+                          <Text style={{ fontSize: 13, color: bodyC, lineHeight: 18 }} numberOfLines={2}>{questDescription}</Text>
                         ) : null}
                       </View>
                     </View>
@@ -1005,7 +1020,7 @@ export default function JustDescribeItScreen({
                     {likelyDuplicate && dupAck && (
                       <View style={{ borderRadius: 14, padding: 14, backgroundColor: colors.amberLight, gap: 4 }}>
                         <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber }}>Looks like a duplicate</Text>
-                        <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>
+                        <Text style={{ fontSize: 13, color: bodyC, lineHeight: 18 }}>
                           "{likelyDuplicate.title}" is already open
                           {likelyDuplicate.dueDate ? ` for ${fmtDate(likelyDuplicate.dueDate)}` : ''}
                           {likelyDuplicate.assignedToId ? ` for ${members.find(m => m.id === likelyDuplicate.assignedToId)?.name?.split(' ')[0] ?? 'someone'}` : ''}.
@@ -1019,16 +1034,16 @@ export default function JustDescribeItScreen({
                       onPress={handleSaveQuest}
                       disabled={!questTitle.trim() || savingQuest}
                       style={{ height: 52, borderRadius: 14,
-                        backgroundColor: questTitle.trim() ? activeBlue : (isDark ? colors.surface : '#E6EAF1'),
+                        backgroundColor: questTitle.trim() ? ctaBlue : (isDark ? colors.surface : '#E6EAF1'),
                         alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
                     >
                       {savingQuest
                         ? <ActivityIndicator color="#FFFFFF" />
-                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>{likelyDuplicate && dupAck ? 'Create anyway' : 'Save chore'}</Text>}
+                        : <Text style={{ fontSize: 15, fontWeight: '700', color: questTitle.trim() ? '#FFFFFF' : tertiaryC }}>{likelyDuplicate && dupAck ? 'Create anyway' : 'Save chore'}</Text>}
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={() => setQuestFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>‹ Back · edit description</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>‹ Back · edit description</Text>
                     </TouchableOpacity>
 
                   </View>

@@ -5,9 +5,10 @@
  * markup, matching Month/Agenda/DaySlot's card treatment.
  */
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { TYPO } from '@/constants/theme';
-import { fmtDateShort } from '@/lib/dates';
+import { fmtDateShort, fmtTime } from '@/lib/dates';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { toDateStr, addDays, DAY_SHORT } from './calendarDateHelpers';
@@ -118,7 +119,7 @@ export default function WeekView({
                   const cat = ev.category ?? 'default';
                   const palette = WEEK_EVENT_BG[cat] ?? WEEK_EVENT_BG.default;
                   const bg = isDark ? palette.dark : palette.light;
-                  const timeStr = ev.time ? ev.time.slice(0, 5) : '';
+                  const timeStr = ev.time ? fmtTime(ev.time) : '';
                   return (
                     <TouchableOpacity
                       key={ev.id}
@@ -127,9 +128,20 @@ export default function WeekView({
                       activeOpacity={0.78}
                       style={{ minHeight: 34, borderRadius: 10, backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 7, justifyContent: 'center' }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#FDFCF9' : '#2C2722' }} numberOfLines={1}>
-                        {timeStr ? `${timeStr} · ${ev.title}` : ev.title}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {!!ev.seriesId && (
+                          <Pressable
+                            onPress={() => router.push({ pathname: '/calendar/series/[seriesId]', params: { seriesId: ev.seriesId! } })}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            style={{ marginRight: 3 }}
+                          >
+                            <Text style={{ fontSize: 12 }} accessibilityLabel="Manage recurring series">🔄</Text>
+                          </Pressable>
+                        )}
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#FDFCF9' : '#2C2722', flexShrink: 1 }} numberOfLines={1}>
+                          {timeStr ? `${timeStr} · ${ev.title}` : ev.title}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}

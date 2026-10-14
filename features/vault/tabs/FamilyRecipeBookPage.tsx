@@ -33,6 +33,7 @@ type FamilyRecipe = {
   ai_refined?: boolean;
   created_by?: string | null;
   created_at?: string;
+  status?: 'pending' | 'approved';
 };
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { useGroceryStore } from '@/store/groceryStore';
@@ -125,6 +126,11 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       const prepSteps   = newStepsText.split('\n').map(s => s.trim()).filter(Boolean);
       const dietaryTags = newTags;
       const id = `${familyId}-recipe-${Date.now()}`;
+      // Kids/teens send recipes to a parent review queue instead of
+      // publishing straight to the shared book — same "propose, parent
+      // approves" shape as chores/quests [live-requested: "kids can
+      // contribute ... send to the parents to review approve"].
+      const status: 'pending' | 'approved' = isParent ? 'approved' : 'pending';
       const { data, error } = await supabase.from('family_recipes').insert({
         id, family_id: familyId,
         title: newTitle.trim(),
@@ -135,10 +141,11 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
         prep_minutes: newPrepMins ? parseInt(newPrepMins, 10) : null,
         created_by: activeMember?.id ?? null,
         ai_refined: false,
+        status,
       }).select().single();
       if (!error && data) {
         setRecipes(prev => [data as FamilyRecipe, ...prev]);
-        showToast(`${newTitle.trim()} added to recipe book`);
+        showToast(isParent ? `${newTitle.trim()} added to recipe book` : `Sent to your parents for review`);
         resetAddRecipeForm();
         setShowAddRecipe(false);
       } else {
@@ -225,12 +232,34 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   const pillText = (active: boolean) =>
     active ? '#FFFFFF' : (isDark ? colors.textSecondary : GEMINI.bodyColor);
 
+  // Pending recipes only show to the parent reviewing them and the kid
+  // who submitted them — everyone else only ever sees 'approved' rows
+  // (status defaults to 'approved' for parent-created recipes, so this
+  // never hides anything from before this feature existed).
+  const visibleRecipes = recipes.filter(r =>
+    r.status !== 'pending' || isParent || r.created_by === activeMember?.id
+  );
+  const pendingRecipes  = visibleRecipes.filter(r => r.status === 'pending');
+  const approvedRecipes = visibleRecipes.filter(r => r.status !== 'pending');
+
   const filtered = query.trim()
-    ? recipes.filter(r =>
+    ? approvedRecipes.filter(r =>
         r.title.toLowerCase().includes(query.toLowerCase()) ||
         r.ingredients?.some(i => i.toLowerCase().includes(query.toLowerCase()))
       )
-    : recipes;
+    : approvedRecipes;
+
+  const reviewRecipe = async (recipe: FamilyRecipe, approve: boolean) => {
+    if (approve) {
+      await supabase.from('family_recipes').update({ status: 'approved' }).eq('id', recipe.id);
+      setRecipes(prev => prev.map(r => r.id === recipe.id ? { ...r, status: 'approved' } : r));
+      showToast(`${recipe.title} added to the recipe book`);
+    } else {
+      await supabase.from('family_recipes').delete().eq('id', recipe.id);
+      setRecipes(prev => prev.filter(r => r.id !== recipe.id));
+      showToast(`${recipe.title} declined`);
+    }
+  };
 
   const chefLabel = (recipe: FamilyRecipe) => {
     if (!recipe.created_by) return null;
@@ -269,7 +298,9 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
         </Pressable>
 
         <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 20 }}>
-          Recipes your family has made and loved. Add any recipe to this week's plan.
+          {isParent
+            ? "Recipes your family has made and loved. Add any recipe to this week's plan."
+            : 'Recipes your family has made and loved. Add your own to share with the family.'}
         </Text>
       </View>
 
@@ -288,31 +319,87 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           />
         </View>
 
-        {/* Add a recipe CTA card */}
-        {isParent && (
-          <Pressable
-            onPress={() => { resetAddRecipeForm(); setShowAddRecipe(true); }}
-            style={({ pressed }) => ({
-              backgroundColor: colors.amberLight, borderRadius: 18, padding: 18,
-              flexDirection: 'row', alignItems: 'center', gap: 14,
-              opacity: pressed ? 0.85 : 1,
-              borderWidth: 1.5, borderColor: colors.amber + '30',
-            })}>
-            <View style={{ width: 48, height: 48, borderRadius: 14,
-              backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.7)',
-              alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Plus size={24} color={colors.amber} strokeWidth={2.2} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-                Add a family recipe
-              </Text>
-              <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
-                Record ingredients and steps — Cube AI can clean it up and generate a photo.
-              </Text>
-            </View>
-            <Text style={{ fontSize: 20, color: colors.amber }}>›</Text>
-          </Pressable>
+        {/* Add a recipe CTA card — open to every member now, not just
+            parents [live-requested: "kids can contribute ... we should
+            have the full form like parents does"]. Kid/teen submissions
+            route into the pending-review queue below instead of
+            publishing straight to the book (see saveNewRecipe's status
+            branch). */}
+        <Pressable
+          onPress={() => { resetAddRecipeForm(); setShowAddRecipe(true); }}
+          style={({ pressed }) => ({
+            backgroundColor: colors.amberLight, borderRadius: 18, padding: 18,
+            flexDirection: 'row', alignItems: 'center', gap: 14,
+            opacity: pressed ? 0.85 : 1,
+            borderWidth: 1.5, borderColor: colors.amber + '30',
+          })}>
+          <View style={{ width: 48, height: 48, borderRadius: 14,
+            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.7)',
+            alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Plus size={24} color={colors.amber} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+              Add a family recipe
+            </Text>
+            <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
+              {isParent
+                ? 'Record ingredients and steps — Cube AI can clean it up and generate a photo.'
+                : "Record your recipe and send it to your parents to review."}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 20, color: colors.amber }}>›</Text>
+        </Pressable>
+
+        {/* Pending review queue — parents see every kid submission here;
+            a kid sees only their own pending submissions, so they know
+            it was sent without being able to approve it themselves. */}
+        {pendingRecipes.length > 0 && (
+          <View style={{ gap: 10 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.3 }}>
+              {isParent ? `WAITING FOR YOUR REVIEW · ${pendingRecipes.length}` : 'SENT · AWAITING REVIEW'}
+            </Text>
+            {pendingRecipes.map(recipe => (
+              <View key={recipe.id} style={{
+                backgroundColor: colors.pinkLight, borderRadius: 16, padding: 16, gap: 10,
+                borderWidth: 1, borderColor: colors.pink + '30',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 22 }}>{recipe.emoji || '🍽️'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                      {recipe.title}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
+                      {chefLabel(recipe) ?? 'Submitted recipe'} · {recipe.ingredients?.length ?? 0} ingredients
+                    </Text>
+                  </View>
+                </View>
+                {isParent ? (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable onPress={() => setActiveRecipe(recipe)}
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center',
+                        backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink }}>View</Text>
+                    </Pressable>
+                    <Pressable onPress={() => reviewRecipe(recipe, false)}
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center',
+                        backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>Decline</Text>
+                    </Pressable>
+                    <Pressable onPress={() => reviewRecipe(recipe, true)}
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: colors.pink }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Approve</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                    A parent will review it before it shows up in the recipe book.
+                  </Text>
+                )}
+              </View>
+            ))}
+          </View>
         )}
 
         {/* Recipe list */}
@@ -384,19 +471,26 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                 <Text style={{ fontSize: 20, color: colors.textTertiary }}>›</Text>
               </Pressable>
 
-              {/* "Add to week" CTA */}
-              <Pressable
-                onPress={() => { setAddTarget(recipe); setPickerDay('Mon'); setPickerType('Dinner'); }}
-                style={({ pressed }) => ({
-                  marginHorizontal: 16, marginBottom: 14,
-                  borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-                  backgroundColor: pressed ? colors.tealLight : colors.tealLight,
-                  borderWidth: 1, borderColor: colors.teal + '40',
-                })}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>
-                  + Add to this week
-                </Text>
-              </Pressable>
+              {/* "Add to week" CTA — parent-only (planning the actual
+                  week stays a parent action, same as meal add/edit/delete
+                  in MealsTab; only recipe *contribution* opened up to
+                  kids/teens) [live-requested: "we shouldnt allow
+                  kids/teens to add this week meal from family recipie
+                  book"]. */}
+              {isParent && (
+                <Pressable
+                  onPress={() => { setAddTarget(recipe); setPickerDay('Mon'); setPickerType('Dinner'); }}
+                  style={({ pressed }) => ({
+                    marginHorizontal: 16, marginBottom: 14,
+                    borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+                    backgroundColor: pressed ? colors.tealLight : colors.tealLight,
+                    borderWidth: 1, borderColor: colors.teal + '40',
+                  })}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>
+                    + Add to this week
+                  </Text>
+                </Pressable>
+              )}
             </View>
           ))
         )}
@@ -697,7 +791,9 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <>
                       <Check size={17} color="#fff" strokeWidth={2.5} />
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Save to recipe book</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>
+                        {isParent ? 'Save to recipe book' : 'Submit for parent review'}
+                      </Text>
                     </>}
               </Pressable>
               <Pressable onPress={() => setShowAddRecipe(false)} style={{ alignItems: 'center', paddingVertical: 6 }}>

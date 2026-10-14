@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import { useRewardStore, Reward } from '@/store/rewardStore';
+import { useRewardStore, Reward, Redemption } from '@/store/rewardStore';
 import { showToast } from '@/components/AppToast';
 import {
   CheckCircle, XCircle, ChevronRight, ShoppingBag, Flame, Coins,
@@ -31,7 +31,10 @@ const CANVAS = '#ECE6DE';
 const TITLE_CLR = '#0D1210';
 const BODY_CLR = '#3D4D47';
 const BODY_CLR_LIGHT = '#4E5C56';
-const BLUE = '#3B5FE4';
+// Muted blue — same CTA_BLUE used on Kid Hub's quest detail CTAs
+// (KidQuestDetailScreen.tsx/KidQuestCard.tsx), kept local here for the
+// same no-brand-token reason [live-requested: "muted blue color"].
+const BLUE = '#5B7FA6';
 const LINK_BLUE = '#23352B';
 const BORDER = '#DDD6CC';
 const CARD_BG = '#FFFFFF';
@@ -43,12 +46,14 @@ const RED_TXT = '#C0392B';
 const PURPLE_TXT = '#6A4FBF';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function fmtDate(iso: string) {
-  const d = new Date(iso);
+function fmtDate(iso: string | undefined) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return 'Unknown date';
   return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
 }
-function fmtDateTime(iso: string) {
-  const d = new Date(iso);
+function fmtDateTime(iso: string | undefined) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return 'Unknown date';
   const date = fmtDate(iso);
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   return `${date} · ${time}`;
@@ -108,6 +113,89 @@ function Divider({ colors, isDark }: { colors: any; isDark: boolean }) {
   return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: isDark ? colors.border : BORDER }} />;
 }
 
+// ─── Field card for the receipt detail page — same shape as the Perks
+// Store's own PerkDetailScreen DetailField (StoreScreen.tsx) ───────────────
+function DetailField({ label, value, colors, isDark }: {
+  label: string; value: string; colors: any; isDark: boolean;
+}) {
+  return (
+    <View style={{ borderWidth: isDark ? 1 : 0, borderColor: colors.border, borderRadius: 16,
+      backgroundColor: isDark ? colors.card : CARD_BG, paddingHorizontal: 16, paddingVertical: 14,
+      ...(!isDark ? CARD_SHADOW : {}) }}>
+      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginBottom: 3 }}>{label}</Text>
+      <Text style={{ fontSize: 15, color: isDark ? colors.textPrimary : TITLE_CLR, lineHeight: 20 }}>{value}</Text>
+    </View>
+  );
+}
+
+// ─── Receipt detail page — "my requests also should open the dedicated
+// page" [live-requested], same rhythm as StoreScreen's PerkDetailScreen:
+// warm-cream canvas, shadowed white field cards, pastel status pill. ───────
+function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose }: {
+  redemption: Redemption | null; reward: Reward | undefined; colors: any; isDark: boolean; onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const canvas = isDark ? colors.background : CANVAS;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+
+  return (
+    <FullPageOverlay visible={!!redemption} onDismiss={onClose} zIndex={65}>
+      {(requestAnimatedClose) => (
+        <View style={{ flex: 1, backgroundColor: canvas }}>
+          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+            {redemption && (
+              <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center', ...(!isDark ? CARD_SHADOW : {}) }}>
+                  <Text style={{ fontSize: 20 }}>{reward?.emoji ?? '🎁'}</Text>
+                </View>
+                <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>
+                  {reward?.title ?? redemption.rewardTitle ?? 'Perk'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {redemption && (
+              <View style={{ marginTop: 10 }}>
+                <StatusPill status={redemption.status} colors={colors} isDark={isDark} />
+              </View>
+            )}
+          </View>
+
+          {redemption && (
+            <ScrollView showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 10 }}>
+
+              <DetailField label="Coin cost" value={`${redemption.deductedCoins} coins 🪙`} colors={colors} isDark={isDark} />
+
+              <DetailField label="Requested" value={fmtDateTime(redemption.redeemedAt)} colors={colors} isDark={isDark} />
+
+              {redemption.respondedAt && (
+                <DetailField
+                  label={redemption.status === 'rejected' ? 'Declined' : redemption.status === 'cancelled' ? 'Cancelled' : 'Approved'}
+                  value={fmtDateTime(redemption.respondedAt)}
+                  colors={colors} isDark={isDark}
+                />
+              )}
+
+              {redemption.note && (
+                <DetailField label="Note from parent" value={redemption.note} colors={colors} isDark={isDark} />
+              )}
+
+              {redemption.status === 'pending' && (
+                <Text style={{ fontSize: 13, color: bodyC, textAlign: 'center', marginTop: 4 }}>
+                  Waiting for a parent to approve this request.
+                </Text>
+              )}
+            </ScrollView>
+          )}
+        </View>
+      )}
+    </FullPageOverlay>
+  );
+}
+
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function RewardsDashboardScreen({
   hideHeader = false,
@@ -123,6 +211,7 @@ export default function RewardsDashboardScreen({
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
+  const [detailRedemption, setDetailRedemption] = useState<Redemption | null>(null);
 
   const activeMember  = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent      = activeMember?.role === 'parent';
@@ -208,6 +297,13 @@ export default function RewardsDashboardScreen({
         )}
       </FullPageOverlay>
 
+      <RedemptionDetailScreen
+        redemption={detailRedemption}
+        reward={rewards.find(r => r.id === detailRedemption?.rewardId)}
+        colors={colors} isDark={isDark}
+        onClose={() => setDetailRedemption(null)}
+      />
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
         {!hideHeader && (
@@ -247,17 +343,21 @@ export default function RewardsDashboardScreen({
           ══════════════════════════════════════════ */}
           {canRedeemSelf && (
             <>
-              {/* Balance card */}
-              <Card colors={colors} isDark={isDark}>
+              {/* Balance card — amber pastel banner, not flat white, per
+                  Figma's "nice color banners and pastels" rhythm. */}
+              <View style={{ borderRadius: 20, backgroundColor: isDark ? colors.surface : colors.amberLight,
+                borderWidth: isDark ? 1 : 0, borderColor: colors.border, overflow: 'hidden', ...(!isDark ? CARD_SHADOW : {}) }}>
                 <View style={{ padding: 16, flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ width: 52, height: 52, borderRadius: 16, marginRight: 14,
+                    backgroundColor: isDark ? colors.card : '#FFFFFF',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 24 }}>🪙</Text>
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <Text style={{ fontSize: 20 }}>🪙</Text>
-                      <Text style={{ fontSize: 28, fontWeight: '800', color: isDark ? colors.amber : AMBER_TXT }}>
-                        {myCoins} coins
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 13, color: bodyC }}>Available to spend</Text>
+                    <Text style={{ fontSize: 28, fontWeight: '800', color: isDark ? colors.amber : AMBER_TXT }}>
+                      {myCoins} coins
+                    </Text>
+                    <Text style={{ fontSize: 13, color: bodyC, marginTop: 2 }}>Available to spend</Text>
                     {myGpCoins > 0 && (
                       <Text style={{ fontSize: 12, color: isDark ? colors.textTertiary : BODY_CLR, marginTop: 4 }}>
                         {myMainCoins} main · {myGpCoins} grandparent bonus
@@ -265,19 +365,23 @@ export default function RewardsDashboardScreen({
                     )}
                   </View>
                   <TouchableOpacity onPress={() => setStoreOpen(true)}
-                    style={{ padding: 10, borderRadius: 12, backgroundColor: isDark ? colors.surface : SURFACE }}>
+                    style={{ padding: 10, borderRadius: 12, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
                     <ShoppingBag size={20} color={isDark ? colors.teal : GREEN_TXT} />
                   </TouchableOpacity>
                 </View>
-              </Card>
+              </View>
 
-              {/* Featured reward */}
+              {/* Featured reward — bright white card lifted off the pastel
+                  canvas with a real shadow, blue CTA fill. */}
               {featuredReward && (
                 <Card colors={colors} isDark={isDark} style={{ padding: 16 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.5,
-                    color: isDark ? colors.amber : AMBER_TXT, marginBottom: 8 }}>
-                    {featuredReward.cost} coins · available now
-                  </Text>
+                  <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+                    backgroundColor: isDark ? colors.amberLight : '#FDF3D8', marginBottom: 10 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3,
+                      color: isDark ? colors.amber : AMBER_TXT }}>
+                      {featuredReward.cost} coins · available now
+                    </Text>
+                  </View>
                   <Text style={{ fontSize: 20, fontWeight: '800', lineHeight: 26, color: titleC, marginBottom: 6 }}>
                     {featuredReward.emoji} {featuredReward.title}
                   </Text>
@@ -287,7 +391,8 @@ export default function RewardsDashboardScreen({
                     </Text>
                   ) : <View style={{ height: 10 }} />}
                   <TouchableOpacity onPress={() => handleRedeem(featuredReward)}
-                    style={{ height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
+                    style={{ height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE,
+                      shadowColor: BLUE, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: isDark ? 0 : 3 }}>
                     <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
                       Redeem · {featuredReward.cost} coins
                     </Text>
@@ -350,7 +455,8 @@ export default function RewardsDashboardScreen({
                       return (
                         <View key={rd.id}>
                           {i > 0 && <Divider colors={colors} isDark={isDark} />}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 }}>
+                          <TouchableOpacity onPress={() => setDetailRedemption(rd)}
+                            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 }}>
                             <Text style={{ fontSize: 18 }}>{reward?.emoji ?? '🎁'}</Text>
                             <View style={{ flex: 1 }}>
                               <Text style={{ fontSize: 14, fontWeight: '600', color: titleC }} numberOfLines={1}>
@@ -361,7 +467,7 @@ export default function RewardsDashboardScreen({
                               </Text>
                             </View>
                             <StatusPill status={rd.status} colors={colors} isDark={isDark} />
-                          </View>
+                          </TouchableOpacity>
                         </View>
                       );
                     })}
@@ -527,7 +633,8 @@ export default function RewardsDashboardScreen({
                       return (
                         <View key={rd.id}>
                           {i > 0 && <Divider colors={colors} isDark={isDark} />}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, gap: 10 }}>
+                          <TouchableOpacity onPress={() => setDetailRedemption(rd)}
+                            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, gap: 10 }}>
                             <View style={{ width: 36, height: 36, borderRadius: 10,
                               backgroundColor: isDark ? colors.surface : SURFACE,
                               alignItems: 'center', justifyContent: 'center' }}>
@@ -542,7 +649,7 @@ export default function RewardsDashboardScreen({
                               </Text>
                             </View>
                             <StatusPill status={rd.status} colors={colors} isDark={isDark} />
-                          </View>
+                          </TouchableOpacity>
                         </View>
                       );
                     })}

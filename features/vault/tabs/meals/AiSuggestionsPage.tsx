@@ -646,31 +646,37 @@ export default function AiSuggestionsPage({
 
             </ScrollView>
 
-            {/* Recipe detail — full page, read-only */}
-            <RecipeModal
-              meal={activeRecipe}
-              visible={!!activeRecipe}
-              onClose={() => setActiveRecipe(null)}
-              onAddToGrocery={async (names) => {
-                const { addItem, items: existing, familyId: sfId } = useGroceryStore.getState();
-                const famId = (members[0] as any)?.familyId ?? 'family-1';
-                const effectiveFamilyId = sfId ?? famId;
-                const existingNames = new Set(existing.map((i: any) => i.name.toLowerCase().trim()));
-                for (const name of names) {
-                  if (!existingNames.has(name.toLowerCase().trim())) {
-                    await addItem({ familyId: effectiveFamilyId, name, quantity: '1', category: categorizeItem(name), addedBy: (activeMember as any)?.id ?? '', aiGenerated: true, notes: activeRecipe ? `From ${activeRecipe.title}` : undefined });
-                  }
-                }
-                showToast('Ingredients added to grocery list');
-              }}
-              senderId={(activeMember as any)?.id ?? ''}
-              colors={colors}
-              isDark={isDark}
-            />
-
           </View>
         </Animated.View>
       </SwipeBackWrapper>
+
+      {/* Recipe detail — full page, read-only. Rendered as a sibling of
+          this screen's own outer position:absolute wrapper (not nested
+          inside its SwipeBackWrapper/flex:1 body) so it covers this
+          screen's own header too, not just the scroll area beneath it
+          [live-requested: "why is this recipie not opening as overlay
+          instead opening the inline page" — same root cause found and
+          fixed in MealsWeekPage/MealsTab]. */}
+      <RecipeModal
+        meal={activeRecipe}
+        visible={!!activeRecipe}
+        onClose={() => setActiveRecipe(null)}
+        onAddToGrocery={async (names) => {
+          const { addItem, items: existing, familyId: sfId } = useGroceryStore.getState();
+          const famId = (members[0] as any)?.familyId ?? 'family-1';
+          const effectiveFamilyId = sfId ?? famId;
+          const existingNames = new Set(existing.map((i: any) => i.name.toLowerCase().trim()));
+          for (const name of names) {
+            if (!existingNames.has(name.toLowerCase().trim())) {
+              await addItem({ familyId: effectiveFamilyId, name, quantity: '1', category: categorizeItem(name), addedBy: (activeMember as any)?.id ?? '', aiGenerated: true, notes: activeRecipe ? `From ${activeRecipe.title}` : undefined });
+            }
+          }
+          showToast('Ingredients added to grocery list');
+        }}
+        senderId={(activeMember as any)?.id ?? ''}
+        colors={colors}
+        isDark={isDark}
+      />
     </View>
   );
 }

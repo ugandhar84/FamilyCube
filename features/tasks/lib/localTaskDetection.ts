@@ -398,7 +398,30 @@ export interface ExtractedLocations { pickup: string | null; dropoff: string | n
 // right after the ride's own subject, "pick up Leo from X") keeps this
 // scoped to language that's actually describing a ride, not any "from"
 // in the sentence.
-const PICKUP_CONTEXT_RE = /\b(?:pick(?:ing)?\s?up|picked up|collect(?:ing)?|leaving|coming)\b[^.,;]{0,40}\bfrom\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,;]|$)/i;
+// "pick(?:ing)? ?up" alone missed the single most common kid phrasing,
+// "pick ME up" / "pick HIM up" / "pick THEM up" — the object sits BETWEEN
+// pick and up, not adjacent to it like "pickup"/"pick up" are. Without the
+// optional (?:me|him|her|them|\w+)\s+ in the middle, "pick me up from
+// soccer" matched neither this regex nor PICKUP/DROPOFF verb detection
+// below, silently leaving pickup location AND rideDirection both unfilled
+// despite the sentence being an unambiguous pickup request.
+const PICKUP_CONTEXT_RE = /\b(?:pick(?:ing)?\s?(?:me|him|her|them)?\s?up|picked (?:me|him|her|them)?\s?up|collect(?:ing)?|leaving|coming)\b[^.,;]{0,40}\bfrom\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after|every|daily|weekly|monthly)\b|[.,;]|$)/i;
+
+// No-preposition fallback: "pick me up soccer" / "drop me off dance class"
+// names the place right after the verb with no "from"/"to"/"at" at all —
+// live-reported phrasing, not hypothetical. Only fires when the "from"/"to"
+// forms above found nothing, so a sentence that DID use a preposition still
+// prefers that more explicit match.
+// Negative lookahead right after the verb stops "pick me up at 10 pm" (pure
+// time, no place at all) from having its cutoff keyword itself captured as
+// the location — the lazy `+?` group has nothing to stop on BEFORE "at" when
+// "at" is the very next word, so it swallowed "at 10 pm" whole as a bogus
+// pickup location (live bug: kid's "Pickup location" field filled with
+// "At 10 pm"). Requiring the captured text not START with a cutoff keyword
+// forces the regex to fail (and location stays null) instead of matching a
+// location-shaped string that's actually just the time.
+const PICKUP_NO_PREP_RE = /\b(?:pick(?:ing)?\s?(?:me|him|her|them)?\s?up|picked (?:me|him|her|them)?\s?up)\b\s+(?!(?:at|on|by|before|after|every|daily|weekly|monthly)\b)([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after|every|daily|weekly|monthly)\b|[.,;]|$)/i;
+const DROPOFF_NO_PREP_RE = /\b(?:drop(?:ping)?\s?(?:me|him|her|them)?\s?off|dropped (?:me|him|her|them)?\s?off)\b\s+(?!(?:at|on|by|before|after|every|daily|weekly|monthly)\b)([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after|every|daily|weekly|monthly)\b|[.,;]|$)/i;
 
 export function extractLocations(rawInput: string): ExtractedLocations {
   let pickup: string | null = null, dropoff: string | null = null;
@@ -416,6 +439,14 @@ export function extractLocations(rawInput: string): ExtractedLocations {
     // instead of populating a real dropoff location.
     m = rawInput.match(/\b(?:drop(?:ping)?(?:\s|-)?off(?:\s+\w+)?\s+(?:at|to)|take (?:her|him|them) to)\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
     if (m) dropoff = m[1].trim();
+    if (!pickup) {
+      m = rawInput.match(PICKUP_NO_PREP_RE);
+      if (m) pickup = m[1].trim();
+    }
+    if (!dropoff) {
+      m = rawInput.match(DROPOFF_NO_PREP_RE);
+      if (m) dropoff = m[1].trim();
+    }
   }
   const clean = (s: string | null) => s ? s.replace(/\s+/g, ' ').trim().replace(/^\w/, c => c.toUpperCase()) : null;
   return { pickup: clean(pickup), dropoff: clean(dropoff) };
@@ -502,6 +533,10 @@ export interface LocalDetectionResult {
   amount: number | null;
   recurrence: 'once' | 'daily' | 'weekly' | 'monthly';
   recurrenceDays: number[]; // 0=Sun..6=Sat, only meaningful when recurrence==='weekly'
+  // Which leg(s) of a ride the sentence actually asked for — null when
+  // neither a pickup nor a drop-off verb appears, so the ride form can
+  // leave its own chip default untouched instead of guessing wrong.
+  rideDirection: 'dropoff' | 'pickup' | 'both' | null;
   urgent: boolean;
   // Category-vote kind can be wrong for phrasing the keyword list alone
   // can't disambiguate — "remind me to call the dentist" is a to-do
@@ -604,7 +639,12 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // a named family member or her/him/them, and previously fell through to
   // the discounted generic-errand branch below, misclassifying "pick me up
   // at 4pm" as a low-confidence chore instead of a Ride.
-  const pickupTargetsSelf = /\b(?:pick(?:ing)?\s?up|drop(?:ping)?\s?off)\s+(?:me|myself)\b/.test(input);
+  // "pick up me" (object after "up") is not how anyone actually phrases
+  // this — real phrasing puts the object BETWEEN pick/drop and up/off
+  // ("pick me up", "drop me off"), which the original regex never matched
+  // at all, silently discounting the ride category's score on the most
+  // common ride-request sentence shape a kid would type.
+  const pickupTargetsSelf = /\b(?:pick(?:ing)?\s?(?:me|myself)\s?up|drop(?:ping)?\s?(?:me|myself)\s?off)\b/.test(input);
   const pickupTargetsPerson = pickupTargetsSelf || members.some(m => {
     const first = m.name.split(' ')[0].toLowerCase();
     return new RegExp('\\b(?:pick(?:ing)?\\s?up|drop(?:ping)?\\s?off)\\s+' + escapeRegex(first) + '\\b').test(input)
@@ -688,19 +728,48 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // otherwise need to avoid a false daily match too — matching first
   // instead is simpler and avoids that ordering trap entirely.
   const weekdayRe = /\bevery\s+weekday|\bweekdays?\b(?!\s*and\s*weekend)/i;
-  if (weekdayRe.test(input)) {
+  // "every other day"/"alternate days"/"every alternate day" has no bucket
+  // of its own in the once/daily/weekly/monthly model both this form and
+  // the ride/quest forms share — closest real bucket is 'daily', since it's
+  // still a day-granularity repeat rather than a specific weekday list.
+  // Checked first since "every other day" would otherwise also satisfy
+  // weeklyDayRe's day-token scan (false positive: "other" isn't a day, but
+  // plain "daily"/"every day" checks below it DO literally contain "day").
+  const alternateDaysRe = /\bevery\s+other\s+day\b|\balternate\s+days?\b|\bevery\s+alternate\s+day\b/;
+  // A bare list/pair of weekday names with no "every"/"weekly" framing at
+  // all — "Tue and Thu pickups", "Mon Wed Fri practice" — is still real
+  // recurrence, just phrased as a day-list instead of "every <day>". Require
+  // at least 2 distinct day tokens so a single bare day name ("Thursday
+  // 2pm", a one-time event) is never misread as recurring.
+  const bareDayListMatches = Object.entries(DAY_TOKEN_MAP)
+    .filter(([token]) => new RegExp('\\b' + token + '\\b').test(input));
+  const bareDayListDays = new Set(bareDayListMatches.map(([, num]) => num));
+  if (alternateDaysRe.test(input)) {
+    recurrence = 'daily';
+  } else if (weekdayRe.test(input)) {
     recurrence = 'weekly';
     recurrenceDays.push(1, 2, 3, 4, 5);
   } else if (/\bdaily\b|\bevery\s+day\b|\beveryday\b|\beach\s+day\b/.test(input)) {
     recurrence = 'daily';
   } else if (/\bmonthly\b|\bevery month\b/.test(input)) {
     recurrence = 'monthly';
-  } else if (/\bweekly\b|\bevery week\b/.test(input) || weeklyDayRe.test(input)) {
+  } else if (/\bweekly\b|\bevery week\b/.test(input) || weeklyDayRe.test(input) || bareDayListDays.size >= 2) {
     recurrence = 'weekly';
-    Object.entries(DAY_TOKEN_MAP).forEach(([token, num]) => {
-      if (new RegExp('\\b' + token + '\\b').test(input) && !recurrenceDays.includes(num)) recurrenceDays.push(num);
-    });
+    bareDayListDays.forEach(num => { if (!recurrenceDays.includes(num)) recurrenceDays.push(num); });
   }
+
+  // A kid describing a ride shouldn't also have to manually tap the
+  // "Ride needed?" dropoff/pickup/both chip row afterward — "drop me off
+  // at X"/"take me to X" means Drop-off, "pick me up from X"/"get me from
+  // X" means Pickup, and if a sentence names both verbs it's genuinely
+  // Both. Independent of whether extractLocations actually captured a
+  // location string, since the verb itself is the real signal here.
+  // Same "pick ME up" gap as PICKUP_CONTEXT_RE above — the object (me/him/
+  // her/them) sits between "pick" and "up", not adjacent to it.
+  const hasPickupVerb = /\b(?:pick(?:ing)?\s?(?:me|him|her|them)?\s?up|picked (?:me|him|her|them)?\s?up|collect(?:ing)?|get(?:ting)?\s+me)\b/.test(input);
+  const hasDropoffVerb = /\bdrop(?:ping)?(?:\s|-)?off\b|\btake\s+(?:me|her|him|them)\s+to\b/.test(input);
+  const rideDirection: LocalDetectionResult['rideDirection'] =
+    hasPickupVerb && hasDropoffVerb ? 'both' : hasDropoffVerb ? 'dropoff' : hasPickupVerb ? 'pickup' : null;
 
   return {
     category: entry,
@@ -709,6 +778,7 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
     when,
     locations,
     memberNames,
+    rideDirection,
     amount,
     recurrence,
     recurrenceDays,

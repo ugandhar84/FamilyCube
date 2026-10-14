@@ -1,88 +1,60 @@
 /**
- * ReceiptScanSheet — bottom-sheet AI receipt scanner matching the Health tab's Rx scan pattern.
- * Dark handle → CubeAI header → animated scan box → Camera / Library / PDF source picker → review items.
+ * ReceiptScanSheet — full-page AI receipt scanner, Figma field-card rhythm.
+ * Was a dark Modal-based bottom sheet with hardcoded hex colors and a
+ * 2-step wizard inside the sheet [live-requested: "the scan receipt should
+ * be individual page overlay like other pages? with figma rhythm" /
+ * flatten decision: one scrolling page instead of a stepped wizard].
+ * Rendered inside a FullPageOverlay by its caller (GroceryScreen.tsx),
+ * same as AddItemSheet/CreateRunSheet — this component itself is just the
+ * page body, not its own Modal.
  */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
-  View, Text, Modal, Pressable, TouchableOpacity, ActivityIndicator, Alert,
-  ScrollView, KeyboardAvoidingView, Platform, Animated, Easing,
+  View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 // SDK 54's default expo-file-system export dropped readAsStringAsync as a
 // hard runtime error, not just a deprecation warning — /legacy is the
 // documented migration path.
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
-import Svg, { Path, Rect, Circle, Polyline } from 'react-native-svg';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { supabase, uploadReceiptScanPhoto } from '@/lib/supabase';
 import { compressImage } from '@/lib/compressImage';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
-import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { useFamilyStore } from '@/store/familyStore';
 
-// ── SVG icons ─────────────────────────────────────────────────────────────────
-const ScanLineIcon = ({ c, size = 24 }: { c: string; size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Rect x={3} y={2} width={14} height={18} rx={2} stroke={c} strokeWidth={1.5} fill="none" />
-    <Path d="M7 7h6M7 10h6M7 13h4" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-    <Path d="M19 9l2 2-2 2" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-    <Path d="M1 12h20" stroke={c} strokeWidth={1.2} strokeLinecap="round" strokeDasharray="3 2" fill="none" />
-  </Svg>
-);
-const CameraIcon = ({ c }: { c: string }) => (
-  <Svg width={32} height={32} viewBox="0 0 24 24">
-    <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-    <Circle cx={12} cy={13} r={4} stroke={c} strokeWidth={1.5} fill="none" />
-  </Svg>
-);
-const GalleryIcon = ({ c }: { c: string }) => (
-  <Svg width={32} height={32} viewBox="0 0 24 24">
-    <Rect x={3} y={3} width={18} height={18} rx={2} stroke={c} strokeWidth={1.5} fill="none" />
-    <Circle cx={8.5} cy={8.5} r={1.5} fill={c} />
-    <Path d="M21 15l-5-5L5 21" stroke={c} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
-const FileIcon = ({ c }: { c: string }) => (
-  <Svg width={32} height={32} viewBox="0 0 24 24">
-    <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-    <Polyline points="14 2 14 8 20 8" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-  </Svg>
-);
-const CheckIcon = ({ c }: { c: string }) => (
-  <Svg width={13} height={13} viewBox="0 0 24 24">
-    <Path d="M20,6 L9,17 L4,12" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
-const BotIcon = ({ c }: { c: string }) => (
-  <Svg width={16} height={16} viewBox="0 0 24 24">
-    <Rect x={3} y={8} width={18} height={13} rx={2} stroke={c} strokeWidth={2} fill="none" />
-    <Path d="M9,3 L12,3 M12,3 L15,3 M12,3 L12,8" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-    <Circle cx={9} cy={14} r={1.5} fill={c} />
-    <Circle cx={15} cy={14} r={1.5} fill={c} />
-    <Path d="M9,18 C9,17 10.3,16 12,16 C13.7,16 15,17 15,18" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-  </Svg>
-);
-const BackIcon = ({ c }: { c: string }) => (
-  <Svg width={20} height={20} viewBox="0 0 24 24">
-    <Path d="M19 12H5M12 19l-7-7 7-7" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
-const XIcon = ({ c }: { c: string }) => (
-  <Svg width={20} height={20} viewBox="0 0 24 24">
-    <Path d="M18 6L6 18M6 6l12 12" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-  </Svg>
-);
+// "Gemini rhythm" + content-group card shape, copied from
+// BringInPrescriptionScreen.tsx (the Health tab's scan-prescription
+// screen) [live-requested: "like we should do like med scan like
+// that"] — same `‹ Back` nav line, eyebrow row, big title, type badge,
+// one white rounded content-group card with icon rows + solid CTA, and
+// a bottom privacy/disclaimer card, instead of this screen's earlier
+// animated-scan-box layout.
+function contentGroupStyle(cardBg: string, isDark: boolean, border: string) {
+  return isDark
+    ? { backgroundColor: cardBg, borderRadius: 22, borderWidth: 1, borderColor: border, padding: 16, gap: 14 as const }
+    : {
+        backgroundColor: cardBg, borderRadius: 22, padding: 16, gap: 14 as const,
+        shadowColor: '#102347', shadowOpacity: 0.05, shadowRadius: 20, shadowOffset: { width: 0, height: 6 },
+        elevation: 3,
+      };
+}
 
-// ── Category colors ───────────────────────────────────────────────────────────
+// Category dot colors — a small fixed swatch keyed by AI-returned category
+// string, same kind of data-driven color array as a tag/category picker
+// (CLAUDE.md rule 1's exception: "color pickers and color-swatch arrays
+// where the user is explicitly choosing/seeing a brand category color"),
+// not a decorative hardcode.
 const CAT_COLOR: Record<string, string> = {
   produce: '#10B981', dairy: '#3B82F6', meat: '#EF4444', seafood: '#0EA5E9',
   bakery: '#F59E0B', frozen: '#6366F1', snacks: '#F97316', beverages: '#06B6D4',
   grains: '#84CC16', cleaning: '#8B5CF6', personal_care: '#EC4899', other: '#9CA3AF',
 };
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface ExtractedItem {
   name: string; quantity: number; unit: string;
   unitPrice: number; totalPrice: number; category: string;
@@ -97,74 +69,41 @@ export interface ReceiptScanSheetProps {
   colors: any;
   isDark: boolean;
   onSuccess?: (receipt: any) => void;
+  requestAnimatedClose?: () => void;
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
 export function ReceiptScanSheet({
-  visible, onClose, familyId, memberId, memberName, colors, isDark, onSuccess,
+  visible, onClose, familyId, memberId, memberName, colors, isDark, onSuccess, requestAnimatedClose,
 }: ReceiptScanSheetProps) {
   const insets = useSafeAreaInsets();
-  const [page, setPage]         = useState<1 | 2>(1);
+  const familySurname = useFamilyStore(s => s.familyName);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [items, setItems]       = useState<ExtractedItem[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [store, setStore]       = useState('');
-  const [receiptDate, setReceiptDate] = useState('');
   const [total, setTotal]       = useState(0);
-  // Was a plain `saving` state — a fast double-tap on "Add items to List"
-  // could fire addToList twice, inserting each selected receipt item into
-  // grocery_items twice [live-requested app-wide: "We should avoid double
-  // tab submit for all the app wide"].
+  // Which of the two scan flows this is — sent explicitly to the edge
+  // function instead of making the AI re-guess every call [live-requested:
+  // "we should not treat this as receipt right if it's groceries .. just
+  // to clarify" / "we send that receipt / list tag in the request as
+  // these are 2 separate call pages"].
+  const [scanSource, setScanSource] = useState<'receipt' | 'photo'>('receipt');
   const { submitting: saving, guard } = useSubmitGuard();
   const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
-  // Holds whichever picker action was blocked pending consent, so "I agree" can replay it.
   const pendingScanAction = useRef<(() => void) | null>(null);
 
-  // ── Scan beam animation ───────────────────────────────────────────────────
-  const beamY     = useRef(new Animated.Value(0)).current;
-  const pulseScale = useRef(new Animated.Value(1)).current;
-  const dotOpacity = useRef([0,1,2].map(() => new Animated.Value(0.3))).current;
-
-  useEffect(() => {
-    if (!scanning) { beamY.setValue(0); pulseScale.setValue(1); return; }
-    const beam = Animated.loop(
-      Animated.sequence([
-        Animated.timing(beamY, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(beamY, { toValue: 0, duration: 1300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ])
-    );
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseScale, { toValue: 1.12, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulseScale, { toValue: 1.00, duration: 600, useNativeDriver: true }),
-      ])
-    );
-    const dots = Animated.loop(
-      Animated.stagger(180, dotOpacity.map(op =>
-        Animated.sequence([
-          Animated.timing(op, { toValue: 1,   duration: 300, useNativeDriver: true }),
-          Animated.timing(op, { toValue: 0.3, duration: 300, useNativeDriver: true }),
-        ])
-      ))
-    );
-    beam.start(); pulse.start(); dots.start();
-    return () => { beam.stop(); pulse.stop(); dots.stop(); };
-  }, [scanning]);
-
   const reset = useCallback(() => {
-    setPage(1); setScanning(false); setScanError(null);
+    setScanning(false); setScanError(null);
     setItems([]); setSelected(new Set());
-    setStore(''); setReceiptDate(''); setTotal(0);
+    setStore(''); setTotal(0); setScanSource('receipt');
   }, []);
 
-  const handleClose = () => { reset(); onClose(); };
+  const handleClose = () => { reset(); (requestAnimatedClose ?? onClose)(); };
 
-  // ── Core scan logic ───────────────────────────────────────────────────────
   const runScan = async (base64: string, localUri?: string) => {
     setScanning(true); setScanError(null);
     try {
-      // Upload compressed image to storage so history can show the photo
       let imageUrl: string | undefined;
       if (localUri) {
         try {
@@ -174,18 +113,31 @@ export function ReceiptScanSheet({
         }
       }
       const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {
-        body: { familyId, scannedById: memberId, imageBase64: base64, imageUrl },
+        body: { familyId, scannedById: memberId, imageBase64: base64, imageUrl, source: scanSource },
       });
-      if (error) throw new Error(error.message);
-      if (data?.error === 'not_a_receipt') throw new Error(data.message ?? 'This image doesn\'t look like a receipt.');
+      if (error) {
+        // supabase-js's FunctionsHttpError only carries a generic "non-2xx
+        // status code" message — the edge function's own readable JSON body
+        // ({error, message}) lands on error.context (a Response), which was
+        // never read here, so every failure (bad image, missing API key,
+        // Gemini outage, etc.) surfaced the same useless string to the user
+        // [live-reported: "this edge is giving non 2xx, handle all error
+        // scenarios and retrun user readable errors"].
+        let readableMessage = error.message;
+        try {
+          const body = await error.context?.json?.();
+          if (body?.message || body?.error) readableMessage = body.message ?? body.error;
+        } catch { /* context wasn't JSON / already consumed — fall back */ }
+        throw new Error(readableMessage || 'Could not read this receipt. Try again.');
+      }
+      if (data?.error === 'not_a_receipt') throw new Error(data.message ?? 'This doesn\'t look like a receipt or a photo of groceries.');
       if (data?.error === 'not_grocery')   throw new Error(data.message ?? 'Only grocery/shopping receipts are supported.');
+      if (data?.error) throw new Error(data.message ?? data.error);
       const extracted: ExtractedItem[] = data.items ?? [];
       setItems(extracted);
       setSelected(new Set(extracted.map((_, i) => i)));
       setStore(data.store ?? '');
-      setReceiptDate(data.date ?? '');
       setTotal(data.total ?? 0);
-      setPage(2);
     } catch (err: any) {
       setScanError(err?.message ?? 'Could not read this receipt. Try again.');
     } finally {
@@ -193,8 +145,6 @@ export function ReceiptScanSheet({
     }
   };
 
-  // Consent gate: if the member hasn't agreed yet, show the sheet and stash
-  // the picker action to replay on "I agree" rather than let the scan fire.
   const withAiConsent = (action: () => void) => {
     if (!consentChecked || consented) { action(); return; }
     pendingScanAction.current = action;
@@ -234,7 +184,7 @@ export function ReceiptScanSheet({
       for (const item of toAdd) {
         await supabase.from('grocery_items').insert({
           family_id: familyId, name: item.name, category: item.category,
-          quantity: item.quantity, estimated_price: item.totalPrice, store_preference: store,
+          quantity: item.quantity, unit: item.unit, estimated_price: item.totalPrice, store_preference: store,
         });
       }
       onSuccess?.({ store, items: toAdd, scannedBy: memberId, total });
@@ -250,28 +200,22 @@ export function ReceiptScanSheet({
     setSelected(next);
   };
 
-  const bg   = isDark ? '#13131F' : '#F8F8FC';
-  const bdr  = isDark ? '#1E2A42' : '#E5E7EB';
-  const txtP = isDark ? '#fff' : '#111';
-  const txtS = isDark ? '#aaa' : '#666';
-  const P    = BRAND.purple;
-
-  // Animated sheet height: page1 = compact 54%, page2 = 62–78% based on item count
-  const sheetHeight = useRef(new Animated.Value(0.54)).current;
-  useEffect(() => {
-    const targetRatio = page === 2
-      ? Math.min(0.78, 0.42 + items.length * 0.032)
-      : 0.54;
-    Animated.spring(sheetHeight, { toValue: targetRatio, useNativeDriver: false, tension: 60, friction: 12 }).start();
-  }, [page, items.length]);
+  const P = colors.primary;
+  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const border = isDark ? colors.border : GEMINI.border;
+  const cardBg = isDark ? colors.card : GEMINI.cardBg;
+  const pageBg = isDark ? colors.background : GEMINI.canvas;
+  const accent = colors.amber;
+  const accentL = colors.amberLight;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <View style={{ flex: 1, backgroundColor: pageBg }}>
       <AiConsentSheet
         visible={showConsent}
         memberId={memberId}
         familyId={familyId}
-        colors={{ card: bg, textPrimary: txtP, textSecondary: txtS, border: bdr, accent: P }}
+        colors={colors}
         isDark={isDark}
         onAgree={() => {
           setShowConsent(false);
@@ -281,216 +225,221 @@ export function ReceiptScanSheet({
         }}
         onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
       />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+      {/* Header — matches the other Grocery sub-pages' rhythm (Shopping
+          Trips / Purchase History in GroceryScreen.tsx): eyebrow row
+          (family name + member name), then a big tappable title that IS
+          the close action, no separate back-link line
+          [live-requested: "make this scan page header rythm to match
+          other sub pages" — was previously borrowed from
+          BringInPrescriptionScreen.tsx's med-scan layout instead]. */}
+      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
+        backgroundColor: pageBg, gap: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: bodyC }}>
+            {(familySurname ?? 'FAMILY SPACE').toUpperCase()}
+          </Text>
+          {memberName && <Text style={{ fontSize: 13, fontWeight: '500', color: accent }}>{memberName}</Text>}
+        </View>
+        <TouchableOpacity onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: titleC }}>
+            Scan Groceries
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-          <Animated.View style={{ backgroundColor: bg, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-            height: sheetHeight.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
-            paddingBottom: insets.bottom || 16 }}>
+      <ScrollView showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>
 
-            {/* ── Step progress ── */}
-            <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 }}>
-              {[1, 2].map(s => (
-                <View key={s} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: page >= s ? P : (isDark ? '#333' : '#E5E7EB') }} />
-              ))}
+        {/* Type badge */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ backgroundColor: accent + '18', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: accent }}>Grocery · receipt or photo</Text>
+          </View>
+        </View>
+
+        <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19 }}>
+          Choose a source. CubeAI reads a receipt or a photo of your groceries and lists out each item so you can add them straight to your Shopping List.
+        </Text>
+
+        {/* Receipt vs plain-photo toggle — sent to the AI explicitly so it
+            isn't re-guessing which kind of image this is every call
+            [live-requested: "we should not treat this as receipt right if
+            it's groceries .. just to clarify" / "we send that receipt /
+            list tag in the request as these are 2 separate call pages"]. */}
+        <View style={{ flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
+          {(['receipt', 'photo'] as const).map(s => (
+            <TouchableOpacity key={s} onPress={() => setScanSource(s)} disabled={scanning}
+              style={{ flex: 1, paddingVertical: 10, alignItems: 'center',
+                backgroundColor: scanSource === s ? accent : 'transparent' }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: scanSource === s ? '#FFFFFF' : bodyC }}>
+                {s === 'receipt' ? 'Printed receipt' : 'Photo of groceries'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {scanning && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: accentL, borderRadius: 14, padding: 12 }}>
+            <ActivityIndicator size="small" color={accent} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: titleC, flex: 1 }}>CubeAI is reading your photo…</Text>
+          </View>
+        )}
+
+        {scanError && (
+          <View style={{ flexDirection: 'row', gap: 8, backgroundColor: colors.danger + '15', borderRadius: 12, padding: 12 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.danger, flex: 1, lineHeight: 18 }}>{scanError}</Text>
+          </View>
+        )}
+
+        {/* Source picker card */}
+        <View style={contentGroupStyle(cardBg, isDark, border)}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Choose how to bring it in</Text>
+
+          {/* Camera */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: accent + '18', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="camera-outline" size={19} color={accent} />
             </View>
-
-            {/* ── Handle ── */}
-            <View style={{ alignItems: 'center', paddingTop: 6 }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? '#444' : '#DDD' }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>Take a photo</Text>
+              <Text style={{ fontSize: 12, color: bodyC, marginTop: 1 }}>
+                {scanSource === 'receipt' ? 'Keep the receipt flat and in frame.' : 'Lay your groceries out in frame.'}
+              </Text>
             </View>
+          </View>
+          <TouchableOpacity onPress={pickCamera} disabled={scanning}
+            style={{ backgroundColor: GEMINI.blue, borderRadius: 14, paddingVertical: 13, alignItems: 'center', opacity: scanning ? 0.6 : 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Scan</Text>
+          </TouchableOpacity>
 
-            {/* ── Header ── */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {page === 2 && !scanning && !saving && (
-                  <TouchableOpacity onPress={() => { setPage(1); setScanError(null); }} style={{ marginRight: 4, padding: 4 }}>
-                    <BackIcon c={txtS} />
-                  </TouchableOpacity>
-                )}
-                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: P + '20', alignItems: 'center', justifyContent: 'center' }}>
-                  <BotIcon c={BRAND.purple2} />
-                </View>
-                <View>
-                  <Text style={{ fontSize: 15, fontWeight: '900', color: txtP }}>
-                    {page === 1 ? 'Scan Receipt' : `${items.length} Items Found`}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: txtS, marginTop: 1 }}>
-                    Step {page} of 2 · {page === 1 ? (scanning ? 'Reading with AI…' : 'Choose source') : `${store || 'Unknown store'}${total > 0 ? ` · $${total.toFixed(2)}` : ''}`}
-                  </Text>
-                </View>
+          <View style={{ height: 1, backgroundColor: border, marginVertical: 2 }} />
+
+          {/* Photo library + file */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: accent + '18', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="cloud-upload-outline" size={19} color={accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>Choose an existing file</Text>
+              <Text style={{ fontSize: 12, color: bodyC, marginTop: 1 }}>Photo or image file — one receipt or grocery photo at a time.</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={pickLibrary} disabled={scanning}
+              style={{ flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
+                borderWidth: 1, borderColor: border, backgroundColor: cardBg, opacity: scanning ? 0.6 : 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? accent : GEMINI.linkBlue }}>Upload photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={pickPDF} disabled={scanning}
+              style={{ flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
+                borderWidth: 1, borderColor: border, backgroundColor: cardBg, opacity: scanning ? 0.6 : 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? accent : GEMINI.linkBlue }}>Upload file</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Review items — only once a scan has produced results */}
+        {items.length > 0 && (
+          <View style={contentGroupStyle(cardBg, isDark, border)}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Review items</Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: accentL, borderRadius: 14, padding: 14, gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: bodyC, textTransform: 'uppercase', letterSpacing: 0.5 }}>Store (applied to the whole list)</Text>
+                {/* Confirm/correct the store once for the whole scanned batch
+                    instead of it only ever being whatever AI/OCR guessed
+                    [live-requested: "ask the whole list once done with the
+                    inline store prefernce"] — every item below shares this
+                    one value as its store_preference on add. */}
+                <TextInput
+                  value={store} onChangeText={setStore}
+                  placeholder="e.g. Walmart" placeholderTextColor={bodyC}
+                  style={{ fontSize: 15, fontWeight: '800', color: accent, padding: 0 }}
+                />
               </View>
-              <TouchableOpacity onPress={handleClose} style={{ padding: 4 }}>
-                <XIcon c={txtS} />
+              {total > 0 && (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: bodyC, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: accent }}>${total.toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: bodyC, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {selected.size} of {items.length} selected
+              </Text>
+              <TouchableOpacity onPress={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((_, i) => i)))}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: GEMINI.linkBlue }}>
+                  {selected.size === items.length ? 'Deselect all' : 'Select all'}
+                </Text>
               </TouchableOpacity>
             </View>
 
-            {/* ══ PAGE 1 — Source picker ══ */}
-            {page === 1 && (
-              <View style={{ paddingHorizontal: 20, paddingBottom: 24, gap: 20 }}>
-
-                {/* Animated scan preview box */}
-                <View style={{ height: 160, borderRadius: 20, overflow: 'hidden', backgroundColor: isDark ? '#0D1424' : '#F0F4FF', borderWidth: 1.5, borderColor: P + '40', alignItems: 'center', justifyContent: 'center' }}>
-                  {scanning ? (
-                    <>
-                      {/* Corner brackets */}
-                      {[
-                        { top: 10, left: 10, rotate: '0deg' },
-                        { top: 10, right: 10, rotate: '90deg' },
-                        { bottom: 10, right: 10, rotate: '180deg' },
-                        { bottom: 10, left: 10, rotate: '270deg' },
-                      ].map((pos, i) => (
-                        <View key={i} style={{ position: 'absolute', ...(pos as any), width: 24, height: 24 }}>
-                          <Svg width={24} height={24} viewBox="0 0 24 24" style={{ transform: [{ rotate: pos.rotate }] }}>
-                            <Path d="M2 8V2h6" stroke={P} strokeWidth={2.5} strokeLinecap="round" fill="none" />
-                          </Svg>
-                        </View>
-                      ))}
-                      {/* Scan beam */}
-                      <Animated.View style={{ position: 'absolute', left: 12, right: 12, height: 2, borderRadius: 1, backgroundColor: P, opacity: 0.85,
-                        transform: [{ translateY: beamY.interpolate({ inputRange: [0, 1], outputRange: [-65, 65] }) }] }} />
-                      {/* Icon */}
-                      <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
-                        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: P + '25', alignItems: 'center', justifyContent: 'center' }}>
-                          <ScanLineIcon c={P} size={26} />
-                        </View>
-                      </Animated.View>
-                      {/* Dot loader */}
-                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
-                        {dotOpacity.map((op, i) => (
-                          <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: BRAND.purple2, opacity: op }} />
-                        ))}
-                      </View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: txtS, marginTop: 10 }}>CubeAI is reading your receipt…</Text>
-                    </>
-                  ) : (
-                    <View style={{ alignItems: 'center', gap: 8 }}>
-                      <ScanLineIcon c={isDark ? '#444' : '#CCC'} size={44} />
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#555' : '#BBB' }}>Choose how to add your receipt</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Error banner */}
-                {scanError && (
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: '#EF444420', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#EF444440' }}>
-                    <Text style={{ fontSize: 12, color: '#EF4444', flex: 1, fontWeight: '600', lineHeight: 18 }}>{scanError}</Text>
+            {items.map((item, idx) => {
+              const checked = selected.has(idx);
+              const catColor = CAT_COLOR[item.category] ?? bodyC;
+              return (
+                <TouchableOpacity key={idx} onPress={() => toggleItem(idx)} activeOpacity={0.75}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12,
+                    backgroundColor: checked ? accentL : (isDark ? colors.surface : '#F8FAFC'),
+                    borderWidth: 1.5, borderColor: checked ? accent : border }}>
+                  <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 2,
+                    borderColor: checked ? accent : border, backgroundColor: checked ? accent : 'transparent',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    {checked && <Ionicons name="checkmark" size={14} color="#fff" />}
                   </View>
-                )}
-
-                {/* Source buttons */}
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  {[
-                    { label: 'Camera', sub: 'Scan now', icon: <CameraIcon c={P} />, onPress: pickCamera },
-                    { label: 'Photos', sub: 'From library', icon: <GalleryIcon c={P} />, onPress: pickLibrary },
-                    { label: 'File', sub: 'Image file', icon: <FileIcon c={P} />, onPress: pickPDF },
-                  ].map(btn => (
-                    <TouchableOpacity key={btn.label} disabled={scanning} onPress={btn.onPress}
-                      style={withAndroidShadowFix({ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
-                        backgroundColor: isDark ? '#1E1E2E' : '#fff', borderWidth: 1.5, borderColor: bdr, gap: 8, opacity: scanning ? 0.45 : 1,
-                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 })}>
-                      {btn.icon}
-                      <Text style={{ fontSize: 12, fontWeight: '800', color: txtP }}>{btn.label}</Text>
-                      <Text style={{ fontSize: 10, fontWeight: '600', color: txtS, marginTop: -4 }}>{btn.sub}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Attribution hint */}
-                <Text style={{ fontSize: 11, color: txtS, textAlign: 'center' }}>
-                  Scanned by <Text style={{ fontWeight: '700', color: BRAND.purple2 }}>{memberName ?? 'You'}</Text> · Grocery receipts only · Google Gemini
-                </Text>
-              </View>
-            )}
-
-            {/* ══ PAGE 2 — Review items ══ */}
-            {page === 2 && (
-              <>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}>
-
-                  {/* Store + total summary */}
-                  <View style={{ backgroundColor: isDark ? '#0D1424' : '#F5F3FF', borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E2A42' : '#DDD6FE', padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 12 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Store</Text>
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#C4B5FD' : P }}>{store || 'Unknown'}</Text>
-                    </View>
-                    {total > 0 && (
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Total</Text>
-                        <Text style={{ fontSize: 16, fontWeight: '900', color: BRAND.amber }}>${total.toFixed(2)}</Text>
-                      </View>
-                    )}
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Scanned by</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#C4B5FD' : P }}>{memberName ?? 'You'}</Text>
-                    </View>
-                  </View>
-
-                  {/* Select-all row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2, marginBottom: 4 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: txtS, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      {selected.size} of {items.length} selected
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: catColor }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }} numberOfLines={1}>{item.name}</Text>
+                    <Text style={{ fontSize: 11, color: bodyC, marginTop: 1 }}>
+                      {item.quantity}{item.unit !== 'each' ? ` ${item.unit}` : ''} · <Text style={{ color: catColor, fontWeight: '600' }}>{item.category}</Text>
                     </Text>
-                    <TouchableOpacity onPress={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((_, i) => i)))}>
-                      <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple2 }}>
-                        {selected.size === items.length ? 'Deselect all' : 'Select all'}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
+                  {item.totalPrice > 0 && (
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: checked ? accent : bodyC }}>
+                      ${item.totalPrice.toFixed(2)}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
 
-                  {/* Items */}
-                  {items.map((item, idx) => {
-                    const checked = selected.has(idx);
-                    const catColor = CAT_COLOR[item.category] ?? '#9CA3AF';
-                    return (
-                      <TouchableOpacity key={idx} onPress={() => toggleItem(idx)} activeOpacity={0.75}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, marginBottom: 4,
-                          backgroundColor: checked ? (isDark ? 'rgba(146,97,199,0.12)' : '#F5F3FF') : (isDark ? '#1E1E2E' : '#F9FAFB'),
-                          borderWidth: 1.5, borderColor: checked ? P + '60' : bdr }}>
-                        <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: checked ? P : (isDark ? '#334155' : '#D1D5DB'), backgroundColor: checked ? P : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                          {checked && <CheckIcon c="#fff" />}
-                        </View>
-                        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: catColor }} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: txtP }} numberOfLines={1}>{item.name}</Text>
-                          <Text style={{ fontSize: 11, color: txtS, marginTop: 1 }}>
-                            {item.quantity}{item.unit !== 'each' ? ` ${item.unit}` : ''} · <Text style={{ color: catColor, fontWeight: '600' }}>{item.category}</Text>
-                          </Text>
-                        </View>
-                        {item.totalPrice > 0 && (
-                          <Text style={{ fontSize: 14, fontWeight: '800', color: checked ? (isDark ? '#C4B5FD' : P) : txtS }}>
-                            ${item.totalPrice.toFixed(2)}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={handleClose}
+                style={{ flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#F8FAFC',
+                  alignItems: 'center', borderWidth: 1, borderColor: border }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: bodyC }}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={addToList} disabled={selected.size === 0 || saving}
+                style={{ flex: 2, paddingVertical: 13, borderRadius: 14,
+                  backgroundColor: selected.size === 0 ? border : GEMINI.blue,
+                  alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                {saving
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>
+                      Add {selected.size} item{selected.size !== 1 ? 's' : ''} to List →
+                    </Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
-                {/* Footer */}
-                <View style={{ borderTopWidth: 1, borderTopColor: bdr, padding: 16, gap: 10, backgroundColor: bg }}>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity onPress={handleClose}
-                      style={{ flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: isDark ? '#1E293B' : '#F3F4F6', alignItems: 'center', borderWidth: 1, borderColor: bdr }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: txtS }}>Discard</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={addToList} disabled={selected.size === 0 || saving}
-                      style={{ flex: 2, paddingVertical: 13, borderRadius: 14, backgroundColor: selected.size === 0 ? '#374151' : P, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-                      {saving
-                        ? <ActivityIndicator color="#fff" size="small" />
-                        : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>
-                            Add {selected.size} item{selected.size !== 1 ? 's' : ''} to List →
-                          </Text>
-                      }
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </>
-            )}
-          </Animated.View>
+        {/* Privacy card — same Shield-card pattern as BringInPrescriptionScreen.tsx */}
+        <View style={{ flexDirection: 'row', gap: 12, borderRadius: 18, padding: 14,
+          backgroundColor: isDark ? accentL + '22' : accentL, borderWidth: 1, borderColor: accent + '30' }}>
+          <Ionicons name="shield-checkmark-outline" size={18} color={accent} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>Your photo stays private</Text>
+            <Text style={{ fontSize: 12, color: bodyC, lineHeight: 17 }}>
+              AI reads the receipt or photo to extract items, quantities and prices (when visible). The original image is never stored by AI — only the items you approve are added to your Shopping List.
+            </Text>
+          </View>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+
+      </ScrollView>
+    </View>
   );
 }

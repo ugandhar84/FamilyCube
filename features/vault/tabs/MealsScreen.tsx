@@ -328,6 +328,15 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
     },
   })).current;
 
+  const isKid = (activeMember as any)?.role === 'kid';
+
+  // "A little inspiration" is CubeAI planning the WEEK — dropped for kids
+  // specifically (teens keep it) rather than letting them browse-then-save,
+  // since every AI idea a kid taps "Save to recipe book" on would otherwise
+  // land in the parent review queue as a low-effort pick [live-requested:
+  // "shall we remove this completely?" ... "itis oly for kids removal"].
+  // Kids still contribute real recipes via "Family recipe book"'s own
+  // Add form, which already routes through review.
   const categories = [
     {
       key: 'week',
@@ -338,7 +347,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
       bg: colors.primaryLight,
       onPress: () => setShowWeekPlan(true),
     },
-    {
+    ...(isKid ? [] : [{
       key: 'ai',
       title: 'A little inspiration',
       subtitle: 'CubeAI suggests meals for the week — pick your favourites and add them in one tap',
@@ -346,7 +355,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
       color: colors.pink,
       bg: colors.pinkLight,
       onPress: () => { setAiOpen(true); setShowInspirationPage(true); },
-    },
+    }]),
     {
       key: 'recipes',
       title: 'Family recipe book',

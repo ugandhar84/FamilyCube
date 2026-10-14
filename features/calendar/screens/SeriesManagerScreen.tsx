@@ -15,18 +15,19 @@
  *  - multi-select for arbitrary occurrences (e.g. keep the ones already
  *    completed/confirmed, wipe the rest)
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
-import { useEventStore, type FamilyEvent } from '@/store/eventStore';
+import { useEventStore, fromRow, type FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { isEventPast } from '@/features/calendar/components/calendarDateHelpers';
 import { showAlert } from '@/components/AppAlert';
 import { showToast } from '@/components/AppToast';
+import { supabase } from '@/lib/supabase';
 
 const FREQ_LABEL: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -37,19 +38,33 @@ export default function SeriesManagerScreen() {
   const members = useFamilyStore(s => s.members);
   const { rangeEvents, dayEvents, deleteEvent, deleteEventScoped } = useEventStore();
 
-  // The series' rows may span further than whatever window Agenda/Week
-  // happened to have loaded (loadRange is a rolling SWR window, not "the
-  // whole series") — rangeEvents/dayEvents together are what's already in
-  // memory, good enough for a same-session drill-in from the chip that
-  // just rendered this exact series. A cold-start deep link (not this
-  // screen's real entry path today) would show whatever's cached instead
-  // of the full 84-row set; acceptable since the only way in is tapping a
-  // chip that already has the full series loaded moments earlier.
+  // rangeEvents/dayEvents are a rolling SWR window, not "the whole
+  // series" — a series created just now (e.g. from a narrow week-view
+  // range) may only have its anchor row loaded in memory yet, with the
+  // other occurrences further out than whatever window was fetched.
+  // Live-reported: a freshly-created 9-occurrence series showed "1
+  // occurrence" here because of exactly this. Fetch the full series
+  // straight from the DB by seriesId so this screen is always accurate
+  // regardless of what Agenda/Week happened to have loaded, falling back
+  // to the in-memory rows (merged in) so any optimistic local-only state
+  // isn't lost while the fetch is in flight.
+  const [dbOccurrences, setDbOccurrences] = useState<FamilyEvent[] | null>(null);
+  useEffect(() => {
+    if (!seriesId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from('calendar_events')
+        .select('*').eq('series_id', seriesId).is('deleted_at', null);
+      if (!cancelled && !error && data) setDbOccurrences(data.map(fromRow));
+    })();
+    return () => { cancelled = true; };
+  }, [seriesId]);
+
   const occurrences = useMemo(() => {
     const byId = new Map<string, FamilyEvent>();
-    for (const ev of [...rangeEvents, ...dayEvents]) if (ev.seriesId === seriesId) byId.set(ev.id, ev);
+    for (const ev of [...rangeEvents, ...dayEvents, ...(dbOccurrences ?? [])]) if (ev.seriesId === seriesId) byId.set(ev.id, ev);
     return [...byId.values()].sort((a, b) => a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date));
-  }, [rangeEvents, dayEvents, seriesId]);
+  }, [rangeEvents, dayEvents, dbOccurrences, seriesId]);
 
   const anchor = occurrences.find(ev => ev.isSeriesAnchor) ?? occurrences[0];
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

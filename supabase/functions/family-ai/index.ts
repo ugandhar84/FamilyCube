@@ -572,6 +572,19 @@ Return JSON: {
       reminder/notification/alert (e.g. "enable call reminder", "call notification").
       false for a plain mention of a phone call that is the task itself ("call the
       dentist", "phone call with tutor").
+    pickupLocation: string | null — ONLY when category is "transport": where the
+      rider is being picked up FROM (e.g. "Eastfield library", "home", "school").
+      Clean place name, no leading "from". Null if not mentioned or category isn't
+      transport.
+    dropoffLocation: string | null — ONLY when category is "transport": where the
+      rider is being taken TO (e.g. "soccer practice", "Maya's house"). Clean place
+      name, no leading "to"/"at". Null if not mentioned or category isn't transport.
+    rideDirection: "pickup" | "dropoff" | "both" | null — ONLY when category is
+      "transport": which leg(s) are actually being asked for. "Pick me up from X" /
+      "collect me from X" -> "pickup". "Drop me off at X" / "take me to X" ->
+      "dropoff". Both a pickup location AND a dropoff location named, or language
+      implying a round trip ("...then pick me up after at 6pm") -> "both". Null if
+      category isn't transport or direction is unclear.
   },
   errand: null | {
     category: one of ${JSON.stringify(errandSubcategories)} (pick the closest match, never invent a new value — this must be one of these exact values, they map directly to a database constraint),

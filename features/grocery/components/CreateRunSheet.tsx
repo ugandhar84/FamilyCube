@@ -39,7 +39,13 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
   const [pickerMode, setPickerMode] = useState<'none' | 'date' | 'time'>('none');
 
   const DEFAULT_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', "Trader Joe's", 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
-  const STORE_SUGGESTIONS = [...new Set([...pastStores, ...DEFAULT_SUGGESTIONS])].slice(0, 9);
+  // Pinned branches first, then past runs, then the generic default list
+  // [live-requested: "these pinned location should store on the shopping
+  // store list as a suggestion as prefernce in first place along with
+  // other store"] — was pinned-only-or-defaults-only (never mixed with
+  // past/default once any pin existed), so a family with one pinned store
+  // lost every other suggestion entirely.
+  const STORE_SUGGESTIONS = [...new Set([...pinnedStoreNames, ...pastStores, ...DEFAULT_SUGGESTIONS])].slice(0, 9);
 
   const savingRef = useRef(false);
   const handleSave = async () => {
@@ -137,33 +143,23 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
           shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
           <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>Choose your branch</Text>
 
-          {/* Pinned store rows */}
-          {pinnedStoreNames.length > 0 ? (
-            pinnedStoreNames.map((storeName, i) => (
-              <Pressable key={storeName} onPress={() => setStore(storeName)}
-                style={{ gap: 2 }}>
-                <Text style={{ fontSize: 15, fontWeight: store === storeName ? '700' : '600', color: colors.textPrimary }}>
-                  {store === storeName ? 'Selected · ' : ''}{storeName}
-                </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
-                  Pinned branch{store !== storeName ? ' · not selected' : ''}
-                </Text>
-                {i < pinnedStoreNames.length - 1 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />}
-              </Pressable>
-            ))
-          ) : (
-            STORE_SUGGESTIONS.slice(0, 3).map((s, i) => (
+          {/* Store rows — pinned branches first (real mapped locations),
+              then past/default suggestions, all in one list so a pinned
+              store doesn't crowd out everything else. */}
+          {STORE_SUGGESTIONS.slice(0, 3).map((s, i) => {
+            const isPinned = pinnedStoreNames.includes(s);
+            return (
               <Pressable key={s} onPress={() => setStore(s)} style={{ gap: 2 }}>
                 <Text style={{ fontSize: 15, fontWeight: store === s ? '700' : '600', color: colors.textPrimary }}>
                   {store === s ? 'Selected · ' : ''}{s}
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
-                  {store === s ? 'Selected store' : 'not selected'}
+                  {isPinned ? `Pinned branch${store !== s ? ' · not selected' : ''}` : (store === s ? 'Selected store' : 'not selected')}
                 </Text>
-                {i < 2 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />}
+                {i < Math.min(STORE_SUGGESTIONS.length, 3) - 1 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />}
               </Pressable>
-            ))
-          )}
+            );
+          })}
 
           {/* Type custom store */}
           <View style={{ borderRadius: 10, borderWidth: 1, borderColor: store ? P : colors.border,

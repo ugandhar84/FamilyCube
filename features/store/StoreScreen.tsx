@@ -34,6 +34,10 @@ const BODY_CLR_LIGHT = '#4E5C56';
 const BORDER    = '#DDD6CC';
 const AMBER_TXT = '#B5720A';
 const BLUE_BTN  = '#3B5FE4';
+// Muted blue — same CTA_BLUE used on Kid Hub's quest CTAs and the Rewards
+// Dashboard's Redeem button, kept local here for the same no-brand-token
+// reason [live-requested: "muted blue color"].
+const CTA_BLUE  = '#5B7FA6';
 const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
 
 const FORM_TITLE_CLR = TITLE_CLR;
@@ -268,8 +272,9 @@ function DetailField({ label, value, colors, isDark }: {
   label: string; value: string; colors: any; isDark: boolean;
 }) {
   return (
-    <View style={{ borderWidth: 1, borderColor: isDark ? colors.border : FORM_BORDER, borderRadius: 14,
-      backgroundColor: isDark ? colors.card : FORM_CARD_BG, paddingHorizontal: 16, paddingVertical: 12 }}>
+    <View style={{ borderWidth: isDark ? 1 : 0, borderColor: colors.border, borderRadius: 16,
+      backgroundColor: isDark ? colors.card : FORM_CARD_BG, paddingHorizontal: 16, paddingVertical: 14,
+      ...(!isDark ? CARD_SHADOW : {}) }}>
       <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : FORM_BODY_CLR, marginBottom: 3 }}>{label}</Text>
       <Text style={{ fontSize: 15, color: isDark ? colors.textPrimary : FORM_TITLE_CLR, lineHeight: 20 }}>{value}</Text>
     </View>
@@ -283,7 +288,7 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
   const insets = useSafeAreaInsets();
   const updater = reward?.updatedById ? allMembers.find(m => m.id === reward.updatedById) : undefined;
   const creator = reward?.createdById ? allMembers.find(m => m.id === reward.createdById) : undefined;
-  const canvas = isDark ? colors.background : FORM_CARD_BG;
+  const canvas = isDark ? colors.background : PAGE_BG;
   const titleC = isDark ? colors.textPrimary : FORM_TITLE_CLR;
   const bodyC = isDark ? colors.textSecondary : FORM_BODY_CLR;
   const border = isDark ? colors.border : FORM_BORDER;
@@ -296,29 +301,29 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
           {reward && (
             <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? colors.surface : FORM_SURFACE,
-                alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 18 }}>{reward.emoji ?? '🎁'}</Text>
+              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+                alignItems: 'center', justifyContent: 'center', ...(!isDark ? CARD_SHADOW : {}) }}>
+                <Text style={{ fontSize: 20 }}>{reward.emoji ?? '🎁'}</Text>
               </View>
               <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{reward.title}</Text>
             </TouchableOpacity>
           )}
 
           {reward && (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
               {reward.category ? (
-                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : FORM_SURFACE }}>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{reward.category}</Text>
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.pinkLight : '#EDE4F7' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.pink : '#6A4FBF' }}>{reward.category}</Text>
                 </View>
               ) : null}
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : FORM_SURFACE }}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: reward.available ? '#1B7A54' : bodyC }}>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: reward.available ? (isDark ? colors.tealLight : '#DCF0E6') : (isDark ? colors.surface : FORM_SURFACE) }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: reward.available ? (isDark ? colors.teal : '#1B7A54') : bodyC }}>
                   {reward.available ? 'Available' : 'Unavailable'}
                 </Text>
               </View>
               {reward.requiresApproval && (
-                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: isDark ? colors.surface : FORM_SURFACE }}>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>Needs approval</Text>
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.amberLight : '#FDF3D8' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.amber : AMBER_TXT }}>Needs approval</Text>
                 </View>
               )}
             </View>
@@ -358,7 +363,7 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
             {isParent && (
               <TouchableOpacity onPress={() => onEdit(reward)}
                 style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: FORM_BLUE, marginTop: 4 }}>
+                  backgroundColor: CTA_BLUE, marginTop: 4 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Edit perk</Text>
               </TouchableOpacity>
             )}

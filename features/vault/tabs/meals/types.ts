@@ -83,7 +83,14 @@ export const categorizeItem = (name: string): string => {
 
 export const weekOf = () => {
   const d = new Date();
-  d.setDate(d.getDate() - d.getDay() + 1);
+  const day = d.getDay();
+  // getDay() is Sun-first (0=Sun); a plain `-day+1` pushes Sunday to NEXT
+  // Monday instead of the Monday that started the current week — fixes a
+  // live bug where the Hub's TonightMealCard (uses this fn) couldn't find a
+  // meal planned for today when today is Sunday, while MealsScreen (uses
+  // its own correct currentWeekOf()) could.
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
   return localDateStr(d);
 };
 

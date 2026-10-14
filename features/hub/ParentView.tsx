@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, Animated, Easing } from 'react-native';
+import { View, Text, Animated, Easing, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
@@ -15,6 +15,8 @@ import { localToday, hoursUntilEvent } from './hubUtils';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useRewardStore } from '@/store/rewardStore';
+import { useNotifStore } from '@/store/notifStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { TodayActionGrid } from './parent/TodayActionGrid';
@@ -419,7 +421,12 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // same source ReviewInboxScreen itself reads, so this count and that
   // screen's list can't structurally diverge.
   const pendingRedemptionsCount = useRewardStore(s => s.redemptions.filter(r => r.status === 'pending').length);
-  const pendingKidRequestsCount = kidRequests.filter((r: any) => r.status === 'pending').length;
+  // Same exclusion as pendingKidRequest above — an acknowledged checkin
+  // (status still 'pending' on purpose, respondedAt set) is done and must
+  // not inflate this badge while it waits out its one-hour grace window.
+  const pendingKidRequestsCount = kidRequests.filter((r: any) =>
+    r.status === 'pending' && !(r.type === 'checkin' && r.respondedAt)
+  ).length;
   // Disputes weren't counted here at all — ReviewInboxScreen.tsx's own
   // pendingDisputesCount uses this exact same chores-array check
   // ('kid_disputed_redo' status or disputeStatus 'reversal_requested'); this
@@ -499,7 +506,13 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // hiding the card until something inside it is stale/flagged.
   const pendingApprovalChore = (pendingReviews[0] as any) ?? null;
 
-  const pendingKidRequest = (kidRequests as any[]).find(req => req.status === 'pending') ?? null;
+  // Excludes an already-acknowledged checkin (acknowledgeCheckin stamps
+  // respondedAt but deliberately leaves status 'pending' for an hour, see
+  // kidRequestStore.ts) — it's done, waiting only on finalizeAckedCheckins'
+  // sweep into 'completed', so it must not keep re-surfacing this card.
+  const pendingKidRequest = (kidRequests as any[]).find(req =>
+    req.status === 'pending' && !(req.type === 'checkin' && req.respondedAt)
+  ) ?? null;
 
   const pendingRedemption = useRewardStore(s => s.redemptions.find(rd => rd.status === 'pending') ?? null);
 
@@ -570,6 +583,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         }`,
         extraCount: Math.max(0, pendingKidRequestsCount - 1),
         urgentCount: urgentKidRequestsCount,
+        categoryLabel: 'request',
       },
       onReview: onReviewOpen,
     });
@@ -593,6 +607,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         dueDate: pendingApprovalChore.dueDate, dueTime: pendingApprovalChore.dueTime,
         extraCount: Math.max(0, pendingReviews.length - 1),
         urgentCount: urgentChoresCount,
+        categoryLabel: 'chore',
       },
       onReview: onReviewOpen,
     });
@@ -609,6 +624,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         // category count doubles as its own urgent count.
         extraCount: Math.max(0, pendingDisputesCount - 1),
         urgentCount: pendingDisputesCount,
+        categoryLabel: 'dispute',
       },
       onReview: onReviewOpen,
     });
@@ -625,6 +641,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         reason: `${members.find(m => m.id === pendingRedemption.memberId)?.name?.split(' ')[0] ?? pendingRedemption.memberName ?? 'A family member'} redeemed this and is waiting on you.`,
         extraCount: Math.max(0, pendingRedemptionsCount - 1),
         urgentCount: urgentRedemptionsCount,
+        categoryLabel: 'reward',
       },
       onReview: onReviewOpen,
     });
@@ -772,10 +789,28 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
       <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
         {needsYouCards.length > 0 ? (
-          <View style={{ gap: 10 }}>
-            {needsYouCards.map((c, i) => (
-              <NeedsYouCard key={i} item={c.item} onReview={c.onReview} />
-            ))}
+          <View>
+            <View style={{ marginHorizontal: 20, marginTop: 14, alignSelf: 'flex-start' }}>
+              <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.amber, marginBottom: 6, opacity: 0.6 }} />
+              <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>NEEDS YOU</Text>
+            </View>
+            <View style={{
+              marginHorizontal: 20, marginTop: 10,
+              borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+              borderRadius: 22,
+              backgroundColor: colors.amberLight,
+              ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
+              overflow: 'hidden',
+            }}>
+              {needsYouCards.map((c, i) => (
+                <View key={i}>
+                  {i > 0 && (
+                    <View style={{ height: 1, marginHorizontal: 16, backgroundColor: isDark ? colors.border : GEMINI.border, opacity: 0.6 }} />
+                  )}
+                  <NeedsYouCard item={c.item} onReview={c.onReview} showLabel={false} variant="row" />
+                </View>
+              ))}
+            </View>
           </View>
         ) : (
           // Live direction: "if none of them available Nedds you we can
@@ -784,15 +819,21 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           // see," not "all caught up." A quiet info message instead
           // confirms there's genuinely nothing pending AND nudges toward a
           // proactive check-in, rather than just disappearing.
-          <View style={{
-            marginHorizontal: 20, marginTop: 14, padding: 16, borderRadius: 22,
-            backgroundColor: colors.tealLight,
-          }}>
+          <Pressable
+            onPress={onReviewOpen}
+            style={({ pressed }) => ({
+              marginHorizontal: 20, marginTop: 14, padding: 16, borderRadius: 22,
+              backgroundColor: colors.pinkLight, opacity: pressed ? 0.8 : 1,
+            })}
+          >
             <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>ALL QUIET</Text>
             <Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: '600', marginTop: 4, lineHeight: 20 }}>
               Nothing needs you right now — a good time to check in with the family if they need any help.
             </Text>
-          </View>
+            <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 8 }}>
+              View review history →
+            </Text>
+          </Pressable>
         )}
       </Animated.View>
       {backlogTaskDetailId && (() => {
@@ -823,6 +864,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           colors={colors} isDark={isDark}
           groceryCount={groceryItems.length}
           reviewCount={pendingReviewCount}
+          chatUnreadCount={useNotifStore(s => s.unreadCount)}
           tasksPendingCount={tasksPendingCount}
           tasksInProgressCount={tasksInProgressCount}
           tasksUnassignedCount={tasksUnassignedCount}
@@ -831,7 +873,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           pendingRidesCount={pendingRideRequiredEvents.length}
           onCapture={onDescribeTask}
           onCreateEvent={onDescribeEvent}
-          onReview={onReviewOpen}
+          onChat={() => router.push('/(tabs)/chat')}
         />
       </Animated.View>
 

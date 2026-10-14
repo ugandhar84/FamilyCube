@@ -155,7 +155,7 @@ interface GroceryState {
 
   // store_proximity_reminders (feature-flagged) — which stores this family
   // has pinned a real-world location for, keyed by store name.
-  pinnedStores: Record<string, { lat: number; lng: number }>;
+  pinnedStores: Record<string, { lat: number; lng: number; address?: string }>;
 
   // family_store_preferences — the family's own curated store list, grown
   // by whoever adds a custom store name in the "move to store" picker.
@@ -197,7 +197,7 @@ interface GroceryState {
   appendToCache: (newItemNames: string[], newStores: string[]) => void;
 
   loadPinnedStores:  (familyId: string) => Promise<void>;
-  pinStoreLocation:  (params: { familyId: string; store: string; latitude: number; longitude: number; pinnedBy: string }) => Promise<void>;
+  pinStoreLocation:  (params: { familyId: string; store: string; latitude: number; longitude: number; pinnedBy: string; address?: string }) => Promise<void>;
   // Was no way to remove a store's pin once set at all (live-requested:
   // "once pin is set we should be able to modify it or delete it") —
   // pinStoreLocation's own upsert already covers "modify" (re-pin with a
@@ -751,20 +751,20 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   loadPinnedStores: async (familyId) => {
     const { data, error } = await supabase
       .from('store_locations')
-      .select('store, latitude, longitude')
+      .select('store, latitude, longitude, address')
       .eq('family_id', familyId);
     if (error) { console.warn('[groceryStore] loadPinnedStores error', error); return; }
-    const map: Record<string, { lat: number; lng: number }> = {};
-    for (const row of data ?? []) map[row.store] = { lat: row.latitude, lng: row.longitude };
+    const map: Record<string, { lat: number; lng: number; address?: string }> = {};
+    for (const row of data ?? []) map[row.store] = { lat: row.latitude, lng: row.longitude, address: row.address ?? undefined };
     set({ pinnedStores: map });
   },
 
-  pinStoreLocation: async ({ familyId, store, latitude, longitude, pinnedBy }) => {
+  pinStoreLocation: async ({ familyId, store, latitude, longitude, pinnedBy, address }) => {
     const { error } = await supabase.from('store_locations').upsert({
-      family_id: familyId, store, latitude, longitude, pinned_by: pinnedBy,
+      family_id: familyId, store, latitude, longitude, pinned_by: pinnedBy, address: address ?? null,
     }, { onConflict: 'family_id,store' });
     if (error) { console.warn('[groceryStore] pinStoreLocation error', error); return; }
-    set(s => ({ pinnedStores: { ...s.pinnedStores, [store]: { lat: latitude, lng: longitude } } }));
+    set(s => ({ pinnedStores: { ...s.pinnedStores, [store]: { lat: latitude, lng: longitude, address } } }));
   },
 
   unpinStoreLocation: async ({ familyId, store }) => {

@@ -16,14 +16,15 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Pressable,
   Animated, Easing, ActivityIndicator, Alert,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { useFamilyStore } from '@/store/familyStore';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, fromRow } from '@/store/eventStore';
 import type { FamilyEvent, EventRecurrenceRule } from '@/store/eventStore';
 import { detectLocalTask } from '@/features/tasks/lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
@@ -570,13 +571,12 @@ export default function JustDescribeItEventScreen({
       // back, so opening the drop-off event's own detail page had no way
       // to find its pick-up leg at all; only the reverse direction worked.
       if (evPickupNeeded && mainEventId) {
-        const pickupLegId = await addEvent({
+        const basePickup = {
           title: `Pick-up · ${stripLegWords(evTitle.trim())}`,
-          date: evDate,
           time: evAllDay ? undefined : evEndTime,  // starts when the event ends
           endTime: undefined,
           category: evCategory,
-          type: 'event',
+          type: 'event' as const,
           memberIds: evMemberIds.length > 0 ? evMemberIds : undefined,
           memberId: evMemberIds[0],
           rideRequired: true,
@@ -585,10 +585,50 @@ export default function JustDescribeItEventScreen({
           driverId: evPickupDriverId,
           driverName: pickupDriver ? pickupDriver.name : undefined,
           driverStatus: evPickupDriverId ? (isSelfPickup ? 'confirmed' : 'pending') : undefined,
-          linkedLegId: mainEventId,
           familyId, createdBy,
-        } as Omit<FamilyEvent, 'id'>);
-        if (pickupLegId) await updateEvent(mainEventId, { linkedLegId: pickupLegId });
+        };
+
+        if (evRecurrence === 'once') {
+          const pickupLegId = await addEvent({
+            ...basePickup, date: evDate, linkedLegId: mainEventId,
+          } as Omit<FamilyEvent, 'id'>);
+          if (pickupLegId) await updateEvent(mainEventId, { linkedLegId: pickupLegId });
+        } else {
+          // Recurring drop-off needs a parallel recurring PICK-UP series
+          // (its own seriesId, same recurrenceRule) — not one one-off
+          // pick-up event pinned to the anchor's date, which is what a
+          // plain addEvent() here produced before this fix (live-reported:
+          // a weekly recurring drop-off's future occurrences each silently
+          // had no pick-up leg, only the very first one did). Same
+          // anchor-then-pair-by-date shape EventFormModal.tsx's own
+          // recurring pickup-fork block already uses.
+          const { data: rows, error } = await supabase.from('calendar_events')
+            .select('*').eq('series_id', mainEventId).is('deleted_at', null);
+          if (error || !rows) throw error ?? new Error('series lookup returned no rows');
+          const occurrences = rows.map(fromRow).sort((a, b) => a.date.localeCompare(b.date));
+          const anchor = occurrences.find(r => r.isSeriesAnchor) ?? occurrences[0];
+          if (anchor?.recurrenceRule && occurrences.length > 0) {
+            const pickupAnchorId = await addRecurringEvent({
+              ...basePickup, date: occurrences[0].date,
+            } as Omit<FamilyEvent, 'id'>, anchor.recurrenceRule);
+            if (pickupAnchorId) {
+              const { data: pickupRows, error: pickupErr } = await supabase.from('calendar_events')
+                .select('*').eq('series_id', pickupAnchorId).is('deleted_at', null);
+              if (pickupErr || !pickupRows) throw pickupErr ?? new Error('pickup series lookup returned no rows');
+              const pickupByDate = new Map(pickupRows.map(fromRow).map(r => [r.date, r]));
+              const pairs: { dropoffId: string; pickupId: string }[] = [];
+              for (const dropoff of occurrences) {
+                const pickup = pickupByDate.get(dropoff.date);
+                if (pickup) pairs.push({ dropoffId: dropoff.id, pickupId: pickup.id });
+              }
+              await Promise.all(pairs.flatMap(p => [
+                supabase.from('calendar_events').update({ linked_leg_id: p.pickupId }).eq('id', p.dropoffId),
+                supabase.from('calendar_events').update({ linked_leg_id: p.dropoffId }).eq('id', p.pickupId),
+              ]));
+              await useEventStore.getState().syncFromDB();
+            }
+          }
+        }
       }
       handleClose();
     } catch {
@@ -597,6 +637,18 @@ export default function JustDescribeItEventScreen({
   };
 
   const isListening = dictation.state === 'listening';
+  const micPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isListening) { micPulse.setValue(1); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(micPulse, { toValue: 1.18, duration: 550, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(micPulse, { toValue: 1, duration: 550, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isListening]);
   const fmtListenTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
   const hasInput     = input.trim().length >= MIN_CHARS;
   const detected     = detection;
@@ -611,9 +663,13 @@ export default function JustDescribeItEventScreen({
   const detectedMemberName = detected?.memberNames[0] ?? null;
 
   // Design tokens — exact same pattern as JustDescribeItScreen
-  const canvasBg    = isDark ? '#0E0C13' : '#FFFFFF';
-  const fieldBorder = isDark ? colors.border : '#DFE5EF';
+  const canvasBg    = isDark ? colors.background : GEMINI.canvas;
+  const fieldBorder = isDark ? colors.border : GEMINI.border;
   const activeBlue  = colors.teal;   // Schedule accent = sage/teal (CONNECT)
+  const ctaBlue     = '#5872C4';     // dimmed CTA blue (Home Care/Health button pattern) — distinct from the teal role accent above, not GEMINI.blue
+  const titleC      = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC       = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const tertiaryC   = isDark ? colors.textTertiary : GEMINI.bodyColorLight;
 
   const catEntry = EVENT_CATEGORIES.find(c => c.value === evCategory);
 
@@ -629,21 +685,6 @@ export default function JustDescribeItEventScreen({
     <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
     <SafeAreaView style={{ flex: 1, backgroundColor: canvasBg }} edges={['top']}>
 
-      {/* ── Fixed nav header — does not scroll ── */}
-      <View style={{
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        paddingHorizontal: 20, paddingVertical: 12,
-        backgroundColor: canvasBg,
-      }}>
-        <TouchableOpacity onPress={handleClose} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={{ fontSize: 17, color: activeBlue }}>‹</Text>
-          <Text style={{ fontSize: 15, fontWeight: '500', color: activeBlue }}>{backLabel ?? (isEdit ? 'Event' : 'Schedule')}</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 }}>
-          {activeMember?.name?.split(' ')[0]?.toUpperCase() ?? ''}
-        </Text>
-      </View>
-
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
@@ -654,12 +695,14 @@ export default function JustDescribeItEventScreen({
         >
           <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
 
-            {/* ── Page title ── */}
+            {/* ── Page title — tap to close (same pattern as Health's sub-pages) ── */}
             <View style={{ gap: 6 }}>
-              <Text style={{ fontSize: 34, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, lineHeight: 40 }}>
-                {isEdit ? 'Edit event' : 'Just describe it'}
-              </Text>
-              <Text style={{ fontSize: 15, fontWeight: '400', color: colors.textSecondary, lineHeight: 22 }}>
+              <Pressable onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                <Text style={{ fontSize: 28, fontWeight: '800', color: titleC, letterSpacing: -0.5, lineHeight: 34 }}>
+                  {isEdit ? 'Edit event' : 'Just describe your schedule'}
+                </Text>
+              </Pressable>
+              <Text style={{ fontSize: 15, fontWeight: '400', color: bodyC, lineHeight: 22 }}>
                 {isEdit ? 'Change the core details. Confirmations and reassignments live on the event page.' : 'Type a thought. Speak a thought. Make it a plan.'}
               </Text>
             </View>
@@ -674,7 +717,7 @@ export default function JustDescribeItEventScreen({
                 borderColor: inputFocused || isListening ? activeBlue : colors.border,
                 padding: 20, gap: 12,
               }}>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>
                   {isListening ? 'Editable transcript · listening' : 'What\'s coming up?'}
                 </Text>
                 <TextInput
@@ -687,12 +730,12 @@ export default function JustDescribeItEventScreen({
                   placeholder="Something on the calendar?"
                   placeholderTextColor={colors.textTertiary}
                   multiline
-                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: colors.textPrimary, minHeight: 30 }}
+                  style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: titleC, minHeight: 30 }}
                 />
                 {/* Tools row */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                   <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                    <Text style={{ fontSize: 12, color: tertiaryC }}>
                       {isListening ? `Listening · ${fmtListenTime(listenSecs)}` : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
                     </Text>
                     {hasInput && !isListening && (
@@ -708,14 +751,21 @@ export default function JustDescribeItEventScreen({
                       </TouchableOpacity>
                     )}
                   </View>
-                  <TouchableOpacity
-                    onPress={isListening ? handleStopVoice : () => dictation.start()}
-                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    {isListening
-                      ? <Square size={16} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
-                      : <Mic size={16} color={colors.textSecondary} strokeWidth={1.8} />}
-                  </TouchableOpacity>
+                  <Animated.View style={{ transform: [{ scale: micPulse }] }}>
+                    <TouchableOpacity
+                      onPress={isListening ? handleStopVoice : () => dictation.start()}
+                      style={{
+                        width: 48, height: 48, borderRadius: 24,
+                        backgroundColor: colors.tealLight,
+                        borderWidth: isListening ? 2 : 0, borderColor: activeBlue,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {isListening
+                        ? <Square size={20} color={activeBlue} strokeWidth={1.8} fill={activeBlue} />
+                        : <Mic size={22} color={activeBlue} strokeWidth={1.8} />}
+                    </TouchableOpacity>
+                  </Animated.View>
                 </View>
               </View>
 
@@ -734,7 +784,7 @@ export default function JustDescribeItEventScreen({
                       <Text style={{ fontSize: 15, fontWeight: '600', color: activeBlue }}>Cancel</Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                  <Text style={{ fontSize: 12, color: bodyC, lineHeight: 17 }}>
                     Audio stays private until you tap on-demand AI.
                   </Text>
                 </View>
@@ -749,7 +799,7 @@ export default function JustDescribeItEventScreen({
                         backgroundColor: isDark ? colors.card : colors.navy,
                         borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 }}>
                         {catEmoji ? <Text style={{ fontSize: 14 }}>{catEmoji}</Text> : null}
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : '#FFFFFF' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? titleC : '#FFFFFF' }}>
                           {catLabel}
                           {detected.category.kw.length > 0 ? `  · from "${detected.category.kw[0]}"` : ''}
                         </Text>
@@ -760,7 +810,7 @@ export default function JustDescribeItEventScreen({
                         backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
                         borderWidth: 1, borderColor: colors.border }}>
                         <Text style={{ fontSize: 13 }}>🕐</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>{timeLabel}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: titleC }}>{timeLabel}</Text>
                       </View>
                     )}
                     {detectedMemberName && (
@@ -768,7 +818,7 @@ export default function JustDescribeItEventScreen({
                         backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
                         borderWidth: 1, borderColor: colors.border }}>
                         <Text style={{ fontSize: 13 }}>👤</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textPrimary }}>{detectedMemberName}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: titleC }}>{detectedMemberName}</Text>
                       </View>
                     )}
                     {detected.recurrence && detected.recurrence !== 'once' && (
@@ -782,7 +832,7 @@ export default function JustDescribeItEventScreen({
                       </View>
                     )}
                   </View>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>Detected · adjust in the form below</Text>
+                  <Text style={{ fontSize: 12, color: bodyC }}>Detected · adjust in the form below</Text>
                 </View>
               )}
 
@@ -790,11 +840,11 @@ export default function JustDescribeItEventScreen({
               {!isListening && !hasInput && (
                 <>
                   <View style={{ backgroundColor: colors.amberLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
-                    <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary, lineHeight: 24 }}>One sentence is enough</Text>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: titleC, lineHeight: 24 }}>One sentence is enough</Text>
                     <Text style={{ fontSize: 14, fontWeight: '600', color: colors.amber, lineHeight: 20 }}>
                       "Soccer practice Saturday 4pm" or "Dentist for Mia next Thursday"
                     </Text>
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 2 }}>
+                    <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19, marginTop: 2 }}>
                       We'll detect the category, date, time and who's involved. You confirm before anything is saved.
                     </Text>
                   </View>
@@ -802,17 +852,17 @@ export default function JustDescribeItEventScreen({
                   <TouchableOpacity
                     onPress={() => dictation.start()}
                     style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                      borderWidth: 1.5, borderColor: activeBlue, backgroundColor: colors.card }}
+                      backgroundColor: ctaBlue }}
                   >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: activeBlue }}>Speak your event</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Speak your event</Text>
                   </TouchableOpacity>
 
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
+                  <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
                     Your own wording comes first. Type or voice — there's no extra create menu.
                   </Text>
                   <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 6 }}>
                     <Text style={{ fontSize: 15, fontWeight: '700', color: colors.teal }}>Your privacy</Text>
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
+                    <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19 }}>
                       Detection runs entirely on your device. Nothing is sent anywhere until you tap on-demand AI.
                     </Text>
                   </View>
@@ -823,7 +873,7 @@ export default function JustDescribeItEventScreen({
               {!isListening && hasInput && detected && !formOpen && (
                 <TouchableOpacity
                   onPress={openInlineForm}
-                  style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                  style={{ height: 52, borderRadius: 16, backgroundColor: ctaBlue, alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
                 </TouchableOpacity>
@@ -833,7 +883,7 @@ export default function JustDescribeItEventScreen({
               {!isListening && hasInput && !detected && !formOpen && (
                 <TouchableOpacity
                   onPress={openInlineForm}
-                  style={{ height: 52, borderRadius: 16, backgroundColor: activeBlue, alignItems: 'center', justifyContent: 'center' }}
+                  style={{ height: 52, borderRadius: 16, backgroundColor: ctaBlue, alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Fill in details →</Text>
                 </TouchableOpacity>
@@ -846,7 +896,7 @@ export default function JustDescribeItEventScreen({
 
                 // ── Reusable row helpers ────────────────────────────
                 const FieldLabel = ({ text }: { text: string }) => (
-                  <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.6, color: colors.textTertiary, textTransform: 'uppercase', marginBottom: 2 }}>{text}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.6, color: tertiaryC, textTransform: 'uppercase', marginBottom: 2 }}>{text}</Text>
                 );
                 const Toggle = ({ value, onChange }: { value: boolean; onChange: () => void }) => (
                   <TouchableOpacity onPress={onChange} style={{ width: 44, height: 26, borderRadius: 13,
@@ -870,7 +920,7 @@ export default function JustDescribeItEventScreen({
                         onChangeText={setEvTitle}
                         placeholder="What's happening?"
                         placeholderTextColor={colors.textTertiary}
-                        style={{ fontSize: 20, fontWeight: '600', color: colors.textPrimary, paddingVertical: 2 }}
+                        style={{ fontSize: 20, fontWeight: '600', color: titleC, paddingVertical: 2 }}
                       />
                       <View style={{ height: 1.5, backgroundColor: colors.border }} />
                     </View>
@@ -892,7 +942,7 @@ export default function JustDescribeItEventScreen({
                             >
                               <Text style={{ fontSize: 14 }}>{c.emoji}</Text>
                               <Text style={{ fontSize: 13, fontWeight: sel ? '700' : '400',
-                                color: sel ? canvasBg : colors.textSecondary }}>{c.label}</Text>
+                                color: sel ? canvasBg : bodyC }}>{c.label}</Text>
                             </TouchableOpacity>
                           );
                         })}
@@ -904,7 +954,7 @@ export default function JustDescribeItEventScreen({
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <FieldLabel text="When" />
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text style={{ fontSize: 12, color: colors.textSecondary }}>All day</Text>
+                          <Text style={{ fontSize: 12, color: bodyC }}>All day</Text>
                           <Toggle value={evAllDay} onChange={() => setEvAllDay(v => !v)} />
                         </View>
                       </View>
@@ -915,14 +965,14 @@ export default function JustDescribeItEventScreen({
                           style={{ flex: 1.5, backgroundColor: colors.surface, borderRadius: 14,
                             paddingHorizontal: 16, paddingVertical: 14,
                             flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{fmtDate(evDate)}</Text>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: titleC }}>{fmtDate(evDate)}</Text>
                         </TouchableOpacity>
                         {!evAllDay && (
                           <TouchableOpacity onPress={() => setShowTimePick(true)}
                             style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 14,
                               paddingHorizontal: 14, paddingVertical: 14,
                               flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{fmt12h(evTime)}</Text>
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: titleC }}>{fmt12h(evTime)}</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -945,7 +995,7 @@ export default function JustDescribeItEventScreen({
 
                       {/* Repeat pills */}
                       <View style={{ gap: 6 }}>
-                        <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary, textTransform: 'uppercase' }}>Repeat</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase' }}>Repeat</Text>
                         <View style={{ flexDirection: 'row', gap: 6 }}>
                           {RECUR_OPTIONS.map(opt => {
                             const sel = evRecurrence === opt.value;
@@ -955,7 +1005,7 @@ export default function JustDescribeItEventScreen({
                                   backgroundColor: sel ? colors.textPrimary : colors.surface,
                                   borderWidth: sel ? 0 : 1, borderColor: colors.border }}>
                                 <Text style={{ fontSize: 13, fontWeight: sel ? '700' : '500',
-                                  color: sel ? canvasBg : colors.textSecondary }}>{opt.label}</Text>
+                                  color: sel ? canvasBg : bodyC }}>{opt.label}</Text>
                               </TouchableOpacity>
                             );
                           })}
@@ -973,7 +1023,7 @@ export default function JustDescribeItEventScreen({
                                 style={{ flex: 1, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
                                   backgroundColor: sel ? activeBlue : colors.surface,
                                   borderWidth: sel ? 0 : 1, borderColor: colors.border }}>
-                                <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : colors.textTertiary }}>{lbl}</Text>
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#FFFFFF' : tertiaryC }}>{lbl}</Text>
                               </TouchableOpacity>
                             );
                           })}
@@ -984,7 +1034,7 @@ export default function JustDescribeItEventScreen({
                       {evRecurrence !== 'once' && (
                         <TouchableOpacity onPress={() => setShowEndDatePick(true)}
                           style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <Text style={{ fontSize: 13, color: colors.textTertiary }}>Ends</Text>
+                          <Text style={{ fontSize: 13, color: tertiaryC }}>Ends</Text>
                           {evEndDate ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                               backgroundColor: colors.tealLight, borderRadius: 12,
@@ -1074,7 +1124,7 @@ export default function JustDescribeItEventScreen({
                                 )}
                               </View>
                               <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400',
-                                color: hasConflict ? colors.danger : sel ? colors.textPrimary : colors.textTertiary, textAlign: 'center' }}>
+                                color: hasConflict ? colors.danger : sel ? titleC : tertiaryC, textAlign: 'center' }}>
                                 {m.name.split(' ')[0]}
                               </Text>
                             </TouchableOpacity>
@@ -1109,8 +1159,8 @@ export default function JustDescribeItEventScreen({
                           <View style={{ gap: 10 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                               <View>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Drop-off</Text>
-                                <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{`Getting there · ${fmt12h(evTime)}`}</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Drop-off</Text>
+                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`Getting there · ${fmt12h(evTime)}`}</Text>
                               </View>
                               <Toggle value={evDropNeeded} onChange={() => {
                                 const next = !evDropNeeded;
@@ -1124,7 +1174,7 @@ export default function JustDescribeItEventScreen({
                                   placeholder="From" accent={colors.amber} colors={colors} />
                                 <LocationAutocompleteInput value={evDropTo} onChangeText={setEvDropTo}
                                   placeholder="To" accent={colors.amber} colors={colors} />
-                                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>
+                                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>
                                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                                   {driverCandidates.map(m => {
                                     const sel = evDropDriverId === m.id;
@@ -1152,7 +1202,7 @@ export default function JustDescribeItEventScreen({
                                             </View>
                                           )}
                                         </View>
-                                        <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400', color: sel ? colors.textPrimary : colors.textTertiary, textAlign: 'center' }}>
+                                        <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400', color: sel ? titleC : tertiaryC, textAlign: 'center' }}>
                                           {m.name.split(' ')[0]}
                                         </Text>
                                       </TouchableOpacity>
@@ -1170,8 +1220,8 @@ export default function JustDescribeItEventScreen({
                               <View style={{ gap: 10 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                   <View>
-                                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Pick-up</Text>
-                                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{`Getting home · ${fmt12h(evEndTime)}`}</Text>
+                                    <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Pick-up</Text>
+                                    <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`Getting home · ${fmt12h(evEndTime)}`}</Text>
                                   </View>
                                   <Toggle value={evPickupNeeded} onChange={() => {
                                     const next = !evPickupNeeded;
@@ -1189,7 +1239,7 @@ export default function JustDescribeItEventScreen({
                                       placeholder="From" accent={colors.amber} colors={colors} />
                                     <LocationAutocompleteInput value={evPickupTo} onChangeText={setEvPickupTo}
                                       placeholder="To" accent={colors.amber} colors={colors} />
-                                    <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>
+                                    <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>
                                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                                       {driverCandidates.map(m => {
                                         const sel = evPickupDriverId === m.id;
@@ -1217,7 +1267,7 @@ export default function JustDescribeItEventScreen({
                                                 </View>
                                               )}
                                             </View>
-                                            <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400', color: sel ? colors.textPrimary : colors.textTertiary, textAlign: 'center' }}>
+                                            <Text style={{ fontSize: 11, fontWeight: sel ? '700' : '400', color: sel ? titleC : tertiaryC, textAlign: 'center' }}>
                                               {m.name.split(' ')[0]}
                                             </Text>
                                           </TouchableOpacity>
@@ -1237,7 +1287,7 @@ export default function JustDescribeItEventScreen({
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <View>
                         <FieldLabel text="Private event" />
-                        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }}>
+                        <Text style={{ fontSize: 12, color: tertiaryC, marginTop: 2 }}>
                           {evIsPrivate ? 'Only participants will see this' : 'Visible to the whole family'}
                         </Text>
                       </View>
@@ -1251,7 +1301,7 @@ export default function JustDescribeItEventScreen({
                         paddingHorizontal: 14, paddingVertical: 12, minHeight: 64 }}>
                         <TextInput value={evNotes} onChangeText={setEvNotes} placeholder="Anything else…"
                           placeholderTextColor={colors.textTertiary} multiline
-                          style={{ fontSize: 14, color: colors.textPrimary, textAlignVertical: 'top' }}
+                          style={{ fontSize: 14, color: titleC, textAlignVertical: 'top' }}
                         />
                       </View>
                     </View>
@@ -1259,19 +1309,19 @@ export default function JustDescribeItEventScreen({
                     {/* ── Save ── */}
                     <TouchableOpacity onPress={handleSave} disabled={!evTitle.trim() || saving}
                       style={{ height: 56, borderRadius: 18,
-                        backgroundColor: evTitle.trim() ? activeBlue : colors.surface,
+                        backgroundColor: evTitle.trim() ? ctaBlue : colors.surface,
                         alignItems: 'center', justifyContent: 'center',
-                        shadowColor: evTitle.trim() ? activeBlue : 'transparent',
+                        shadowColor: evTitle.trim() ? ctaBlue : 'transparent',
                         shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }}>
                       {saving
                         ? <ActivityIndicator color="#FFFFFF" />
-                        : <Text style={{ fontSize: 16, fontWeight: '700', color: evTitle.trim() ? '#FFFFFF' : colors.textTertiary }}>
+                        : <Text style={{ fontSize: 16, fontWeight: '700', color: evTitle.trim() ? '#FFFFFF' : tertiaryC }}>
                             {isEdit ? 'Save changes' : 'Add to schedule'}
                           </Text>}
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={isEdit ? handleClose : () => setFormOpen(false)} style={{ alignItems: 'center', paddingVertical: 6 }}>
-                      <Text style={{ fontSize: 13, color: colors.textTertiary }}>{isEdit ? 'Cancel' : '‹ Back'}</Text>
+                      <Text style={{ fontSize: 13, color: tertiaryC }}>{isEdit ? 'Cancel' : '‹ Back'}</Text>
                     </TouchableOpacity>
 
                   </View>

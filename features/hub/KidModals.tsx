@@ -74,9 +74,9 @@ export function decodeRideLate(detail: string): RideLatePayload | null {
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-const GROCERY_CATEGORIES = ['Snacks', 'Produce', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Bakery', 'Household', 'Other'];
+export const GROCERY_CATEGORIES = ['Snacks', 'Produce', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Bakery', 'Household', 'Other'];
 
-const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }[] = [
+export const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }[] = [
   // Snacks
   { name: 'Oreos',               emoji: '🍪', category: 'Snacks' },
   { name: 'Chips',               emoji: '🍟', category: 'Snacks' },
@@ -161,9 +161,9 @@ const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }
   { name: 'Ziploc Bags',         emoji: '📦', category: 'Household' },
 ];
 
-const QTY_PICKS = ['1', '2', '3', '6', '1 pack', '1 box', '1 bag', '1 bottle', '1 dozen', '1 lb'];
+export const QTY_PICKS = ['1', '2', '3', '6', '1 pack', '1 box', '1 bag', '1 bottle', '1 dozen', '1 lb'];
 
-const SUPPLIES_SUGGESTIONS: { name: string; emoji: string }[] = [
+export const SUPPLIES_SUGGESTIONS: { name: string; emoji: string }[] = [
   { name: 'Pencils',             emoji: '✏️' },
   { name: 'Pens',                emoji: '🖊️' },
   { name: 'Eraser',              emoji: '🧹' },
@@ -220,7 +220,7 @@ const f = StyleSheet.create({
 // list) so tapping row 2's mic never clobbers row 1's in-progress speech —
 // a kid adding multiple items by voice needs each row's mic to be its own
 // independent session.
-function ItemNameField({ value, onChangeText, onFocus, onBlur, style, flex = 2.5, placeholder = 'Item name', accent, colors, isDark }: {
+export function ItemNameField({ value, onChangeText, onFocus, onBlur, style, flex = 2.5, placeholder = 'Item name', accent, colors, isDark }: {
   value: string; onChangeText: (t: string) => void;
   onFocus?: () => void; onBlur?: () => void; style: any; flex?: number; placeholder?: string;
   accent: string; colors: any; isDark: boolean;

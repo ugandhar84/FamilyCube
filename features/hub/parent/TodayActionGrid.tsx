@@ -1,5 +1,5 @@
 import { View, Text } from 'react-native';
-import { ClipboardCheck, ShoppingCart, Calendar, ListChecks } from 'lucide-react-native';
+import { ClipboardCheck, ShoppingCart, Calendar, MessageCircle } from 'lucide-react-native';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useUIStore } from '@/store/uiStore';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -12,28 +12,31 @@ import { GEMINI } from '@/constants/geminiRhythm';
  * tile min-height 116, padding 15, radius 20; tones lavender/mint/sky/peach
  * (index.css:404-421).
  *
- * The 4th tile ("Send a cheer" / AskFam) was replaced with "Review" —
- * live-reported gap: every tile here was a create/navigate shortcut
- * (Add a task, Groceries, Arrange a ride), with no way to see WHAT'S
- * ALREADY assigned and waiting on the parent — chores submitted for
- * approval, rides needing confirmation, kid requests. ReviewInboxScreen
- * already exists with exactly that data (getParentReviewDeck()) but had no
- * entry point on this screen besides a single-item NeedsYouCard banner.
- * Appreciation (cheering a completed chore) still lives inline on
- * QuestDetailModal/QuestCard once a chore is approved — removing the
- * shortcut here doesn't remove the feature, just a redundant entry point
- * for the thing people actually needed a glanceable count for.
+ * The 4th tile was originally "Review" (duplicating ReviewInboxScreen's
+ * entry point), then swapped to "Chat" — the Needs You section above this
+ * grid already links to the same review inbox per-category (including an
+ * empty-state message when there's nothing pending), so this tile was a
+ * second, redundant path to the exact same screen
+ * [live-reported: "we have link to the review inbox from needs you
+ * including the empty component... i want to use the review quick action
+ * for something else"]. Chat was picked as the next-most-reached-for
+ * daily action with no existing Hub shortcut (only reachable via the tab
+ * bar today) [live direction: "you suggest what is most important to
+ * parents?"]. reviewCount is still accepted/used for the taskStats
+ * "Review" row inside the Add-a-task tile, which is unrelated to this tile
+ * swap.
  */
 export function TodayActionGrid({
   colors, isDark,
-  groceryCount, reviewCount,
+  groceryCount, reviewCount, chatUnreadCount,
   tasksPendingCount, tasksInProgressCount, tasksUnassignedCount, tasksCompletedCount,
   todayEventsCount, pendingRidesCount,
-  onCapture, onCreateEvent, onReview,
+  onCapture, onCreateEvent, onChat,
 }: {
   colors: any; isDark: boolean;
   groceryCount: number;
   reviewCount: number;
+  chatUnreadCount: number;
   tasksPendingCount: number;
   tasksInProgressCount: number;
   tasksUnassignedCount: number;
@@ -42,7 +45,7 @@ export function TodayActionGrid({
   pendingRidesCount?: number;
   onCapture: () => void;
   onCreateEvent: () => void;
-  onReview: () => void;
+  onChat: () => void;
 }) {
   // "Schedule" tile's subtitle used to be a static "Describe it, we'll
   // schedule it" regardless of actual calendar state — same class of gap
@@ -87,13 +90,13 @@ export function TodayActionGrid({
       onPress: onCreateEvent,
     },
     {
-      key: 'review',
-      icon: ListChecks,
-      tint: colors.amber,
-      bg: colors.amberLight,
-      title: 'Review',
-      subtitle: reviewCount > 0 ? `${reviewCount} waiting on you` : 'All caught up',
-      onPress: onReview,
+      key: 'chat',
+      icon: MessageCircle,
+      tint: colors.pink,
+      bg: colors.pinkLight,
+      title: 'Chat',
+      subtitle: chatUnreadCount > 0 ? `${chatUnreadCount} unread` : 'Message the family',
+      onPress: onChat,
     },
   ];
 
@@ -134,8 +137,8 @@ export function TodayActionGrid({
             <View style={{ gap: 2, justifyContent: 'center' }}>
               {taskStats.map(s => (
                 <View key={s.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: s.color, minWidth: 13 }}>{s.value}</Text>
-                  <Text style={{ fontSize: 9, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>{s.label}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: s.color, minWidth: 16 }}>{s.value}</Text>
+                  <Text style={{ fontSize: 10, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>{s.label}</Text>
                 </View>
               ))}
             </View>
@@ -164,11 +167,11 @@ export function TodayActionGrid({
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Icon size={28} color={t.tint} strokeWidth={2} />
-                {t.key === 'review' && reviewCount > 0 && (
+                {t.key === 'chat' && chatUnreadCount > 0 && (
                   <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5,
                     backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>
-                      {reviewCount > 9 ? '9+' : reviewCount}
+                      {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
                     </Text>
                   </View>
                 )}

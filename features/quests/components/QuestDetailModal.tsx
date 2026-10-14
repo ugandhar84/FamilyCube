@@ -1049,8 +1049,8 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
               )}
 
               {/* Submit / Resubmit — inline compose, replaces the old bottom sheet */}
-              {!liveQuest.pendingTerms && !liveQuest.kidDisputedRedo && (actions.canSubmit || actions.canResubmit) && !actions.canAcceptGp && !submitting && (
-                <TouchableOpacity onPress={() => setSubmitting(true)}
+              {!liveQuest.pendingTerms && !liveQuest.kidDisputedRedo && (actions.canSubmit || actions.canResubmit) && !actions.canAcceptGp && (
+                <TouchableOpacity onPress={() => submitting ? resetSubmitCompose() : setSubmitting(true)}
                   style={{ height: 52, borderRadius: 16, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                     alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>
@@ -1155,8 +1155,11 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                   this button naturally stops showing. */}
               {!liveQuest.pendingTerms &&
                 (activeMember?.role === 'parent' || activeMember?.role === 'senior') &&
-                liveQuest.status === 'todo' && !submitting && !reassigning && (
-                <TouchableOpacity onPress={() => setReassigning(true)}
+                liveQuest.status === 'todo' && !submitting && (
+                <TouchableOpacity onPress={() => {
+                  if (reassigning) { setReassigning(false); setReassignNote(''); setReassignTargetId(null); }
+                  else setReassigning(true);
+                }}
                   style={{ height: 44, borderRadius: 14, backgroundColor: colors.pink,
                     alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>↔ Reassign to someone else</Text>
@@ -1365,7 +1368,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
               {/* ── Parent/approver review — reward-impact card + full-width
                   stacked Approve / Redo / Decline buttons, matching the
                   reference's structure instead of cramped side-by-side pills ── */}
-              {actions.canApprove && !redoing && (() => {
+              {actions.canApprove && (() => {
                 const assignee = members.find(m => m.id === liveQuest.assignedToId);
                 const assigneeFirst = assignee?.name?.split(' ')[0] ?? 'They';
                 const reviewerCoins = assignee?.mainCoins ?? 0;
@@ -1411,7 +1414,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                             ✓ Approve{totalReward > 0 && !liveQuest.isAdultTask ? ` +${totalReward}` : ''}
                           </Text>}
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setRedoing(true)}
+                    <TouchableOpacity onPress={() => (redoing && !declining) ? resetRedoCompose() : setRedoing(true)}
                       style={{ height: 50, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
                         alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>↩ Redo · send a helpful reason</Text>
@@ -1426,7 +1429,10 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                         outright" server action — so this opens the identical
                         compose panel, just framed as a decline (reason
                         required, not optional) via declining=true below. */}
-                    <TouchableOpacity onPress={() => { setRedoing(true); setDeclining(true); }}
+                    <TouchableOpacity onPress={() => {
+                      if (redoing && declining) resetRedoCompose();
+                      else { setRedoing(true); setDeclining(true); }
+                    }}
                       style={{ height: 50, borderRadius: 16, borderWidth: 1.5, borderColor: colors.danger,
                         alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 14, fontWeight: '600', color: colors.danger }}>

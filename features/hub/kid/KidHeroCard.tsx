@@ -1,6 +1,7 @@
 import { View, Text } from 'react-native';
 import { CheckCircle2, Calendar, Flame } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { KID } from './kidTheme';
 import { KidSectionHeader } from './KidSectionHeader';
 import type { FamilyMember } from '@/store/familyStore';
@@ -43,13 +44,13 @@ export function KidHeroCard({
   // completion (an arc, not a static count) instead of the parent card's
   // sharing-count ring, and coins sit inside the ring's center label
   // instead of the parent card's "N/M sharing" text.
-  const encouragement = goalMet ? "You're on fire today! 🔥" : `${questGoal - doneToday} quest${questGoal - doneToday === 1 ? '' : 's'} to go — you've got this!`;
+  const encouragement = goalMet ? "You're on fire today! 🔥" : `${questGoal - doneToday} chore${questGoal - doneToday === 1 ? '' : 's'} to go`;
   const pct = Math.max(0, Math.min(1, questPct));
 
   return (
     <View style={{
-      marginHorizontal: 16, marginBottom: 16,
-      flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 20,
+      marginHorizontal: 16, marginTop: 12, marginBottom: 16,
+      flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16, padding: 18,
       borderWidth: 1, borderColor: colors.border, borderRadius: 24,
       backgroundColor: colors.tealLight,
       shadowColor: colors.teal, shadowOffset: { width: 0, height: 12 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 30,
@@ -57,12 +58,12 @@ export function KidHeroCard({
       <View style={{ flex: 1, minWidth: 180 }}>
         <KidSectionHeader label="MY PULSE" accent={colors.teal} colors={colors} />
 
-        <Text style={{ fontSize: 21, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, marginTop: 6, marginBottom: 6 }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, marginTop: 4, marginBottom: 4 }}>
           {encouragement}
         </Text>
 
         {streak > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <Flame size={15} color="#F97316" fill="#F97316" />
             <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>{streak}-day streak!</Text>
           </View>
@@ -70,7 +71,7 @@ export function KidHeroCard({
 
         {/* Coin balances — same role as the parent card's status line,
             now showing the kid's two balances instead of a sentence. */}
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
           <Text style={{ fontSize: 26, fontWeight: '700', color: colors.textPrimary }}>{mainCoins}</Text>
           <Text style={{ fontSize: 14, color: colors.textSecondary }}>coins</Text>
           {gpCoins > 0 && (
@@ -80,7 +81,7 @@ export function KidHeroCard({
             </View>
           )}
         </View>
-        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }}>Level {level} · tap your coins to see rewards</Text>
+        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }}>Level {level}</Text>
       </View>
 
       {/* Quest-progress ring — same 70x70/5px-border geometry as

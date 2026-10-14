@@ -34,10 +34,24 @@ export type MealFormState = {
   onClose: () => void;
 };
 
-export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onFormStateChange, showAddButton }: {
+export type MealRecipeState = {
+  meal: Meal;
+  onEdit?: (meal: Meal) => void;
+  onAddToGrocery: (items: string[]) => Promise<void>;
+  senderId: string;
+  hideAddToGrocery?: boolean;
+};
+
+export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onFormStateChange, onRecipeChange, showAddButton }: {
   colors: any; isDark: boolean; weekOverride?: string;
   onAddReady?: (trigger: (day?: string) => void) => void;
   onFormStateChange?: (state: MealFormState | null) => void;
+  /** Recipe detail is rendered by the parent (MealsWeekPage) so its
+      full-page overlay can cover the parent's own header/week-nav too
+      [live-requested: "why is this recipie not opening as overlay instead
+      opening the inline page" — RecipeModal's position:absolute only
+      escaped to MealsTab's own flex:1 container, not the real screen]. */
+  onRecipeChange?: (state: MealRecipeState | null) => void;
   showAddButton?: boolean;
 }) {
   const { members, activeMemberId } = useFamilyStore();
@@ -60,7 +74,8 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
   const [loading, setLoading]   = useState(true);
 
   // Modals
-  const [activeRecipe, setActiveRecipe] = useState<Meal | null>(null);
+  const [localActiveRecipe, setLocalActiveRecipe] = useState<Meal | null>(null);
+  const activeRecipe = onRecipeChange ? null : localActiveRecipe;
   const [editMeal, setEditMeal]         = useState<Meal | null>(null);
   const [addDay, setAddDay]             = useState<string | null>(null);
   // Was a plain `savingMeal` state — a fast double-tap on MealFormSheet's
@@ -296,7 +311,19 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
             <DayCard key={day} day={day} meals={mealsByDay[day] ?? []}
               members={members as any}
               colors={colors} isDark={isDark}
-              onRecipe={m => setActiveRecipe(m)}
+              onRecipe={m => {
+                if (onRecipeChange) {
+                  onRecipeChange({
+                    meal: m,
+                    onEdit: isKidOrTeen ? undefined : em => { onRecipeChange(null); setEditMeal(em); },
+                    onAddToGrocery: names => addGroceryItems(names, `From ${m.title}`),
+                    senderId: activeMember?.id ?? '',
+                    hideAddToGrocery: isKidOrTeen,
+                  });
+                } else {
+                  setLocalActiveRecipe(m);
+                }
+              }}
               onEdit={isKidOrTeen ? undefined : m => setEditMeal(m)}
               onDelete={isKidOrTeen ? undefined : m => deleteMeal(m.id)}
               onAdd={isKidOrTeen ? undefined : () => setAddDay(day)}
@@ -312,14 +339,19 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
 
     </ScrollView>
 
-      {/* ── Recipe Detail — full-page ────── */}
-      <RecipeModal meal={activeRecipe} visible={!!activeRecipe}
-        onClose={() => setActiveRecipe(null)}
-        onEdit={isKidOrTeen ? undefined : m => { setActiveRecipe(null); setEditMeal(m); }}
-        onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}
-        senderId={activeMember?.id ?? ''}
-        hideAddToGrocery={isKidOrTeen}
-        colors={colors} isDark={isDark} />
+      {/* ── Recipe Detail — full-page. Only rendered here when the parent
+          hasn't taken over via onRecipeChange (e.g. FamilyRecipeBookPage,
+          AiSuggestionsPage, which don't have their own header/nav to
+          escape) — MealsWeekPage renders its own lifted copy instead. ── */}
+      {!onRecipeChange && (
+        <RecipeModal meal={localActiveRecipe} visible={!!localActiveRecipe}
+          onClose={() => setLocalActiveRecipe(null)}
+          onEdit={isKidOrTeen ? undefined : m => { setLocalActiveRecipe(null); setEditMeal(m); }}
+          onAddToGrocery={(names) => addGroceryItems(names, localActiveRecipe ? `From ${localActiveRecipe.title}` : undefined)}
+          senderId={activeMember?.id ?? ''}
+          hideAddToGrocery={isKidOrTeen}
+          colors={colors} isDark={isDark} />
+      )}
 
     </View>
   );

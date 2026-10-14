@@ -41,7 +41,6 @@ import { ItemDetailSheet } from './components/ItemDetailSheet';
 import { CategorySection } from './components/CategorySection';
 import { HistoryTab } from './components/HistoryTab';
 import { InsightsTab } from './components/InsightsTab';
-import { GroceryAiBanner } from './components/GroceryAiBanner';
 import { AiSuggestionsScreen } from './components/AiSuggestionsScreen';
 import { KidRequestsSection } from './components/KidRequestsSection';
 import { GroceryItemsSection } from './components/GroceryItemsSection';
@@ -107,6 +106,14 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
   const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' }>>({});
   const [priceLoading, setPriceLoading] = useState(false);
   const [pricesLoaded, setPricesLoaded] = useState(false);
+  // When the AI price check last actually ran — used to suppress the
+  // "Price Check" button when nothing has changed since: no new
+  // (unpriced) items AND the last check was within 24h, there's nothing
+  // new for it to tell the family [live-requested: "if there is no new
+  // items added or we ran last 24hs display the button for ai query" —
+  // i.e. hide the re-query affordance in that case instead of inviting a
+  // redundant call].
+  const [lastPriceCheckAt, setLastPriceCheckAt] = useState<number | null>(null);
 
   // Seed priceMap from stored estimatedPrice whenever items load. A
   // receipt-sourced price (parse-grocery-receipt matched this item to a
@@ -194,8 +201,16 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
     } catch (err) {
       console.error('[GroceryScreen] checkPrices() uncaught error:', String(err));
     }
+    setLastPriceCheckAt(Date.now());
     setPriceLoading(false);
   };
+  const unpricedCount = items.filter(i => !i.isBought && !priceMap[i.name] && i.priceSource !== 'receipt').length;
+  const checkedWithinDay = lastPriceCheckAt != null && Date.now() - lastPriceCheckAt < 24 * 60 * 60_000;
+  // Show the "Price Check" action only when there's something new for it
+  // to actually do: unpriced items waiting, or it's been 24h+ (or never
+  // run) since the last check. Otherwise the button is hidden — nothing
+  // changed since the last pass, so a re-query would just repeat it.
+  const canCheckPrices = unpricedCount > 0 || !checkedWithinDay;
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const isSelecting = selectedIds.size > 0;
 
@@ -220,6 +235,10 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
 
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
   const [pinningStore, setPinningStore] = useState<string | null>(null);
+  // Category view (default, Produce/Dairy/etc) vs store view (grouped by
+  // where each item will be bought) [live-requested: "we should have
+  // option to see the store wise list also right"].
+  const [listGroupBy, setListGroupBy] = useState<'category' | 'store'>('category');
 
   // Was no way to remove a store's pin once set (live-requested: "once
   // pin is set we should be able to modify it or delete it") — "modify"
@@ -485,6 +504,18 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       iconName: 'bar-chart-outline', color: colors.pink, bg: colors.pinkLight, count: 0,
     },
   ];
+  // Pinned Stores — the only way to pin a store location used to be 3
+  // taps deep (Groceries → Shopping Trips → New Run → "Pin a specific
+  // store location"), with zero entry point from this landing page
+  // itself [live-reported: "i think there should a pin the store page
+  // where is it? under groceries" / "not finding the link" / "didnt
+  // find that pin location here" — pointing at this exact screen].
+  // Matches the other 4 landing cards' shape exactly; opens a dedicated
+  // map screen showing every pinned store as a marker [live-requested:
+  // "pinned store we should have pinned location page mapped not the
+  // groceries list" — the Shopping List sub-screen was the wrong
+  // destination, since it's about items, not locations].
+  const pinnedStoreCount = Object.keys(pinnedStores).length;
 
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
@@ -543,27 +574,55 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           </Pressable>
         )}
 
-        {/* AI tools card */}
-        <GroceryAiBanner
-          isDark={isDark} colors={colors}
-          onScan={() => setShowReceiptScan(true)}
-          onPriceCheck={() => checkPrices()}
-          pricesLoaded={pricesLoaded} priceLoading={priceLoading}
-        />
-
-        {/* Estimated cart total pill */}
-        {cartTotal > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            backgroundColor: colors.primaryLight, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="pricetag-outline" size={14} color={P} />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
-                Estimated total · {items.filter(i => !i.isBought).length} items
+        {/* Estimated total + Price Check banner — replaces the collapsible
+            CubeAI card (removed) with one flat, always-visible row showing
+            the running total next to the action that produces it
+            [live-requested: "we can remove the Ai banner from the
+            groceries landing page, lets make nice banner for the
+            estimated total and nice flag check price button, enable
+            disable based on condition"]. Button disables once every
+            unbought item already has a price and a check ran within the
+            last 24h (same canCheckPrices condition as before); when
+            disabled, the subtitle swaps to an info line explaining why/when
+            it'll come back, same single row, no extra section
+            [live-requested: "if the condition is met we can add nice info
+            text on card check back when added new items or after 24h" /
+            "no need 2 card row.. just display on the same card"]. */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+          padding: 14,
+          shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05,
+          shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+        }}>
+          <View style={{ flex: 1 }}>
+            {canCheckPrices ? (
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                Estimated total · {items.filter(i => !i.isBought).length} item{items.filter(i => !i.isBought).length !== 1 ? 's' : ''}
               </Text>
-            </View>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: P }}>${cartTotal.toFixed(2)}</Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="checkmark-circle" size={13} color={colors.teal} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.teal }}>
+                  Up to date — check back after new items or 24h
+                </Text>
+              </View>
+            )}
+            <Text style={{ fontSize: 20, fontWeight: '900', color: P, marginTop: 2 }}>${cartTotal.toFixed(2)}</Text>
           </View>
-        )}
+          <Pressable onPress={() => checkPrices()} disabled={!canCheckPrices || priceLoading}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14,
+              borderRadius: 100,
+              backgroundColor: pricesLoaded ? colors.tealLight : (canCheckPrices ? colors.primaryLight : colors.surface),
+              opacity: !canCheckPrices || priceLoading ? 0.6 : 1 }}>
+            {priceLoading
+              ? <ActivityIndicator size="small" color={P} />
+              : <Ionicons name="pricetag" size={15} color={pricesLoaded ? colors.teal : (canCheckPrices ? P : colors.textTertiary)} />}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: pricesLoaded ? colors.teal : (canCheckPrices ? P : colors.textTertiary) }}>
+              {pricesLoaded ? 'Prices ✓' : 'Price Check'}
+            </Text>
+          </Pressable>
+        </View>
 
         {/* Category landing cards — same pastel card rhythm as Home Care's
             task rows, per explicit request. */}
@@ -594,6 +653,63 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </Pressable>
         ))}
+
+        {/* Pinned Stores — see pinnedStoreCount comment above for why
+            this card exists; opens PinStoreLocationSheet directly so one
+            tap gets straight to pinning/re-pinning a store, no
+            intermediate list/map screen [live-requested: "Pin a store
+            page should open when we click on the groceries landing page
+            we dont need another page"]. Opens a blank form — the sheet
+            itself lists every pinned store as a card below the form, and
+            tapping one loads it in for editing [live-requested: "they can
+            pin like 4 location in the same page also they can edit while
+            clicking the perticular card"]. */}
+        <Pressable
+          onPress={() => setPinningStore('')}
+          style={({ pressed }) => ({
+            flexDirection: 'row', alignItems: 'center', gap: 14,
+            backgroundColor: colors.tealLight, borderRadius: 16, padding: 16,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+            alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="location-outline" size={22} color={colors.teal} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Pinned Stores</Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
+              {pinnedStoreCount > 0 ? `${pinnedStoreCount} store${pinnedStoreCount !== 1 ? 's' : ''} pinned` : 'Pin a store location'}
+            </Text>
+          </View>
+          {pinnedStoreCount > 0 && (
+            <View style={{ minWidth: 26, height: 26, borderRadius: 13, paddingHorizontal: 7,
+              backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{pinnedStoreCount}</Text>
+            </View>
+          )}
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
+
+        {/* Bottom info tip — closes out the landing page with one
+            contextual nudge instead of trailing off into empty space
+            [live-requested: "show bottom of this page with nice info
+            banner relavent to it to make more professional"]. Picks the
+            single most relevant message: no store pinned yet beats a
+            general reminder, which beats a quiet "all set" note. */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+          backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginTop: 4,
+        }}>
+          <Ionicons name="sparkles" size={16} color={colors.textTertiary} style={{ marginTop: 1 }} />
+          <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+            {pinnedStoreCount === 0
+              ? 'Tip: pin a store location so delivery and pickup runs know exactly where to go.'
+              : doneRuns.length === 0
+              ? 'Tip: once you finish a shopping trip, it shows up here with totals and a reusable item list.'
+              : `Tip: your last trip was to ${doneRuns[doneRuns.length - 1].store}. Start a new run from Shopping Trips whenever you're ready.`}
+          </Text>
+        </View>
       </ScrollView>
 
       {/* ── Sub-screen overlays (landing card → dedicated page) ── */}
@@ -606,12 +722,9 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 10 }}>
             {/* Family chrome */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-              </Text>
-              {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
-            </View>
+            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
+              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
+            </Text>
             {/* Title — tapping it goes back to the Groceries landing page
                 directly, no separate "‹ Groceries" breadcrumb link above it
                 [live-requested: "lets add the click on the name go to
@@ -639,12 +752,76 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
                 <Text style={{ fontSize: 14, fontWeight: '600', color: P }}>AI suggestions</Text>
               </Pressable>
             </View>
+            {/* Snap-a-photo banner — full width, opens the AI photo scanner
+                so items get added/categorized from a photo instead of typed
+                by hand [live-requested: "create a banner on top of thr add
+                item full width for sanp photo for add groceries list" /
+                placement confirmed on the list screen, not buried inside
+                Add Item]. Reuses the existing ReceiptScanSheet flow. */}
+            <Pressable onPress={() => setShowReceiptScan(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                backgroundColor: colors.amberLight, borderRadius: 14, padding: 14 }}>
+              <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.card,
+                alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="camera" size={19} color={colors.amber} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Snap a photo to add items</Text>
+                <Text style={{ fontSize: 12, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 1 }}>
+                  CubeAI reads the photo and adds items for you
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.amber} />
+            </Pressable>
+            {/* Pinned stores — was only reachable 3 taps deep (Groceries →
+                Shopping Trips → New Run → "Pin a specific store location")
+                with no entry point on the main list at all
+                [live-reported: "i think there should a pin the store page
+                where is it? under groceries" / "not finding the link"].
+                Direct chip row here, same screen as the items it's for. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {Object.keys(pinnedStores).map(store => (
+                <Pressable key={store} onPress={() => setPinningStore(store)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                    borderRadius: 100, borderWidth: 1, borderColor: colors.border,
+                    backgroundColor: colors.primaryLight, paddingVertical: 6, paddingHorizontal: 12 }}>
+                  <Ionicons name="location" size={12} color={P} />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>
+                    {store}
+                  </Text>
+                  <Pressable hitSlop={8} onPress={() => handleUnpinStore(store)}>
+                    <Ionicons name="close" size={14} color={colors.textTertiary} />
+                  </Pressable>
+                </Pressable>
+              ))}
+              <Pressable onPress={() => setPinningStore('Store')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                  borderRadius: 100, borderWidth: 1, borderStyle: 'dashed', borderColor: P,
+                  paddingVertical: 6, paddingHorizontal: 12 }}>
+                <Ionicons name="add" size={14} color={P} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>Pin a store</Text>
+              </Pressable>
+            </ScrollView>
             {/* Figma: estimated total summary */}
             {cartTotal > 0 && (
               <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 18 }}>
                 {pendingCount} approved item{pendingCount !== 1 ? 's' : ''} · estimated ${cartTotal.toFixed(2)}
               </Text>
             )}
+            {/* Category / Store view toggle — same rows, grouped differently
+                [live-requested: "we should have option to see the store
+                wise list also right"]. */}
+            <View style={{ flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+              {(['category', 'store'] as const).map(mode => (
+                <Pressable key={mode} onPress={() => setListGroupBy(mode)}
+                  style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
+                    backgroundColor: listGroupBy === mode ? P : 'transparent' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: listGroupBy === mode ? '#FFFFFF' : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                    {mode === 'category' ? 'By category' : 'By store'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
@@ -657,12 +834,14 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
                   {categorisedItems.supplies.length > 0 && (
                     <CategorySection label="Supplies" emoji="📚" color="#6366F1"
                       items={categorisedItems.supplies} isDark={isDark} colors={colors}
-                      isKid={isKid} onBuy={handleBuyItem} members={members} />
+                      isKid={isKid} onBuy={handleBuyItem} members={members}
+                      pinnedStores={pinnedStores} onPinStore={(store) => setPinningStore(store)} onUnpinStore={handleUnpinStore} />
                   )}
                   {categorisedItems.clothing.length > 0 && (
                     <CategorySection label="Clothing" emoji="👕" color={colors.amber}
                       items={categorisedItems.clothing} isDark={isDark} colors={colors}
-                      isKid={isKid} onBuy={handleBuyItem} members={members} />
+                      isKid={isKid} onBuy={handleBuyItem} members={members}
+                      pinnedStores={pinnedStores} onPinStore={(store) => setPinningStore(store)} onUnpinStore={handleUnpinStore} />
                   )}
                   <KidRequestsSection
                     kidGroceryGroups={kidGroceryGroups} isKid={isKid}
@@ -682,6 +861,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
                     onPinStore={(store) => setPinningStore(store)}
                     onUnpinStore={handleUnpinStore}
                     onAutoScroll={handleAutoScroll} familyId={familyId} activeMemberId={activeMemberId ?? ''}
+                    groupBy={listGroupBy}
                   />
                   <RecentlyBoughtSection
                     boughtItems={boughtItems} boughtExpanded={boughtExpanded} setBoughtExpanded={setBoughtExpanded}
@@ -735,12 +915,9 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-              </Text>
-              {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
-            </View>
+            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
+              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
+            </Text>
             <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Shopping Trips
@@ -767,17 +944,29 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-              </Text>
-              {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
-            </View>
+            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
+              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
+            </Text>
             <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Purchase History
               </Text>
             </Pressable>
+            {/* Scan Receipt — moved here from the CubeAI banner's own
+                button, since a scanned receipt IS a purchase-history
+                entry; scanning from inside the screen that shows that
+                history is the more direct path [live-requested: "scan
+                reciept should be in the purchase heistory right user can
+                scan it directly thre"]. */}
+            {!isKid && (
+              <Pressable onPress={() => setShowReceiptScan(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  paddingVertical: 10, borderRadius: 12, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  borderWidth: 1, borderColor: colors.border }}>
+                <Ionicons name="receipt-outline" size={16} color={P} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Scan Receipt</Text>
+              </Pressable>
+            )}
           </View>
           <HistoryTab familyId={familyId} memberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
         </View>
@@ -791,19 +980,17 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-              </Text>
-              {activeMember && <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>{activeMember.name}</Text>}
-            </View>
+            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
+              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
+            </Text>
             <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                 Insights
               </Text>
             </Pressable>
           </View>
-          <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
+          <InsightsTab familyId={familyId} colors={colors} isDark={isDark}
+            onViewAllPurchases={() => { setTab(null); setTimeout(() => setTab('history'), 50); }} />
         </View>
         )}
       </FullPageOverlay>
@@ -815,6 +1002,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           onClose={() => setShowReceiptScan(false)}
           familyId={familyId}
           memberId={activeMemberId ?? ''}
+          memberName={activeMember?.name}
           colors={colors}
           isDark={isDark}
           onSuccess={() => load(familyId)}
@@ -856,16 +1044,18 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           isDark={isDark}
         />
       </FullPageOverlay>
-      <FullPageOverlay visible={!!pinningStore} onDismiss={() => setPinningStore(null)} zIndex={55}>
+      <FullPageOverlay visible={pinningStore !== null} onDismiss={() => setPinningStore(null)} zIndex={55}>
         <PinStoreLocationSheet
-          visible={!!pinningStore}
+          visible={pinningStore !== null}
           store={pinningStore ?? ''}
+          pinnedStores={pinnedStores}
           onClose={() => setPinningStore(null)}
-          onPin={async (lat, lng) => {
-            if (!pinningStore || !activeMemberId) return;
-            await pinStoreLocation({ familyId, store: pinningStore, latitude: lat, longitude: lng, pinnedBy: activeMemberId });
+          onPin={async (storeName, lat, lng, address) => {
+            if (!activeMemberId) return;
+            await pinStoreLocation({ familyId, store: storeName, latitude: lat, longitude: lng, pinnedBy: activeMemberId, address });
             if (geofencingEnabled) registerStoreGeofences(familyId, activeMemberId).catch(() => {});
           }}
+          onUnpin={(storeName) => handleUnpinStore(storeName)}
         />
       </FullPageOverlay>
       {/* AI Suggestions full-page overlay */}

@@ -24,14 +24,11 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { Quest, QuestCheer } from '@/store/questStore';
 import { localToday, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
-import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { MedicationsCard } from './senior/MedicationsCard';
 import { useMedications } from '@/features/vault/tabs/health/useMedications';
-import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
-import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { HubTimelineSection } from './HubTimelineSection';
 import { HubGreetingHeader } from './HubGreetingHeader';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
@@ -50,7 +47,7 @@ import { AddEventModal } from '@/features/calendar/EventFormModal';
 
 const pad = { paddingHorizontal: 16, marginBottom: 4 } as const;
 
-type SheetKey = 'rides' | 'gas' | 'tutor' | 'cashout' | 'history' | null;
+type SheetKey = 'rides' | 'gas' | 'tutor' | 'cashout' | null;
 
 // Was three separate inline copies of the same expression (claimPickup,
 // dropPickup, confirmAssignment) deciding whether a teen is acting as
@@ -65,7 +62,7 @@ function rideRoleFor(ev: { rideRequired?: boolean; category?: string; driverName
   return ev?.rideRequired && ev.category !== 'Ride' ? 'driver' : 'helper';
 }
 
-export function TeenView({ active, members, colors, isDark, activeTrips, composerVisible, onCloseComposer }: {
+export function TeenView({ active, members, colors, isDark, activeTrips, composerVisible, onCloseComposer, onAskParentTile }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   // Family-wide Pick-up Radar state, synced from tripStore — read-only
@@ -79,6 +76,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // the grocery store load), reused for the composer too.
   composerVisible: boolean;
   onCloseComposer: () => void;
+  // Opens the shared, full-page AskParentHubScreen (Pending/Approved/All
+  // status tabs + destination tiles) that Kid already uses — mounted
+  // globally via KidOverlays in HubScreen.tsx, gated by neither role, so
+  // Teen only needs to flip the trigger flag like Kid does.
+  onAskParentTile: () => void;
 }) {
   const { events, updateEvent } = useEventStore();
   // Same assignee-double-booked signal HubTimelineSection already computes
@@ -164,7 +166,6 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const cancelledQuestsToday = myQuests.filter(q => q.status === 'cancelled' && (q.cancelledAt ?? '').startsWith(today));
   const pendingCoins = reviewQuests.reduce((sum, q) => sum + (q.coins ?? 0) + (q.bonusCoins ?? 0), 0);
   const [declineQuest, setDeclineQuest] = useState<ChoreTask | null>(null);
-  const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
 
   // Cheers landed on this teen's own completed quests — same feed KidView
   // surfaces in its "Needs You" list.
@@ -180,10 +181,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     withinLast24h(r.respondedAt)
   );
 
-  const handleSubmitTap = (q: Quest) => {
-    if (q.photoRequired) setSubmitProofQuest(q);
-    else submitQuest(q.id, undefined, active.id);
-  };
+  // Photo-required submits are handled entirely inline inside
+  // KidQuestDetailScreen/KidQuestCard's own onOpenDetail routing now, same
+  // as KidView.tsx — no Modal sheet. This only ever reaches a non-photo
+  // submit.
+  const handleSubmitTap = (q: Quest) => submitQuest(q.id, undefined, active.id);
 
   // ── Car / dispatch — opt-in, only relevant once the teen says they drive ────
   const hasCar = active.hasCar ?? false;
@@ -418,22 +420,17 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   };
 
   // ── Tile sheets ───────────────────────────────────────────────────────────────
+  // Ride/gas/tutor/cashout stay as Teen's own separate sheets — unrelated
+  // to Ask Parent. Ask Parent itself (and its "My Requests" history) now
+  // routes to the shared AskParentHubScreen via onAskParentTile, same as
+  // Kid, instead of this view's own AskParentSheet/GroceryModal/
+  // SuppliesModal/AskModal/QuestProposalModal/KidRequestHistoryModal.
   const [openSheet, setOpenSheet] = useState<SheetKey>(null);
-  const [askParentSheet, setAskParentSheet] = useState(false);
-  const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
-  // Scenario 1.5 already gives a Teen full self-creation rights via the
-  // Quests tab's own +Quest button — this "Suggest a Chore" entry (shared
-  // AskParentSheet, mainly built for Kids) still works for a Teen too
-  // (asking a parent to set up something the Teen doesn't want full
-  // ownership of), so it's wired the same way rather than hidden.
-  const [questProposalModal, setQuestProposalModal] = useState(false);
-  const [groceryModal, setGroceryModal] = useState(false);
-  const [suppliesModal, setSuppliesModal] = useState(false);
 
   // ── Smart composer — same unrestricted SmartTaskComposer/full-form
   // handoff TasksScreen.tsx wires for Parent, no behavior change (Teen
   // already has full self-creation rights via canCreate elsewhere). Purely
-  // additive alongside AskParentSheet's "ask a parent instead" tile above.
+  // additive alongside the Ask Parent tile above.
   // Visibility is the composerVisible prop (Hub-level FAB, see HubScreen.tsx).
   const [manualQuestPrefill, setManualQuestPrefill] = useState<{
     title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
@@ -501,7 +498,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
       ))}
 
-      <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+      <HubTimelineSection active={active} members={members} events={visibleEvents} colors={colors} isDark={isDark} />
 
       <FamilyGamesSection colors={colors} isDark={isDark} />
 
@@ -554,7 +551,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         <TeenTile
           label="Ask Parent" sublabel="Permission, question, meds"
           Icon={MessageCircle} accent={BRAND.purple}
-          onPress={() => setAskParentSheet(true)} colors={colors} isDark={isDark}
+          onPress={onAskParentTile} colors={colors} isDark={isDark}
         />
         <TeenTile
           label="Rides" sublabel={hasCar ? 'Sibling pickups' : 'Opt in with a car'}
@@ -579,7 +576,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         <TeenTile
           label="My Requests" sublabel="History & status"
           Icon={ClipboardList} accent={BRAND.purple}
-          onPress={() => setOpenSheet('history')} colors={colors} isDark={isDark}
+          onPress={onAskParentTile} colors={colors} isDark={isDark}
         />
         {/* Conditional tile moved last — was positioned before "My
             Requests", so toggling "I Have a Car" reflowed every tile after
@@ -629,41 +626,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         <TeenCashOutSection balance={active.mainCoins ?? active.coins ?? 0} onRequest={requestCashOut} colors={colors} isDark={isDark} />
       </TeenTileSheet>
 
-      <AskParentSheet
-        visible={askParentSheet} onClose={() => setAskParentSheet(false)} colors={colors} isDark={isDark}
-        onPick={(choice) => {
-          setAskParentSheet(false);
-          setTimeout(() => {
-            if (choice === 'ride') setOpenSheet('rides');
-            else if (choice === 'grocery') setGroceryModal(true);
-            else if (choice === 'supplies') setSuppliesModal(true);
-            // "Propose a Chore" (kid-only propose_kid_chore RPC — a Teen
-            // already has full self-creation rights via the unrestricted
-            // SmartTaskComposer/Quests tab, so there's nothing to "propose"
-            // instead of just creating directly) folds into the same
-            // "ask a parent to set something up" framing as Suggest a Chore.
-            else if (choice === 'quest' || choice === 'chore') setQuestProposalModal(true);
-            else setAskModal(choice);
-          }, 300);
-        }}
-      />
-      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
-
       <CantMakeItSheet
         target={declineQuest ? { kind: 'chore', item: declineQuest } : null}
         byMemberId={active.id} members={members}
         onClose={() => setDeclineQuest(null)}
       />
-      <SubmitProofSheet
-        quest={submitProofQuest} colors={colors} isDark={isDark}
-        onClose={() => setSubmitProofQuest(null)}
-        submitQuest={submitQuest}
-      />
-      <GroceryModal  visible={groceryModal}  onClose={() => setGroceryModal(false)}  active={active} />
-      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
-      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
-      <KidRequestHistoryModal visible={openSheet === 'history'} onClose={() => setOpenSheet(null)} active={active} />
-
       <View style={{ height: 32 }} />
     </ScrollView>
 

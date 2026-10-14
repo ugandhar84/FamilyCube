@@ -13,8 +13,9 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import MealsTabComp, { type MealFormState } from './MealsTab';
+import MealsTabComp, { type MealFormState, type MealRecipeState } from './MealsTab';
 import MealFormSheet from './meals/MealFormSheet';
+import RecipeModal from './meals/RecipeModal';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
@@ -69,6 +70,14 @@ export default function MealsWeekPage({
 
   // Form state lifted from MealsTab — when set, render the form as a full page
   const [formState, setFormState] = useState<MealFormState | null>(null);
+
+  // Recipe detail state lifted from MealsTab — rendered as a sibling at
+  // this root level (not nested inside MealsTabComp's own flex:1 region)
+  // so RecipeModal's full-page overlay covers this screen's own header +
+  // week-navigator strip too, not just the day-card list beneath them
+  // [live-requested: "why is this recipie not opening as overlay instead
+  // opening the inline page"].
+  const [recipeState, setRecipeState] = useState<MealRecipeState | null>(null);
 
   // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
   // explicit request — see Home Care/Grocery/MealsScreen's own identical
@@ -154,9 +163,21 @@ export default function MealsWeekPage({
           isDark={isDark}
           weekOverride={currentWeek}
           onFormStateChange={setFormState}
+          onRecipeChange={setRecipeState}
           showAddButton
         />
       </View>
+
+      {/* ── Recipe Detail — full-page overlay, lifted to this screen's own
+          root so it covers the header + week-nav above, not just MealsTab's
+          body. ── */}
+      <RecipeModal meal={recipeState?.meal ?? null} visible={!!recipeState}
+        onClose={() => setRecipeState(null)}
+        onEdit={recipeState?.onEdit}
+        onAddToGrocery={recipeState?.onAddToGrocery ?? (async () => {})}
+        senderId={recipeState?.senderId ?? ''}
+        hideAddToGrocery={recipeState?.hideAddToGrocery}
+        colors={colors} isDark={isDark} />
 
     </View>
   );

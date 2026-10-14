@@ -30,7 +30,13 @@ export default function FindFamTab() {
 
   const close = () => {
     setVisible(false);
-    router.replace('/(tabs)/gps' as any);
+    // navigate (not replace) — replace pushes a stack transition that can
+    // land a beat behind the bottom-tab navigator's own state.index,
+    // leaving the tab bar's highlight stuck on the previous tab while this
+    // screen's content has already closed [live-reported: tab bar "stuck
+    // on the different pages sometimes"]. navigate() reuses the same
+    // tab-switch transition CustomTabBar's own taps use.
+    router.navigate('/(tabs)/gps' as any);
   };
 
   return (

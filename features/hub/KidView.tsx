@@ -1,9 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Alert, Animated, Easing } from 'react-native';
-import FullPageOverlay from '@/components/FullPageOverlay';
-import { useUIStore } from '@/store/uiStore';
-import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
-import { GEMINI } from '@/constants/geminiRhythm';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
@@ -16,6 +12,7 @@ import { useDismissedHubItemsStore } from '@/store/dismissedHubItemsStore';
 import { withinLast24h } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
+import { parseLocalDate } from '@/lib/dates';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { driverLabelByName } from '@/lib/format';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -30,25 +27,14 @@ import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { KidHeroCard } from './kid/KidHeroCard';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { KidTodaySection } from './kid/KidTodaySection';
-import { MyQuestsSection } from './kid/MyQuestsSection';
-import { MyChoresScreen } from './kid/MyChoresScreen';
+import { KidChoresNeedsYouCard } from './kid/KidChoresNeedsYouCard';
 import { KidActionGrid, KidCheckinRow } from './kid/KidMoreRow';
-import { PiggyBankScreen } from './kid/PiggyBankScreen';
-import { SubmitProofSheet } from './kid/SubmitProofSheet';
+import { RideStatusCard } from './kid/RideStatusCard';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
-import { AskParentHubScreen, type AskParentDestination } from './kid/AskParentHubScreen';
-import { AskPermissionPage } from './kid/forms/AskPermissionPage';
-import { AskQuestionPage } from './kid/forms/AskQuestionPage';
-import { MedicationAlertPage } from './kid/forms/MedicationAlertPage';
-import { GroceryRequestPage } from './kid/forms/GroceryRequestPage';
-import { SuppliesRequestPage } from './kid/forms/SuppliesRequestPage';
-import { QuestProposalPage } from './kid/forms/QuestProposalPage';
-import { ChoreProposalPage } from './kid/forms/ChoreProposalPage';
-import { RideRequestPage } from './kid/forms/RideRequestPage';
-import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
+import { TonightMealCard } from './parent/TonightMealCard';
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
-export function KidView({ focusKey, active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer }: {
+export function KidView({ focusKey, active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer, onMyChores, onOpenMyChoresTab, onPiggyBank, onAskParentTile, onAskForRide, onRideStatusOpen }: {
   // Same staggered-entrance trigger ParentView.tsx uses — focusKey=0 means
   // "subpage pop, show immediately," any other value replays the entrance.
   focusKey?: number;
@@ -68,53 +54,42 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // KidView is itself scrolled content, not a positioned ancestor.
   composerVisible: boolean;
   onCloseComposer: () => void;
+  // My Chores / Piggy Bank / Ask Parent now render via KidOverlays, a
+  // top-level sibling HubScreen mounts OUTSIDE its own ScrollView (same
+  // reasoning as composerVisible above) — this view only owns the tile
+  // taps that open them.
+  onMyChores: () => void;
+  // Needs You card's tap target — opens My Chores landing directly on the
+  // given status tab (e.g. 'review' for a submitted item awaiting
+  // approval) instead of always defaulting to 'todo'.
+  onOpenMyChoresTab: (tab: 'todo' | 'review' | 'done' | 'bounty') => void;
+  onPiggyBank: () => void;
+  onAskParentTile: () => void;
+  // Ride also keeps its own full-width Quick Action card for fast access,
+  // opening AskParentUnifiedPage's ride pill directly (via
+  // setAskParentDestination('ride') in HubScreen.tsx) — the same
+  // destination the Ask Parent hub's own "Ask for a Ride" tile now also
+  // leads to (AskParentHubScreen.tsx).
+  onAskForRide: () => void;
+  // Opens RidesControlRoomScreen (same screen the parent uses for the
+  // family-wide fleet view: Active/Upcoming/History tabs, live trip
+  // progress, driver ETA) [live-requested: "ask for a ride full width
+  // card on the kids hub page should open like the parents page to see
+  // their open their ride status and the history progress etc"]. Only
+  // used once the kid has an actual ride to look at (pending or
+  // confirmed) — with nothing going on yet the card still opens the
+  // request form, same as before.
+  onRideStatusOpen: () => void;
 }) {
-  // Backdrop color for the Ask Parent hub + its 8 full-page forms —
-  // every one of those screens already computes this same value
-  // internally (isDark ? colors.background : GEMINI.canvas, the warm-cream
-  // Gemini-rhythm exception these kid-ask screens were built under); the
-  // FullPageOverlay wrapping them just needs the matching value so there's
-  // no backdrop-vs-content color mismatch during the slide gesture.
-  const kidAskCanvas = isDark ? colors.background : GEMINI.canvas;
-
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
   const { startGrandparentQuest } = useChoreStore();
   const { events, updateEvent }                           = useEventStore();
-  const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
-  const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
+  const { rewards, redeemReward, getEligibleRewards, redemptions } = useRewardStore();
+  const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests, expireStale: expireStaleRequests } = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
 
-  const [piggyBankModal,  setPiggyBankModal]  = useState(false);
-  // "Ask Parent" is now a full-page landing screen (AskParentHubScreen)
-  // instead of a bottom-sheet picker — the Hub-level FAB
-  // (composerVisible/onCloseComposer, lifted to HubScreen.tsx so the FAB
-  // can float outside this view's scrolled content) and the tile below
-  // both just open this same full-page hub now.
-  // composerVisible is lifted to HubScreen (so its FAB can float outside
-  // this view's scrolled content) and HubScreen only hands this view a
-  // closer, not a setter — so the "Ask Parent" tile below still needs its
-  // own local flag to open the SAME hub screen the FAB's composerVisible
-  // drives, same shape the old askParentSheetFromTile flag used.
-  const [askParentHubFromTile, setAskParentHubFromTile] = useState(false);
-  const showAskParentHub = composerVisible || askParentHubFromTile;
-  const closeAskParentHub = () => { onCloseComposer(); setAskParentHubFromTile(false); };
-  // Which of the 8 full-page forms is currently open, stacked ABOVE the
-  // hub (zIndex 51 vs the hub's 50) — null means none. Selecting a
-  // destination from the hub sets this without closing the hub underneath,
-  // same stacked-overlay shape HubScreen.tsx uses for its own nested
-  // full-page screens (e.g. showReviewInbox + reviewQuestDetailId).
-  const [askParentDestination, setAskParentDestination] = useState<null | AskParentDestination>(null);
-  // My Chores — full-page landing (banner "Propose a Chore" + To Do/Pending
-  // Review/Completed groups), same shell shape as Piggy Bank below
-  // [live-requested: "We must convert all of them to dedicated overlay
-  // pages like parents view" + "chores tile ... banner propose a chore
-  // and down to that todo pending review completed"].
-  const [showMyChores, setShowMyChores] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [declineQuest,    setDeclineQuest]    = useState<ChoreTask | null>(null);
-  // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
-  // out on a bare tap; the photo IS the proof, so collect it before submitting.
-  const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
 
   // KidView can render without ParentView ever having mounted this session
   // (e.g. app opened straight into Kid Mode), so it must hydrate the kid
@@ -123,19 +98,18 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
     if (!kidRequestsLoaded) loadKidRequests();
   }, [kidRequestsLoaded]);
 
-  // Both the Ask Parent hub and whichever of its 8 full-page forms is
-  // currently stacked above it are full-bleed screens — same combined
-  // setFullBleedScreenActive + hideTabBar/showTabBar pairing
-  // HubScreen.tsx's own anyFullBleedOpen effect uses, so the tab bar
-  // actually animates away (fullBleedScreenActive alone only hides the
-  // floating FAB) and the hide/show calls stay balanced exactly one per
-  // open/close transition.
+  // Lazy client-side sweep for checkin/question requests whose expiresAt
+  // has passed (set in kidRequestStore.sendRequest) — closes the gap
+  // between hourly server-side sweeps (kid-request-expire-sweep) so a
+  // stale request doesn't still show as "pending" on Hub open.
   useEffect(() => {
-    const anyFullBleedOpen = showAskParentHub || !!askParentDestination || showMyChores || piggyBankModal;
-    useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
-    if (anyFullBleedOpen) hideTabBar(); else showTabBar();
-    return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
-  }, [showAskParentHub, askParentDestination, showMyChores, piggyBankModal]);
+    if (kidRequestsLoaded) expireStaleRequests();
+  }, [kidRequestsLoaded]);
+
+  // My Chores / Piggy Bank / Ask Parent full-bleed + tab-bar handling now
+  // lives in HubScreen.tsx's own anyFullBleedOpen effect, alongside
+  // KidOverlays (which actually renders these screens, outside this
+  // view's ScrollView).
 
   // Dismiss state for the "Needs You" list — DB-backed (dismissed_hub_items
   // table), not AsyncStorage: survives reinstall and syncs across a
@@ -317,14 +291,25 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // a teenager. isOpenToTeens now means exactly that: excludes it from a
   // kid's own pool (still shows in TeenView's).
   const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents && !q.isOpenToTeens);
+  const bountyQuests   = poolQuests.filter(q => q.questType === 'bounty');
   const todoQuests       = myQuests.filter(q => q.status === 'todo' && !q.isPool);
-  const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
   const approvedQuests = myQuests.filter(q => ['approved', 'done'].includes(q.status));
-  const cancelledQuests = myQuests.filter(q => q.status === 'cancelled');
-  const cancelledQuestsToday = cancelledQuests.filter(q => (q.cancelledAt ?? '').startsWith(today));
   const doneToday      = myQuests.filter(q => ['approved','done'].includes(q.status)).length;
+  // Same isOverdue definition as KidQuestCard.tsx / QuestCard.tsx: date-only
+  // compare against the start of today, excluded once done/declined.
+  const overdueQuestsStart = new Date(); overdueQuestsStart.setHours(0, 0, 0, 0);
+  const overdueQuests = myQuests.filter(q => {
+    const dueMs = q.dueDate ? parseLocalDate(q.dueDate).getTime() : null;
+    return !!dueMs && dueMs < overdueQuestsStart.getTime() && !['approved','done'].includes(q.status) && q.status !== 'declined';
+  });
+  // Rewards quick-action tile's own stacked counters [live-requested:
+  // "pippy back [sic, meant Rewards] card should show the pending rewards
+  // request, approved requests today if available"].
+  const myRedemptions = redemptions.filter(r => r.memberId === active.id);
+  const pendingRedemptions = myRedemptions.filter(r => r.status === 'pending');
+  const approvedRedemptionsToday = myRedemptions.filter(r => r.status === 'approved' && r.respondedAt && withinLast24h(r.respondedAt));
   const questGoal      = Math.max(myQuests.filter(q => (q.status as string) !== 'pending_parent_approval').length, 3);
   const questPct       = Math.min(doneToday / questGoal, 1);
 
@@ -439,12 +424,14 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
     sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
   };
 
-  // A quest without photoRequired submits immediately; one that requires it
-  // opens the capture sheet instead — "Take Photo to Get Paid" has to mean it.
-  const handleSubmitTap = (q: Quest) => {
-    if (q.photoRequired) setSubmitProofQuest(q);
-    else submitQuest(q.id, undefined, active.id);
-  };
+  // A photoRequired quest's "Take Photo to Get Paid" button is handled
+  // entirely inline inside KidQuestDetailScreen/KidQuestCard's own
+  // onOpenDetail routing now (a plain View compose block, not a Modal
+  // sheet) [live-corrected: "I said don't use bottom sheets use inline
+  // photo proof similar to parent" — the earlier SubmitProofSheet modal
+  // was the wrong shape]. This handler only ever reaches a non-photo
+  // submit, so it just calls submitQuest directly.
+  const handleSubmitTap = (q: Quest) => submitQuest(q.id, undefined, active.id);
 
   const recentReplies = myRequests.filter(r =>
     ['approved', 'declined'].includes(r.status) &&
@@ -508,30 +495,18 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
         />
       </Animated.View>
 
-      {/* 3. My Quests — the "inbox" card the mockup places right after
-          next-up, ahead of Needs You — the actual point of the screen. */}
+      {/* 3. Chores Needs You — single most-urgent chore card (submitted >
+          to do > unclaimed bounty), same compact rhythm as Parent's own
+          NeedsYouCard, replacing the old always-expanded MyQuestsSection
+          [live-requested: "lets build need needs you similar to the
+          parents needs you.. open the chores and it is todo, submitted,
+          approved, bounty etc"]. Tapping it opens My Chores landing
+          directly on that item's own status tab. */}
       <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
-        <MyQuestsSection
-          todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
-          poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} declinedQuests={declinedQuests} allQuests={quests}
-          active={active} members={members} colors={colors} isDark={isDark}
-          onClaim={(id) => claimQuest(id, active.id, (reason) => {
-            // Spec 3.1/3.4 — a lost claim race gets a clear, specific
-            // explanation instead of the item just silently vanishing.
-            Alert.alert(
-              reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
-              reason === 'deleted'
-                ? 'This chore was just removed by a parent.'
-                : 'Someone else already claimed this chore — check the pool for others.',
-            );
-          })}
-          onStart={(id) => submitQuest(id, undefined, active.id)}
-          onSubmit={handleSubmitTap}
-          onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
-          onDeclineGpQuest={(q) => {
-            const chore = useChoreStore.getState().chores.find(c => c.id === q.id);
-            if (chore) setDeclineQuest(chore);
-          }}
+        <KidChoresNeedsYouCard
+          colors={colors} isDark={isDark}
+          todoQuests={todoQuests} reviewQuests={reviewQuests} bountyQuests={bountyQuests}
+          onOpenTab={onOpenMyChoresTab}
         />
       </Animated.View>
 
@@ -575,18 +550,48 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
           essential daily actions. */}
       <Animated.View style={{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }}>
         <KidActionGrid
-          onMyChores={() => setShowMyChores(true)}
-          onAskParent={() => setAskParentHubFromTile(true)}
-          onPiggyBank={() => setPiggyBankModal(true)}
+          onMyChores={onMyChores}
+          onAskParent={onAskParentTile}
+          onPiggyBank={onPiggyBank}
+          choreStats={[
+            { label: 'To do',      value: todoQuests.length,     color: colors.amber },
+            { label: 'Review',     value: reviewQuests.length,   color: colors.danger },
+            { label: 'Approved',   value: doneToday,             color: colors.teal },
+            { label: 'Overdue',    value: overdueQuests.length,  color: colors.danger },
+          ]}
+          rewardStats={pendingRedemptions.length > 0 || approvedRedemptionsToday.length > 0 ? [
+            { label: 'Pending',       value: pendingRedemptions.length,       color: colors.amber },
+            { label: 'Approved today', value: approvedRedemptionsToday.length, color: colors.teal },
+          ].filter(s => s.value > 0) : undefined}
           colors={colors} isDark={isDark}
         />
-        <KidCheckinRow onCheckin={sendCheckin} colors={colors} />
+        <RideStatusCard
+          colors={colors} isDark={isDark}
+          pendingCount={myPendingRides.length}
+          confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
+          confirmedRideDate={confirmedRide?.date}
+          confirmedRideTime={confirmedRide?.time}
+          driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
+          onPress={confirmedRide || myPendingRides.length > 0 ? onRideStatusOpen : onAskForRide}
+        />
+        <KidCheckinRow onCheckin={sendCheckin} colors={colors} isDark={isDark} />
 
         {meds.length > 0 && (
-          <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
+          <View style={{ marginTop: 14, marginBottom: 14 }}>
+            <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
+          </View>
         )}
 
-        <FamilyGamesSection colors={colors} isDark={isDark} />
+        {/* Dinner preview — same card/nav as the Parent Hub's "Tonight" slot
+            instead of the Play Games tile [live-requested: "instead of
+            playgames in the kids hub show the dinner card similar to the
+            parent.. and navigate to dinner landing page"]. Opens the
+            shared MealsScreen via setOpenMealsScreenRequested, same as
+            ParentView — no role-gating on that path, works identically
+            for kids. */}
+        <View style={{ marginTop: 14 }}>
+          <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
+        </View>
       </Animated.View>
 
       <CantMakeItSheet
@@ -594,82 +599,9 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
         byMemberId={active.id} members={members}
         onClose={() => setDeclineQuest(null)}
       />
-      <SubmitProofSheet
-        quest={submitProofQuest} colors={colors} isDark={isDark}
-        onClose={() => setSubmitProofQuest(null)}
-        submitQuest={submitQuest}
-      />
-      <FullPageOverlay visible={piggyBankModal} onDismiss={() => setPiggyBankModal(false)} zIndex={50} backgroundColor={kidAskCanvas}>
-        <PiggyBankScreen
-          onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
-          mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
-          doneToday={doneToday} streak={streak} level={level} memberId={active.id}
-        />
-      </FullPageOverlay>
-
-      <FullPageOverlay visible={showMyChores} onDismiss={() => setShowMyChores(false)} zIndex={50} backgroundColor={kidAskCanvas}>
-        <MyChoresScreen
-          onClose={() => setShowMyChores(false)}
-          active={active} members={members} familyId={familyId ?? ''}
-          todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
-          declinedQuests={declinedQuests} approvedQuests={approvedQuests} allQuests={quests}
-          colors={colors} isDark={isDark}
-          onClaim={(id) => claimQuest(id, active.id, (reason) => {
-            Alert.alert(
-              reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
-              reason === 'deleted'
-                ? 'This chore was just removed by a parent.'
-                : 'Someone else already claimed this chore — check the pool for others.',
-            );
-          })}
-          onStart={(id) => submitQuest(id, undefined, active.id)}
-          onSubmit={handleSubmitTap}
-          onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
-          onDeclineGpQuest={(q) => {
-            const chore = useChoreStore.getState().chores.find(c => c.id === q.id);
-            if (chore) setDeclineQuest(chore);
-          }}
-        />
-      </FullPageOverlay>
-
-      {/* Ask Parent — full-page landing hub (replaces AskParentSheet's
-          bottom-sheet picker), stacked as a sibling per the
-          FullPageOverlay/never-early-return rule. Picking a destination
-          opens the matching full-page form ABOVE it (zIndex 51) without
-          closing the hub underneath, so swiping the form back reveals the
-          hub, not raw Hub content. */}
-      <FullPageOverlay visible={showAskParentHub} onDismiss={closeAskParentHub} zIndex={50} backgroundColor={kidAskCanvas}>
-        <AskParentHubScreen
-          onClose={closeAskParentHub}
-          onSelect={(destination) => setAskParentDestination(destination)}
-        />
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!askParentDestination} onDismiss={() => setAskParentDestination(null)} zIndex={51} backgroundColor={kidAskCanvas}>
-        {askParentDestination === 'ride' && (
-          <RideRequestPage onClose={() => setAskParentDestination(null)} activeMemberId={active.id} />
-        )}
-        {askParentDestination === 'permission' && (
-          <AskPermissionPage active={active} onClose={() => setAskParentDestination(null)} />
-        )}
-        {askParentDestination === 'question' && (
-          <AskQuestionPage active={active} onClose={() => setAskParentDestination(null)} />
-        )}
-        {askParentDestination === 'medication' && (
-          <MedicationAlertPage active={active} onClose={() => setAskParentDestination(null)} />
-        )}
-        {askParentDestination === 'grocery' && (
-          <GroceryRequestPage active={active} onClose={() => setAskParentDestination(null)} />
-        )}
-        {askParentDestination === 'supplies' && (
-          <SuppliesRequestPage active={active} onClose={() => setAskParentDestination(null)} />
-        )}
-        {askParentDestination === 'quest' && (
-          <QuestProposalPage active={active} onClose={() => setAskParentDestination(null)} />
-        )}
-        {askParentDestination === 'chore' && (
-          <ChoreProposalPage active={active} members={members} familyId={familyId ?? ''} onClose={() => setAskParentDestination(null)} />
-        )}
-      </FullPageOverlay>
+      {/* My Chores / Piggy Bank / Ask Parent now render via KidOverlays,
+          mounted by HubScreen.tsx as a top-level sibling outside its own
+          ScrollView — see onMyChores/onPiggyBank/onAskParentTile props. */}
     </>
   );
 }

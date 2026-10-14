@@ -188,6 +188,18 @@ The brand palette already has `*Light` variants: `colors.primaryLight`, `colors.
 
 ---
 
+## Full-Page Detail/Overlay Screens — render as a sibling, not an early-return
+
+**Reference implementation: `features/quests/QuestsScreen.tsx` → `QuestDetailModal.tsx`.** Any new full-page detail/overlay screen (event detail, member detail, etc.) must follow this exact shape:
+
+1. **Render as a conditional sibling inside the parent's JSX**, alongside the parent's own content — e.g. `{detailTarget && <QuestDetailModal ... />}` sitting next to the rest of `QuestsScreen`'s tree. **Never early-return** (`if (detailX) return <Screen .../>`) from a parent that owns real tab content — an early-return fully unmounts everything behind it, so a swipe-back/slide-out gesture has nothing real to reveal underneath, just a flat painted color. `features/tasks/TasksScreen.tsx`'s `detailEvent` → `EventDetailScreen` used to be exactly this early-return mistake (fixed 2026-10-11) — confirm any new full-page screen doesn't repeat it.
+2. **Wrap the screen's content in `FullPageOverlay`** (`components/FullPageOverlay.tsx`), not a raw `SwipeBackWrapper` and never a real RN `<Modal>`. `FullPageOverlay` owns the slide-in-from-right entrance, the swipe-to-dismiss gesture (via `SwipeBackWrapper` internally), and `requestAnimatedClose()` for in-screen buttons that want the same animated exit. A real `<Modal>`'s native backing window has no color of its own and causes a white flash on open/close; `FullPageOverlay` paints its own backdrop instead.
+3. **Pass `backgroundColor={canvas}`** to `FullPageOverlay`, where `canvas` is `isDark ? colors.background : GEMINI.canvas` (or the plain `colors.background` white canvas for non-Gemini-rhythm screens per rule 6 above) — this is the backdrop painted behind the sliding content, preventing any white flash during the gesture.
+4. **Hide the tab bar via `hideTabBar()`/`showTabBar()`** (`lib/tabBarVisibility.ts`) in a mount/unmount `useEffect`, alongside `useUIStore.getState().setFullBleedScreenActive(true/false)` — both together, not just one. `fullBleedScreenActive` alone only hides the floating FAB; `hideTabBar`/`showTabBar` is what actually animates the real tab bar away.
+5. The screen's own explicit Back button calls `onClose` directly — it does **not** need to call `requestAnimatedClose()`. `QuestDetailModal.tsx` itself doesn't animate its own Back tap, only the swipe gesture and the initial mount are animated; match that, don't add extra entrance/exit machinery.
+
+**`components/SwipeBackWrapper.tsx` is shared infrastructure** — every `FullPageOverlay` consumer app-wide (Quest detail, Event detail, Grocery sub-pages, FamilyTree, ConnectCalendar, SchoolHome, Memories, etc.) depends on it. A change here affects every one of them simultaneously. If chasing a swipe/slide visual bug on ONE screen, check whether the actual fix belongs in that screen's own usage (missing `FullPageOverlay` wrap, wrong `canvas` value, early-return architecture) before touching this file — a "fix" here that looks correct in isolation can still regress every other screen's back-swipe at once, since there's no way to test them all from reading the code alone. If a fix here really is required, re-verify Quest detail's swipe-back specifically afterward, since it's the most load-bearing consumer.
+
 ## Dark Mode
 
 - Every component must work in both light and dark mode.

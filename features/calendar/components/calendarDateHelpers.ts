@@ -1,13 +1,13 @@
 // Shared date/format helpers used by CalendarScreen.tsx and its extracted
 // view-mode components (MonthGridView/WeekView/AgendaView/DaySlotView) —
 // kept in one place so both sides stay in sync instead of drifting.
-export function toDateStr(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-export function parseDate(s: string) {
-  const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
+//
+// toDateStr/parseDate delegate to lib/dates.ts's localDateStr/parseLocalDate
+// (the app's one canonical local-timezone-safe implementation) instead of
+// keeping a second hand-rolled copy that could silently diverge from it.
+import { localDateStr, parseLocalDate } from '@/lib/dates';
+export const toDateStr = localDateStr;
+export const parseDate = parseLocalDate;
 export function addDays(d: Date, n: number): Date {
   const next = new Date(d);
   next.setDate(d.getDate() + n);

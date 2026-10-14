@@ -6,7 +6,8 @@
  * DayEventsSummaryCard functions — pure structural move, no behavior change.
  */
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { TYPO } from '@/constants/theme';
 import { fmtTimeParts } from '@/lib/dates';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -130,9 +131,20 @@ export function DayEventsSummaryCard({
 
                 {/* Content column */}
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
-                    {ev.title}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {!!ev.seriesId && (
+                      <Pressable
+                        onPress={() => router.push({ pathname: '/calendar/series/[seriesId]', params: { seriesId: ev.seriesId! } })}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        style={{ marginRight: 3 }}
+                      >
+                        <Text style={{ fontSize: 14 }} accessibilityLabel="Manage recurring series">🔄</Text>
+                      </Pressable>
+                    )}
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), flexShrink: 1 }} numberOfLines={1}>
+                      {ev.title}
+                    </Text>
+                  </View>
                   {subtitle ? (
                     <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : '#707688', marginTop: 3 }} numberOfLines={1}>
                       {subtitle}
@@ -200,39 +212,52 @@ export default function MonthGridView({
 
       {/* Figma: white card containing the grid */}
       <View style={{ borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', padding: 12 }}>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {cells.map((d, i) => {
-            if (!d) return <View key={i} style={{ width: `${100/7}%`, height: 46 }} />;
-            const date = parseDate(d);
-            const isSel = d === selected;
-            const isToday = d === todayStr;
-            const cats = stripMap[d] ?? [];
-            const dotColors = cats.map(c => CAT_DOT[c] ?? colors.teal).filter((c, idx, a) => a.indexOf(c) === idx).slice(0, 3);
-            return (
-              <TouchableOpacity key={d} onPress={() => onSelectDay(d)}
-                style={{ width: `${100/7}%`, height: 46, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                <View style={{
-                  width: 32, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isSel ? '#345de3' : isToday ? (isDark ? '#253862' : '#e9efff') : 'transparent',
-                }}>
-                  <Text style={{
-                    fontSize: 13, fontWeight: isToday || isSel ? '700' : '400',
-                    color: isSel ? (isDark ? '#102a6b' : '#fff') : isToday ? (isDark ? '#99b3ff' : '#294fc7') : (isDark ? colors.textPrimary : GEMINI.titleColor),
+        {/*
+          Explicit rows of 7, not a flat flexWrap list. Seven cells at
+          width: `${100/7}%` (14.2857...%, a repeating decimal) can round
+          to a sum fractionally over 100% — RN then wraps the 7th cell onto
+          the next line early, which silently shifts every date after it
+          one column to the left for the rest of the grid (confirmed live:
+          Oct 1 2026, a Thursday, rendered correctly, but Oct 4 — a Sunday —
+          rendered under Monday a few cells later). Chunking into real rows
+          makes each row's own flex children divide that row's width
+          exactly, so rounding in one row can never bleed into the next.
+        */}
+        {Array.from({ length: cells.length / 7 }, (_, row) => cells.slice(row * 7, row * 7 + 7)).map((week, rowIdx) => (
+          <View key={rowIdx} style={{ flexDirection: 'row' }}>
+            {week.map((d, i) => {
+              if (!d) return <View key={i} style={{ flex: 1, height: 46 }} />;
+              const date = parseDate(d);
+              const isSel = d === selected;
+              const isToday = d === todayStr;
+              const cats = stripMap[d] ?? [];
+              const dotColors = cats.map(c => CAT_DOT[c] ?? colors.teal).filter((c, idx, a) => a.indexOf(c) === idx).slice(0, 3);
+              return (
+                <TouchableOpacity key={d} onPress={() => onSelectDay(d)}
+                  style={{ flex: 1, height: 46, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                  <View style={{
+                    width: 32, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isSel ? '#345de3' : isToday ? (isDark ? '#253862' : '#e9efff') : 'transparent',
                   }}>
-                    {date.getDate()}
-                  </Text>
-                </View>
-                {dotColors.length > 0 && (
-                  <View style={{ flexDirection: 'row', gap: 2, position: 'absolute', bottom: 3, alignItems: 'center' }}>
-                    {dotColors.map((c, idx) => (
-                      <View key={idx} style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: c }} />
-                    ))}
+                    <Text style={{
+                      fontSize: 13, fontWeight: isToday || isSel ? '700' : '400',
+                      color: isSel ? (isDark ? '#102a6b' : '#fff') : isToday ? (isDark ? '#99b3ff' : '#294fc7') : (isDark ? colors.textPrimary : GEMINI.titleColor),
+                    }}>
+                      {date.getDate()}
+                    </Text>
                   </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  {dotColors.length > 0 && (
+                    <View style={{ flexDirection: 'row', gap: 2, position: 'absolute', bottom: 3, alignItems: 'center' }}>
+                      {dotColors.map((c, idx) => (
+                        <View key={idx} style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: c }} />
+                      ))}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
       </View>
     </View>
   );

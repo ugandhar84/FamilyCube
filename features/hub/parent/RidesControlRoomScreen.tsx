@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTripStore, type Trip, type TripPhase } from '@/store/tripStore';
-import { useEventStore, type FamilyEvent } from '@/store/eventStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useEventStore, selectAllKnownEvents, type FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useLiveTripEta } from '@/lib/hooks/useLiveTripEta';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -209,7 +210,7 @@ export function RidesControlRoomScreen({
   const [filter, setFilter] = useState<FilterKey>('active');
 
   const { activeTrips, completedTrips, loadCompletedTrips } = useTripStore();
-  const events   = useEventStore(s => s.events);
+  const events   = useEventStore(useShallow(selectAllKnownEvents));
   const members  = useFamilyStore(s => s.members);
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const familyName = useFamilyStore(s => s.familyName);

@@ -441,10 +441,8 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     if (!analysis) return;
     setApproving(true);
     try {
-      // Encrypt the full analysis JSON — per-device envelope when available
-      // (activeMemberId needed to satisfy device registration), legacy
-      // familyId-derived key otherwise (see recordsCrypto.ts).
-      const encryptedBlob = await encryptAnalysis(familyId, analysis, activeMemberId ?? undefined);
+      // Encrypt the full analysis JSON with the shared family key (see recordsCrypto.ts).
+      const encryptedBlob = await encryptAnalysis(familyId, analysis);
 
       const { error } = await supabase.from('medical_records').update({
         ai_summary:       analysis.summary,

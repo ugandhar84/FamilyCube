@@ -190,13 +190,19 @@ export function SectionCard({
 // ─── CollapsibleCard ──────────────────────────────────────────────────────────
 
 export function CollapsibleCard({
-  summary, accent, colors, isDark, defaultExpanded = false, children, flat = false,
+  summary, accent, colors, isDark, defaultExpanded = false, children, flat = false, flatBg = false,
 }: {
   summary: React.ReactNode; accent?: string; colors: any; isDark: boolean;
   defaultExpanded?: boolean; children?: React.ReactNode; flat?: boolean;
+  // White/card fill with the accent kept only on the border — for callers
+  // already sitting inside their own white group card (e.g. Kid Hub's
+  // MyChoresScreen), where the default accent-tinted fill (accent + '10'/
+  // '18') read as a mismatched lavender box nested inside an already-white
+  // card instead of matching the screen's flat white-card rhythm.
+  flatBg?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const bg = accent ? (isDark ? accent + '18' : accent + '10') : (colors.surface);
+  const bg = flatBg ? colors.card : accent ? (isDark ? accent + '18' : accent + '10') : (colors.surface);
   const border = accent ? accent + '40' : colors.border;
 
   if (flat) {

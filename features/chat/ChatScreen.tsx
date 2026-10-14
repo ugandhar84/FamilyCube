@@ -2,13 +2,13 @@
  * ChatScreen — v2 bubbles, @mentions, long-press action sheet, double-tap emoji,
  * swipe-to-reply, per-channel context, search, photo/video, grocery convert, E2E.
  *
- * E2E key architecture (Option 1 — passcode-wrapped):
- *   - AES-256-GCM data key lives in expo-secure-store locally.
- *   - On first launch the key is generated and wrapped with the family passcode
- *     (PBKDF2 → AES-KW) → blob stored in Supabase `families.encrypted_key`.
- *   - DB admin sees only ciphertext; no raw key is ever sent to the server.
- *   - New device/reinstall: user enters passcode → fetch blob → unwrapKeyWithPasscode().
- *   - Implementation: @/lib/chatCrypto (wrapKeyWithPasscode / unwrapKeyWithPasscode).
+ * E2E key architecture — one shared AES-256 key per family, derived from a
+ * user-visible code, stored only in local SecureStore on each device (see
+ * lib/chatCrypto.ts's encryptWithFamilyKey/decryptWithFamilyKey and
+ * lib/familyKeyRotation.ts for rotation). A device with no key, or a stale
+ * one after a rotation, is blocked from sending/reading here — see
+ * familyKeyLocked below, which reuses the same lock-screen pattern as
+ * coupleChannelLocked/parentLocked.
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PageHeading } from '@/components/PageHeading';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
@@ -69,12 +69,15 @@ import { Pin, PinOff, Trash2 } from 'lucide-react-native';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { getActiveFamilyKey } from '@/lib/chatCrypto';
+import { isFamilyKeyStale } from '@/lib/familyKeyRotation';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const {
     channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage, clearChannel,
@@ -153,6 +156,26 @@ export default function ChatScreen() {
     if (!activeMemberId) return;
     loadPinnedChannels(activeMemberId).then(setPinnedChannels);
   }, [activeMemberId]);
+
+  // Whole-tab lock gate — mirrors coupleChannelLocked/parentLocked below,
+  // but for the shared family encryption key rather than a PIN. No key
+  // entered yet, or this device's key predates the family's latest
+  // rotation: block sending/reading everywhere in chat until the current
+  // code is entered (see lib/chatCrypto.ts / lib/familyKeyRotation.ts).
+  const [familyKeyLocked, setFamilyKeyLocked] = useState(false);
+  const activeFamilyId = members.find(m => m.id === activeMemberId)?.familyId;
+  useEffect(() => {
+    if (!activeFamilyId) { setFamilyKeyLocked(false); return; }
+    let cancelled = false;
+    (async () => {
+      const [key, stale] = await Promise.all([
+        getActiveFamilyKey(activeFamilyId),
+        isFamilyKeyStale(activeFamilyId),
+      ]);
+      if (!cancelled) setFamilyKeyLocked(!key || stale);
+    })();
+    return () => { cancelled = true; };
+  }, [activeFamilyId]);
   // Inverted FlatList starts at bottom — no scroll-to-end needed.
   // Only reset scroll position on channel switch.
   const prevChannelRef = useRef<string | null>(null);
@@ -1298,7 +1321,23 @@ export default function ChatScreen() {
       </Animated.View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {parentLocked ? (
+        {familyKeyLocked ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.primaryLight, borderWidth: 2, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={30} color={colors.primary} />
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>🔒 Chat Locked</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, textAlign: 'center', lineHeight: 20 }}>
+              Enter your family's security code to read and send messages.
+            </Text>
+            <Pressable
+              onPress={() => router.push('/profile-settings/data-recovery')}
+              style={{ marginTop: 4, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: colors.primary }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Enter Code</Text>
+            </Pressable>
+          </View>
+        ) : parentLocked ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.amberLight, borderWidth: 2, borderColor: colors.amber, alignItems: 'center', justifyContent: 'center' }}>
               <Lock size={30} color={colors.amber} />

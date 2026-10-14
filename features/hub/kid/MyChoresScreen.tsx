@@ -1,8 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, PanResponder } from 'react-native';
+import { View, Text, Pressable, ScrollView, PanResponder } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ClipboardList, Plus } from 'lucide-react-native';
+import { ClipboardList, Clock, CheckCircle2, Plus, Gem } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
@@ -10,6 +10,7 @@ import FullPageOverlay from '@/components/FullPageOverlay';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import { KidQuestCard } from './KidQuestCard';
+import { KidQuestDetailScreen } from './KidQuestDetailScreen';
 import { ChoreProposalPage } from './forms/ChoreProposalPage';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
@@ -25,26 +26,32 @@ import type { Quest } from '@/store/questStore';
 // parents meals module rhythm with headers and gestures pages"]
 export function MyChoresScreen({
   onClose, active, members, familyId,
-  todoQuests, inProgressQuests, reviewQuests, declinedQuests, approvedQuests, allQuests,
+  todoQuests, inProgressQuests, reviewQuests, declinedQuests, approvedQuests, poolQuests, allQuests,
   colors, isDark,
   onClaim, onStart, onSubmit, onAcceptGpQuest, onDeclineGpQuest,
+  initialTab,
 }: {
   onClose: () => void;
   active: FamilyMember; members: FamilyMember[]; familyId: string;
   todoQuests: Quest[]; inProgressQuests: Quest[]; reviewQuests: Quest[];
-  declinedQuests: Quest[]; approvedQuests: Quest[]; allQuests: Quest[];
+  declinedQuests: Quest[]; approvedQuests: Quest[]; poolQuests: Quest[]; allQuests: Quest[];
   colors: any; isDark: boolean;
   onClaim: (id: string) => void;
   onStart: (id: string) => void;
   onSubmit: (q: Quest) => void;
   onAcceptGpQuest: (id: string) => void;
   onDeclineGpQuest: (q: Quest) => void;
+  // Which status tab opens first — e.g. the Needs You card's own
+  // most-urgent item should land the kid directly on that item's tab
+  // ('review'/'todo'/'bounty') instead of always defaulting to 'todo'.
+  initialTab?: 'todo' | 'review' | 'done' | 'bounty';
 }) {
   const insets = useSafeAreaInsets();
   const canvas = isDark ? colors.background : GEMINI.canvas;
   const cardBg = isDark ? colors.card : GEMINI.cardBg;
 
   const [showPropose, setShowPropose] = useState(false);
+  const [detailQuest, setDetailQuest] = useState<Quest | null>(null);
 
   useEffect(() => {
     if (showPropose) hideTabBar();
@@ -53,7 +60,7 @@ export function MyChoresScreen({
   }, [showPropose]);
 
   const subPageOpen = useRef(false);
-  useEffect(() => { subPageOpen.current = showPropose; }, [showPropose]);
+  useEffect(() => { subPageOpen.current = showPropose || !!detailQuest; }, [showPropose, detailQuest]);
 
   const swipePan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) =>
@@ -63,12 +70,18 @@ export function MyChoresScreen({
     },
   })).current;
 
-  const groups: { key: string; label: string; quests: Quest[]; accent: 'teal' | 'amber' | 'primary' }[] = [
-    { key: 'todo',     label: 'To Do',          quests: [...todoQuests, ...inProgressQuests, ...declinedQuests], accent: 'teal' },
-    { key: 'review',   label: 'Pending Review', quests: reviewQuests,   accent: 'amber' },
-    { key: 'done',     label: 'Completed',      quests: approvedQuests, accent: 'primary' },
+  const bountyQuests = poolQuests.filter(q => q.questType === 'bounty');
+
+  const groups: { key: string; label: string; quests: Quest[]; accent: string; Icon: any }[] = [
+    { key: 'todo',     label: 'To Do',          quests: [...todoQuests, ...inProgressQuests, ...declinedQuests], accent: colors.teal, Icon: ClipboardList },
+    { key: 'review',   label: 'Submitted',      quests: reviewQuests,   accent: colors.amber,   Icon: Clock },
+    { key: 'done',     label: 'Approved',       quests: approvedQuests, accent: colors.primary, Icon: CheckCircle2 },
+    { key: 'bounty',   label: 'Bounty',         quests: bountyQuests,   accent: colors.pink,    Icon: Gem },
   ];
   const totalOpen = todoQuests.length + inProgressQuests.length + declinedQuests.length;
+
+  const [activeTab, setActiveTab] = useState<string>(initialTab ?? 'todo');
+  const activeGroup = groups.find(g => g.key === activeTab) ?? groups[0];
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }} {...swipePan.panHandlers}>
@@ -86,64 +99,94 @@ export function MyChoresScreen({
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 32 }}>
 
-        {/* ── Propose a Chore banner ── */}
+        {/* ── Propose a Chore banner — same Figma rhythm as Health's
+            "Health documents" banner (HealthRecordsScreen.tsx): bright
+            white card on the warm canvas, bordered, real drop shadow
+            (GEMINI.cardShadow) instead of a flat tinted-fill card with no
+            shadow [live-reported: "Banner should have proper shadow also
+            CTA button styles and colors also should match with heath
+            records" / "Cards should be rhythm of Figma"]. ── */}
         <Pressable
           onPress={() => setShowPropose(true)}
           style={({ pressed }) => ({
-            flexDirection: 'row', alignItems: 'center', gap: 14,
-            backgroundColor: colors.tealLight, borderRadius: 20, padding: 18,
-            opacity: pressed ? 0.88 : 1,
-            ...Platform.select({
-              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: isDark ? 0.22 : 0.10, shadowRadius: 14 },
-              android: { elevation: 4 },
-            }),
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            backgroundColor: cardBg, borderRadius: 16,
+            borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            padding: 16, opacity: pressed ? 0.88 : 1,
+            ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
           })}
         >
-          <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center' }}>
-            <Plus size={26} color={colors.teal} strokeWidth={2.2} />
+          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: GEMINI.blue + '15', alignItems: 'center', justifyContent: 'center' }}>
+            <Plus size={22} color={GEMINI.blue} strokeWidth={2.2} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontSize: 17, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Propose a Chore</Text>
-            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>Suggest one for yourself or a sibling</Text>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Propose a Chore</Text>
+            <Text style={{ fontSize: 12, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>Suggest one for yourself or a sibling</Text>
           </View>
-          <Text style={{ fontSize: 22, color: colors.teal }}>›</Text>
         </Pressable>
 
         {totalOpen === 0 && reviewQuests.length === 0 && approvedQuests.length === 0 && (
-          <View style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.teal + '50',
-            backgroundColor: colors.tealLight, padding: 28, alignItems: 'center', gap: 8 }}>
+          <View style={{ borderRadius: 16, backgroundColor: cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            padding: 28, alignItems: 'center', gap: 8, ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
             <ClipboardList size={36} color={colors.teal} />
             <Text style={{ fontSize: 17, fontWeight: '900', color: colors.teal, marginTop: 4 }}>All caught up!</Text>
             <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center' }}>Propose a chore above to get started</Text>
           </View>
         )}
 
-        {groups.filter(g => g.quests.length > 0).map(group => (
-          <View key={group.key} style={{ backgroundColor: cardBg, borderRadius: 18, padding: 16, gap: 10,
-            ...Platform.select({
-              ios: { shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0.16 : 0.07, shadowRadius: 10 },
-              android: { elevation: 2 },
-            }) }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', color: colors.textTertiary }}>
-                {group.label}
-              </Text>
-              <View style={{ backgroundColor: colors[group.accent] + '20', borderRadius: 10, minWidth: 22, paddingHorizontal: 7, paddingVertical: 2, alignItems: 'center' }}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: colors[group.accent] }}>{group.quests.length}</Text>
-              </View>
+        {/* ── Stat cards double as the filter/tabs — each group keeps its
+            own icon-on-top / count / label card shape AND its own pastel
+            fill (group.accent Light-tint), while also being the tappable
+            filter that drives activeGroup below [live-requested: "keep the
+            stip cards for the counters use the same as filters/tabs"].
+            Active card gets the full-strength accent fill + white
+            icon/text; inactive cards get the soft *Light tint with
+            accent-colored icon/text. ── */}
+        {groups.some(g => g.quests.length > 0) && (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {groups.map(group => {
+              const isActive = activeTab === group.key;
+              return (
+                <Pressable key={group.key} onPress={() => setActiveTab(group.key)}
+                  style={{ flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 6, alignItems: 'center', gap: 4,
+                    backgroundColor: isActive ? group.accent : group.accent + '18' }}>
+                  <group.Icon size={18} color={isActive ? '#fff' : group.accent} />
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: isActive ? '#fff' : group.accent }}>
+                    {group.quests.length}
+                  </Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isActive ? '#fff' : group.accent }} numberOfLines={1}>
+                    {group.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {activeGroup.quests.length === 0 ? (
+          totalOpen > 0 || reviewQuests.length > 0 || approvedQuests.length > 0 ? (
+            <View style={{ borderRadius: 16, backgroundColor: cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+              padding: 24, alignItems: 'center', gap: 6, ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+              <Text style={{ fontSize: 13, color: colors.textTertiary }}>Nothing here right now</Text>
             </View>
-            {group.quests.map((q, i) => (
+          ) : null
+        ) : (
+          <View style={{ backgroundColor: cardBg, borderRadius: 16,
+            borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            padding: 16, gap: 10, ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+            {activeGroup.quests.map((q, i) => (
               <View key={q.id} style={{ gap: 0 }}>
                 <KidQuestCard q={q} active={active} members={members} allQuests={allQuests} colors={colors} isDark={isDark}
                   onClaim={onClaim} onStart={onStart} onSubmit={onSubmit}
-                  onAcceptGpQuest={onAcceptGpQuest} onDeclineGpQuest={onDeclineGpQuest} />
-                {i < group.quests.length - 1 && (
+                  onAcceptGpQuest={onAcceptGpQuest} onDeclineGpQuest={onDeclineGpQuest}
+                  onOpenDetail={setDetailQuest} />
+                {i < activeGroup.quests.length - 1 && (
                   <View style={{ height: 1, backgroundColor: colors.border, marginTop: 10 }} />
                 )}
               </View>
             ))}
           </View>
-        ))}
+        )}
 
       </ScrollView>
 
@@ -152,6 +195,16 @@ export function MyChoresScreen({
           <ChoreProposalPage active={active} members={members} familyId={familyId} onClose={requestAnimatedClose} />
         )}
       </FullPageOverlay>
+
+      {detailQuest && (
+        <KidQuestDetailScreen
+          quest={allQuests.find(q => q.id === detailQuest.id) ?? detailQuest}
+          active={active} members={members} allQuests={allQuests}
+          onClose={() => setDetailQuest(null)}
+          onClaim={onClaim} onStart={onStart} onSubmit={onSubmit}
+          onAcceptGpQuest={onAcceptGpQuest} onDeclineGpQuest={onDeclineGpQuest}
+        />
+      )}
     </View>
   );
 }

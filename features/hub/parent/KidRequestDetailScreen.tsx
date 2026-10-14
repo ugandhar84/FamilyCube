@@ -174,6 +174,22 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
     setProcessingComplete(false);
   };
 
+  // Check-in ack — distinct from doComplete: stays 'pending' for an hour
+  // after the tap (reads as a recent, live fact — "I'm home" at 4:05pm
+  // shouldn't vanish into history the instant a parent taps "Got it"),
+  // then kidRequestStore's finalizeAckedCheckins sweep (driven from
+  // app/_layout.tsx on an interval) flips it to 'completed' on its own.
+  // Carries its own optional note via permComment rather than doComplete's
+  // no-note signature used by its other (approved→completed) callers
+  // elsewhere in this screen.
+  const doAckCheckin = async () => {
+    if (processingComplete) return;
+    setProcessingComplete(true);
+    await new Promise(r => setTimeout(r, 500));
+    useKidRequestStore.getState().acknowledgeCheckin(req.id, activeMemberId ?? '', permComment || undefined);
+    setProcessingComplete(false);
+  };
+
   const doWithdraw = async () => {
     if (processingWithdraw) return;
     setProcessingWithdraw(true);
@@ -434,8 +450,43 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
             </View>
           )}
 
-          {/* Parent/senior actions — pending, non-item type (excludes permission/question, handled above) */}
-          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && !itemRequest && req.type !== 'permission' && req.type !== 'question' && (
+          {/* Parent/senior actions — check-in, pending → one-way status ping,
+              acknowledge only. Matches ActionNeededSection's CheckinRow
+              ("Got it" button, no decline) — a check-in ("I'm home!") isn't
+              an ask that can be declined or assigned to a helper, so it
+              must not fall into the generic assign/decline branch below.
+              Unlike CheckinRow (a compact feed row with no room for a
+              note), this full detail screen offers an optional inline note.
+              Gated on !req.respondedAt too — once acknowledged the check-in
+              stays 'pending' for an hour on purpose (see acknowledgeCheckin),
+              so without this it would still re-show this same form instead
+              of the read-only "Acknowledged, moving to history soon" block
+              below. */}
+          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && req.type === 'checkin' && !req.respondedAt && (
+            <View style={{ gap: 10 }}>
+              <TextInput
+                style={[styles.noteInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.card, height: 100, textAlignVertical: 'top' }]}
+                placeholder="Add a note (optional)..."
+                placeholderTextColor={colors.textTertiary}
+                maxLength={150}
+                value={permComment}
+                onChangeText={v => setPermComment(v.slice(0, 150))}
+                multiline
+              />
+              <TouchableOpacity
+                style={{ borderRadius: 14, padding: 13, backgroundColor: colors.teal, alignItems: 'center', opacity: processingComplete ? 0.5 : 1 }}
+                onPress={doAckCheckin}
+                disabled={processingComplete}
+              >
+                {processingComplete
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>👍 Got it</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Parent/senior actions — pending, non-item type (excludes permission/question/checkin, handled above) */}
+          {!isViewerKidSender && isParentOrSenior && req.status === 'pending' && !itemRequest && req.type !== 'permission' && req.type !== 'question' && req.type !== 'checkin' && (
             <View style={{ gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontWeight: '900', color: colors.amber }}>
@@ -651,6 +702,30 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
           {req.status === 'approved' && itemRequest && (
             <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 14 }}>
               <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal }}>✓ Added to the grocery list</Text>
+            </View>
+          )}
+
+          {/* Acknowledged check-in, still inside its one-hour grace window
+              (status is deliberately still 'pending' — see
+              acknowledgeCheckin) — read-only, same shape as the Completed
+              block below, since there's nothing left to do here either. */}
+          {req.status === 'pending' && req.type === 'checkin' && req.respondedAt && (
+            <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 14, gap: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal }}>✓ Acknowledged</Text>
+              {req.parentNote ? (
+                <Text style={{ fontSize: 13, color: colors.textSecondary, fontStyle: 'italic' }}>"{req.parentNote}"</Text>
+              ) : null}
+            </View>
+          )}
+
+          {/* Completed → read-only (check-ins land here directly from
+              pending via doAckCheckin, skipping the "approved" step). */}
+          {req.status === 'completed' && (
+            <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 14, gap: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal }}>✓ {req.type === 'checkin' ? 'Acknowledged' : 'Completed'}</Text>
+              {req.parentNote ? (
+                <Text style={{ fontSize: 13, color: colors.textSecondary, fontStyle: 'italic' }}>"{req.parentNote}"</Text>
+              ) : null}
             </View>
           )}
 

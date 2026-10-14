@@ -489,6 +489,7 @@ export function KioskOverviewTab({
   const rejectRedemption = useRewardStore(s => s.rejectRedemption);
   const kidRequests = useKidRequestStore(s => s.requests);
   const approveRequest = useKidRequestStore(s => s.approveRequest);
+  const completeRequest = useKidRequestStore(s => s.completeRequest);
   const declineRequest = useKidRequestStore(s => s.declineRequest);
   const approveItems = useKidRequestStore(s => s.approveItems);
   const rejectItems = useKidRequestStore(s => s.rejectItems);
@@ -1927,6 +1928,7 @@ export function KioskOverviewTab({
               onRejectRedemption={(id) => rejectRedemption(id, active.id)}
               onApproveRequest={(id, note) => approveRequest(id, active.id, note)}
               onDeclineRequest={(id, note) => declineRequest(id, active.id, note)}
+              onCompleteCheckin={(id, note) => completeRequest(id, active.id, note)}
               onApproveQuestProposal={(id, coins) => {
                 const req = pendingKidRequestsForAction.find(r => r.id === id);
                 if (req) approveQuestProposalHandler(req, coins);
@@ -3040,7 +3042,7 @@ function PulseDot({ color }: { color: string }) {
 
 function ParentApprovalsWidget({
   approvals, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption,
-  onApproveRequest, onDeclineRequest, onApproveQuestProposal, active, members, scrollRef,
+  onApproveRequest, onDeclineRequest, onCompleteCheckin, onApproveQuestProposal, active, members, scrollRef,
 }: {
   approvals: ApprovalItem[];
   k: KioskColors;
@@ -3056,6 +3058,13 @@ function ParentApprovalsWidget({
    *  optional text and mandatory text while replying inline"]. */
   onApproveRequest: (id: string, note?: string) => void;
   onDeclineRequest: (id: string, note?: string) => void;
+  /** A check-in ("I'm home"/"running late") has no "approved" state to
+   *  sit in — acking it IS done, so its "Got it" tap must land the
+   *  request straight at 'completed' (History), not 'approved' (which
+   *  HelpDispatchQueue buckets as "In progress" forever since nothing
+   *  else ever completes a check-in from there) [live-reported: acked
+   *  check-ins stuck under "In progress"]. */
+  onCompleteCheckin: (id: string, note?: string) => void;
   /** Opens the coin-amount sheet instead of a plain Approve — a
    *  quest_proposal (kid's own "chore idea" ask) needs a chosen coin
    *  reward AND a real chore row created, not just a status flip
@@ -3158,6 +3167,7 @@ function ParentApprovalsWidget({
               onRejectRedemption={onRejectRedemption}
               onApproveRequest={onApproveRequest}
               onDeclineRequest={onDeclineRequest}
+              onCompleteCheckin={onCompleteCheckin}
               onOpenQuestProposalCoinSheet={() => setCoinTarget({ id: item.id.slice(item.id.indexOf(':') + 1), title: item.title })}
               scrollRef={scrollRef}
             />
@@ -3220,7 +3230,7 @@ function ParentApprovalsWidget({
  * is a small grid card; this panel is a list, so its rows are list rows.
  */
 function ApprovalRow({
-  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest, onOpenQuestProposalCoinSheet, scrollRef,
+  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest, onCompleteCheckin, onOpenQuestProposalCoinSheet, scrollRef,
 }: {
   item: ApprovalItem;
   k: KioskColors;
@@ -3233,6 +3243,9 @@ function ApprovalRow({
   onRejectRedemption: (id: string) => void;
   onApproveRequest: (id: string, note?: string) => void;
   onDeclineRequest: (id: string, note?: string) => void;
+  /** Check-in "Got it" taps go here, not onApproveRequest — see
+   *  ParentApprovalsWidget's own onCompleteCheckin comment. */
+  onCompleteCheckin: (id: string, note?: string) => void;
   /** Opens the shared coin-amount sheet — a quest_proposal's own Approve
    *  never fires directly (see QuestProposalCoinSheet's own comment). */
   onOpenQuestProposalCoinSheet: () => void;
@@ -3289,10 +3302,12 @@ function ApprovalRow({
   // question REQUIRES a reply before it can be sent; every other type's
   // note is optional. Not shown for chore/redemption (those have their
   // own real flows: chore decline opens the shared redo-reason sheet,
-  // redemption has no reply concept at all), for a check-in (a single
-  // acknowledgment, nothing to say back), or for a quest_proposal (its own
-  // coin-amount sheet is the real flow, not a plain note).
-  const showsReply = item.kind === 'request' && !isCheckin && !isQuestProposal;
+  // redemption has no reply concept at all) or for a quest_proposal (its
+  // own coin-amount sheet is the real flow, not a plain note). A check-in
+  // DOES show this box — an optional note on the ack itself
+  // [live-requested: "also we should have option notes inline"] — it just
+  // never requires one and is threaded through onCompleteCheckin instead.
+  const showsReply = item.kind === 'request' && !isQuestProposal;
   const [reply, setReply] = useState('');
   const replyRequired = isQuestion;
   const canApprove = !replyRequired || reply.trim().length > 0;
@@ -3306,6 +3321,10 @@ function ApprovalRow({
     // chore's own redo-reason sheet uses.
     if (isQuestProposal) { onOpenQuestProposalCoinSheet(); return; }
     setBusy(true);
+    // A check-in has no "approved" state to sit in — acking it must land
+    // directly at 'completed' via completeRequest, not approveRequest,
+    // which would leave it stuck under "In progress" forever.
+    if (isCheckin) { onCompleteCheckin(rawId, reply.trim() || undefined); return; }
     onApproveRequest(rawId, showsReply ? reply.trim() || undefined : undefined);
   };
   const decline = () => {

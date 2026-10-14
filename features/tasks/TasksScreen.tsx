@@ -530,21 +530,6 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
     </View>
   );
 
-  // Full-page overlay — event detail. EventDetailScreen owns its own full-page
-  // edit flow internally (swaps to JustDescribeItEventScreen in edit mode), so
-  // no separate EditEventModal/editEvent plumbing is needed here.
-  if (detailEvent) {
-    return (
-      <>
-        <EventDetailScreen
-          ev={detailEvent}
-          onClose={() => setDetailEvent(null)}
-          onDelete={async (id) => { await deleteEvent(id); setDetailEvent(null); }}
-        />
-      </>
-    );
-  }
-
   // Full-page overlay — renders instead of the tab content, same pattern as hub review screens
   if (showJustDescribeEvent) {
     return (
@@ -580,6 +565,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   }
 
   return (
+    <>
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : PAGE_BG }} edges={['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
@@ -698,6 +684,21 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
         }}
       />
     </SafeAreaView>
+
+      {/* Event detail — rendered as a sibling overlay, not an early-return,
+          so TasksScreen's own tree (Schedule/Queue/Chores) stays mounted
+          behind it, matching QuestsScreen's own QuestDetailModal rendering.
+          EventDetailScreen owns its own full-page edit flow internally
+          (swaps to JustDescribeItEventScreen in edit mode), so no separate
+          EditEventModal/editEvent plumbing is needed here. */}
+      {detailEvent && (
+        <EventDetailScreen
+          ev={detailEvent}
+          onClose={() => setDetailEvent(null)}
+          onDelete={async (id) => { await deleteEvent(id); setDetailEvent(null); }}
+        />
+      )}
+    </>
   );
 }
 

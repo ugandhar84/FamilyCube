@@ -45,6 +45,7 @@ import MealsScreen from '@/features/vault/tabs/MealsScreen';
 import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
 import MemoriesScreen from '@/features/vault/tabs/MemoriesScreen';
 import { KidView } from './KidView';
+import { KidOverlays } from './kid/KidOverlays';
 import { SeniorView } from './SeniorView';
 import { TeenView } from './TeenView';
 import { EnRouteModal } from './hubComponents';
@@ -84,6 +85,27 @@ export default function HubScreen() {
   // which still owns all the routing/import specifics) can share one flag.
   const [composerVisible, setComposerVisible] = useState(false);
   const insetsBottomForFab = useSafeAreaInsets().bottom;
+  // Kid Hub's three FullPageOverlay screens (My Chores, Piggy Bank, Ask
+  // Parent) — same "must render outside this screen's own ScrollView"
+  // reasoning as composerVisible above. Rendered via KidOverlays
+  // (features/hub/kid/KidOverlays.tsx) as a top-level sibling below,
+  // matching Parent Hub's Meals/Rides Room position exactly. Previously
+  // these lived inside KidView (itself scrolled content), so opening one
+  // while the Hub was scrolled down opened the new page already scrolled
+  // to match [live-reported, screenshot: My Chores opening on "Completed"
+  // instead of the top; "All new pages opened with some pre scroll"].
+  const [showMyChores, setShowMyChores] = useState(false);
+  // Which tab My Chores opens on — set by the Needs You card so tapping it
+  // lands directly on the most-urgent item's own tab (e.g. 'review' for a
+  // submitted chore awaiting approval) instead of always defaulting to
+  // 'todo'. Reset to undefined on close so the next plain-tile open starts
+  // fresh on 'todo' again.
+  const [myChoresInitialTab, setMyChoresInitialTab] = useState<'todo' | 'review' | 'done' | 'bounty' | undefined>(undefined);
+  const [piggyBankModal, setPiggyBankModal] = useState(false);
+  const [askParentHubFromTile, setAskParentHubFromTile] = useState(false);
+  const showAskParentHub = composerVisible || askParentHubFromTile;
+  const closeAskParentHub = () => { setComposerVisible(false); setAskParentHubFromTile(false); };
+  const [askParentDestination, setAskParentDestination] = useState<null | import('./kid/AskParentHubScreen').AskParentDestination>(null);
   // Parent Hub's TodayActionGrid "Add a task"/"Schedule" tiles — same
   // reasoning as composerVisible just above: the Describe It screens must
   // render OUTSIDE this screen's own ScrollView (below) to be a true
@@ -181,7 +203,8 @@ export default function HubScreen() {
     setShowMemories(true);
   }, [memoriesRequest]);
   useEffect(() => {
-    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals || showRewards || showMemories;
+    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals || showRewards || showMemories
+      || showMyChores || piggyBankModal || showAskParentHub || !!askParentDestination;
     useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
     // Live direction: "remove the bottom nav on the sub pages" — the
     // Figma mocks for every one of these full-page screens
@@ -195,7 +218,8 @@ export default function HubScreen() {
     // while a child screen is open — see FullPageOverlay's own doc.
     if (anyFullBleedOpen) hideTabBar(); else showTabBar();
     return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
-  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals, showRewards, showMemories]);
+  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals, showRewards, showMemories,
+      showMyChores, piggyBankModal, showAskParentHub, askParentDestination]);
   const describeFullFormRef = useRef<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>(null);
 
   // Drive ParentView's entrance animation from HubScreen's focus events —
@@ -480,9 +504,11 @@ export default function HubScreen() {
       // Parent role gets the Figma Make reskin's compact TopBar (avatar +
       // family/name + "+" button, no role badge/Switch-Profile text row) —
       // per explicit direction, follow the mock for the parent Hub
-      // specifically; kid/teen/senior keep the existing full header
-      // unchanged (this work hasn't touched those views).
-      compact={isParent}
+      // specifically. Kid now shares the same compact header ["also header
+      // should be similar to parent" — part of the Kid Hub figma-rhythm
+      // pass]; teen/senior keep the existing full header unchanged (this
+      // work hasn't touched those views).
+      compact={isParent || active.role === 'kid'}
       // ParentView owns its own Smart Task Composer internally (its own
       // showTaskComposer state via useParentModals) — not reachable from
       // here across the component boundary, unlike composerVisible (which
@@ -527,15 +553,14 @@ export default function HubScreen() {
           cutout); this only hides the icons themselves, and only while
           actively scrolled away from the top. Parent Hub only. */}
       {isParent && <StatusBar hidden={statusBarHidden} animated />}
-      {!isParent && headerEl}
+      {/* kid now shares parent's inside-ScrollView header placement (see
+          below) so its FullPageOverlay screens can cover it, matching
+          "parent hub rhythm" ["Align the kids hub header similar to the
+          parent"]. teen/senior unchanged — still the original fixed
+          siblings here, outside the ScrollView. */}
+      {!isParent && active.role !== 'kid' && headerEl}
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-
-      {/* AppsQuickAccessPills (Profile/Memories/School/Health row) isn't
-          part of the Figma mock's TopBar at all — skipped for parent only,
-          same "follow the mock" direction as the header above. Those
-          destinations are still reachable via Profile → Apps grid for
-          parents; this only removes the always-visible shortcut row. */}
-      {!isParent && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
+      {!isParent && active.role !== 'kid' && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -576,7 +601,7 @@ export default function HubScreen() {
         } : undefined}
         scrollEventThrottle={isParent ? 100 : undefined}
       >
-        {isParent && headerEl}
+        {(isParent || active.role === 'kid') && headerEl}
         {isParent && (
           <ParentView
             focusKey={hubFocusKey}
@@ -606,9 +631,16 @@ export default function HubScreen() {
         )}
         {isKid && (
           <KidView
+            focusKey={hubFocusKey}
             active={active} members={members} colors={colors} isDark={isDark}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
+            onMyChores={() => setShowMyChores(true)}
+            onOpenMyChoresTab={(tab) => { setMyChoresInitialTab(tab); setShowMyChores(true); }}
+            onPiggyBank={() => setPiggyBankModal(true)}
+            onAskParentTile={() => setAskParentDestination('permission')}
+            onAskForRide={() => setAskParentDestination('ride')}
+            onRideStatusOpen={() => setShowRidesRoom(true)}
           />
         )}
         {isTeen && (
@@ -616,6 +648,7 @@ export default function HubScreen() {
             active={active} members={members} colors={colors} isDark={isDark}
             activeTrips={tripViews}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
+            onAskParentTile={() => setAskParentHubFromTile(true)}
           />
         )}
         {isSenior && (
@@ -821,6 +854,20 @@ export default function HubScreen() {
       <FullPageOverlay visible={showMemories} onDismiss={() => setShowMemories(false)} zIndex={50} backgroundColor={hubCanvas}>
         {(requestAnimatedClose) => <MemoriesScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
+
+      {/* Kid Hub's My Chores / Piggy Bank / Ask Parent — top-level sibling,
+          same position as Meals/Rides Room above, so it's never affected by
+          the ScrollView's scroll offset or covered by the header/pills. */}
+      {isKid && (
+        <KidOverlays
+          active={active} members={members} familyId={familyId}
+          showMyChores={showMyChores} setShowMyChores={setShowMyChores}
+          myChoresInitialTab={myChoresInitialTab} setMyChoresInitialTab={setMyChoresInitialTab}
+          piggyBankModal={piggyBankModal} setPiggyBankModal={setPiggyBankModal}
+          showAskParentHub={showAskParentHub} closeAskParentHub={closeAskParentHub}
+          askParentDestination={askParentDestination} setAskParentDestination={setAskParentDestination}
+        />
+      )}
 
       {/* Senior Hub's own En Route flow still uses the picker modal — it has
           no linked-ride concept like Parent Hub's Pick-up Radar does. */}

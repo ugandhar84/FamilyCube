@@ -1,29 +1,15 @@
 /**
- * recordsCrypto — per-device envelope encryption for AI analysis results
- * (medical_records.ai_analysis_json), mirroring lib/locationCrypto.ts's
- * "long-lived session key, wrapped once per family device" shape rather
- * than chat's per-message envelope — a record's analysis is written once
- * and read many times by many family members over time, not messaged.
+ * recordsCrypto — shared-family-key encryption for AI analysis results
+ * (medical_records.ai_analysis_json), using the same AES-256 key every
+ * other family member's device already has (lib/chatCrypto.ts's
+ * encryptWithFamilyKey/decryptWithFamilyKey) — no per-device wrapping.
  *
- * Was: a key derived purely from `familyId + a fixed public salt`
- * (APP_SALT below) — any client that knows the family's id (a non-secret
- * UUID, visible to anyone who can query the family's own rows) could
- * derive the exact same key. Upgraded to the real per-device scheme
- * chat/location already use in production (feature flag `per_device_e2e`).
- *
- * Blob versioning: v1 is the OLD familyId+salt scheme, kept only for
- * decrypting rows written before this upgrade — never used for new writes.
- * v2 is the new per-device scheme. isEncryptedBlob() accepts either.
+ * Blob versioning: v1 is the OLD familyId+salt scheme (kept decrypt-only,
+ * for rows written before any encryption upgrade). v2 was the per-device
+ * envelope (removed — no longer written, but see note below). v3 is the
+ * current shared-key scheme. isEncryptedBlob() accepts v1 or v3.
  */
-import { supabase } from '@/lib/supabase';
-import {
-  getDeviceId, getDevicePublicKeyB64,
-  getOrCreateRecordsSessionKey, wrapRecordsKeyForDevices, unwrapRecordsKey,
-  unwrapRecordsKeyWithRealIdentity,
-  encryptWithSessionKey, decryptWithSessionKey,
-} from '@/lib/chatCrypto';
-import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
-import { isFeatureEnabled } from '@/lib/featureFlags';
+import { encryptWithFamilyKey, decryptWithFamilyKey } from '@/lib/chatCrypto';
 
 const ENC = new TextEncoder();
 const DEC = new TextDecoder();
@@ -67,84 +53,6 @@ async function decryptLegacy<T>(familyId: string, blob: { iv: string; ct: string
   }
 }
 
-// ─── v2 scheme — per-device envelope ──────────────────────────────────────────
-
-export interface EncryptedBlobV1 { iv: string; ct: string; v: 1; }
-export interface EncryptedBlobV2 { ct: string; v: 2; }
-export type EncryptedBlob = EncryptedBlobV1 | EncryptedBlobV2;
-
-// Devices this session has already confirmed are wrapped for — avoids
-// re-checking/re-wrapping on every single record write (only actually needs
-// to happen once per app session per family, or when a new device joins,
-// which a future session will naturally re-run this for). Same pattern as
-// locationCrypto.ts's _locationKeyEnsured.
-const _recordsKeyEnsured = new Set<string>();
-
-async function ensureRecordsKeyWrapped(familyId: string, memberId: string): Promise<Uint8Array | null> {
-  const sessionKey = await getOrCreateRecordsSessionKey(familyId);
-  if (_recordsKeyEnsured.has(familyId)) return sessionKey;
-  try {
-    await ensureDeviceRegistered(familyId, memberId);
-    // One entry per physical device, not per (device, profile) pair —
-    // family_record_keys is keyed (family_id, device_id) with no column for
-    // "which profile," so wrapping once per profile on a shared device
-    // produced duplicate device_id rows in one upsert batch and hit
-    // Postgres' "ON CONFLICT DO UPDATE command cannot affect row a second
-    // time" (see getUniqueWrapTargets' own doc — this silently broke every
-    // one of chat/location/records' wrap paths for any family with a
-    // device shared across more than one member profile).
-    const directory = await getUniqueWrapTargets(familyId);
-    if (directory.length === 0) return sessionKey;
-    // Same staleness class as locationCrypto.ts's _locationKeyEnsured fix —
-    // this flag only proves a wrap succeeded at some point THIS app
-    // process, with no way to know the server rows were later deleted or
-    // the family's device set changed since. Check which of the CURRENT
-    // directory's devices are actually still missing a row before trusting
-    // the in-memory cache to skip the work.
-    const { data: existingRows } = await supabase
-      .from('family_record_keys')
-      .select('device_id')
-      .eq('family_id', familyId);
-    const existingDeviceIds = new Set((existingRows ?? []).map(r => r.device_id));
-    const missing = directory.filter(d => !existingDeviceIds.has(d.deviceId));
-    if (missing.length === 0) { _recordsKeyEnsured.add(familyId); return sessionKey; }
-    const wrapped = await wrapRecordsKeyForDevices(sessionKey, missing, familyId);
-    const { error } = await supabase.from('family_record_keys').upsert(
-      wrapped.map(w => ({ family_id: familyId, device_id: w.deviceId, wrapped_key: w.wrappedKey })),
-      { onConflict: 'family_id,device_id' },
-    );
-    if (error) { console.warn('[recordsCrypto] ensureRecordsKeyWrapped upsert failed', error.message); return sessionKey; }
-    _recordsKeyEnsured.add(familyId);
-  } catch (e: any) {
-    console.warn('[recordsCrypto] ensureRecordsKeyWrapped failed', e?.message ?? e);
-  }
-  return sessionKey;
-}
-
-/**
- * Encrypts an AI analysis object for storage in medical_records.ai_analysis_json.
- * `memberId` is needed (unlike the old signature) purely to satisfy
- * ensureDeviceRegistered's own requirement — pass the currently active
- * member's id. Falls back to the legacy scheme if per_device_e2e is off or
- * anything about the device-wrap path fails, matching locationCrypto.ts's
- * own fail-open behavior.
- */
-export async function encryptAnalysis(familyId: string, data: object, memberId?: string): Promise<string> {
-  if (!isFeatureEnabled('per_device_e2e') || !memberId) {
-    return encryptLegacyBlob(familyId, data);
-  }
-  try {
-    const sessionKey = await ensureRecordsKeyWrapped(familyId, memberId);
-    if (!sessionKey) return encryptLegacyBlob(familyId, data);
-    const ct = encryptWithSessionKey(JSON.stringify(data), sessionKey);
-    const blob: EncryptedBlobV2 = { ct, v: 2 };
-    return JSON.stringify(blob);
-  } catch (e: any) {
-    console.warn('[recordsCrypto] encryptAnalysis per-device failed, falling back to legacy', e?.message ?? e);
-    return encryptLegacyBlob(familyId, data);
-  }
-}
-
 async function encryptLegacyBlob(familyId: string, data: object): Promise<string> {
   const key = await deriveLegacyKey(familyId);
   const iv  = crypto.getRandomValues(new Uint8Array(12));
@@ -154,28 +62,34 @@ async function encryptLegacyBlob(familyId: string, data: object): Promise<string
   return JSON.stringify(blob);
 }
 
-/**
- * Decrypts a stored analysis blob, from THIS device's perspective. Handles
- * both v1 (legacy familyId+salt) and v2 (per-device envelope) blobs
- * transparently — the caller never needs to know which scheme a given row
- * used. Looks up this device's own wrapped copy of the family's records
- * session key; falls back to the legacy decrypt for v1 rows or if this
- * device hasn't been wrapped for yet (e.g. it just registered, or is
- * mid-recovery).
- */
-// Resolved records session key, per family, for THIS device — the expensive
-// part of decryptAnalysis (two table fetches + a per-device unwrap-and-try
-// loop) resolves to the exact same session key every time for a given
-// family+device, since family_record_keys' wrapped_key doesn't change
-// between record writes. RecordsTab.tsx re-runs decryptAnalysis for every
-// record on every realtime postgres_changes event for the whole family's
-// medical_records table (not just once per screen visit), so without this
-// cache, N records x M family devices worth of unwrap attempts repeats on
-// every unrelated record's insert/update. Cleared on unwrap failure so a
-// stale cached key (e.g. after a passcode-driven recovery re-wrap) doesn't
-// permanently mask a real "not wrapped yet" state.
-const _recordsSessionKeyCache = new Map<string, Uint8Array>();
+// ─── v3 scheme — shared family key ────────────────────────────────────────────
 
+export interface EncryptedBlobV1 { iv: string; ct: string; v: 1; }
+export interface EncryptedBlobV3 { ct: string; v: 3; }
+export type EncryptedBlob = EncryptedBlobV1 | EncryptedBlobV3;
+
+/**
+ * Encrypts an AI analysis object for storage in medical_records.ai_analysis_json
+ * with this family's shared key. Falls back to the legacy familyId-derived
+ * scheme only if no family key has been set on this device yet (shouldn't
+ * normally happen — the chat lock screen gates entry before this point —
+ * but fails safe rather than throwing out of a background analysis job).
+ */
+export async function encryptAnalysis(familyId: string, data: object): Promise<string> {
+  try {
+    const ct = await encryptWithFamilyKey(familyId, JSON.stringify(data));
+    const blob: EncryptedBlobV3 = { ct, v: 3 };
+    return JSON.stringify(blob);
+  } catch (e: any) {
+    console.warn('[recordsCrypto] encryptAnalysis failed, falling back to legacy', e?.message ?? e);
+    return encryptLegacyBlob(familyId, data);
+  }
+}
+
+/**
+ * Decrypts a stored analysis blob. Handles v1 (legacy familyId+salt) and
+ * v3 (shared family key) transparently.
+ */
 export async function decryptAnalysis<T = object>(familyId: string, stored: string): Promise<T | null> {
   let blob: EncryptedBlob;
   try {
@@ -184,71 +98,12 @@ export async function decryptAnalysis<T = object>(familyId: string, stored: stri
     return null;
   }
   if (blob.v === 1) return decryptLegacy<T>(familyId, blob);
-  if (blob.v !== 2) return null;
+  if (blob.v !== 3) return null;
 
-  if (!isFeatureEnabled('per_device_e2e')) return null; // v2 written but flag now off — nothing sensible to do
   try {
-    const cached = _recordsSessionKeyCache.get(familyId);
-    if (cached) {
-      const result = decryptWithSessionKey(blob.ct, cached);
-      if (!result.startsWith('[🔒')) {
-        try { return JSON.parse(result) as T; } catch { /* fall through to re-resolve below */ }
-      }
-      _recordsSessionKeyCache.delete(familyId); // stale — re-resolve from scratch
-    }
-
-    const deviceId = await getDeviceId();
-    const { data: keyRow } = await supabase
-      .from('family_record_keys')
-      .select('wrapped_key')
-      .eq('family_id', familyId)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-    if (!keyRow) return null; // not wrapped for this device yet
-
-    // Same "try every family device's public key as the writer side" trick
-    // locationCrypto.ts uses — family_record_keys has no "which device
-    // wrapped this" column (it's a shared session key, not a per-message
-    // envelope), so this device doesn't know which family device produced
-    // ITS specific wrap. A wrong guess just fails the GCM auth tag check.
-    const { data: familyDevices } = await supabase
-      .from('device_keys')
-      .select('public_key')
-      .eq('family_id', familyId)
-      .is('revoked_at', null);
-    for (const d of familyDevices ?? []) {
-      let sessionKey: Uint8Array;
-      let result: string;
-      try {
-        sessionKey = await unwrapRecordsKey(keyRow.wrapped_key, d.public_key, familyId);
-        result = decryptWithSessionKey(blob.ct, sessionKey);
-      } catch {
-        // Same stale-recovered-identity gap fixed for location (see
-        // getRealDeviceKeyPair's own doc in chatCrypto.ts) — a family-
-        // scoped recovered key left over from before a passcode reset/
-        // rotation takes priority in unwrapRecordsKey's own
-        // getDeviceKeyPair(familyId) call and fails the GCM auth check
-        // against a wrap made for this device's REAL identity instead.
-        // Retry this same device's public key against this device's real
-        // identity before giving up on it entirely.
-        try {
-          sessionKey = await unwrapRecordsKeyWithRealIdentity(keyRow.wrapped_key, d.public_key);
-          result = decryptWithSessionKey(blob.ct, sessionKey);
-        } catch { continue; } // wrong device's public key for this wrap — try the next one
-      }
-      if (result.startsWith('[🔒')) continue; // wrong key/corrupted ciphertext — try the next device
-      // The right device+key WAS found (decrypt succeeded) — a JSON.parse
-      // failure past this point means the underlying plaintext itself is
-      // corrupt, not a key-management problem. This must NOT be caught by
-      // the loop's own per-device try/catch above (it was, before this
-      // fix) — doing so made a genuinely-decrypted-but-corrupt record
-      // indistinguishable from "no device could decrypt this," silently
-      // returning null after exhausting every device even though the
-      // right key was already found on the first one.
-      _recordsSessionKeyCache.set(familyId, sessionKey);
-      return JSON.parse(result) as T;
-    }
-    return null;
+    const result = await decryptWithFamilyKey(familyId, blob.ct);
+    if (result.startsWith('[🔒')) return null;
+    return JSON.parse(result) as T;
   } catch (e: any) {
     console.warn('[recordsCrypto] decryptAnalysis failed', e?.message ?? e);
     return null;
@@ -260,7 +115,7 @@ export function isEncryptedBlob(value: unknown): boolean {
   try {
     const parsed = JSON.parse(value);
     if (parsed?.v === 1) return typeof parsed.iv === 'string' && typeof parsed.ct === 'string';
-    if (parsed?.v === 2) return typeof parsed.ct === 'string';
+    if (parsed?.v === 3) return typeof parsed.ct === 'string';
     return false;
   } catch {
     return false;

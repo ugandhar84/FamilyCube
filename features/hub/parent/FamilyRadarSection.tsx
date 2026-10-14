@@ -96,7 +96,17 @@ export function FamilyRadarSection({ members, colors, isDark }: {
       title="Family Radar"
       accent={colors.teal}
       badge={liveCount} badgeLabel="Live" badgeColor={colors.teal}
-      seeAll={() => router.push('/(tabs)/gps' as any)}
+      // router.navigate (not push/replace) — this targets a sibling tab
+      // inside the (tabs) group. push/replace go through the stack
+      // navigator and can land a beat behind the bottom-tab navigator's
+      // own state.index, leaving CustomTabBar's highlight pointing at the
+      // PREVIOUS tab while this screen's content is already visible
+      // [live-reported: "bottom tab ... stuck on the different pages
+      // sometimes", screenshot showed Chat highlighted while Family/GPS
+      // content was on screen]. navigate() reuses the tab navigator's own
+      // transition, same as CustomTabBar's own tap handler, keeping the
+      // highlight in sync with what's rendered.
+      seeAll={() => router.navigate('/(tabs)/gps' as any)}
       seeAllLabel="Open Map"
       collapsible defaultExpanded={false}
       colors={colors} isDark={isDark}>

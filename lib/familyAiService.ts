@@ -16,6 +16,12 @@ export interface ExtractedTask {
   recurrenceDays: number[]; // 0=Sun..6=Sat, only meaningful when weekly
   urgent: boolean;
   alertCall: boolean;
+  // Only populated when category === 'transport' — see the edge function's
+  // own prompt comment for exact extraction rules. Null for every other
+  // category, and null when transport but the detail wasn't mentioned.
+  pickupLocation: string | null;
+  dropoffLocation: string | null;
+  rideDirection: 'pickup' | 'dropoff' | 'both' | null;
 }
 
 export interface ExtractedErrand {

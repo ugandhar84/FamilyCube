@@ -10,7 +10,7 @@ function fmtShortDay(iso?: string) {
   return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
 }
 
-export function InsightsTab({ familyId, colors, isDark }: { familyId: string; colors: any; isDark: boolean }) {
+export function InsightsTab({ familyId, colors, isDark, onViewAllPurchases }: { familyId: string; colors: any; isDark: boolean; onViewAllPurchases?: () => void }) {
   const [staples, setStaples] = useState<any[]>([]);
   const [receipts, setReceipts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,12 +121,17 @@ export function InsightsTab({ familyId, colors, isDark }: { familyId: string; co
         No trend claims from just {receipts.length} run{receipts.length !== 1 ? 's' : ''}. Check actual stock before restocking; estimated list prices are not included in confirmed spending.
       </Text>
 
-      {/* Figma: "View all purchase records →" link card */}
-      <Pressable style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, alignItems: 'center' }}>
-        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>
-          View all {receipts.length} purchase record{receipts.length !== 1 ? 's' : ''} →
-        </Text>
-      </Pressable>
+      {/* Figma: "View all purchase records →" link card — opens Purchase
+          History; hidden with nothing to show (was previously rendering
+          "View all 0 purchase records" with no onPress at all). */}
+      {receipts.length > 0 && (
+        <Pressable onPress={onViewAllPurchases}
+          style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, alignItems: 'center' }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>
+            View all {receipts.length} purchase record{receipts.length !== 1 ? 's' : ''} →
+          </Text>
+        </Pressable>
+      )}
 
       {staples.length === 0 && receipts.length === 0 && (
         <View style={{ alignItems: 'center', paddingVertical: 40 }}>

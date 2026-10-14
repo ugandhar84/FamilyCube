@@ -117,6 +117,17 @@ export interface Redemption {
   rejectedBy?:   string;
   note?:         string;     // parent comment
   respondedAt?:  string;
+  // Audit trail (20261013040000_reward_redemption_audit_trail.sql) — coins
+  // are actually debited at REQUEST time (redeem_reward), so balanceBefore/
+  // balanceAfter reflect that debit for an approval, or the decline-time
+  // refund for a decline; approvedByName/declinedByName are resolved
+  // client-side from familyStore, same pattern as memberName above.
+  balanceBefore?: number;
+  balanceAfter?:  number;
+  // Kid's own optional note added on the full-page redeem screen, distinct
+  // from `note` (the parent's decision note) [live-requested: "show the
+  // CTA button to redeem with oprion inline Notes button"].
+  kidNote?:      string;
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -140,7 +151,7 @@ interface RewardState {
   // authoritative check rejects it (e.g. someone else claimed the last
   // stock a moment earlier) — either way, no local state is guessed at
   // before the server confirms.
-  redeemReward:            (rewardId: string, memberId: string, wallet?: 'mainCoins' | 'gpCoins') => Promise<boolean>;
+  redeemReward:            (rewardId: string, memberId: string, wallet?: 'mainCoins' | 'gpCoins', note?: string) => Promise<boolean>;
   approveRedemption:       (id: string, approverId: string, note?: string) => void;
   rejectRedemption:        (id: string, rejectorId: string, note?: string) => void;
   cancelRedemption:        (id: string) => void;
@@ -381,7 +392,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     }
   },
 
-  redeemReward: async (rewardId, memberId, wallet) => {
+  redeemReward: async (rewardId, memberId, wallet, note) => {
     const reward = get().rewards.find(r => r.id === rewardId);
     if (!reward) return false;
     // Cheap client-side pre-checks stay as an early bail for obviously-bad
@@ -397,6 +408,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       p_reward_id: rewardId,
       p_member_id: memberId,
       p_wallet: wallet ?? null,
+      p_note: note ?? null,
     });
     if (error) {
       // Expected failures (out of stock, max reached, expired, not
@@ -641,11 +653,9 @@ function rewardFromRow(row: any): Reward {
 // information_schema): id, reward_id, reward_title, coin_cost, member_id,
 // member_name, status, requested_at, created_at, screen_time_code,
 // declined_reason, declined_at, approved_at, wallet (added by this pass's
-// migration). There is no rejected_by/note/responded_at column — status
-// transitions are tracked only via approved_at/declined_at timestamps, and
-// "who approved/rejected" and any parent note are not currently persisted
-// server-side (local-only, same limitation as before this fix — flagged,
-// not silently invented as a new column here).
+// migration). approved_by/declined_by/balance_before/balance_after come
+// from 20261013040000_reward_redemption_audit_trail.sql; kid_note from
+// 20261013050000_reward_redemption_kid_note.sql.
 function redemptionFromRow(row: any): Redemption {
   return {
     // reward_id is SET NULL once the reward is deleted (fixed this session,
@@ -661,5 +671,10 @@ function redemptionFromRow(row: any): Redemption {
     wallet: row.wallet === 'gpCoins' ? 'gpCoins' : row.wallet === 'mainCoins' ? 'mainCoins' : undefined,
     respondedAt: row.approved_at ?? row.declined_at ?? undefined,
     note: row.declined_reason ?? undefined,
+    approvedBy: row.approved_by ?? undefined,
+    rejectedBy: row.declined_by ?? undefined,
+    balanceBefore: row.balance_before ?? undefined,
+    balanceAfter: row.balance_after ?? undefined,
+    kidNote: row.kid_note ?? undefined,
   };
 }

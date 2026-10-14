@@ -9,7 +9,7 @@
  */
 import { useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet,
+  View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
@@ -131,13 +131,25 @@ function DetailField({ label, value, colors, isDark }: {
 // ─── Receipt detail page — "my requests also should open the dedicated
 // page" [live-requested], same rhythm as StoreScreen's PerkDetailScreen:
 // warm-cream canvas, shadowed white field cards, pastel status pill. ───────
-function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose }: {
+function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose, onCancel, members }: {
   redemption: Redemption | null; reward: Reward | undefined; colors: any; isDark: boolean; onClose: () => void;
+  onCancel?: (id: string) => void; members: any[];
 }) {
   const insets = useSafeAreaInsets();
   const canvas = isDark ? colors.background : CANVAS;
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
   const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  // Parity with the parent-facing RewardReviewScreen's Activity Log —
+  // live-reported: "why this page is diffrent than the parents approval
+  // ?? this should show complete details and approvals history and proper
+  // date time approved by/declined by etc.." — this screen only showed a
+  // bare "Approved"/timestamp row with no actor name, no balance
+  // before/after; the data (approvedBy/rejectedBy/balanceBefore/After) has
+  // existed in the store since the audit-trail migration, it just wasn't
+  // rendered here.
+  const resolvedByMember = redemption
+    ? members.find(m => m.id === (redemption.approvedBy ?? redemption.rejectedBy))
+    : undefined;
 
   return (
     <FullPageOverlay visible={!!redemption} onDismiss={onClose} zIndex={65}>
@@ -171,10 +183,22 @@ function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose }:
 
               <DetailField label="Requested" value={fmtDateTime(redemption.redeemedAt)} colors={colors} isDark={isDark} />
 
+              {redemption.kidNote && (
+                <DetailField label="Your note" value={redemption.kidNote} colors={colors} isDark={isDark} />
+              )}
+
               {redemption.respondedAt && (
                 <DetailField
                   label={redemption.status === 'rejected' ? 'Declined' : redemption.status === 'cancelled' ? 'Cancelled' : 'Approved'}
-                  value={fmtDateTime(redemption.respondedAt)}
+                  value={`${fmtDateTime(redemption.respondedAt)}${resolvedByMember ? ` · by ${resolvedByMember.name}` : ''}`}
+                  colors={colors} isDark={isDark}
+                />
+              )}
+
+              {(redemption.balanceBefore !== undefined && redemption.balanceAfter !== undefined) && (
+                <DetailField
+                  label="Coin balance"
+                  value={`${redemption.balanceBefore} → ${redemption.balanceAfter} coins`}
                   colors={colors} isDark={isDark}
                 />
               )}
@@ -184,10 +208,132 @@ function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose }:
               )}
 
               {redemption.status === 'pending' && (
-                <Text style={{ fontSize: 13, color: bodyC, textAlign: 'center', marginTop: 4 }}>
-                  Waiting for a parent to approve this request.
-                </Text>
+                <>
+                  <Text style={{ fontSize: 13, color: bodyC, textAlign: 'center', marginTop: 4 }}>
+                    Waiting for a parent to approve this request.
+                  </Text>
+                  {/* Kids should see the same review-style screen a parent
+                      does and be able to cancel their own still-pending
+                      request before a parent acts on it [live-requested:
+                      "kids should see same screen like parents.. pending
+                      approvals they can cancel before parent approves
+                      it"] — cancelRedemption already existed in the store
+                      (used elsewhere) but wasn't wired into this screen. */}
+                  {onCancel && (
+                    <TouchableOpacity
+                      onPress={() => { onCancel(redemption.id); requestAnimatedClose(); }}
+                      activeOpacity={0.85}
+                      style={{
+                        marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                        borderWidth: 1, borderColor: isDark ? colors.border : BORDER,
+                        backgroundColor: isDark ? colors.card : '#FFFFFF',
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.danger }}>Cancel request</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
+            </ScrollView>
+          )}
+        </View>
+      )}
+    </FullPageOverlay>
+  );
+}
+
+// ─── Reward detail page — kid taps a reward card/row → open this full page
+// first, with a Redeem CTA + optional inline Notes field, instead of
+// redeeming instantly on tap [live-requested: "when kid taps on the
+// rewards card to redeem it should first open full page with rewards and
+// then show the CTA button to redeem with oprion inline Notes button"].
+// Mirrors StoreScreen's PerkDetailScreen layout/field shape. ───────────────
+function RewardDetailScreen({ reward, colors, isDark, myCoins, isGoal, onClose, onRedeem }: {
+  reward: Reward | null; colors: any; isDark: boolean; myCoins: number; isGoal: boolean;
+  onClose: () => void; onRedeem: (reward: Reward, note?: string) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const canvas = isDark ? colors.background : CANVAS;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const [note, setNote] = useState('');
+
+  useEffect(() => { if (reward) setNote(''); }, [reward?.id]);
+
+  const canAfford = !!reward && myCoins >= reward.cost;
+  const coinsToGo = reward ? Math.max(0, reward.cost - myCoins) : 0;
+
+  return (
+    <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
+      {(requestAnimatedClose) => (
+        <View style={{ flex: 1, backgroundColor: canvas }}>
+          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+            {reward && (
+              <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center', ...(!isDark ? CARD_SHADOW : {}) }}>
+                  <Text style={{ fontSize: 20 }}>{reward.emoji ?? '🎁'}</Text>
+                </View>
+                <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{reward.title}</Text>
+              </TouchableOpacity>
+            )}
+            {reward && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                {isGoal && (
+                  <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.amberLight : '#FDF3D8' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.amber : AMBER_TXT }}>⭐ Your goal</Text>
+                  </View>
+                )}
+                {reward.requiresApproval && (
+                  <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.pinkLight : '#EDE4F7' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.pink : PURPLE_TXT }}>Needs approval</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+
+          {reward && (
+            <ScrollView showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 10 }}>
+
+              <DetailField label="Coin cost" value={`${reward.cost} coins 🪙`} colors={colors} isDark={isDark} />
+
+              {reward.description ? (
+                <DetailField label="Description" value={reward.description} colors={colors} isDark={isDark} />
+              ) : null}
+
+              <DetailField
+                label="Your balance"
+                value={canAfford ? `${myCoins} coins · you can afford this` : `${myCoins} coins · ${coinsToGo} coins to go`}
+                colors={colors} isDark={isDark}
+              />
+
+              <View style={{ borderWidth: isDark ? 1 : 0, borderColor: border, borderRadius: 16,
+                backgroundColor: cardBg, paddingHorizontal: 16, paddingVertical: 14, ...(!isDark ? CARD_SHADOW : {}) }}>
+                <Text style={{ fontSize: 12, color: bodyC, marginBottom: 6 }}>Note (optional)</Text>
+                <TextInput
+                  value={note}
+                  onChangeText={setNote}
+                  placeholder="Add a note for your parent…"
+                  placeholderTextColor={isDark ? colors.textTertiary : '#A69A8A'}
+                  multiline
+                  style={{ fontSize: 15, color: titleC, padding: 0, minHeight: 44, textAlignVertical: 'top' }}
+                />
+              </View>
+
+              <TouchableOpacity
+                disabled={!canAfford}
+                onPress={() => { onRedeem(reward, note.trim() || undefined); requestAnimatedClose(); }}
+                style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: canAfford ? BLUE : (isDark ? colors.surface : SURFACE), marginTop: 4 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: canAfford ? '#FFFFFF' : bodyC }}>
+                  {canAfford ? `Redeem · ${reward.cost} coins` : `Need ${coinsToGo} more coins`}
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
           )}
         </View>
@@ -207,11 +353,12 @@ export default function RewardsDashboardScreen({
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
-  const { rewards, redemptions, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
+  const { rewards, redemptions, redeemReward, approveRedemption, rejectRedemption, cancelRedemption } = useRewardStore();
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [detailRedemption, setDetailRedemption] = useState<Redemption | null>(null);
+  const [detailReward, setDetailReward] = useState<Reward | null>(null);
 
   const activeMember  = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent      = activeMember?.role === 'parent';
@@ -242,7 +389,17 @@ export default function RewardsDashboardScreen({
     [rewards]
   );
 
-  const featuredReward = availableRewards.find(r => myCoins >= r.cost && !r.requiresApproval)
+  // The kid's own chosen goal/favorite reward (goalRewardId, set via "Set
+  // as My Goal" on StoreScreen's perk detail) takes priority as the
+  // featured card over the generic cheapest-affordable pick, so the
+  // dashboard actually reflects what they're saving toward
+  // [live-requested: "they have option to target perticular item that
+  // right? so we can show that x coins to go rredeem"].
+  const goalReward = (activeMember as any)?.goalRewardId
+    ? availableRewards.find(r => r.id === (activeMember as any).goalRewardId)
+    : undefined;
+  const featuredReward = goalReward
+    ?? availableRewards.find(r => myCoins >= r.cost && !r.requiresApproval)
     ?? availableRewards[0];
   const listRewards = availableRewards.filter(r => r.id !== featuredReward?.id).slice(0, 8);
 
@@ -264,14 +421,14 @@ export default function RewardsDashboardScreen({
     [redemptions]
   );
 
-  const handleRedeem = async (reward: Reward) => {
+  const handleRedeem = async (reward: Reward, note?: string) => {
     if (!activeMember) return;
     if (myCoins < reward.cost) {
       Alert.alert('Not enough coins', `You need ${reward.cost - myCoins} more coins.`);
       return;
     }
     const wallet = myMainCoins >= reward.cost ? 'mainCoins' : 'gpCoins';
-    const ok = await redeemReward(reward.id, activeMember.id, wallet);
+    const ok = await redeemReward(reward.id, activeMember.id, wallet, note);
     if (!ok) { showToast('Unable to redeem — try again'); return; }
     showToast(reward.requiresApproval
       ? '⏳ Requested — waiting for parent approval'
@@ -302,6 +459,17 @@ export default function RewardsDashboardScreen({
         reward={rewards.find(r => r.id === detailRedemption?.rewardId)}
         colors={colors} isDark={isDark}
         onClose={() => setDetailRedemption(null)}
+        onCancel={canRedeemSelf ? (id) => { cancelRedemption(id); setDetailRedemption(null); } : undefined}
+        members={members}
+      />
+
+      <RewardDetailScreen
+        reward={detailReward}
+        colors={colors} isDark={isDark}
+        myCoins={myCoins}
+        isGoal={!!detailReward && (activeMember as any)?.goalRewardId === detailReward.id}
+        onClose={() => setDetailReward(null)}
+        onRedeem={(reward, note) => handleRedeem(reward, note)}
       />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -374,30 +542,40 @@ export default function RewardsDashboardScreen({
               {/* Featured reward — bright white card lifted off the pastel
                   canvas with a real shadow, blue CTA fill. */}
               {featuredReward && (
-                <Card colors={colors} isDark={isDark} style={{ padding: 16 }}>
-                  <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-                    backgroundColor: isDark ? colors.amberLight : '#FDF3D8', marginBottom: 10 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3,
-                      color: isDark ? colors.amber : AMBER_TXT }}>
-                      {featuredReward.cost} coins · available now
+                <TouchableOpacity activeOpacity={0.85} onPress={() => setDetailReward(featuredReward)}>
+                  <Card colors={colors} isDark={isDark} style={{ padding: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+                        backgroundColor: isDark ? colors.amberLight : '#FDF3D8' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3,
+                          color: isDark ? colors.amber : AMBER_TXT }}>
+                          {featuredReward.cost} coins · {myCoins >= featuredReward.cost ? 'available now' : `${featuredReward.cost - myCoins} to go`}
+                        </Text>
+                      </View>
+                      {goalReward?.id === featuredReward.id && (
+                        <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+                          backgroundColor: isDark ? colors.amberLight : '#FDF3D8' }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.amber : AMBER_TXT }}>⭐ Goal</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 20, fontWeight: '800', lineHeight: 26, color: titleC, marginBottom: 6 }}>
+                      {featuredReward.emoji} {featuredReward.title}
                     </Text>
-                  </View>
-                  <Text style={{ fontSize: 20, fontWeight: '800', lineHeight: 26, color: titleC, marginBottom: 6 }}>
-                    {featuredReward.emoji} {featuredReward.title}
-                  </Text>
-                  {featuredReward.description ? (
-                    <Text style={{ fontSize: 14, color: bodyC, lineHeight: 20, marginBottom: 14 }}>
-                      {featuredReward.description}
-                    </Text>
-                  ) : <View style={{ height: 10 }} />}
-                  <TouchableOpacity onPress={() => handleRedeem(featuredReward)}
-                    style={{ height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE,
-                      shadowColor: BLUE, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: isDark ? 0 : 3 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
-                      Redeem · {featuredReward.cost} coins
-                    </Text>
-                  </TouchableOpacity>
-                </Card>
+                    {featuredReward.description ? (
+                      <Text style={{ fontSize: 14, color: bodyC, lineHeight: 20, marginBottom: 14 }}>
+                        {featuredReward.description}
+                      </Text>
+                    ) : <View style={{ height: 10 }} />}
+                    <View
+                      style={{ height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE,
+                        shadowColor: BLUE, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: isDark ? 0 : 3 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
+                        View · {featuredReward.cost} coins
+                      </Text>
+                    </View>
+                  </Card>
+                </TouchableOpacity>
               )}
 
               {/* Perk list */}
@@ -417,7 +595,7 @@ export default function RewardsDashboardScreen({
                       return (
                         <View key={reward.id}>
                           {i > 0 && <Divider colors={colors} isDark={isDark} />}
-                          <TouchableOpacity onPress={() => handleRedeem(reward)}
+                          <TouchableOpacity onPress={() => setDetailReward(reward)}
                             style={{ paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row', alignItems: 'center' }}>
                             <View style={{ flex: 1 }}>
                               <Text style={{ fontSize: 14, fontWeight: '600', color: titleC }} numberOfLines={1}>

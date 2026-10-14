@@ -190,6 +190,21 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
     setProcessingComplete(false);
   };
 
+  // The checkin detail text is one of 3 fixed kid-tap phrasings
+  // (sendCheckin in KidView.tsx/KioskKidQuickActions.tsx: "I'm home!",
+  // "I'm ready for pickup!", "Running a bit late") — matching on that
+  // text lets the single generic "Got it" button become a reply that
+  // actually answers what the kid said [live-reported: "why these are
+  // not still context aware of the buttons ??"], instead of the same
+  // acknowledgment regardless of content.
+  const checkinAckLabel = (() => {
+    const d = (req.detail || '').toLowerCase();
+    if (d.includes('ready for pickup')) return '🚗 On my way';
+    if (d.includes('running') && d.includes('late')) return '👍 Thanks, noted';
+    if (d.includes('home')) return '👍 Got it';
+    return '👍 Got it';
+  })();
+
   const doWithdraw = async () => {
     if (processingWithdraw) return;
     setProcessingWithdraw(true);
@@ -480,7 +495,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
               >
                 {processingComplete
                   ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>👍 Got it</Text>}
+                  : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>{checkinAckLabel}</Text>}
               </TouchableOpacity>
             </View>
           )}

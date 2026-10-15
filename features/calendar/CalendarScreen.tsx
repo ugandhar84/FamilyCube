@@ -30,7 +30,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility, eventAssignee } from '@/store/eventStore';
+import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility, eventAssignee, eventDisplayLocation } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
 import { PageTopBar } from '@/components/PageTopBar';
@@ -1662,10 +1662,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                               <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={BRAND.teal} ringWidth={1.5} />
                             )) : null;
                           })()}
-                          {ev.location ? (
+                          {eventDisplayLocation(ev) ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}>
                               <I.MapPin c={isDark ? '#34D399' : '#059669'} size={15} />
-                              <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.body} fontWeight="700" />
+                              <LocationLink addr={eventDisplayLocation(ev)!} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.body} fontWeight="700" />
                             </View>
                           ) : null}
                         </View>

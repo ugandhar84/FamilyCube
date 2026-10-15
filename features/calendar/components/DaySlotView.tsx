@@ -12,7 +12,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Pressable, Animated, Easing, Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
 import type { FamilyEvent } from '@/store/eventStore';
-import { eventAssignee } from '@/store/eventStore';
+import { eventAssignee, eventDisplayLocation } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { timeToMinutes, toDateStr } from './calendarDateHelpers';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -56,31 +56,93 @@ const SLOT_END   = 23;  // 11 PM
 const HOUR_H     = 64;  // px per hour — slightly taller for Figma rhythm
 const TOTAL_H    = (SLOT_END - SLOT_START) * HOUR_H;
 
-type LayoutEvent = FamilyEvent & { col: number; colCount: number; top: number; height: number };
+// `joinedWithNext`/`joinedWithPrev` mark a both-ways ride's two independent
+// legs (linkedLegId points each at the other — see eventStore.ts:146-151)
+// when they sit back-to-back in time with no real event between them. Each
+// leg stays its own full event (own tap target, own edit/delete/confirm —
+// forkRideLegs intentionally keeps them as 2 rows, not 1), but the render
+// below closes the gap and drops a connecting notch between them so they
+// read as one trip instead of two unrelated blocks [live-reported: "can we
+// show the pickup and drop on same card to block the slots if it is same hr
+// not spread the multiple hrs" — tried a true data-merge first, but the two
+// legs are deliberately independent events, so visually joining them while
+// keeping them separately tappable is the right fix].
+type LayoutEvent = FamilyEvent & { col: number; colCount: number; top: number; height: number; joinedWithNext?: boolean; joinedWithPrev?: boolean };
 
 function layoutEvents(events: FamilyEvent[]): LayoutEvent[] {
   const sorted = [...events].sort((a, b) => (timeToMinutes(a.time) ?? 0) - (timeToMinutes(b.time) ?? 0));
   const laid: LayoutEvent[] = sorted.map(ev => {
     const startMin = timeToMinutes(ev.time) ?? (SLOT_START * 60);
-    const durationMin = (ev as any).durationMinutes ?? 60;
-    const top = Math.max(0, startMin - SLOT_START * 60);
-    const height = Math.max(40, durationMin * (HOUR_H / 60));
+    const durationMin = eventDurationMin(ev);
+    // top/height must both be in px (scaled by HOUR_H/60), not raw minutes —
+    // was storing `top` as unconverted minutes while `height` was correctly
+    // scaled, so a 4:45 PM start (705 "minutes" past 5 AM) rendered at
+    // 705px, landing almost exactly on the 4 PM gridline (704px) instead of
+    // 45 minutes below it [live-reported: "it appears like event starts at
+    // 4.00"]. Coincidentally close to right before because HOUR_H (64) is
+    // near 60, which is exactly what hid the bug.
+    const top = Math.max(0, (startMin - SLOT_START * 60) * (HOUR_H / 60));
+    const height = Math.max(36, durationMin * (HOUR_H / 60));
     return { ...ev, col: 0, colCount: 1, top, height };
   });
 
+  // Back-to-back events (one starts exactly when the previous ends — e.g. a
+  // ride's pickup leg starting at the main event's end time) were still
+  // splitting into side-by-side columns, because `height` here is the
+  // padded block height (min 36px) rather than the event's real duration,
+  // so a short block's padded bottom edge could creep past the next
+  // event's start [live-reported: "why do we need to show the side by
+  // side.. as it is 4:45 - 6" — the pickup leg has no real time overlap
+  // with the class it follows]. Compare real end-of-event minutes (next
+  // event's own start, not the rendered box height) so adjacency never
+  // counts as overlap — only true time conflicts split into columns.
   let i = 0;
   while (i < laid.length) {
-    let groupEnd = laid[i].top + laid[i].height;
+    let groupEndMin = (timeToMinutes(laid[i].time) ?? 0) + eventDurationMin(laid[i]);
     let j = i + 1;
-    while (j < laid.length && laid[j].top < groupEnd) {
-      groupEnd = Math.max(groupEnd, laid[j].top + laid[j].height);
+    while (j < laid.length && (timeToMinutes(laid[j].time) ?? 0) < groupEndMin) {
+      groupEndMin = Math.max(groupEndMin, (timeToMinutes(laid[j].time) ?? 0) + eventDurationMin(laid[j]));
       j++;
     }
     const group = laid.slice(i, j);
     group.forEach((ev, idx) => { ev.col = idx; ev.colCount = group.length; });
     i = j;
   }
+
+  // Mark adjacent linked-leg pairs so the render pass can close the gap
+  // between them and draw a connecting notch instead of leaving the normal
+  // spacing — only when they're truly back-to-back (not split across
+  // columns and not separated by another event in between).
+  for (let k = 0; k < laid.length - 1; k++) {
+    const a = laid[k], b = laid[k + 1];
+    if (a.linkedLegId === b.id || b.linkedLegId === a.id) {
+      a.joinedWithNext = true;
+      b.joinedWithPrev = true;
+    }
+  }
   return laid;
+}
+
+// Real duration from start/end time when both are set — was always `?? 60`,
+// so an event WITH an explicit endTime (a ride pickup leg always has `time`
+// set to the drop-off's end time and no separate endTime, meant to render
+// as a short marker) still drew as a full 60-minute block, visually
+// stretching "Pick-up" an hour later/longer than it actually is
+// [live-reported: "when creating ride or event with the drop off and
+// pickup we should create the exact time no need to give +60 default? as
+// it creates the legs wrongly"]. Falls back to 60 only when there's truly
+// no endTime to compute from (most non-ride events).
+function eventDurationMin(ev: FamilyEvent & { pickupLeg?: FamilyEvent }): number {
+  const startMin = timeToMinutes(ev.time);
+  // A merged main+pickup card spans from the main event's start through
+  // the linked pickup leg's own end, not just the main event's own end —
+  // otherwise the card would stop at drop-off and clip the pickup info.
+  const leg = ev.pickupLeg;
+  const legEndMin = leg ? (timeToMinutes((leg as any).endTime) ?? timeToMinutes(leg.time)) : null;
+  const ownEndMin = timeToMinutes((ev as any).endTime);
+  const endMin = legEndMin != null ? legEndMin : ownEndMin;
+  if (startMin != null && endMin != null && endMin > startMin) return endMin - startMin;
+  return (ev as any).durationMinutes ?? 60;
 }
 
 function fmt12h(totalMin: number) {
@@ -89,13 +151,6 @@ function fmt12h(totalMin: number) {
   const suffix = h < 12 ? 'AM' : 'PM';
   const h12 = h % 12 || 12;
   return m === 0 ? `${h12} ${suffix}` : `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
-}
-
-function fmtDuration(min: number) {
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 // Live "you are here" pulse — a soft expanding ring behind a solid dot,
@@ -218,9 +273,9 @@ export default function DaySlotView({
             const { bg: bgColor, accent: accentColor } = dayEventStyle((ev as any).category, isDark);
 
             const startMin = timeToMinutes(ev.time) ?? 0;
-            const durationMin = (ev as any).durationMinutes ?? 60;
+            const durationMin = eventDurationMin(ev);
             const endMin = startMin + durationMin;
-            const isShort = ev.height < 44;  // compact: title only, no subtitle
+            const isShort = ev.height < 44;  // compact: title only (no inline time, no subtitle) — e.g. a 15-min pickup leg
 
             // Subtitle: location + who. A ride event's driver lives in
             // ev.driverName/driverId, not memberId/memberIds — EventCard.tsx
@@ -246,7 +301,16 @@ export default function DaySlotView({
                 ? allAssignees.map(m => m.name.split(' ')[0]).join(' · ')
                 : null;
             const statusLabel = (ev as any).status === 'pending' ? 'Needs confirmation' : null;
-            const hasSubtitle = !!(ev.location || whoLabel || statusLabel);
+            // A pick-up leg's card should show where the rider is actually
+            // being picked up FROM (pickupLocation) — eventDisplayLocation()
+            // prioritizes location/dropLocation first, which on a pick-up
+            // leg row was shadowing the pickup address entirely
+            // [live-reported: "the pickup address should be present on the
+            // pickup card"].
+            const displayLocation = ev.title?.startsWith('Pick-up')
+              ? (ev.pickupLocation || eventDisplayLocation(ev))
+              : eventDisplayLocation(ev);
+            const hasSubtitle = !!(displayLocation || whoLabel || statusLabel);
 
             return (
               <TouchableOpacity
@@ -257,95 +321,132 @@ export default function DaySlotView({
                 activeOpacity={0.82}
                 style={{
                   position: 'absolute',
-                  top: ev.top + 2,
-                  height: Math.max(36, ev.height - 4),
+                  top: ev.top + 3,
+                  // Card height fits its actual content (title line, plus
+                  // subtitle line only when there's room/content for one),
+                  // not the full duration-derived slot height — a long event
+                  // with a short one-line title no longer drags a tall empty
+                  // slab under the text just because its time span was long
+                  // [live-reported: "card too tall for its time range", then
+                  // "fit card to the content" after the flex-start tweak
+                  // alone still left duration-sized blocks]. Caps at the
+                  // slot height so it never overflows into the next hour.
+                  height: Math.min(Math.max(30, ev.height - 6), !isShort && hasSubtitle ? 42 : 30),
                   left: `${leftPct}%` as any,
                   width: `${colWidthPct}%` as any,
-                  borderRadius: 14,
+                  borderRadius: 12,
                   backgroundColor: bgColor,
-                  borderLeftWidth: 3,
-                  borderLeftColor: accentColor,
                   overflow: 'hidden',
                   paddingHorizontal: 10,
-                  paddingVertical: 8,
-                  opacity: isConflict && ev.col > 0 ? 0.75 : 1,
-                  justifyContent: 'center',
+                  paddingVertical: 6,
+                  opacity: isConflict && ev.col > 0 ? 0.78 : 1,
+                  justifyContent: 'flex-start',
                   zIndex: 2,
                 }}
               >
-                {/* Time range — small, top — dark for readability against the pastel tint */}
-                {!isShort && (
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? '#fff' : GEMINI.titleColor, letterSpacing: 0.2, marginBottom: 3 }}>
-                    {fmt12h(startMin)} – {fmt12h(endMin)}
-                  </Text>
-                )}
-
-                {/* Bold title */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Matches WeekView's flat pastel-pill rows: one line of
+                    "time · title", no border/shadow chrome, no separate
+                    time-pill or duration-badge competing with the title for
+                    space [live-reported: "not at all nicer" / "data
+                    squeezed" on a prior pass with heavier card chrome, then
+                    "see how weekly event block made i think such away we
+                    can use that" — rebuilt to follow WeekView's own simple
+                    row shape instead]. Title+time share one line by
+                    default; a second line only appears when the block is
+                    tall enough to spare it. */}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   {!!ev.seriesId && (
                     <Pressable
                       onPress={() => router.push({ pathname: '/calendar/series/[seriesId]', params: { seriesId: ev.seriesId! } })}
                       hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      style={{ marginRight: 3 }}
+                      style={{ marginRight: 4 }}
                     >
-                      <Text style={{ fontSize: isShort ? 11 : 13 }} accessibilityLabel="Manage recurring series">🔄</Text>
+                      <Text style={{ fontSize: 11 }} accessibilityLabel="Manage recurring series">🔄</Text>
                     </Pressable>
                   )}
-                  <Text style={{ fontSize: isShort ? 11 : 13, fontWeight: '700', color: isDark ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 16 }} numberOfLines={isShort ? 1 : 2}>
-                    {ev.title}
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#FDFCF9' : '#2C2722', flexShrink: 1 }} numberOfLines={1}>
+                    {!isShort ? `${fmt12h(startMin)} · ` : ''}{ev.title}
                   </Text>
                 </View>
 
-                {/* Subtitle — location · who · status. Shown whenever there's
-                    room for a second line (not gated to tall blocks only
-                    anymore, so person/location metadata is visible on most
-                    default-duration events too). */}
-                {!isShort && hasSubtitle ? (
-                  <Text style={{ fontSize: 10, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 3 }} numberOfLines={1}>
-                    {ev.location ? (
+                {/* Subtitle — location · who · status, only when the block
+                    has room below the title row for a second line. */}
+                {!isShort && hasSubtitle && ev.height >= 56 ? (
+                  <Text style={{ fontSize: 10, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, fontWeight: '600' }} numberOfLines={1}>
+                    {displayLocation ? (
                       <Text
-                        onPress={() => openInMaps(ev.location!)}
-                        style={{ textDecorationLine: 'underline', color: accentColor, fontWeight: '700' }}
+                        onPress={() => openInMaps(displayLocation)}
+                        style={{ color: accentColor, fontWeight: '800' }}
                       >
-                        📍 {streetOnly(ev.location)}
+                        📍 {streetOnly(displayLocation)}
                       </Text>
                     ) : null}
-                    {ev.location && (whoLabel || statusLabel) ? '  ·  ' : null}
+                    {displayLocation && (whoLabel || statusLabel) ? '  ·  ' : null}
                     {whoLabel}
                     {whoLabel && statusLabel ? '  ·  ' : null}
                     {statusLabel}
                   </Text>
                 ) : null}
 
-                {/* Duration chip — bottom-right corner for tall cards */}
-                {ev.height >= 72 && (
-                  <View style={{ position: 'absolute', bottom: 6, right: 8, backgroundColor: accentColor + '22', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: accentColor }}>{fmtDuration(durationMin)}</Text>
-                  </View>
-                )}
               </TouchableOpacity>
             );
           })}
 
-          {/* + Add — thin strip at the bottom of each hour, zIndex 1 so event blocks (zIndex 2) always win */}
+          {/* Connecting notch between a linked ride pair's two cards — a
+              small pill bridging the closed gap, so "drop-off" + "pick-up"
+              read as one trip without merging their data (each stays its
+              own tappable card — see joinedWithNext/Prev above). */}
+          {laid.filter(ev => ev.joinedWithNext).map(ev => (
+            <View
+              key={`join-${ev.id}`}
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: ev.top + ev.height - 7,
+                left: TRACK_L + 14,
+                width: 2,
+                height: 14,
+                backgroundColor: dayEventStyle((ev as any).category, isDark).accent,
+                opacity: 0.5,
+                zIndex: 3,
+              }}
+            />
+          ))}
+
+          {/* Empty-hour tap targets — was a near-invisible 18px "+ Add" sliver
+              at the bottom of every hour, so a fully vacant evening (e.g.
+              7 PM–11 PM with nothing scheduled) read as mostly dead space
+              with only tiny gray text hinting it was tappable
+              [live-reported: "this slot is fully vacant whey dont we show
+              the nicer cards... use the space properly on the event
+              blocks"]. Each hour with no event now gets its own full-height,
+              dashed-border card spanning the whole hour row — same rounded/
+              padded shape as a real event block, so the empty grid reads as
+              a grid of actionable slots rather than a half-rendered table. */}
           {hours.map(hour => {
             const slotTop  = (hour - SLOT_START) * HOUR_H;
             const timeKey  = `${String(hour).padStart(2, '0')}:00`;
+            const isOccupied = laid.some(ev => slotTop < ev.top + ev.height && slotTop + HOUR_H > ev.top);
+            if (isOccupied) return null;
             return (
               <TouchableOpacity
                 key={`add-${hour}`}
                 onPress={() => onAddAtTime(timeKey)}
-                hitSlop={{ top: 0, bottom: 0, left: 0, right: 0 }}
+                activeOpacity={0.6}
                 style={{
                   position: 'absolute',
-                  top: slotTop + HOUR_H - 18,
+                  top: slotTop + 2,
+                  height: HOUR_H - 4,
                   left: 0, right: 0,
-                  height: 18,
                   zIndex: 1,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderStyle: 'dashed',
+                  borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(44,39,34,0.12)',
                   alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600', opacity: 0.7 }}>+ Add</Text>
+                <Text style={{ fontSize: 11, color: colors.textTertiary, fontWeight: '700', opacity: 0.6 }}>+ Add event</Text>
               </TouchableOpacity>
             );
           })}

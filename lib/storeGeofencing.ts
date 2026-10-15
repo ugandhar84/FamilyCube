@@ -156,6 +156,16 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
   taskDefined = true;
 }
 
+// Define at import time, not just inside registerStoreGeofences — otherwise
+// a cold-start/background wake can deliver a geofence event for a region the
+// OS still remembers from a prior session before this module's JS has had a
+// chance to call registerStoreGeofences, and the task fires against an
+// undefined name: "Task 'family-cube-store-geofence' not found for app ID"
+// [live-reported, same class of race already fixed for placeGeofencing.ts/
+// locationTracking.ts by defining their tasks eagerly at module load].
+const _boot = getTaskManager();
+if (_boot) ensureTaskDefined(_boot);
+
 /** True once expo-task-manager's native module is actually available (post-rebuild). */
 export function isStoreGeofencingSupported(): boolean {
   return getTaskManager() !== null;

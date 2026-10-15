@@ -258,11 +258,6 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
       });
     return () => { cancelled = true; };
   }, [quest.id]);
-  // Inline call reminder toggle — same pattern as EventDetailScreen's: local
-  // state mirrors liveQuest for an instant-feeling Switch, writes straight
-  // through to updateQuest on change.
-  const [alertCall, setAlertCallState] = useState((quest as any).alertCall ?? false);
-  const [alertCallLeadMinutes, setAlertCallLeadMinutesState] = useState((quest as any).alertCallLeadMinutes ?? 10);
   const {
     updateQuest, quests, cheerQuest, claimQuest, submitQuest, approveQuest, declineQuest, reassignQuest, reopenQuest,
   } = useQuestStore();
@@ -290,20 +285,6 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
     if (liveQuest.photoUrl && optimisticPhotoUrl) setOptimisticPhotoUrl(null);
   }, [liveQuest.photoUrl, optimisticPhotoUrl]);
 
-  useEffect(() => {
-    setAlertCallState((liveQuest as any).alertCall ?? false);
-    setAlertCallLeadMinutesState((liveQuest as any).alertCallLeadMinutes ?? 10);
-  }, [(liveQuest as any).alertCall, (liveQuest as any).alertCallLeadMinutes]);
-
-  function handleAlertCallChange(v: boolean | ((prev: boolean) => boolean)) {
-    const next = typeof v === 'function' ? v(alertCall) : v;
-    setAlertCallState(next);
-    updateQuest(liveQuest.id, { alertCall: next } as any);
-  }
-  function handleLeadMinutesChange(v: number) {
-    setAlertCallLeadMinutesState(v);
-    updateQuest(liveQuest.id, { alertCallLeadMinutes: v } as any);
-  }
 
   // ── Command-center actions — the same gating QuestCard uses on the list,
   // ported onto the detail page so a single tap into "readonly" detail isn't
@@ -350,8 +331,54 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
   const [redoPreset, setRedoPreset] = useState<typeof REJECTION_PRESETS[number]['key'] | null>(null);
   const [redoCustom, setRedoCustom] = useState('');
 
+  const [editingSubmission, setEditingSubmission] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   function resetSubmitCompose() {
-    setSubmitting(false); setSubmitNote(''); setSubmitPhotoUri(null);
+    setSubmitting(false); setEditingSubmission(false); setSubmitNote(''); setSubmitPhotoUri(null);
+  }
+
+  function openEditSubmission() {
+    // Photo-required chores always need a fresh photo on every edit —
+    // never prefill the old one, same as resubmit after a decline already
+    // does [live-requested earlier: "when resubmitting the photo required
+    // task we should always ask the picure on every resubmission"]. A
+    // non-photo chore's note-only edit can safely start prefilled.
+    setSubmitPhotoUri(liveQuest.photoRequired ? null : (liveQuest.photoUrl ?? null));
+    setSubmitNote(liveQuest.completionNote ?? '');
+    setEditingSubmission(true);
+    setSubmitting(true);
+  }
+
+  async function doEditSubmission() {
+    if (liveQuest.photoRequired && !submitPhotoUri) {
+      Alert.alert('📸 Photo required', 'Add a photo before saving your changes.');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      let photoUrl: string | undefined = liveQuest.photoUrl ?? undefined;
+      if (submitPhotoUri && submitPhotoUri !== liveQuest.photoUrl) {
+        setUploadingProof(true);
+        try {
+          const familyId = activeMember?.familyId ?? '';
+          photoUrl = await uploadChoreProofPhoto(familyId || 'unknown', liveQuest.id, submitPhotoUri);
+        } finally {
+          setUploadingProof(false);
+        }
+      }
+      await useChoreStore.getState().editPendingSubmission(liveQuest.id, activeMemberId, {
+        photoUrl, note: submitNote.trim() || undefined,
+      });
+      if (photoUrl) setOptimisticPhotoUrl(photoUrl);
+      resetSubmitCompose();
+      refreshLog();
+    } catch (e) {
+      console.warn('[QuestDetailModal] doEditSubmission failed', e);
+      Alert.alert('Upload failed', "Couldn't save your changes — check your connection and try again.");
+    } finally {
+      setSavingEdit(false);
+    }
   }
   function resetRedoCompose() {
     setRedoing(false); setDeclining(false); setRedoPreset(null); setRedoCustom('');
@@ -743,33 +770,15 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
               }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: statusInfo.color }}>{statusInfo.label}</Text>
               </View>
-              {liveQuest.status !== 'approved' && liveQuest.status !== 'done' && liveQuest.status !== 'declined' && (() => {
-                // Live direction: "don't be another chip, convert the call
-                // reminder to that selected one" — one chip total, not a
-                // toggle chip plus a separate lead-time chip underneath.
-                // Off: tap turns it on (default lead time). On: the SAME
-                // chip's own label shows the selected lead time, tap cycles
-                // to the next one; long-press turns the reminder back off.
-                const LEAD_OPTIONS = [0, 10, 15, 30];
-                const idx = LEAD_OPTIONS.indexOf(alertCallLeadMinutes);
-                const label = !alertCall ? 'Call reminder' : (alertCallLeadMinutes === 0 ? 'Call · on time' : `Call · ${alertCallLeadMinutes} min before`);
-                return (
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!alertCall) handleAlertCallChange(true);
-                      else handleLeadMinutesChange(LEAD_OPTIONS[(idx + 1) % LEAD_OPTIONS.length]);
-                    }}
-                    onLongPress={() => handleAlertCallChange(false)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, height: 25,
-                      borderRadius: 100, backgroundColor: alertCall ? colors.pink + '18' : colors.surface,
-                      borderWidth: 1, borderColor: alertCall ? colors.pink + '50' : colors.border }}>
-                    <Text style={{ fontSize: 13 }}>{alertCall ? '📞' : '📴'}</Text>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: alertCall ? colors.pink : colors.textSecondary }}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })()}
+              {/* Call reminder removed from chores entirely [live-requested:
+                  "we should only alert the meaningful - dont use the
+                  annolying calls"]. A chore has no equivalent of an event's
+                  Medical/Ride category or rideRequired flag — there's no
+                  chore that's genuinely time-critical enough to warrant a
+                  real CallKit-style ring, so the toggle no longer renders
+                  here at all. Event call reminders (rides, medication,
+                  appointments) are a separate screen/store and are
+                  unaffected by this change. */}
             </View>
             {(liveQuest.description || note) && (
               <Text style={{ fontSize: 15, color: colors.textSecondary, lineHeight: 22 }}>
@@ -1048,6 +1057,18 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                 </Text>
               )}
 
+              {/* Edit submission — correct an already-submitted proof while
+                  still pending_approval, no new redo cycle. */}
+              {!liveQuest.pendingTerms && !liveQuest.kidDisputedRedo && actions.canEditPendingSubmission && (
+                <TouchableOpacity onPress={() => submitting ? resetSubmitCompose() : openEditSubmission()}
+                  style={{ height: 52, borderRadius: 16, backgroundColor: (isDark ? colors.primary : GEMINI.blue) + '26',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.primary : GEMINI.blue }}>
+                    ↺ Edit submission
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               {/* Submit / Resubmit — inline compose, replaces the old bottom sheet */}
               {!liveQuest.pendingTerms && !liveQuest.kidDisputedRedo && (actions.canSubmit || actions.canResubmit) && !actions.canAcceptGp && (
                 <TouchableOpacity onPress={() => submitting ? resetSubmitCompose() : setSubmitting(true)}
@@ -1074,7 +1095,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                 <View style={{ backgroundColor: isDark ? colors.surface : colors.pinkLight,
                   borderRadius: 16, padding: 16, gap: 10 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
-                    {actions.canResubmit ? 'Revise & resubmit' : 'Submit for review'}
+                    {editingSubmission ? 'Edit your submission' : actions.canResubmit ? 'Revise & resubmit' : 'Submit for review'}
                   </Text>
                   {liveQuest.photoRequired && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -1124,12 +1145,12 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
                         alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 13, color: colors.textSecondary }}>Cancel</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={doSubmit} disabled={uploadingProof}
+                    <TouchableOpacity onPress={editingSubmission ? doEditSubmission : doSubmit} disabled={uploadingProof || savingEdit}
                       style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: isDark ? colors.primary : GEMINI.blue,
                         alignItems: 'center', justifyContent: 'center' }}>
-                      {uploadingProof
+                      {(uploadingProof || savingEdit)
                         ? <ActivityIndicator color="#fff" />
-                        : <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Submit</Text>}
+                        : <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>{editingSubmission ? 'Save changes' : 'Submit'}</Text>}
                     </TouchableOpacity>
                   </View>
                 </View>

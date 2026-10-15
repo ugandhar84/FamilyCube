@@ -17,10 +17,17 @@ import type { Quest } from '@/store/questStore';
 // parent review — furthest along, most worth surfacing) > To Do (oldest/
 // most due) > unclaimed Bounty (fallback once nothing of the kid's own is
 // pending). Tapping the card opens MyChoresScreen on that item's own tab.
-export type KidChoresNeedsYouKind = 'review' | 'todo' | 'bounty';
+// 'review' (submitted, awaiting a parent) is NOT action-required BY THE
+// KID — it's surfaced in MyChoresScreen's own Review tab, not here
+// [live-requested: "we dont need to show the submit review item here in
+// needyou .. only where any action is required we should show"]. The card
+// only ever headlines todo/bounty now; reviewQuests still gates whether
+// the card renders at all alongside them (kept visible once ANY chore
+// activity exists), but never becomes the headline kind or counts toward
+// extraCount.
+export type KidChoresNeedsYouKind = 'todo' | 'bounty';
 
 function statusFor(kind: KidChoresNeedsYouKind): { label: string; color: (colors: any) => string } {
-  if (kind === 'review') return { label: 'Submitted',  color: (c) => c.amber };
   if (kind === 'bounty') return { label: 'Up for grabs', color: (c) => c.pink };
   return { label: 'To do', color: (c) => c.teal };
 }
@@ -34,20 +41,18 @@ export function KidChoresNeedsYouCard({
   todoQuests: Quest[]; reviewQuests: Quest[]; bountyQuests: Quest[];
   onOpenTab: (tab: 'todo' | 'review' | 'done' | 'bounty') => void;
 }) {
-  if (todoQuests.length === 0 && reviewQuests.length === 0 && bountyQuests.length === 0) return null;
+  if (todoQuests.length === 0 && bountyQuests.length === 0) return null;
 
-  const kind: KidChoresNeedsYouKind =
-    reviewQuests.length > 0 ? 'review' : todoQuests.length > 0 ? 'todo' : 'bounty';
-  const list = kind === 'review' ? reviewQuests : kind === 'todo' ? todoQuests : bountyQuests;
+  const kind: KidChoresNeedsYouKind = todoQuests.length > 0 ? 'todo' : 'bounty';
+  const list = kind === 'todo' ? todoQuests : bountyQuests;
   const headline = list[0];
   const extraCount = list.length - 1;
   const status = statusFor(kind);
   const statusColor = status.color(colors);
 
   const reason =
-    kind === 'review' ? 'Waiting on a parent to approve it'
-      : kind === 'todo' ? `+${headline.coins} coins when it's done`
-        : `First to claim it gets +${headline.coins} coins`;
+    kind === 'todo' ? `+${headline.coins} coins when it's done`
+      : `First to claim it gets +${headline.coins} coins`;
 
   return (
     <AnimatedPressable
@@ -89,7 +94,7 @@ export function KidChoresNeedsYouCard({
         </View>
         {extraCount > 0 && (
           <Text style={{ color: colors.pink, fontSize: 12, fontWeight: '700', marginTop: 4 }}>
-            +{extraCount} more {kind === 'bounty' ? 'unclaimed' : kind === 'review' ? 'awaiting review' : 'to do'}
+            +{extraCount} more {kind === 'bounty' ? 'unclaimed' : 'to do'}
           </Text>
         )}
       </View>

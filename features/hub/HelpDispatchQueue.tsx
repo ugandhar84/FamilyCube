@@ -20,7 +20,8 @@ import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
-import { fmtDateShort, fmtTime } from '@/lib/dates';
+import { fmtDateShort, fmtTime, fmtDateTime } from '@/lib/dates';
+import { relativeTime } from '@/lib/notifications/display';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -131,6 +132,14 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
 
   const [tab, setTab] = useState<'awaiting' | 'rejected' | 'history'>('awaiting');
 
+  // Re-render every minute so pending rows' "Xago" timer stays live while
+  // this screen is open, instead of freezing at whatever it read on mount.
+  const [, forceTick] = useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => forceTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const pending   = useMemo(() => requests.filter(r => r.status === 'pending'),  [requests]);
   const assigned  = useMemo(() => requests.filter(r => r.status === 'approved'), [requests]);
   const rejected  = useMemo(() => requests.filter(r => r.status === 'declined'), [requests]);
@@ -196,6 +205,19 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
         : null;
     }
 
+    // Timestamp line: a still-pending request shows a live "Xago" since it
+    // was sent (so it's obvious how long it's been sitting); a resolved one
+    // (rejected/history) shows the actual requested + resolved date/times
+    // instead, since "3d ago" stops being useful once there's a real
+    // decision date to show — live-requested: "show the timer Xago while on
+    // pending, in the history/reject show the time on the cards when
+    // actually requested and rejected".
+    const timestampLine = req.status === 'pending'
+      ? `Requested ${relativeTime(req.requestedAt)}`
+      : req.respondedAt
+        ? `Requested ${fmtDateTime(req.requestedAt)} · ${req.status === 'declined' ? 'Declined' : req.status === 'approved' ? 'Approved' : 'Resolved'} ${fmtDateTime(req.respondedAt)}`
+        : `Requested ${fmtDateTime(req.requestedAt)}`;
+
     return (
       <TouchableOpacity
         onPress={() => onOpenDetail(req.id)}
@@ -220,6 +242,9 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
               </View>
             )}
           </View>
+          <Text style={[styles.timestampText, { color: colors.textTertiary }]} numberOfLines={1}>
+            {timestampLine}
+          </Text>
         </View>
         {inHistory ? (
           outcomeTag ? (
@@ -352,6 +377,7 @@ const styles = StyleSheet.create({
 
   coinPill:     { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   coinPillText: { fontSize: 11, fontWeight: '800' },
+  timestampText: { fontSize: 11, fontWeight: '600', marginTop: 2 },
 
   outcomeTag:     { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'center' },
   outcomeTagText: { fontSize: 11, fontWeight: '700' },

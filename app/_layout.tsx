@@ -1252,13 +1252,25 @@ function RootNavigator() {
   // Checked every minute (cheap local array scan, no network call unless
   // something's actually due) so the move to history feels prompt without
   // needing the app to be foregrounded exactly on the hour.
+  //
+  // expireStale lives here too (not just KidView's own mount-time call) —
+  // it flips a checkin/question to 'expired' once its 3h/36h expiresAt
+  // passes. It previously only ran from KidView, so a checkin a parent never
+  // acknowledged stayed "Needs a Decision" on the PARENT's own screen
+  // indefinitely (parent never mounts KidView) — reported live: "why these
+  // are not auto complete on certain exprity." No server-side sweeper cron
+  // actually exists despite an old comment claiming one does, so this is
+  // the only place this transition happens — run it for whoever's device is
+  // open, parent or kid.
   useEffect(() => {
     if (!activeMemberId) return;
     const SWEEP_INTERVAL_MS = 60_000;
-    useKidRequestStore.getState().finalizeAckedCheckins().catch(() => {});
-    const id = setInterval(() => {
+    const runSweep = () => {
       useKidRequestStore.getState().finalizeAckedCheckins().catch(() => {});
-    }, SWEEP_INTERVAL_MS);
+      useKidRequestStore.getState().expireStale().catch(() => {});
+    };
+    runSweep();
+    const id = setInterval(runSweep, SWEEP_INTERVAL_MS);
     return () => clearInterval(id);
   }, [activeMemberId]);
 

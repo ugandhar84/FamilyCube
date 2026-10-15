@@ -28,7 +28,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { eventAssignee } from '@/store/eventStore';
+import { eventAssignee, eventDisplayLocation } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
@@ -373,8 +373,8 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   </Text>
                 </View>
               )}
-              {showLocation && ev.location && (
-                <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.micro} iconSize={12} fontWeight="700" />
+              {showLocation && eventDisplayLocation(ev) && (
+                <LocationLink addr={eventDisplayLocation(ev)!} color={colors.info} fontSize={TYPO.micro} iconSize={12} fontWeight="700" />
               )}
               {/* Live-requested: "Show on the email indicator that it is
                   coming from where" — a personal-calendar sync (inbound
@@ -667,8 +667,8 @@ export function EventCardTimeline({
                     {forLabel}: <Text style={{ fontWeight: '700' }}>—</Text>
                   </Text>
                 )}
-                {ev.location && (
-                  <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.label} fontWeight="600" />
+                {eventDisplayLocation(ev) && (
+                  <LocationLink addr={eventDisplayLocation(ev)!} color={colors.info} fontSize={TYPO.label} fontWeight="600" />
                 )}
               </View>
             );

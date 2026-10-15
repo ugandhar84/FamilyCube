@@ -6,7 +6,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { KID } from './kidTheme';
 import { KidQuestCard } from './KidQuestCard';
-import { KidQuestDetailScreen } from './KidQuestDetailScreen';
+import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 
@@ -143,13 +143,12 @@ export function MyQuestsSection({
         })
       )}
 
+      {/* Same QuestDetailModal Tasks tab/Parent side use — see
+          MyChoresScreen.tsx's matching comment for why. */}
       {detailQuest && (
-        <KidQuestDetailScreen
+        <QuestDetailModal
           quest={allQuests.find(q => q.id === detailQuest.id) ?? detailQuest}
-          active={active} members={members} allQuests={allQuests}
           onClose={() => setDetailQuest(null)}
-          onClaim={onClaim} onStart={onStart} onSubmit={onSubmit}
-          onAcceptGpQuest={onAcceptGpQuest} onDeclineGpQuest={onDeclineGpQuest}
         />
       )}
     </View>

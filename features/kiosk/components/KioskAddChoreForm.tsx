@@ -78,7 +78,6 @@ import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 // similar to add medication"]. TaskFormShell.tsx/DueDateTimePicker.tsx
 // themselves are untouched.
 import { KioskTaskFormShell as TaskFormShell } from './KioskTaskFormShell';
-import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import { KioskDueDateTimePicker as DueDateTimePicker } from './KioskDueDateTimePicker';
 import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
 
@@ -1046,14 +1045,9 @@ export function KioskAddChoreForm({ visible, onClose, activeMemberId, defaultQue
               );
             })()}
 
-            {/* Call-style reminder — shared with the Schedule form and
-                EditQuestModal (see CallReminderToggle). */}
-            <CallReminderToggle
-              alertCall={alertCall} setAlertCall={setAlertCall}
-              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-              accentColor={BRAND.purple} colors={colors} isDark={isDark}
-              variant="icon" pillStyle={aq.datePill}
-            />
+            {/* Call reminder removed from chore creation [live-requested:
+                "we should only alert the meaningful - dont use the
+                annolying calls"]. */}
             </>}
 
             {/* ── Assignment suggestion — calls the live Responsibility Engine

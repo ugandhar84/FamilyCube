@@ -44,7 +44,6 @@ const ACTION_TEXT  = '#294fc7';
 // toggle AddEventModal uses. Previously this file hand-maintained its own
 // copy of each; see TaskFormShell's header for why that stopped being safe.
 import { TaskFormShell } from '@/features/tasks/components/forms/TaskFormShell';
-import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
 import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
 
@@ -1183,14 +1182,13 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               );
             })()}
 
-            {/* Call-style reminder — shared with the Schedule form and
-                EditQuestModal (see CallReminderToggle). */}
-            <CallReminderToggle
-              alertCall={alertCall} setAlertCall={setAlertCall}
-              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-              accentColor={periwinkle} colors={colors} isDark={isDark}
-              variant="icon" pillStyle={aq.datePill}
-            />
+            {/* Call reminder removed from chore creation [live-requested:
+                "we should only alert the meaningful - dont use the
+                annolying calls"] — a chore has no equivalent of an event's
+                Medical/Ride urgency, so this never offers a real
+                CallKit-style ring anymore. alertCall/alertCallLeadMinutes
+                state is kept (still defaults to false) so submit() below
+                doesn't need its own separate change. */}
             </>}
 
             {currentStepId === 'assign' && <>

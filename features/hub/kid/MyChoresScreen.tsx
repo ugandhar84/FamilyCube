@@ -10,7 +10,7 @@ import FullPageOverlay from '@/components/FullPageOverlay';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import { KidQuestCard } from './KidQuestCard';
-import { KidQuestDetailScreen } from './KidQuestDetailScreen';
+import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
 import { ChoreProposalPage } from './forms/ChoreProposalPage';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
@@ -196,13 +196,25 @@ export function MyChoresScreen({
         )}
       </FullPageOverlay>
 
+      {/* Detail page is the SAME QuestDetailModal the Tasks tab/Parent side
+          opens (features/quests/components/QuestDetailModal.tsx), not a
+          separate kid-only implementation — two components independently
+          rendering the same chore's submission/approval state was a real
+          sync-drift source (e.g. an "Edit submission" flow built only on
+          the kid-only copy, missing QuestDetailModal's already-existing
+          chore_submissions history). QuestDetailModal reads activeMemberId
+          from the store itself and derives its own actions via
+          deriveQuestActions (features/tasks/lib/deriveCardActions.ts) —
+          canApprove/canReopen already require isParentOrSenior, so it's
+          safe to open here with no isParent/canEdit props (those only add
+          parent-only extras like the activity log) [live direction: "use
+          the tasks tab -> questcard -> questdetails page as common"].
+          Landing page/cards above (KidQuestCard, claim/start/submit quick
+          actions) are unchanged — only what opens on tap changes. */}
       {detailQuest && (
-        <KidQuestDetailScreen
+        <QuestDetailModal
           quest={allQuests.find(q => q.id === detailQuest.id) ?? detailQuest}
-          active={active} members={members} allQuests={allQuests}
           onClose={() => setDetailQuest(null)}
-          onClaim={onClaim} onStart={onStart} onSubmit={onSubmit}
-          onAcceptGpQuest={onAcceptGpQuest} onDeclineGpQuest={onDeclineGpQuest}
         />
       )}
     </View>

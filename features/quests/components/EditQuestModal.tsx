@@ -21,7 +21,6 @@ import { fetchCustomCategories, CustomCategory } from '@/lib/familyCustomCategor
 import { aq } from './AddQuestModal';
 // Shared with AddQuestModal / AddEventModal — this file used to hand-
 // duplicate both of these blocks inline.
-import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
 import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, previewKidChoreAssignment,
@@ -131,8 +130,13 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
   const [saving,       setSaving]       = useState(false);
-  const [alertCall,           setAlertCall]           = useState(quest.alertCall ?? false);
-  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(quest.alertCallLeadMinutes ?? 10);
+  // Call reminder removed from chores entirely [live-requested: "we should
+  // only alert the meaningful - dont use the annolying calls"] — forced off
+  // on every save now (not just hidden from the UI), so editing a chore
+  // that already had alertCall=true from before this change quietly clears
+  // it instead of leaving a stale, now-unreachable-from-the-UI ring armed.
+  const [alertCall,           setAlertCall]           = useState(false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
 
   const pillBg  = isDark ? colors.surface : '#F1F5F9';
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
@@ -497,17 +501,6 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                   {routineFreq === 'once' ? "Turns off repeating — future occurrences won't be generated."
                     : `Will repeat ${routineFreq} going forward. Today's task stays as-is.`}
                 </Text>
-              )}
-
-              {!locked && (
-                <View style={{ marginBottom: 20 }}>
-                  <CallReminderToggle
-                    alertCall={alertCall} setAlertCall={setAlertCall}
-                    alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-                    accentColor={colors.teal} colors={colors} isDark={isDark}
-                    variant="icon" pillStyle={aq.datePill}
-                  />
-                </View>
               )}
 
               {/* ── REWARD section — was gated on the static isAdultTask flag

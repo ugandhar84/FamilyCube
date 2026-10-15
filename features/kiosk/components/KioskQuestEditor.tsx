@@ -53,7 +53,6 @@ import type { Quest } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { showToast } from '@/components/AppToast';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
-import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import MemberPicker from '@/features/calendar/components/eventForm/MemberPicker';
 import { ALL_CATEGORIES, CATEGORY_META } from '@/features/quests/components/questFormShared';
 import {
@@ -154,8 +153,12 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
       setShowDuePicker(null);
       setLinkedEventId(quest.linkedEventId);
       setShowEventPicker(false);
-      setAlertCall(quest.alertCall ?? false);
-      setAlertCallLeadMinutes(quest.alertCallLeadMinutes ?? 10);
+      // Call reminder removed from chores entirely [live-requested: "we
+      // should only alert the meaningful - dont use the annolying calls"]
+      // — force off on load so editing a chore that already had
+      // alertCall=true from before this change clears it on next save.
+      setAlertCall(false);
+      setAlertCallLeadMinutes(10);
       // Same real coercion EditQuestModal.tsx's own prefill uses: a chore
       // whose recurrence isn't one of these 4 basic values (e.g.
       // 'biweekly'/'custom', reachable only from AddQuestModal's fuller
@@ -609,14 +612,9 @@ export function KioskQuestEditor({ quest, active, members, isActiveApprover, onC
         </View>
       </View>
 
-      <View style={s.section}>
-        <CallReminderToggle
-          alertCall={alertCall} setAlertCall={setAlertCall}
-          alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-          accentColor={k.primary} colors={colors} isDark={isDark}
-          variant="icon"
-        />
-      </View>
+      {/* Call reminder removed from chores entirely [live-requested: "we
+          should only alert the meaningful - dont use the annolying
+          calls"]. */}
 
       <View style={s.switchRow}>
         <Text style={[s.switchLabel, { color: k.text }]}>Photo required</Text>

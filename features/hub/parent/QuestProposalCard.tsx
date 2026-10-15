@@ -3,7 +3,6 @@ import { View, Text, TextInput, Alert, Pressable } from 'react-native';
 import { Coins, X, Check, PenLine } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
-import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
 import { fmtDateLabel, fmtTimeLabel } from '@/features/quests/components/questFormShared';
 import { localDateStr } from '@/lib/dates';
@@ -48,11 +47,9 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
   const finalCoins = Math.max(0, Math.round(parseInt(coinsText, 10) || 0));
   const wasEdited = finalCoins !== (req.rewardCoins ?? 15);
 
-  // Call-style reminder needs a due date/time to ring against — off by
-  // default (pool quest, no due date, matching the pre-existing behavior)
-  // and only shown/collected once the parent turns the toggle on.
-  const [alertCall, setAlertCall] = useState(false);
-  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
+  // Due date/time — off by default (pool quest, no due date, matching the
+  // pre-existing behavior) and only shown/collected once the parent opts in.
+  const [hasDueDate, setHasDueDate] = useState(false);
   const defaultDue = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
   const [dueDate, setDueDate] = useState<Date>(defaultDue);
   const [showDatePick, setShowDatePick] = useState(false);
@@ -101,17 +98,18 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
         )}
       </View>
 
-      {/* Optional due date/time + call-reminder — shown collapsed by
-          default (pool quest, no schedule) since most proposed chores don't
-          need one; a parent who wants the sweeper to ring must set a due
-          time here first, since it only queries chores with due_date set. */}
-      <CallReminderToggle
-        alertCall={alertCall} setAlertCall={setAlertCall}
-        alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-        accentColor={colors.parent} colors={colors} isDark={isDark}
-        variant="icon" pillStyle={styles.datePill}
-      />
-      {alertCall && (
+      {/* Call reminder removed from chores entirely [live-requested: "we
+          should only alert the meaningful - dont use the annolying
+          calls"]. A due date/time is still settable via setHasDueDate
+          below — it no longer requires turning on a call to reveal the
+          picker, since that toggle no longer exists for chores. */}
+      <Pressable onPress={() => setHasDueDate(v => !v)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: hasDueDate ? 8 : 12 }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+          {hasDueDate ? '📅 Due date set' : '📅 Set a due date (optional)'}
+        </Text>
+      </Pressable>
+      {hasDueDate && (
         <DueDateTimePicker
           value={dueDate} setValue={setDueDate}
           showDatePick={showDatePick} setShowDatePick={setShowDatePick}
@@ -145,9 +143,9 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
         <Pressable
           disabled={submitting}
           onPress={guard(async () => {
-            onApprove(finalCoins, alertCall ? {
+            onApprove(finalCoins, hasDueDate ? {
               dueDate: localDateStr(dueDate), dueTime: fmtTimeLabel(dueDate),
-              alertCall, alertCallLeadMinutes,
+              alertCall: false, alertCallLeadMinutes: 10,
             } : undefined);
           })}
           style={{ flex: 2, backgroundColor: colors.parent, paddingVertical: 10, borderRadius: 12,

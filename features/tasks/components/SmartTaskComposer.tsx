@@ -1437,34 +1437,41 @@ export default function SmartTaskComposer({
 
                 {/* Call reminder — VoIP-style ringing alert (call-reminder-
                     sweeper cron), distinct from ordinary push notifications.
-                    Off by default; turning it on defaults to 10 min before,
-                    same default AskCubeProposalCard's ReminderPicker uses
-                    when a reminder is first added. */}
-                <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
-                    borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,
-                    borderWidth: 1, borderColor: alertCall ? colors.primary + '50' : colors.border, marginTop: 4 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCall ? colors.primary : colors.textPrimary }}>
-                    📞 Call reminder {alertCall ? `— ${alertCallLeadMinutes} min before` : 'off'}
-                  </Text>
-                </Pressable>
-                {alertCall && (
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {[0, 10, 15, 30].map(mins => {
-                      const active = alertCallLeadMinutes === mins;
-                      return (
-                        <Pressable key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
-                          style={{ flex: 1, borderRadius: RADIUS.sm, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center',
-                            borderColor: active ? colors.primary : colors.border,
-                            backgroundColor: active ? colors.primaryLight : 'transparent' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? colors.primary : colors.textSecondary }}>
-                            {mins === 0 ? 'On time' : `${mins}m`}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                    Restricted to events only now [live-requested: "we
+                    should only alert the meaningful - dont use the
+                    annolying calls"] — a chore has no equivalent of an
+                    event's Medical/Ride urgency, so it's no longer offered
+                    for chores at all. Off by default; turning it on
+                    defaults to 10 min before. */}
+                {isEvent && (
+                  <>
+                    <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
+                        borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,
+                        borderWidth: 1, borderColor: alertCall ? colors.primary + '50' : colors.border, marginTop: 4 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCall ? colors.primary : colors.textPrimary }}>
+                        📞 Call reminder {alertCall ? `— ${alertCallLeadMinutes} min before` : 'off'}
+                      </Text>
+                    </Pressable>
+                    {alertCall && (
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {[0, 10, 15, 30].map(mins => {
+                          const active = alertCallLeadMinutes === mins;
+                          return (
+                            <Pressable key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                              style={{ flex: 1, borderRadius: RADIUS.sm, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center',
+                                borderColor: active ? colors.primary : colors.border,
+                                backgroundColor: active ? colors.primaryLight : 'transparent' }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? colors.primary : colors.textSecondary }}>
+                                {mins === 0 ? 'On time' : `${mins}m`}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
                 )}
             </View>
 

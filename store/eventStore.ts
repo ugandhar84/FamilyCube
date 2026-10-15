@@ -329,6 +329,21 @@ export function eventAssignee(e: Pick<FamilyEvent, 'helper' | 'helperId' | 'help
   return { name: undefined, id: undefined, status: undefined };
 }
 
+// A ride leg (drop-off or pick-up) carries its address in
+// pickupLocation/dropLocation, not the plain `location` field, so any
+// card reading only `ev.location` silently showed no street link at all
+// for a pick-up leg even though the address was saved [live-reported: "on
+// the pickup card why there is no pickup street link"]. Shared so every
+// calendar surface (DaySlotView, EventCard, CalendarScreen's compact
+// list) resolves the same way instead of three cards drifting on which
+// field to fall back to. dropLocation (where the driver is headed to
+// pick someone up) takes priority over pickupLocation (where the rider
+// currently is) since the destination is the more actionable address to
+// show for "where am I going."
+export function eventDisplayLocation(e: Pick<FamilyEvent, 'location' | 'pickupLocation' | 'dropLocation'>): string | undefined {
+  return e.location || e.dropLocation || e.pickupLocation || undefined;
+}
+
 // Scenario 2.6/5.4/5.5 — the single shared visibility predicate every
 // calendar/hub surface should call for a sensitive event, instead of each
 // screen re-deriving its own version of "am I allowed to see this."

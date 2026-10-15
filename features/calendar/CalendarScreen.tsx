@@ -39,7 +39,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
-import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
+import { fmtDate, fmtDateWithWeekday, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
 import { KidRequestModal } from './KidRequestModal';
 import { EventDetailSheet } from '@/features/hub/hubComponents';
@@ -1099,7 +1099,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
 
-  const selectedDateLabel = fmtDate(selectedDate);
+  // Weekday included [live-requested: "in both strips places show the day
+  // of week"] — both the Day-view strip header and the standalone date
+  // pill share this one label.
+  const selectedDateLabel = fmtDateWithWeekday(selectedDate);
 
   const familyName = useFamilyStore(s => s.familyName);
   const cardBg   = isDark ? colors.card : CARD_BG;

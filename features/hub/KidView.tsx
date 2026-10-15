@@ -542,6 +542,7 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
             dismissedIds={dismissedIds} onDismiss={dismissItem}
             onConfirmPickup={confirmPickup}
             onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
+            onOpenHistory={() => onOpenMyChoresTab('review')}
           />
         </Animated.View>
       )}

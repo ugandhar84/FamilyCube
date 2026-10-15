@@ -18,13 +18,20 @@ import { useFamilyStore } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
 
+// Switches from a relative "Xh ago" to the actual date once a request
+// crosses a day old — live-requested: "on this Xago if it crosses a day
+// then put the actual date". Also guards invalid/missing timestamps
+// (redeemedAt can be unset on some rows) which previously produced
+// "NaNd ago" instead of blanking out.
 function relativeTime(iso?: string): string {
   if (!iso) return '';
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return '';
+  const mins = Math.floor((Date.now() - then) / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
   if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-  return `${Math.floor(mins / 1440)}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export function RewardsReviewQueueScreen({ onSelectRow, onClose }: {

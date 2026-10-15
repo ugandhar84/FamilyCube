@@ -64,6 +64,23 @@ function shiftDate(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// A pick-up leg's `time` is the exact moment the driver needs to arrive
+// (the main event's end time) and was previously saved with `endTime:
+// undefined` — the day-timeline grid had no real duration to size the
+// block with, so it defaulted to a full 60-minute block starting there,
+// visually showing "Pick-up" an hour later/longer than it actually is
+// [live-reported: "when creating ride or event with the drop off and
+// pickup we should create the exact time no need to give +60 default? as
+// it creates the legs wrongly"]. A pick-up is a short, point-in-time
+// errand, not an hour-long block — give it a real 15-minute endTime so it
+// renders as the compact marker it actually is.
+const PICKUP_LEG_DURATION_MIN = 15;
+function addMinutesToHHMM(hhmm: string, minutes: number): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = (h * 60 + m + minutes + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
 // Strips any leg-direction wording the user's own title might already
 // contain ("Drop off at soccer" → "soccer") before a leg label gets
 // prepended — otherwise a pick-up leg built from a "Drop off at X" title
@@ -496,6 +513,7 @@ export default function JustDescribeItEventScreen({
             await updateEvent(ed.linkedLegId, {
               date: evDate,
               time: evAllDay ? undefined : evEndTime,
+              endTime: evAllDay ? undefined : addMinutesToHHMM(evEndTime, PICKUP_LEG_DURATION_MIN),
               pickupLocation: evPickupFrom.trim() || evDropTo.trim() || undefined,
               dropLocation: evPickupTo.trim() || evDropFrom.trim() || undefined,
               driverId: evPickupDriverId,
@@ -509,7 +527,7 @@ export default function JustDescribeItEventScreen({
               title: `Pick-up · ${stripLegWords(evTitle.trim())}`,
               date: evDate,
               time: evAllDay ? undefined : evEndTime,
-              endTime: undefined,
+              endTime: evAllDay ? undefined : addMinutesToHHMM(evEndTime, PICKUP_LEG_DURATION_MIN),
               category: evCategory,
               type: 'event',
               memberIds: evMemberIds.length > 0 ? evMemberIds : undefined,
@@ -574,7 +592,7 @@ export default function JustDescribeItEventScreen({
         const basePickup = {
           title: `Pick-up · ${stripLegWords(evTitle.trim())}`,
           time: evAllDay ? undefined : evEndTime,  // starts when the event ends
-          endTime: undefined,
+          endTime: evAllDay ? undefined : addMinutesToHHMM(evEndTime, PICKUP_LEG_DURATION_MIN),
           category: evCategory,
           type: 'event' as const,
           memberIds: evMemberIds.length > 0 ? evMemberIds : undefined,

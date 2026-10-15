@@ -221,7 +221,7 @@ export function KidNeedsYouSection({
   declinedRides, pendingRides, declinedQuests, approvedQuests, cheersForMe, recentReplies,
   confirmedRide, rideCountdown, confirmedRideConflict, confirmedRideDispatched, awaitingDriverRide, activeTrips,
   active, members, colors, isDark, dismissedIds, onDismiss,
-  onConfirmPickup, onSendDriverLate, lateNudgeSent,
+  onConfirmPickup, onSendDriverLate, lateNudgeSent, onOpenHistory,
 }: {
   declinedRides: FamilyEvent[]; pendingRides: FamilyEvent[];
   declinedQuests: Quest[]; approvedQuests: Quest[];
@@ -243,6 +243,11 @@ export function KidNeedsYouSection({
   onConfirmPickup: (ev: FamilyEvent) => void;
   onSendDriverLate: (ev: FamilyEvent) => void;
   lateNudgeSent: Record<string, boolean>;
+  // Opens My Chores' own history/done tab — surfaced only in the empty
+  // state below, once there's genuinely nothing left requiring action
+  // [live-requested: "we can make the show history link in the empty
+  // component"].
+  onOpenHistory?: () => void;
 }) {
   const filteredDeclinedRides = declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`));
   const filteredPendingRides  = pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`));
@@ -332,7 +337,20 @@ export function KidNeedsYouSection({
   const hasAnything = filteredDeclinedRides.length > 0 || filteredPendingRides.length > 0 ||
     showConfirmedRide || showAwaitingDriver || !!activeTrips?.length;
 
-  if (!hasAnything) return null;
+  // Nothing currently needs the kid's action — no NEEDS YOU card at all
+  // (per the same "only where action is required" rule that dropped
+  // chores/cheers/replies above), just a quiet text link down to past
+  // activity instead of an empty card shell.
+  if (!hasAnything) {
+    if (!onOpenHistory) return null;
+    return (
+      <Pressable onPress={onOpenHistory} style={{ paddingHorizontal: 16, marginTop: 10, marginBottom: 10 }}>
+        <Text style={{ color: colors.textTertiary, fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+          Nothing needs you right now · Show history
+        </Text>
+      </Pressable>
+    );
+  }
 
   // Sequential divider counter — every row past the first gets a hairline
   // above it, matching ParentView.tsx's `i > 0` divider pattern for its own

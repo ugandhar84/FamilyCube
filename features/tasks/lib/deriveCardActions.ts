@@ -78,6 +78,15 @@ export interface QuestActions {
   canClaim: boolean;
   canSubmit: boolean;
   canResubmit: boolean;
+  // Correct an already-submitted, still pending_approval proof (retake
+  // photo / fix the comment) WITHOUT starting a new redo cycle — distinct
+  // from canResubmit, which only applies once a parent has sent it back
+  // (declined/redo_requested) [live-requested: "we should have edit for
+  // the kids once they submit to do necessary changes .. only edit that
+  // latest submitted review only"]. Routes through
+  // editPendingSubmission/edit_pending_chore_submission RPC, see
+  // store/choreStore.ts.
+  canEditPendingSubmission: boolean;
   canKidDecline: boolean;
   canAdultDecline: boolean;
   canGiveBack: boolean;
@@ -138,6 +147,7 @@ export function deriveQuestActions(
   const isSelfAssignedParent = isParent && !!myId && isAssignedTo(q, myId) && q.createdById === myId;
   const canSubmit = (isKidOrTeen || isSelfAssignedParent) && todo && !!myId && isAssignedTo(q, myId);
   const canResubmit = isKidOrTeen && declined && !!myId && isAssignedTo(q, myId);
+  const canEditPendingSubmission = isKidOrTeen && review && !!myId && isAssignedTo(q, myId);
   const canKidDecline = isKidOrTeen && todo && !q.isPool && !!myId && isAssignedTo(q, myId);
   // Live-reported gap, twice now: a parent/senior assignee — whether or not
   // the task is flagged isAdultTask (an ORDINARY kid-eligible chore just
@@ -208,7 +218,7 @@ export function deriveQuestActions(
   const canDelete = (isParent || (isSenior && q.questType === 'grandparent_quest' && q.sponsorUserId === myId)) && !hasStarted;
 
   return {
-    canClaim, canSubmit, canResubmit, canKidDecline, canAdultDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
+    canClaim, canSubmit, canResubmit, canEditPendingSubmission, canKidDecline, canAdultDecline, canGiveBack, canAcceptGp, canGpClaimPool, canGpDone,
     canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
   };
 }

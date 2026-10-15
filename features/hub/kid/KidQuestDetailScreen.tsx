@@ -129,11 +129,52 @@ export function KidQuestDetailScreen({
   const [submitPhotoUri, setSubmitPhotoUri] = useState<string | null>(null);
   const [submitNote, setSubmitNote] = useState('');
   const [uploadingProof, setUploadingProof] = useState(false);
+  // Editing an already-submitted, still-pending proof (retake photo / fix
+  // the comment) reuses this same compose panel instead of a second one —
+  // only the save path differs (patch submissionPhoto/Note in place, no
+  // status change) [live-requested: "in review task - kids can quickly
+  // recall and correct that if they need like remove existing picure and
+  // take new and comments correction etc"]. RLS already allows this: any
+  // write that leaves status alone (still pending_approval, not moving
+  // INTO an approval/payout terminal state) is unrestricted family-wide —
+  // see chore_tasks_update policy, 20260925112000_chore_tasks_approver_
+  // only_write.sql — so a plain updateChore patch is safe, no new RPC
+  // needed.
+  const [editingSubmission, setEditingSubmission] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   function resetSubmitCompose() {
     setComposingSubmit(false);
+    setEditingSubmission(false);
     setSubmitPhotoUri(null);
     setSubmitNote('');
+  }
+
+  function openEditSubmission() {
+    // Photo-required chores always need a fresh photo on every
+    // resubmission/edit — never prefill the old one here, same as the
+    // declined->resubmit path already does (that one starts from null too)
+    // [live-requested: "when resubmitting the photo required task we
+    // should always ask the picure on every resubmission"]. Only a
+    // non-photo chore's note-only edit can start prefilled, since there's
+    // nothing to re-capture.
+    setSubmitPhotoUri(liveQuest.photoRequired ? null : (liveQuest.photoUrl ?? null));
+    setSubmitNote(liveQuest.completionNote ?? '');
+    setEditingSubmission(true);
+    setComposingSubmit(true);
+  }
+
+  async function doInlineEditSave() {
+    setSavingEdit(true);
+    try {
+      await useChoreStore.getState().editPendingSubmission(liveQuest.id, activeMemberId ?? '', {
+        photoUrl: submitPhotoUri ?? undefined,
+        note: submitNote.trim() || undefined,
+      });
+      resetSubmitCompose();
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   // "Can't do this" — inline reason chips + free text, same shape as the
@@ -206,6 +247,7 @@ export function KidQuestDetailScreen({
   const isClaimed = liveQuest.status === 'claimed';
   const isDeclined = liveQuest.status === 'declined';
   const isActionable = ['todo', 'claimed', 'in_progress', 'declined'].includes(liveQuest.status);
+  const isPendingReview = liveQuest.status === 'pending_approval';
 
   const assigneeIds = liveQuest.assignedToIds?.length
     ? liveQuest.assignedToIds
@@ -412,12 +454,21 @@ export function KidQuestDetailScreen({
                 </View>
               )}
 
-              {/* Action center — mirrors KidQuestCard's action gating exactly */}
-              {isActionable && (
+              {/* Action center — mirrors KidQuestCard's action gating exactly.
+                  Also renders while pending_approval now, for the one new
+                  action a kid has at that stage: edit their own submission
+                  before a parent reviews it. */}
+              {(isActionable || isPendingReview) && (
                 <View style={{ marginBottom: 14, gap: 8 }}>
                   <SectionLabel color={colors.textTertiary}>Actions</SectionLabel>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {isGpTodo ? (
+                    {isPendingReview ? (
+                      <Pressable onPress={() => composingSubmit ? resetSubmitCompose() : openEditSubmission()}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, borderWidth: 1.5, borderColor: CTA_BLUE, paddingVertical: 15 }}>
+                        <RotateCcw size={16} color={CTA_BLUE} />
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: CTA_BLUE }}>Edit submission</Text>
+                      </Pressable>
+                    ) : isGpTodo ? (
                       <>
                         <Pressable onPress={() => onAcceptGpQuest(liveQuest.id)}
                           style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: CTA_BLUE, paddingVertical: 15 }}>
@@ -483,13 +534,15 @@ export function KidQuestDetailScreen({
                   {composingSubmit && (
                     <View style={{ backgroundColor: isDark ? colors.surface : colors.pinkLight, borderRadius: 16, padding: 16, gap: 10, marginTop: 10 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
-                        {canResubmit ? 'Revise & resubmit' : 'Submit for review'}
+                        {editingSubmission ? 'Edit your submission' : canResubmit ? 'Revise & resubmit' : 'Submit for review'}
                       </Text>
 
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                        <Camera size={13} color={colors.amber} />
-                        <Text style={{ fontSize: 12, color: colors.amber, fontWeight: '600' }}>Photo required</Text>
-                      </View>
+                      {liveQuest.photoRequired && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Camera size={13} color={colors.amber} />
+                          <Text style={{ fontSize: 12, color: colors.amber, fontWeight: '600' }}>Photo required</Text>
+                        </View>
+                      )}
 
                       {submitPhotoUri ? (
                         <View style={{ alignSelf: 'flex-start' }}>
@@ -534,11 +587,19 @@ export function KidQuestDetailScreen({
                             alignItems: 'center', justifyContent: 'center' }}>
                           <Text style={{ fontSize: 13, color: colors.textSecondary }}>Cancel</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={doInlineSubmit} disabled={!submitPhotoUri || uploadingProof}
-                          style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: CTA_BLUE,
-                            alignItems: 'center', justifyContent: 'center', opacity: submitPhotoUri ? 1 : 0.5 }}>
-                          {uploadingProof ? <ActivityIndicator color="#fff" /> : <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Submit</Text>}
-                        </TouchableOpacity>
+                        {editingSubmission ? (
+                          <TouchableOpacity onPress={doInlineEditSave} disabled={(liveQuest.photoRequired && !submitPhotoUri) || savingEdit}
+                            style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: CTA_BLUE,
+                              alignItems: 'center', justifyContent: 'center', opacity: (liveQuest.photoRequired && !submitPhotoUri) ? 0.5 : 1 }}>
+                            {savingEdit ? <ActivityIndicator color="#fff" /> : <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Save changes</Text>}
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity onPress={doInlineSubmit} disabled={!submitPhotoUri || uploadingProof}
+                            style={{ flex: 2, height: 42, borderRadius: 12, backgroundColor: CTA_BLUE,
+                              alignItems: 'center', justifyContent: 'center', opacity: submitPhotoUri ? 1 : 0.5 }}>
+                            {uploadingProof ? <ActivityIndicator color="#fff" /> : <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Submit</Text>}
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   )}

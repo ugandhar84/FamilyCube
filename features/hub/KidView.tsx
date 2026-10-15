@@ -292,7 +292,13 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // kid's own pool (still shows in TeenView's).
   const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents && !q.isOpenToTeens);
   const bountyQuests   = poolQuests.filter(q => q.questType === 'bounty');
-  const todoQuests       = myQuests.filter(q => q.status === 'todo' && !q.isPool);
+  // Includes 'declined' ("sent back") chores — a resubmission is still a
+  // to-do for the kid, and MyChoresScreen's own To Do tab/counter already
+  // folds declinedQuests in (MyChoresScreen.tsx groups:
+  // [...todoQuests, ...inProgressQuests, ...declinedQuests]) — the Hub's
+  // KidChoresNeedsYouCard "To Do" count/headline was missing them,
+  // undercounting vs. the screen it opens into.
+  const todoQuests       = myQuests.filter(q => (q.status === 'todo' || q.status === 'declined') && !q.isPool);
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
   const approvedQuests = myQuests.filter(q => ['approved', 'done'].includes(q.status));

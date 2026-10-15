@@ -18,7 +18,7 @@
  * Submit logic per type is ported verbatim from each original file.
  */
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Unlock, HelpCircle, Pill, ShoppingCart, BookOpen, ClipboardList, MessageCircle, X, Car, Mic, Phone, Trash2, Sparkles, AlertTriangle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -684,7 +684,6 @@ export function AskParentUnifiedPage({ active, members, familyId, initialType = 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 48 }}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={{ backgroundColor: canvas }}>
           {!isSentForCurrentType && (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1590,7 +1589,6 @@ export function AskParentUnifiedPage({ active, members, familyId, initialType = 
           </>
         )}
         </View>
-        </TouchableWithoutFeedback>
       </ScrollView>
       </KeyboardAvoidingView>
     </View>

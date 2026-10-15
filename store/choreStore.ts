@@ -1020,6 +1020,13 @@ interface ChoreState {
   // One-time chores and on/after-due-date recurring chores always succeed.
   submitChore:              (choreId: string, opts?: { photoUrl?: string; note?: string }) => boolean;
   resubmitChore:            (choreId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
+  // Corrects an already-submitted, still pending_approval proof (retake
+  // photo / fix the comment) WITHOUT starting a new redo cycle. Routes
+  // through edit_pending_chore_submission (migration
+  // 20261014210000_edit_pending_chore_submission.sql), which snapshots the
+  // correction into chore_submissions before patching chore_tasks — unlike
+  // a plain updateChore() patch, this preserves full submission history.
+  editPendingSubmission:    (choreId: string, memberId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
   // Internal — shared by submitChore/resubmitChore, calls the submit_chore
   // RPC (server-side redo-cap/self-assigned-parent branch + coin payout).
   // Not part of the public store API surface, not called by UI directly.
@@ -2810,6 +2817,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       note: opts?.note ?? chore.submissionNote,
       photoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
     });
+  },
+
+  editPendingSubmission: async (choreId, memberId, opts) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'pending_approval') return;
+    if (chore.requiresPhotoProof && !opts?.photoUrl) return;
+
+    const { data, error } = await supabase.rpc('edit_pending_chore_submission', {
+      p_chore_id: choreId,
+      p_member_id: memberId,
+      p_note: opts?.note ?? null,
+      p_photo_url: opts?.photoUrl ?? null,
+    });
+    if (error) {
+      console.warn('[choreStore] editPendingSubmission RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c,
+        submissionNote: data?.submission_note ?? opts?.note ?? c.submissionNote,
+        submissionPhotoUrl: data?.submission_photo_url ?? opts?.photoUrl ?? c.submissionPhotoUrl,
+      } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    showToast('Submission updated ✓');
   },
 
   // QA punch list #5 — the kid's own "I did do it — ask [a parent]" path,

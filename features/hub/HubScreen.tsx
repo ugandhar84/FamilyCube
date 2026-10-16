@@ -13,6 +13,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTripStore } from '@/store/tripStore';
 import { useUIStore } from '@/store/uiStore';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
@@ -49,7 +50,7 @@ import { KidOverlays } from './kid/KidOverlays';
 import { SeniorView } from './SeniorView';
 import { TeenView } from './TeenView';
 import { EnRouteModal } from './hubComponents';
-import { fmtClock } from './hubUtils';
+import { fmtClock, localToday } from './hubUtils';
 import GlobalCelebration from '@/components/GlobalCelebration';
 import { AppsQuickAccessPills } from './AppsQuickAccessPills';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -102,6 +103,21 @@ export default function HubScreen() {
   // fresh on 'todo' again.
   const [myChoresInitialTab, setMyChoresInitialTab] = useState<'todo' | 'review' | 'done' | 'bounty' | undefined>(undefined);
   const [piggyBankModal, setPiggyBankModal] = useState(false);
+  // Teen-only — Tutor/Cash-Out full-page overlays (KidOverlays renders
+  // them for isTeen too). State lives here, same as My Chores/Piggy Bank
+  // above, so the overlay itself stays a top-level sibling outside the
+  // ScrollView per KidOverlays' own placement rule. (The handlers that
+  // need `active` are declared further below, right after `active` itself
+  // is defined — this block only declares the boolean state, which has no
+  // such dependency.)
+  const [teenTutorOpen, setTeenTutorOpen] = useState(false);
+  const [teenCashOutOpen, setTeenCashOutOpen] = useState(false);
+  const [teenGasVehicleOpen, setTeenGasVehicleOpen] = useState(false);
+  // Hook calls themselves must sit above the `if (!active) return null;`
+  // guard further below (Rules of Hooks) — only the values that actually
+  // read `active` are derived after that guard.
+  const { sendRequest: sendTeenRequest, requests: teenRequests, cancelRequest: cancelTeenRequest } = useKidRequestStore();
+  const sendTeenChatMessage = useChatStore(s => s.sendMessage);
   const [askParentHubFromTile, setAskParentHubFromTile] = useState(false);
   const showAskParentHub = composerVisible || askParentHubFromTile;
   const closeAskParentHub = () => { setComposerVisible(false); setAskParentHubFromTile(false); };
@@ -435,6 +451,38 @@ export default function HubScreen() {
 
   if (!active) return null;
 
+  // Derived Teen Tutor/Cash-Out data — same logic TeenView.tsx already has,
+  // duplicated here (cheap) so KidOverlays (rendered outside the
+  // ScrollView, see its own doc comment) can own these overlays without
+  // TeenView needing to render FullPageOverlay content from inside the
+  // scrolled content box. Placed after the `if (!active) return null;`
+  // guard above since every one of these reads `active`.
+  const teenSiblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== active.id);
+  const teenPendingOffers = teenRequests.filter(r =>
+    r.fromMemberId === active.id && r.status === 'pending' && (r.type === 'tutor' || r.type === 'cheer'));
+  const sendTeenTutorOffer = (kid: FamilyMember, subject: string, note: string) => {
+    const detail = `${active.name.split(' ')[0]} can help ${kid.name.split(' ')[0]} with ${subject}${note ? ` — ${note}` : ''}`;
+    sendTeenRequest({ type: 'tutor', fromMemberId: active.id, detail, urgency: 'normal' });
+    sendTeenChatMessage('all', active.id, `🎒 ${detail}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+  };
+  const requestTeenCashOut = (amount: string, method: string) => {
+    const coins = (active as any).mainCoins ?? (active as any).coins ?? 0;
+    const detail = `💵 Cash-out request: $${amount} via ${method} (balance: ${coins} coins)`;
+    sendTeenRequest({ type: 'delegation', fromMemberId: active.id, detail, urgency: 'normal' });
+    sendTeenChatMessage('all', active.id, `${active.name.split(' ')[0]} requested cash-out: $${amount} via ${method}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+  };
+  // Cash-out request history — same requests list, filtered to this teen's
+  // own delegation-type (cash-out) requests, newest first. Feeds
+  // TeenCashOutPage's Pending/Settled/Rejected/All tabs.
+  const teenCashOuts = teenRequests
+    .filter(r => r.fromMemberId === active.id && r.type === 'delegation')
+    .sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
+  const reportTeenVehicleIssue = (issue: string) => {
+    const detail = `🚗 Vehicle issue reported by ${active.name.split(' ')[0]}: ${issue}`;
+    sendTeenRequest({ type: 'emergency', fromMemberId: active.id, detail, urgency: 'soon' });
+    sendTeenChatMessage('all', active.id, detail, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+  };
+
   // Wall-mounted kitchen tablet — a fully separate dashboard/nav-rail UI,
   // not the phone Hub resized. See features/kiosk/ for the whole feature;
   // this is its only touch-point into existing mobile screens. Placed after
@@ -504,11 +552,12 @@ export default function HubScreen() {
       // Parent role gets the Figma Make reskin's compact TopBar (avatar +
       // family/name + "+" button, no role badge/Switch-Profile text row) —
       // per explicit direction, follow the mock for the parent Hub
-      // specifically. Kid now shares the same compact header ["also header
-      // should be similar to parent" — part of the Kid Hub figma-rhythm
-      // pass]; teen/senior keep the existing full header unchanged (this
-      // work hasn't touched those views).
-      compact={isParent || active.role === 'kid'}
+      // specifically. Kid and Teen now share the same compact header
+      // ["hub page header is still not matched with the parent/kids
+      // headers" — Teen was left on the old full header/role-mode pill
+      // after the rest of the Teen Hub rebuild]; senior keeps the existing
+      // full header unchanged (out of scope here).
+      compact={isParent || active.role === 'kid' || isTeen}
       // ParentView owns its own Smart Task Composer internally (its own
       // showTaskComposer state via useParentModals) — not reachable from
       // here across the component boundary, unlike composerVisible (which
@@ -553,14 +602,21 @@ export default function HubScreen() {
           cutout); this only hides the icons themselves, and only while
           actively scrolled away from the top. Parent Hub only. */}
       {isParent && <StatusBar hidden={statusBarHidden} animated />}
-      {/* kid now shares parent's inside-ScrollView header placement (see
-          below) so its FullPageOverlay screens can cover it, matching
-          "parent hub rhythm" ["Align the kids hub header similar to the
-          parent"]. teen/senior unchanged — still the original fixed
-          siblings here, outside the ScrollView. */}
-      {!isParent && active.role !== 'kid' && headerEl}
+      {/* kid/teen now share parent's inside-ScrollView header placement
+          (see below) so their FullPageOverlay screens can cover it,
+          matching "parent hub rhythm" ["Align the kids hub header similar
+          to the parent"; "hub page header is still not matched with the
+          parent/kids headers" for teen]. senior unchanged — still the
+          original fixed sibling here, outside the ScrollView.
+          AppsQuickAccessPills (Profile/Store/School/Health/... pill row)
+          also removed for teen here — teen no longer wants that row
+          ["remove the header pill option from here teens"] — Rides now
+          lives under the member's own profile per a toggle instead of a
+          Hub quick action, so it isn't part of this row's purpose either;
+          senior keeps it unchanged. */}
+      {!isParent && active.role !== 'kid' && !isTeen && headerEl}
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-      {!isParent && active.role !== 'kid' && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
+      {!isParent && active.role !== 'kid' && !isTeen && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -601,7 +657,7 @@ export default function HubScreen() {
         } : undefined}
         scrollEventThrottle={isParent ? 100 : undefined}
       >
-        {(isParent || active.role === 'kid') && headerEl}
+        {(isParent || active.role === 'kid' || isTeen) && headerEl}
         {isParent && (
           <ParentView
             focusKey={hubFocusKey}
@@ -655,6 +711,9 @@ export default function HubScreen() {
             onAskParentTile={() => setAskParentDestination('permission')}
             onAskForRide={() => setAskParentDestination('ride')}
             onRideStatusOpen={() => setShowRidesRoom(true)}
+            onOpenTutor={() => setTeenTutorOpen(true)}
+            onOpenCashOut={() => setTeenCashOutOpen(true)}
+            onOpenGasVehicle={() => setTeenGasVehicleOpen(true)}
           />
         )}
         {isSenior && (
@@ -872,6 +931,15 @@ export default function HubScreen() {
           piggyBankModal={piggyBankModal} setPiggyBankModal={setPiggyBankModal}
           showAskParentHub={showAskParentHub} closeAskParentHub={closeAskParentHub}
           askParentDestination={askParentDestination} setAskParentDestination={setAskParentDestination}
+          teenTutorOpen={teenTutorOpen} closeTeenTutor={() => setTeenTutorOpen(false)}
+          teenSiblings={teenSiblings} teenPendingOffers={teenPendingOffers}
+          onSendTutorOffer={sendTeenTutorOffer} onCancelTutorOffer={cancelTeenRequest}
+          teenCashOutOpen={teenCashOutOpen} closeTeenCashOut={() => setTeenCashOutOpen(false)}
+          teenBalance={(active as any).mainCoins ?? (active as any).coins ?? 0}
+          onRequestCashOut={requestTeenCashOut}
+          teenCashOuts={teenCashOuts}
+          teenGasVehicleOpen={teenGasVehicleOpen} closeTeenGasVehicle={() => setTeenGasVehicleOpen(false)}
+          teenToday={localToday()} onReportVehicleIssue={reportTeenVehicleIssue}
         />
       )}
 

@@ -11,6 +11,10 @@ import { MyChoresScreen } from './MyChoresScreen';
 import { PiggyBankScreen } from './PiggyBankScreen';
 import { AskParentHubScreen, type AskParentDestination } from './AskParentHubScreen';
 import { AskParentUnifiedPage, type AskFormType } from './forms/AskParentUnifiedPage';
+import { TeenTutorPage } from '../teen/TeenTutorPage';
+import { TeenCashOutPage } from '../teen/TeenCashOutPage';
+import { TeenGasVehiclePage } from '../teen/TeenGasVehiclePage';
+import type { KidRequest } from '@/store/kidRequestStore';
 
 /**
  * KidOverlays — the kid role's three FullPageOverlay screens (My Chores,
@@ -38,6 +42,9 @@ export function KidOverlays({
   piggyBankModal, setPiggyBankModal,
   showAskParentHub, closeAskParentHub,
   askParentDestination, setAskParentDestination,
+  teenTutorOpen, closeTeenTutor, teenSiblings, teenPendingOffers, onSendTutorOffer, onCancelTutorOffer,
+  teenCashOutOpen, closeTeenCashOut, teenBalance, onRequestCashOut, teenCashOuts,
+  teenGasVehicleOpen, closeTeenGasVehicle, teenToday, onReportVehicleIssue,
 }: {
   active: FamilyMember; members: FamilyMember[]; familyId?: string;
   showMyChores: boolean; setShowMyChores: (v: boolean) => void;
@@ -47,6 +54,17 @@ export function KidOverlays({
   showAskParentHub: boolean; closeAskParentHub: () => void;
   askParentDestination: null | AskParentDestination;
   setAskParentDestination: (v: null | AskParentDestination) => void;
+  // Teen-only — Tutor/Cash-Out full-page overlays. Optional since KidView
+  // (the kid role) never passes these.
+  teenTutorOpen?: boolean; closeTeenTutor?: () => void;
+  teenSiblings?: FamilyMember[]; teenPendingOffers?: KidRequest[];
+  onSendTutorOffer?: (kid: FamilyMember, subject: string, note: string) => void;
+  onCancelTutorOffer?: (id: string) => void;
+  teenCashOutOpen?: boolean; closeTeenCashOut?: () => void;
+  teenBalance?: number; onRequestCashOut?: (amount: string, method: string) => void;
+  teenCashOuts?: KidRequest[];
+  teenGasVehicleOpen?: boolean; closeTeenGasVehicle?: () => void;
+  teenToday?: string; onReportVehicleIssue?: (detail: string) => void;
 }) {
   const { colors, isDark } = useTheme();
   const kidAskCanvas = isDark ? colors.background : GEMINI.canvas;
@@ -145,6 +163,34 @@ export function KidOverlays({
             onClose={() => setAskParentDestination(null)}
           />
         )}
+      </FullPageOverlay>
+
+      {/* Teen-only — Tutor / Cash-Out, converted from TeenTileSheet bottom
+          sheets to full-page overlays matching the Ask-Parent rhythm
+          ["touturing and cashout should be full page overlay with figma
+          /gemini rythem"]. */}
+      <FullPageOverlay visible={!!teenTutorOpen} onDismiss={() => closeTeenTutor?.()} zIndex={50} backgroundColor={kidAskCanvas}>
+        <TeenTutorPage
+          siblings={teenSiblings ?? []} pendingOffers={teenPendingOffers ?? []}
+          onSend={(kid, subject, note) => onSendTutorOffer?.(kid, subject, note)}
+          onCancel={(id) => onCancelTutorOffer?.(id)}
+          onClose={() => closeTeenTutor?.()}
+        />
+      </FullPageOverlay>
+      <FullPageOverlay visible={!!teenCashOutOpen} onDismiss={() => closeTeenCashOut?.()} zIndex={50} backgroundColor={kidAskCanvas}>
+        <TeenCashOutPage
+          balance={teenBalance ?? 0}
+          cashOuts={teenCashOuts ?? []}
+          onRequest={(amount, method) => onRequestCashOut?.(amount, method)}
+          onClose={() => closeTeenCashOut?.()}
+        />
+      </FullPageOverlay>
+      <FullPageOverlay visible={!!teenGasVehicleOpen} onDismiss={() => closeTeenGasVehicle?.()} zIndex={50} backgroundColor={kidAskCanvas}>
+        <TeenGasVehiclePage
+          activeId={active.id} today={teenToday ?? ''}
+          onReportIssue={(detail) => onReportVehicleIssue?.(detail)}
+          onClose={() => closeTeenGasVehicle?.()}
+        />
       </FullPageOverlay>
     </>
   );

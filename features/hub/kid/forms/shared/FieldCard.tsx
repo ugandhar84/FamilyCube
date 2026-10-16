@@ -5,16 +5,17 @@
  * definition instead of redeclaring it locally).
  */
 import { ReactNode } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, type StyleProp, type ViewStyle } from 'react-native';
 import { GEMINI } from '@/constants/geminiRhythm';
 
-export function FieldCard({ label, focused, children, colors, isDark }: {
+export function FieldCard({ label, focused, children, colors, isDark, style }: {
   label: string; focused?: boolean; children: ReactNode; colors: any; isDark: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   const cardBg = isDark ? colors.card : GEMINI.cardBg;
   const cardShadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
   return (
-    <View style={{
+    <View style={[{
       backgroundColor: cardBg,
       borderRadius: 14,
       borderWidth: focused ? 2 : 1,
@@ -23,7 +24,7 @@ export function FieldCard({ label, focused, children, colors, isDark }: {
       minHeight: 72,
       gap: 4,
       ...cardShadow,
-    }}>
+    }, style]}>
       <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
         {label}
       </Text>

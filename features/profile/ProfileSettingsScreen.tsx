@@ -1493,6 +1493,36 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           renderShell={notificationsShell}
         />
 
+        {/* Vehicle — teen-only opt-in for the Gas & Vehicle log tile on the
+            Teen Hub. Was originally labeled for the sibling-pickup dispatch
+            feature, which has since been removed entirely from the Teen Hub
+            ["sibling rids we can remove right??"] — hasCar is kept as the
+            same underlying field (TeenGasLogSection's gate), just relabeled
+            since its only remaining consumer is the gas/vehicle log now. */}
+        {role === 'teen' && (
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+            backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            borderRadius: RADIUS.lg, padding: 14,
+          }]}>
+            <SectionHeader label="Vehicle" colors={colors} isDark={isDark} />
+            <Row
+              icon="car-outline"
+              label="I drive"
+              subtitle={activeMember?.hasCar ? 'Gas & Vehicle log is on your Hub' : 'Turn on to track gas fill-ups and vehicle issues'}
+              accent={colors.amber}
+              colors={colors} isDark={isDark}
+              right={
+                <Switch
+                  value={activeMember?.hasCar ?? false}
+                  onValueChange={(next) => activeMember && updateMember(activeMember.id, { hasCar: next })}
+                  trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.amber }}
+                  thumbColor="#fff"
+                />
+              }
+            />
+          </View>
+        )}
+
         {/* Security */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
           backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,

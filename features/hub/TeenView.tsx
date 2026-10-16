@@ -2,14 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, Alert, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  ClipboardList, Car, Fuel, BookOpen, CreditCard,
+  ClipboardList, Fuel, BookOpen, CreditCard,
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { showToast } from '@/components/AppToast';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
-import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -35,14 +34,8 @@ import { TonightMealCard } from './parent/TonightMealCard';
 import { KidRideBanner } from './kid/KidRideBanner';
 import { PickupRadarStatus } from './hubComponents';
 import { TeenTile } from './teen/TeenTile';
-import { TeenTileSheet } from './teen/TeenTileSheet';
-import { TeenCarDispatchSection } from './teen/TeenCarDispatchSection';
-import { TeenGasLogSection } from './teen/TeenGasLogSection';
-import { TeenTutorSection } from './teen/TeenTutorSection';
-import { TeenCashOutSection } from './teen/TeenCashOutSection';
+import { TeenCashOutBanner } from './teen/TeenCashOutBanner';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
-
-type SheetKey = 'rides' | 'gas' | 'tutor' | 'cashout' | null;
 
 // Was three separate inline copies of the same expression (claimPickup,
 // dropPickup, confirmAssignment) deciding whether a teen is acting as
@@ -66,7 +59,7 @@ function rideRoleFor(ev: { rideRequired?: boolean; category?: string; driverName
 // KidView. Teen's own extras — car dispatch/gas log/tutor/cash-out — are
 // kept as an additional "Teen Extras" tile row + sheets appended after
 // KidView's own Quick Actions section, since those have no Kid equivalent.
-export function TeenView({ focusKey, active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer, onMyChores, onOpenMyChoresTab, onPiggyBank, onAskParentTile, onAskForRide, onRideStatusOpen }: {
+export function TeenView({ focusKey, active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer, onMyChores, onOpenMyChoresTab, onPiggyBank, onAskParentTile, onAskForRide, onRideStatusOpen, onOpenTutor, onOpenCashOut, onOpenGasVehicle }: {
   focusKey?: number;
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
@@ -82,6 +75,18 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   onAskParentTile: () => void;
   onAskForRide: () => void;
   onRideStatusOpen: () => void;
+  // Tutor/Cash-Out now render as HubScreen-level FullPageOverlay screens
+  // (via KidOverlays) instead of this component's own TeenTileSheet
+  // ["touturing and cashout should be full page overlay with figma
+  // /gemini rythem"] — these just flip that overlay's visibility state.
+  onOpenTutor: () => void;
+  onOpenCashOut: () => void;
+  // Gas & Vehicle now opens as a full-page landing screen (fill-up/issue
+  // history + forms) instead of the old TeenTileSheet bottom sheet
+  // ["Gas and vehical lab laso should have the dedicated landing page
+  // with all status /logs"] — same FullPageOverlay-via-KidOverlays
+  // pattern as Tutor/Cash-Out.
+  onOpenGasVehicle: () => void;
 }) {
   const { quests, submitQuest, claimQuest } = useQuestStore();
   const { startGrandparentQuest } = useChoreStore();
@@ -113,8 +118,7 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   const visibleEvents = events.filter(e =>
     !isEventSensitive(e, members) || canViewSensitiveEventDetail(e, 'teen', active.id, active.name));
   const todayStr = localToday();
-  const { updateMember, awardCoins, clawbackCoins } = useFamilyStore();
-  const { sendRequest, requests, cancelRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
+  const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const sendMessage = useChatStore(s => s.sendMessage);
   const today = todayStr;
   // Same shared hook ParentView/SeniorView/KidView already use.
@@ -143,8 +147,6 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   // reinstall and syncs across a shared/second device).
   const { dismissedIds, loaded: dismissedLoaded, load: loadDismissedHubItems, dismissItem } = useDismissedHubItemsStore();
   useEffect(() => { loadDismissedHubItems(active.id); }, [active.id]);
-
-  const siblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== active.id);
 
   // ── My Chores (same normalized model KidView uses) ──────────────────────────
   const myQuests = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id) || q.pendingHandoffTo === active.id) && !q.awaitingParentApproval);
@@ -206,33 +208,20 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   // submit.
   const handleSubmitTap = (q: Quest) => submitQuest(q.id, undefined, active.id);
 
-  // ── Car / dispatch — opt-in, only relevant once the teen says they drive ────
+  // ── Car — Gas & Vehicle log gate only now; Sibling Pickups dispatch
+  // (TeenCarDispatchSection, claim/drop/confirm) was removed entirely
+  // ["sibling rids we can remove right??"] — toggled from Profile now,
+  // not a Hub quick-action.
   const hasCar = active.hasCar ?? false;
-  const rideEarnings = active.rideEarningsPerRun ?? 50;
-  const toggleCar = () => updateMember(active.id, { hasCar: !hasCar });
 
-  const [myPendingAssignmentsRaw, openPickupsRaw, myPickupsRaw] = [
+  const [myPendingAssignmentsRaw] = [
     upcomingEvents.filter(e => {
       const a = eventAssignee(e);
       const isMine = a.id ? a.id === active.id : a.name === active.name;
       return isMine && a.status === 'pending' && !e.approvalPending && e.date >= today;
     }),
-    upcomingEvents.filter(e => {
-      const a = eventAssignee(e);
-      return e.isOpenToTeens && a.status !== 'confirmed' && a.status !== 'rejected' && e.date >= today;
-    }),
-    upcomingEvents.filter(e => {
-      const a = eventAssignee(e);
-      const isMine = a.id ? a.id === active.id : a.name === active.name;
-      return isMine && a.status === 'confirmed' && e.date >= today;
-    }),
   ];
   const [myPendingAssignments] = dedupeRideSeries(myPendingAssignmentsRaw);
-  const [openPickups] = dedupeRideSeries(openPickupsRaw);
-  const [myPickups] = dedupeRideSeries(myPickupsRaw);
-  const openPickupsVisible = openPickups.filter(e => !(e.teenPassedIds ?? []).includes(active.id));
-  const urgentPickups = openPickupsVisible.filter(e =>
-    hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
 
   // Confirmed ride where THIS teen is being picked up (the ride's subject/
   // rider), not driving it — same pattern KidView uses for confirmedRide.
@@ -257,39 +246,6 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
     .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
     .find(e => hoursUntilEvent(e.date, e.time) > 0 && eventAssignee(e).status !== 'rejected');
   const nextCountdown = useCountdown(nextEvent?.date, nextEvent?.time);
-  // A direct assignment awaiting confirmation is at least as urgent as an
-  // open pickup up for grabs — it's already on this teen specifically —
-  // so it counts toward the same "Rides" tile badge.
-  const openPickupCount = openPickupsVisible.length + myPendingAssignments.length;
-
-  const claimPickup = (evId: string) => {
-    const ev = upcomingEvents.find(e => e.id === evId);
-    const coins = ev?.rideCoins ?? rideEarnings;
-    const role = rideRoleFor(ev, active.name);
-    useEventStore.getState().claimHelperSlot(evId, role, active.name, undefined, () => {
-      if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
-      showToast(coins > 0 ? `Got it — +${coins} coins ✓` : 'Got it ✓');
-    });
-  };
-
-  const dropPickup = (evId: string) => {
-    const ev = upcomingEvents.find(e => e.id === evId);
-    const a = ev ? eventAssignee(ev) : undefined;
-    const paidCoins = ev?.rideCoins ?? rideEarnings;
-    const clawedBack = (a?.id ? a.id === active.id : a?.name === active.name) && paidCoins > 0;
-    const role = rideRoleFor(ev, active.name);
-    useEventStore.getState().declineEventAssignment(evId, active.id, role).then(ok => {
-      if (!ok) return;
-      if (clawedBack) clawbackCoins(active.id, paidCoins, 'mainCoins');
-      showToast(clawedBack ? `Dropped — ${paidCoins} coins clawed back` : 'Dropped ✓');
-    });
-  };
-
-  const confirmAssignment = (evId: string) => {
-    const ev = upcomingEvents.find(e => e.id === evId);
-    const role = rideRoleFor(ev, active.name);
-    useEventStore.getState().confirmEventAssignment(evId, active.id, role);
-  };
 
   // Either side (rider or driver) can confirm a pickup actually happened —
   // mirrors KidView's confirmPickup exactly, scoped to this teen as rider.
@@ -311,30 +267,26 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   };
 
   // ── Tutoring / sibling help ───────────────────────────────────────────────────
+  // Offer-sending/cash-out itself now lives in HubScreen.tsx (duplicated,
+  // same store calls) so KidOverlays can own the Tutor/Cash-Out
+  // FullPageOverlay screens outside this view's ScrollView-nested
+  // fragment — only the pending-offer badge count is still needed here.
   const myPendingOffers = requests.filter(r =>
     r.fromMemberId === active.id && r.status === 'pending' && (r.type === 'tutor' || r.type === 'cheer')
   );
-  const sendTutorOffer = (kid: FamilyMember, subject: string, note: string) => {
-    const detail = `${active.name.split(' ')[0]} can help ${kid.name.split(' ')[0]} with ${subject}${note ? ` — ${note}` : ''}`;
-    sendRequest({ type: 'tutor', fromMemberId: active.id, detail, urgency: 'normal' });
-    sendMessage('all', active.id, `🎒 ${detail}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
-  };
 
-  const reportVehicleIssue = (issue: string) => {
-    const detail = `🚗 Vehicle issue reported by ${active.name.split(' ')[0]}: ${issue}`;
-    sendRequest({ type: 'emergency', fromMemberId: active.id, detail, urgency: 'soon' });
-    sendMessage('all', active.id, detail, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
-  };
-
-  const requestCashOut = (amount: string, method: string) => {
-    const coins = active.mainCoins ?? active.coins ?? 0;
-    const detail = `💵 Cash-out request: $${amount} via ${method} (balance: ${coins} coins)`;
-    sendRequest({ type: 'delegation', fromMemberId: active.id, detail, urgency: 'normal' });
-    sendMessage('all', active.id, `${active.name.split(' ')[0]} requested cash-out: $${amount} via ${method}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
-    showToast('Cash-out sent — your parent will review it ✓');
-  };
-
-  const [openSheet, setOpenSheet] = useState<SheetKey>(null);
+  // ── Cash Out — banner card data (pending count + last status) ─────────────
+  const myCashOuts = requests
+    .filter(r => r.fromMemberId === active.id && r.type === 'delegation')
+    .sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
+  const myPendingCashOuts = myCashOuts.filter(r => r.status === 'pending');
+  const lastCashOut = myCashOuts[0];
+  const lastCashOutStatusLabel = lastCashOut
+    ? lastCashOut.status === 'pending' ? 'Pending'
+      : lastCashOut.status === 'approved' || lastCashOut.status === 'completed' ? 'Settled'
+      : lastCashOut.status === 'declined' || lastCashOut.status === 'cancelled' || lastCashOut.status === 'expired' ? 'Rejected'
+      : undefined
+    : undefined;
 
   // Same staggered-entrance pattern as KidView/ParentView — one Animated.Value
   // pair per top-level section below (Hero / Today / ChoresNeedsYou / NeedsYou
@@ -359,26 +311,6 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
 
   return (
     <>
-      {/* Amber, not danger-red — this is a heads-up about the shared pickup
-          pool ("someone should grab this"), not something already on this
-          teen personally. KidRideBanner below (this teen's OWN confirmed
-          ride) keeps its own styling as the "this concerns you directly"
-          signal. */}
-      {urgentPickups.length > 0 && (
-        <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
-          <Pressable onPress={() => setOpenSheet('rides')}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-              backgroundColor: isDark ? BRAND.amber + '15' : BRAND.amber + '18',
-              borderWidth: 1.5, borderColor: BRAND.amber + '50',
-              borderRadius: 16, padding: 12, marginBottom: 12 }}>
-            <Car size={18} color={BRAND.amber} />
-            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: isDark ? BRAND.amber : '#8A5A00' }}>
-              {urgentPickups.length} pickup{urgentPickups.length > 1 ? 's' : ''} within the hour — needs a driver
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
       {/* 1. Hero — identity/progress at a glance, plus the single most
           time-sensitive fact (confirmed ride or next event countdown) —
           same KidHeroCard component KidView uses, 1:1. */}
@@ -492,7 +424,7 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
           </View>
         )}
 
-        <View style={{ marginTop: 14 }}>
+        <View style={{ marginTop: 14, marginBottom: 14 }}>
           <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
         </View>
       </Animated.View>
@@ -500,70 +432,42 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
       {/* ── Teen Extras — car dispatch/tutor/cash-out/gas log, Teen-only
           tiles with no Kid equivalent. Kept as its own grid + sheets below
           KidView's own Quick Actions, matching the structure's final
-          section. ── */}
-      <View style={{ paddingHorizontal: 16, marginTop: 4 }}>
+          section. Vertical rhythm (marginTop/marginBottom: 14) now matches
+          every other section wrapper above (KidChoresNeedsYouCard/
+          KidNeedsYouSection/KidMoreRow all use the same 14/14 pattern) —
+          this block previously used its own one-off 4/16 spacing ["make
+          sure hub verical paddiginh are uniform and nicer"]. ── */}
+      <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 10 }}>
           TEEN EXTRAS
         </Text>
       </View>
-      <View style={{ paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-        <TeenTile
-          label="Rides" sublabel={hasCar ? 'Sibling pickups' : 'Opt in with a car'}
-          Icon={Car} accent={BRAND.amber}
-          badge={hasCar ? openPickupCount : myPendingAssignments.length}
-          onPress={() => setOpenSheet('rides')} colors={colors} isDark={isDark}
-        />
+      <View style={{ paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <TeenTile
           label="Tutor a Sibling" sublabel="Offer homework help"
           Icon={BookOpen} accent={BRAND.purple} badge={myPendingOffers.length}
-          onPress={() => setOpenSheet('tutor')} colors={colors} isDark={isDark}
-        />
-        <TeenTile
-          label="Cash Out" sublabel="Request a payout"
-          Icon={CreditCard} accent={BRAND.amber}
-          onPress={() => setOpenSheet('cashout')} colors={colors} isDark={isDark}
+          onPress={onOpenTutor} colors={colors} isDark={isDark}
         />
         {hasCar && (
           <TeenTile
             label="Gas & Vehicle" sublabel="Log fill-ups, report issues"
             Icon={Fuel} accent={colors.success}
-            onPress={() => setOpenSheet('gas')} colors={colors} isDark={isDark}
+            onPress={onOpenGasVehicle} colors={colors} isDark={isDark}
           />
         )}
       </View>
 
-      {/* ── Sheets — static 75% height, no content-driven resize ── */}
-      <TeenTileSheet visible={openSheet === 'rides'} onClose={() => setOpenSheet(null)}
-        title="Rides" accentColor={BRAND.amber} colors={colors} isDark={isDark}>
-        <TeenCarDispatchSection
-          hasCar={hasCar} onToggleCar={toggleCar}
-          openPickups={openPickupsVisible} myPickups={myPickups} myPendingAssignments={myPendingAssignments}
-          onPass={(id) => {
-            const ev = events.find(e => e.id === id) ?? openPickups.find(e => e.id === id);
-            updateEvent(id, { teenPassedIds: [...new Set([...(ev?.teenPassedIds ?? []), active.id])] });
-          }} onClaim={claimPickup} onDrop={dropPickup} onConfirmAssignment={confirmAssignment}
-          rideEarnings={rideEarnings} members={members} colors={colors} isDark={isDark}
+      {/* Cash Out — full-width banner card (pending count + last status),
+          tapping it opens the full-page Cash Out form/history
+          ["Cashout can be a full widdth banner card with theit pending
+          cashouts and last cashout status"]. */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+        <TeenCashOutBanner
+          pendingCount={myPendingCashOuts.length}
+          lastStatusLabel={lastCashOutStatusLabel}
+          onPress={onOpenCashOut} colors={colors} isDark={isDark}
         />
-      </TeenTileSheet>
-
-      <TeenTileSheet visible={openSheet === 'gas'} onClose={() => setOpenSheet(null)}
-        title="Gas & Vehicle Log" accentColor={colors.success} colors={colors} isDark={isDark}>
-        <TeenGasLogSection activeId={active.id} today={today} onReportIssue={reportVehicleIssue} colors={colors} isDark={isDark} />
-      </TeenTileSheet>
-
-      <TeenTileSheet visible={openSheet === 'tutor'} onClose={() => setOpenSheet(null)}
-        title="Tutor a Sibling" accentColor={BRAND.purple} colors={colors} isDark={isDark}>
-        <TeenTutorSection
-          siblings={siblings} pendingOffers={myPendingOffers}
-          onSend={sendTutorOffer} onCancel={cancelRequest}
-          colors={colors} isDark={isDark}
-        />
-      </TeenTileSheet>
-
-      <TeenTileSheet visible={openSheet === 'cashout'} onClose={() => setOpenSheet(null)}
-        title="Cash Out Earnings" accentColor={BRAND.amber} colors={colors} isDark={isDark}>
-        <TeenCashOutSection balance={active.mainCoins ?? active.coins ?? 0} onRequest={requestCashOut} colors={colors} isDark={isDark} />
-      </TeenTileSheet>
+      </View>
 
       <CantMakeItSheet
         target={declineQuest ? { kind: 'chore', item: declineQuest } : null}

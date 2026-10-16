@@ -96,6 +96,10 @@ export default function ChatScreen() {
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [channelId, setChannelId]         = useState('all');
+  // Inbox view: false = show channel list, true = show thread. Declared
+  // here (moved up from its original spot near openChannel further down)
+  // because the markChannelRead effect above openChannel now needs it too.
+  const [threadOpen, setThreadOpen]       = useState(false);
   const [pinnedChannels, setPinnedChannels] = useState<string[]>([]);
   const [text, setText]                   = useState('');
   // Dictation into the text box — distinct from the separate voice-NOTE mic
@@ -385,11 +389,20 @@ export default function ChatScreen() {
   // subscription which channel is currently visible, so a message
   // arriving on it while open doesn't flash the badge on right before
   // markChannelRead's own zero-out lands.
+  // Gated on threadOpen — channelId defaults to 'all' and stays 'all'
+  // while the user is just looking at the inbox list (threadOpen false),
+  // so without this gate simply opening the Chat tab silently marked the
+  // 'all' channel as read before the user ever viewed it, zeroing its row
+  // badge while chatUnreadCounts' tab-level sum (computed from the same
+  // unreadCounts map before this fired) stayed stuck showing the old
+  // total [live-reported: "see nothing showing on threads but the over
+  // all showing the 9+"].
   useEffect(() => {
+    if (!threadOpen) return;
     if (activeMemberId) markChannelRead(channelId, activeMemberId);
     setOpenChannelId(channelId);
     return () => setOpenChannelId(null);
-  }, [channelId, activeMemberId]);
+  }, [channelId, activeMemberId, threadOpen]);
 
   const isPinned = pinnedChannels.includes(channelId);
   const togglePin = () => {
@@ -879,8 +892,6 @@ export default function ChatScreen() {
   }, [openCoupleChannel, channelId]));
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
-  // Inbox view: false = show channel list, true = show thread
-  const [threadOpen, setThreadOpen] = useState(false);
 
   const openChannel = (id: string) => {
     switchChannel(id);

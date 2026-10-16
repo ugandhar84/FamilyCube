@@ -129,6 +129,16 @@ export default function FamilyScreen() {
   // Pastel accents cycle: primary → teal → amber → pink (repeating)
   const PASTELS = [colors.primaryLight, colors.tealLight, colors.amberLight, colors.pinkLight];
 
+  // Family Invite is an admin action (adding/removing members, sharing
+  // join codes) — hidden for non-parent members [live-requested: "we can
+  // remove family invite for non admin"]. Calendar connect is likewise
+  // hidden for kid/teen/senior — it's account-linking (Google/Apple/
+  // Outlook calendar OAuth), not something a non-parent should be doing
+  // [live-requested: "remove calender connect for the kids/teens" /
+  // "said cander connect hide for Grads"]. TOOLS itself always keeps
+  // both entries — byKey() below looks them up unconditionally — so the
+  // gating happens only at the two render call sites further down.
+  const isParent = activeMember?.role === 'parent';
   const TOOLS: Tool[] = [
     {
       key: 'people',
@@ -247,7 +257,10 @@ export default function FamilyScreen() {
   // way?"]. Each row keeps its own pastel accent per the brand's existing
   // *Light token set rather than one flat color for every row.
   const careRows = ['health', 'homecare', 'school'].map(byKey);
-  const everydayRows = ['rewards', 'games', 'memories'].map(byKey);
+  // Games hidden app-wide [live-requested: "hide games from the all
+  // roles"] — TOOLS still defines the 'games' entry so byKey() stays
+  // consistent for anything else referencing it, just not rendered here.
+  const everydayRows = ['rewards', 'memories'].map(byKey);
 
   function ToolRow({ tool, index, accentBg, accentFg }: { tool: Tool; index: number; accentBg: string; accentFg: string }) {
     const Icon = tool.icon;
@@ -371,7 +384,17 @@ export default function FamilyScreen() {
             })}
           </SectionCard>
 
-          {/* ── The people in your life — lavender-tinted card ── */}
+          {/* ── The people in your life — lavender-tinted card. Every row
+              in it (Family Invite, Calendars, Generations) is admin-only
+              [live-requested: "we can remove family invite for non
+              admin" / "remove calender connect for the kids/teens" /
+              "we can hide the generations card for the kids/teens/
+              seniors"] — with nothing left to show for a non-parent,
+              the whole section (heading included) hides too
+              [live-requested: "why do we need to show the people in
+              your life heading banner"] rather than rendering an empty
+              shell. ── */}
+          {isParent && (
           <SectionCard title="The people in your life" bg={colors.pinkLight}>
             <ToolRow tool={byKey('people')} index={5} accentBg="#FFFFFF" accentFg={P} />
             <ToolRow tool={byKey('calendars')} index={6} accentBg="#FFFFFF" accentFg={colors.teal} />
@@ -394,6 +417,7 @@ export default function FamilyScreen() {
               </AnimatedPressable>
             </AnimatedCard>
           </SectionCard>
+          )}
 
           {/* ── Find my family — highlighted teal banner, same rhythm as
               School's "Scan a schedule flyer" banner. ── */}

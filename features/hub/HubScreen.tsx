@@ -645,10 +645,16 @@ export default function HubScreen() {
         )}
         {isTeen && (
           <TeenView
+            focusKey={hubFocusKey}
             active={active} members={members} colors={colors} isDark={isDark}
-            activeTrips={tripViews}
+            activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
-            onAskParentTile={() => setAskParentHubFromTile(true)}
+            onMyChores={() => setShowMyChores(true)}
+            onOpenMyChoresTab={(tab) => { setMyChoresInitialTab(tab); setShowMyChores(true); }}
+            onPiggyBank={() => setPiggyBankModal(true)}
+            onAskParentTile={() => setAskParentDestination('permission')}
+            onAskForRide={() => setAskParentDestination('ride')}
+            onRideStatusOpen={() => setShowRidesRoom(true)}
           />
         )}
         {isSenior && (
@@ -858,7 +864,7 @@ export default function HubScreen() {
       {/* Kid Hub's My Chores / Piggy Bank / Ask Parent — top-level sibling,
           same position as Meals/Rides Room above, so it's never affected by
           the ScrollView's scroll offset or covered by the header/pills. */}
-      {isKid && (
+      {(isKid || isTeen) && (
         <KidOverlays
           active={active} members={members} familyId={familyId}
           showMyChores={showMyChores} setShowMyChores={setShowMyChores}

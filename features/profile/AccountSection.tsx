@@ -235,7 +235,17 @@ export function AccountSection({ colors, isDark }: { colors: any; isDark: boolea
 
   return (
     <View style={{ gap: 14 }}>
-      {/* Subscription — primary pastel */}
+      {/* Subscription — primary pastel. Billing/plan details are a
+          family-admin concern, not something kid/teen/senior members
+          should see or manage [live-requested: "plan details can be
+          revoe from the non admins.. as those all comes under the
+          family group"]. Unlike Danger Zone/Google-link below, this
+          also hides while a parent is PIN-switched INTO a kid's
+          profile [live-confirmed: "hide whenever viewing a kid/teen/
+          senior profile" — billing isn't a per-member action like
+          deleting a specific profile, so it should only show on the
+          parent's OWN profile]. */}
+      {isRealOwnerParent && viewingOwnProfile && (
       <View style={cardStyle(colors.primaryLight)}>
         <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textSecondary : GEMINI.bodyColor, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
           Subscription
@@ -268,6 +278,7 @@ export function AccountSection({ colors, isDark }: { colors: any; isDark: boolea
           colors={colors} isDark={isDark}
         />
       </View>
+      )}
 
       {/* Link Google — Apple-only parents/admins have no fallback
           credential to reach this same account from a non-Apple device

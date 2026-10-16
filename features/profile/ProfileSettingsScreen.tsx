@@ -132,9 +132,9 @@ function Row({
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 12,
         paddingVertical: 13, paddingHorizontal: 14,
-        borderRadius: RADIUS.md, backgroundColor: isDark ? tint + '16' : tint + '14',
-        borderWidth: 1, borderColor: tint + (isDark ? '40' : '30'),
+        borderRadius: RADIUS.md, backgroundColor: isDark ? colors.card : GEMINI.cardBg,
         marginBottom: 8,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
       }}
     >
       <View style={{

@@ -43,6 +43,7 @@
  * but touches inside a Modal never reach KioskScreen's root onTouchStart,
  * so without the host each tap failed to restart the idle timer.
  */
+import { KioskSlideModal } from '../components/KioskSlideModal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet,
@@ -699,7 +700,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           earlier version tried sizing this drawer to the grid's own
           measured rect, which left no room for the panel to shrink into
           and broke the keyboard fix again). */}
-      <Modal supportedOrientations={['portrait', 'landscape']} visible={threadOpen} transparent animationType="slide" onRequestClose={() => setThreadOpen(false)}>
+      <KioskSlideModal visible={threadOpen} onRequestClose={() => setThreadOpen(false)}>
         <KioskModalHost style={s.threadHost}>
           <Pressable
             style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -1062,7 +1063,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           </KeyboardAvoidingView>
         </KioskModalHost>
-      </Modal>
+      </KioskSlideModal>
 
       {/* ── Quick emoji (double-tap) ── */}
       <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>

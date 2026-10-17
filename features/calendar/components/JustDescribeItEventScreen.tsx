@@ -14,6 +14,7 @@
  *   preview card + save button + ‹ Back
  *   date pickers rendered outside ScrollView
  */
+import { showToast } from '@/components/AppToast';
 import { PageHeading } from '@/components/PageHeading';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -608,6 +609,12 @@ export default function JustDescribeItEventScreen({
             ...(evRecurrence === 'weekly' && evRecurDays.length > 0 ? { days: evRecurDays } : {}),
           })
         : await addEvent(baseEvent);
+      if (!mainEventId) {
+        // addEvent returns '' when the database refused the row: say so instead of closing as if it saved.
+        setSaving(false);
+        showToast('Could not save the event. Check the time and details and try again.');
+        return;
+      }
 
       // Pick-up leg — separate event linked back to main. linkedLegId was
       // previously only set on this new pick-up leg (pointing AT the main
@@ -675,10 +682,18 @@ export default function JustDescribeItEventScreen({
         }
       }
       handleClose();
-    } catch {
+    } catch (e: any) {
       setSaving(false);
+      showToast(e?.message ? `Could not save the event: ${e.message}` : 'Could not save the event. Try again.');
     }
   };
+
+  // Safety net: a save that has not finished after 25 seconds is treated as failed so the button never spins forever.
+  useEffect(() => {
+    if (!saving) return;
+    const t = setTimeout(() => { setSaving(false); showToast('Saving is taking too long. Check your connection and try again.'); }, 25000);
+    return () => clearTimeout(t);
+  }, [saving]);
 
   const isListening = dictation.state === 'listening';
   const micPulse = useRef(new Animated.Value(1)).current;

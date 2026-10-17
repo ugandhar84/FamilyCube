@@ -316,6 +316,64 @@ try {
   const anonChat = await (await fetch(`${URL}/rest/v1/chat_messages?select=id&channel_id=eq.${encodeURIComponent(dmAM)}`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } })).json();
   check(CH, 'the public anon key cannot read chat', Array.isArray(anonChat) && anonChat.length === 0, JSON.stringify(anonChat).slice(0, 80));
 
+  /* ───────── Medical files and visit recordings ───────── */
+  const MF = 'Medical files';
+  const b64 = (t) => Buffer.from(t).toString('base64');
+  const st = (who, bucket, op, path, extra = {}) => call({ action: 'storage', actingMemberId: who, bucket, op, path, ...extra });
+  r = await st(alex, 'medical-audio', 'upload', `${F}/${mia}/visit1.m4a`, { b64: b64('FCE1-sealed-audio') });
+  check(MF, 'a parent uploads a visit recording for a kid', r.ok, r.error);
+  r = await st(alex, 'medical-records', 'upload', `${F}/${mia}/doc1.bin`, { b64: b64('FCE1-sealed-doc') });
+  check(MF, 'a parent uploads a document for a kid', r.ok, r.error);
+  r = await st(alex, 'medical-records', 'upload', `${F}/${alex}/secret.bin`, { b64: b64('parent record') });
+  check(MF, 'a parent uploads their own document', r.ok, r.error);
+  r = await st(mia, 'medical-records', 'upload', `${F}/${mia}/mine.bin`, { b64: b64('kid doc') });
+  check(MF, 'a kid uploads their own document', r.ok, r.error);
+  r = await st(mia, 'medical-records', 'upload', `${F}/${alex}/forged.bin`, { b64: b64('x') });
+  check(MF, 'a kid cannot upload into a parent’s folder', !r.ok, r.error ?? 'upload succeeded');
+  r = await st(alex, 'medical-records', 'upload', `${crypto.randomUUID()}/${alex}/other-family.bin`, { b64: b64('x') });
+  check(MF, 'nobody can upload into another family’s folder', !r.ok, r.error ?? 'upload succeeded');
+  r = await st(mia, 'medical-records', 'download', `${F}/${mia}/doc1.bin`);
+  check(MF, 'a kid downloads their own document', r.ok && r.size > 0, r.error ?? r.size);
+  r = await st(mia, 'medical-records', 'download', `${F}/${alex}/secret.bin`);
+  check(MF, 'a kid cannot download a parent’s document', !r.ok || r.size === 0, r.error ?? `size ${r.size}`);
+  r = await st(mia, 'medical-records', 'list', `${F}/${alex}`);
+  check(MF, 'a kid cannot list a parent’s folder', (r.names ?? []).length === 0, JSON.stringify(r.names));
+  r = await st(zane, 'medical-records', 'download', `${F}/${mia}/doc1.bin`);
+  check(MF, 'a teen cannot download a sibling’s document', !r.ok || r.size === 0, r.error ?? `size ${r.size}`);
+  r = await st(nana, 'medical-audio', 'download', `${F}/${mia}/visit1.m4a`);
+  check(MF, 'a grandparent cannot download a kid’s visit recording', !r.ok || r.size === 0, r.error ?? `size ${r.size}`);
+  r = await st(sarah, 'medical-audio', 'download', `${F}/${mia}/visit1.m4a`);
+  check(MF, 'the other parent downloads the kid’s visit recording', r.ok && r.size > 0, r.error ?? r.size);
+  r = await st(mia, 'medical-records', 'remove', `${F}/${alex}/secret.bin`);
+  const stillThere = await st(alex, 'medical-records', 'download', `${F}/${alex}/secret.bin`);
+  check(MF, 'a kid cannot delete a parent’s document', stillThere.ok && stillThere.size > 0, r.error ?? 'deleted');
+  const anonDl = await fetch(`${URL}/storage/v1/object/medical-records/${F}/${mia}/doc1.bin`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
+  check(MF, 'the public anon key cannot download files', !anonDl.ok, `HTTP ${anonDl.status}`);
+  // the visit-recording record rows follow the same privacy
+  r = await as(alex, 'medical_records', 'insert', { row: { family_id: F, member_id: mia, uploaded_by: alex, title: 'QA visit — private', tag: 'visit_recording', record_date: day, ai_tags: [], ai_analyzed: true, ai_summary: 'summary' } });
+  check(MF, 'a parent saves a visit record for a kid', r.ok, r.error);
+  r = await as(zane, 'medical_records', 'select', { match: { family_id: F, tag: 'visit_recording' } });
+  check(MF, 'a teen cannot read a sibling’s visit record', rows(r).length === 0, rows(r).length);
+  r = await as(mia, 'medical_records', 'select', { match: { family_id: F, tag: 'visit_recording' } });
+  check(MF, 'a kid reads their own visit record', rows(r).length === 1, r.error ?? rows(r).length);
+  // nightly sweeper
+  const seed = await call({ action: 'seed_visits', familyId: F, memberId: mia, uploaderId: alex });
+  check(MF, 'sweeper fixtures were created', !!seed.ok, seed.error);
+  if (seed.ok) {
+    const sw = await (await fetch(`${URL}/functions/v1/visit-audio-sweeper`, { method: 'POST', headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }, body: '{}' })).json();
+    check(MF, 'the sweeper runs', !!sw.ok, JSON.stringify(sw));
+    let q = await call({ action: 'read', table: 'medical_records', familyId: F, where: { tag: 'visit_recording' } });
+    const byTitle = Object.fromEntries((q.rows ?? []).map(x => [x.title, x]));
+    check(MF, 'an unsubmitted recording older than 7 days is deleted', !byTitle['QA stale'], 'still there');
+    check(MF, 'a fresh unsubmitted recording is kept', !!byTitle['QA fresh']?.file_path, JSON.stringify(byTitle['QA fresh']));
+    check(MF, 'an approved visit has its audio reference cleared', byTitle['QA approved'] && byTitle['QA approved'].file_path === null, JSON.stringify(byTitle['QA approved']?.file_path));
+    const gone = await st(alex, 'medical-audio', 'download', seed.stale.path);
+    const gone2 = await st(alex, 'medical-audio', 'download', seed.approved.path);
+    check(MF, 'the stale and approved audio files are really deleted from storage', !gone.ok && !gone2.ok, `${gone.ok}/${gone2.ok}`);
+    const kept = await st(alex, 'medical-audio', 'download', seed.fresh.path);
+    check(MF, 'the fresh audio file is still in storage', kept.ok, kept.error);
+  }
+
 } catch (e) {
   check('Harness', 'suite ran to the end', false, e.message);
 } finally {

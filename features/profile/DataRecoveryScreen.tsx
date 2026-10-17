@@ -296,7 +296,8 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
           <Text style={s.infoText}>
             Chat messages, medical documents, visit recordings and AI summaries are encrypted with one security code
             shared by your whole family. The code lives only on your devices, not on our servers, so there is no
-            "forgot code" reset.
+            "forgot code" reset. Titles, dates, notes and medication or vaccine details stay readable on our servers so
+            reminders and search work, and AI scans send the document or recording to our AI provider to read it.
           </Text>
         </View>
         <View style={[s.infoCard, { borderColor: colors.danger }]}>

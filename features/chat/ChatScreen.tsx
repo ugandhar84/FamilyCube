@@ -18,6 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PageHeading } from '@/components/PageHeading';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { InteractionManager } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
@@ -373,13 +374,24 @@ export default function ChatScreen() {
     loadChannel(channelId);
   }, [channelId, isSenior, !!activeMember]);
 
-  // The inbox rows show each conversation's latest message, so every channel this person can see needs its
-  // messages loaded, not just the one that happens to be open. Just Us stays unloaded until its PIN is entered.
+  // The inbox rows show each conversation's latest message. Fetch just that one message per channel, one channel at a
+  // time, after the screen has finished animating in and only while the tab is focused, so opening or leaving Chat
+  // never competes with the tab switch for the JS thread. Just Us stays unloaded until its PIN is entered.
+  const loadChannelPreview = useChatStore(st => st.loadChannelPreview);
   const inboxChannelKey = allChannels.filter((c: any) => !c.isCoupleChannel && !(c.lock && !isParent)).map(c => c.id).join(',');
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!activeMember || !inboxChannelKey) return;
-    inboxChannelKey.split(',').forEach(id => { if (!(id === 'all' && isSenior)) loadChannel(id); });
-  }, [inboxChannelKey, !!activeMember, isSenior]);
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(async () => {
+      for (const id of inboxChannelKey.split(',')) {
+        if (cancelled) return;
+        if (id === 'all' && isSenior) continue;
+        await loadChannelPreview(id);
+        await new Promise(r => setTimeout(r, 40)); // yield between channels so taps stay responsive
+      }
+    });
+    return () => { cancelled = true; task.cancel(); };
+  }, [inboxChannelKey, !!activeMember, isSenior]));
 
   // One cheap query for last-activity + unread counts across every channel
   // this member can see, so the strip can sort/badge correctly even for
@@ -411,6 +423,12 @@ export default function ChatScreen() {
     setOpenChannelId(channelId);
     return () => setOpenChannelId(null);
   }, [channelId, activeMemberId, threadOpen]);
+  // Leaving the Chat tab with a thread open must stop that thread's background refresh (it would otherwise keep
+  // polling and re-rendering a frozen screen), and resume when the tab is focused again.
+  useFocusEffect(useCallback(() => {
+    if (threadOpen) setOpenChannelId(channelId);
+    return () => setOpenChannelId(null);
+  }, [threadOpen, channelId]));
 
   const isPinned = pinnedChannels.includes(channelId);
   const togglePin = () => {

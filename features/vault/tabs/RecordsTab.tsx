@@ -348,7 +348,8 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     Alert.alert('Remove record', `Remove "${rec.title}"? This permanently deletes the file from your vault.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
-        if (rec.file_path) await supabase.storage.from('medical-records').remove([rec.file_path]);
+        // A visit recording's audio lives in the medical-audio bucket, everything else in medical-records.
+        if (rec.file_path) await supabase.storage.from(rec.tag === 'visit_recording' ? 'medical-audio' : 'medical-records').remove([rec.file_path]);
         await supabase.from('medical_records').delete().eq('id', rec.id);
         setRecords(prev => prev.filter(r => r.id !== rec.id));
         setPending(prev => { const c = { ...prev }; delete c[rec.id]; return c; });
@@ -447,11 +448,22 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       // Encrypt the full analysis JSON with the shared family key (see recordsCrypto.ts).
       const encryptedBlob = await encryptAnalysis(familyId, analysis);
 
+      // A visit recording's raw audio has served its purpose once the summary is approved: delete it first (with
+      // retries) and only clear the reference when it is really gone, so the nightly sweeper can retry otherwise.
+      let audioGone = false;
+      if (reviewRec.tag === 'visit_recording' && reviewRec.file_path) {
+        for (let attempt = 0; attempt < 3 && !audioGone; attempt++) {
+          const { error: rmErr } = await supabase.storage.from('medical-audio').remove([reviewRec.file_path]);
+          audioGone = !rmErr;
+          if (!audioGone) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
       const { error } = await supabase.from('medical_records').update({
         ai_summary:       analysis.summary,
         ai_tags:          analysis.tags ?? [],
         ai_analysis_json: encryptedBlob,   // stored as AES-GCM ciphertext
         ai_analyzed:      true,
+        ...(audioGone ? { file_path: null, file_name: null, file_size: null } : {}),
       }).eq('id', reviewRec.id);
 
       if (error) throw new Error(error.message);

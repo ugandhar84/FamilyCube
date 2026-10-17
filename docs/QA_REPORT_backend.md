@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T16:33:35.105Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T17:12:33.437Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**106 passed, 0 failed, 1 findings.**
+**128 passed, 1 failed, 1 findings.**
 
 ## Sticky notes
 
@@ -74,7 +74,7 @@ Run: 2026-10-17T16:33:35.105Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 8892348a-3db7-4e94-9ddc-7b00d6545cf0 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 1e107c66-7268-4a64-9752-ae8cfdbdc667 is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -93,8 +93,8 @@ Run: 2026-10-17T16:33:35.105Z against a throwaway scratch family (real rows, rea
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792254747485"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792254747485"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792257074099"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792257074099"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
@@ -175,4 +175,33 @@ Run: 2026-10-17T16:33:35.105Z against a throwaway scratch family (real rows, rea
 | PASS | the sender can edit their own message | 1 |
 | PASS | the other person cannot rewrite the message | only the original sender can edit this message |
 | PASS | the public anon key cannot read chat | [] |
+
+## Medical files
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a parent uploads a visit recording for a kid | null |
+| PASS | a parent uploads a document for a kid | null |
+| PASS | a parent uploads their own document | null |
+| PASS | a kid uploads their own document | null |
+| PASS | a kid cannot upload into a parent’s folder | new row violates row-level security policy |
+| PASS | nobody can upload into another family’s folder | new row violates row-level security policy |
+| PASS | a kid downloads their own document | 15 |
+| PASS | a kid cannot download a parent’s document | Object not found |
+| PASS | a kid cannot list a parent’s folder | [] |
+| PASS | a teen cannot download a sibling’s document | Object not found |
+| PASS | a grandparent cannot download a kid’s visit recording | Object not found |
+| PASS | the other parent downloads the kid’s visit recording | 17 |
+| PASS | a kid cannot delete a parent’s document | deleted |
+| PASS | the public anon key cannot download files | HTTP 400 |
+| PASS | a parent saves a visit record for a kid | null |
+| PASS | a teen cannot read a sibling’s visit record | 0 |
+| PASS | a kid reads their own visit record | 1 |
+| PASS | sweeper fixtures were created |  |
+| PASS | the sweeper runs | {"ok":true,"scanned":3,"clearedApproved":1,"deletedStale":1,"failed":0} |
+| PASS | an unsubmitted recording older than 7 days is deleted | still there |
+| **FAIL** | a fresh unsubmitted recording is kept |  |
+| NOTE | an approved visit has its audio reference cleared |  |
+| PASS | the stale and approved audio files are really deleted from storage | false/false |
+| PASS | the fresh audio file is still in storage | null |
 

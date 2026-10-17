@@ -702,7 +702,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
         </View>
         <View style={[s.encBanner, { backgroundColor: k.pastelSage }]}>
           <ShieldCheck size={15} color={k.sage} />
-          <Text style={[s.encText, { color: k.sage }]} numberOfLines={1}>End-to-end encrypted with your family key</Text>
+          <Text style={[s.encText, { color: k.sage }]} numberOfLines={1}>Messages encrypted with your family key</Text>
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.convs} keyboardShouldPersistTaps="handled">
           {entries.map((e, i) => {

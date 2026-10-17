@@ -251,9 +251,8 @@ function CustomTabBar({ state, navigation }: any) {
             <Pressable
               key={name}
               onPress={() => {
-                const now = Date.now();
-                if (now - lastNavTime.current < 400) return;
-                lastNavTime.current = now;
+                // No tap debounce: every tap must register. navigate() to the tab that is already focused is a no-op,
+                // so there is nothing to guard against, and dropping taps is what made switching feel unresponsive.
                 const event = navigation.emit({ type: 'tabPress', target: route?.key, canPreventDefault: true });
                 if (!focused && !event.defaultPrevented) navigation.navigate(name);
               }}

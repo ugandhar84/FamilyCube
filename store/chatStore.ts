@@ -412,6 +412,8 @@ interface ChatState {
   channelState: (id: string) => ChannelState;
 
   loadChannel:  (channelId: string) => Promise<void>;
+  /** Cheap inbox preview: fetches and decrypts only the newest message, no subscription, no full history. */
+  loadChannelPreview: (channelId: string) => Promise<void>;
   loadOlder:    (channelId: string) => Promise<void>;
   unsubscribe:  (channelId: string) => void;
   loadLastActivity: (channelIds: string[]) => Promise<void>;
@@ -698,6 +700,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // ── Load latest page + subscribe ──────────────────────────────────────────
+
+  loadChannelPreview: async (channelId) => {
+    // Already have messages (opened before, or full-loaded): nothing to preview.
+    if ((get().channels[channelId]?.messages.length ?? 0) > 0) return;
+    try {
+      const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
+      const { data } = await supabase.from('chat_messages').select('*').eq('channel_id', dbChannelId)
+        .order('created_at', { ascending: false }).limit(1);
+      const row = (data ?? [])[0] as DBRow | undefined;
+      if (!row) return;
+      get()._upsertMessage(channelId, await rowToMessage(row));
+    } catch { /* the inbox row just shows no preview */ }
+  },
 
   loadChannel: async (channelId) => {
     const current = get().channels[channelId];

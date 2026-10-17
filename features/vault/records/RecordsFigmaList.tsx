@@ -297,7 +297,7 @@ export default function RecordsFigmaList({
           <View style={{ flex: 1 }} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <Lock size={10} color={colors.teal} />
-            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal }}>Encrypted</Text>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.teal }}>Family-code protected</Text>
           </View>
         </View>
       </View>

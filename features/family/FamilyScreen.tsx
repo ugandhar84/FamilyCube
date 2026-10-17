@@ -8,7 +8,7 @@ import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import {
   Users, MapPin, Heart, GraduationCap, Home, Image as ImageIcon,
-  Gift, Gamepad2, Plus, ChevronRight, CalendarDays,
+  Gift, Gamepad2, ChevronRight, CalendarDays,
 } from 'lucide-react-native';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { ConnectCalendarPage } from './ConnectCalendarPage';
@@ -319,18 +319,6 @@ export default function FamilyScreen() {
             subtitle={familySubtitle}
             accent="primary"
             Icon={Users}
-            right={
-              <Pressable
-                onPress={() => setShowFamilyTree(true)}
-                style={({ pressed }) => ({
-                  width: 40, height: 40, borderRadius: 20,
-                  backgroundColor: pressed ? colors.border : (isDark ? colors.card : GEMINI.cardBg),
-                  borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
-                  alignItems: 'center', justifyContent: 'center',
-                })}>
-                <Plus size={20} color={isDark ? colors.textPrimary : TITLE_CLR} strokeWidth={2} />
-              </Pressable>
-            }
           />
         </View>
 

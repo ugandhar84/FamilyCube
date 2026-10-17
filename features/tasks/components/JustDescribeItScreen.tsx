@@ -10,6 +10,7 @@
  *   3. Voice    — waveform + Stop/Cancel
  *   4. Expanded — inline quest form below chips (pre-filled)
  */
+import { PageHeading } from '@/components/PageHeading';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Pressable,
@@ -27,7 +28,7 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { previewAssignment } from '@/lib/responsibilityCategories';
 import { todayLocal, nextHourRoundedStr } from '@/lib/dates';
 import { familyAi } from '@/lib/familyAiService';
-import { Mic, Square } from 'lucide-react-native';
+import { Mic, Square, Sparkles } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
@@ -399,17 +400,7 @@ export default function JustDescribeItScreen({
           >
             <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
 
-              {/* ── Page title — tap to close (same pattern as Health's sub-pages) ── */}
-              <View style={{ gap: 6 }}>
-                <Pressable onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-                  <Text style={{ fontSize: 28, fontWeight: '800', color: titleC, letterSpacing: -0.5, lineHeight: 34 }}>
-                    Just describe your task
-                  </Text>
-                </Pressable>
-                <Text style={{ fontSize: 15, fontWeight: '400', color: bodyC, lineHeight: 22 }}>
-                  Type a thought. Speak a thought. Make it a plan.
-                </Text>
-              </View>
+              <PageHeading eyebrow="FAMILY CUBE · TASKS" title="Just describe your task" subtitle="Type a thought. Speak a thought. Make it a plan." accent="pink" Icon={Sparkles} onTitlePress={handleClose} topInset={0} paddingHorizontal={0} />
 
               <View style={{ gap: 14 }}>
 

@@ -14,6 +14,7 @@
  *   preview card + save button + ‹ Back
  *   date pickers rendered outside ScrollView
  */
+import { PageHeading } from '@/components/PageHeading';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Pressable,
@@ -30,7 +31,7 @@ import { detectLocalTask } from '@/features/tasks/lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { todayLocal } from '@/lib/dates';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { Mic, Square } from 'lucide-react-native';
+import { Mic, Square, CalendarDays } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 import { supabase } from '@/lib/supabase';
 import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
@@ -713,17 +714,7 @@ export default function JustDescribeItEventScreen({
         >
           <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
 
-            {/* ── Page title — tap to close (same pattern as Health's sub-pages) ── */}
-            <View style={{ gap: 6 }}>
-              <Pressable onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-                <Text style={{ fontSize: 28, fontWeight: '800', color: titleC, letterSpacing: -0.5, lineHeight: 34 }}>
-                  {isEdit ? 'Edit event' : 'Just describe your schedule'}
-                </Text>
-              </Pressable>
-              <Text style={{ fontSize: 15, fontWeight: '400', color: bodyC, lineHeight: 22 }}>
-                {isEdit ? 'Change the core details. Confirmations and reassignments live on the event page.' : 'Type a thought. Speak a thought. Make it a plan.'}
-              </Text>
-            </View>
+            <PageHeading eyebrow="FAMILY CUBE · SCHEDULE" title={isEdit ? 'Edit event' : 'Just describe your schedule'} subtitle={isEdit ? 'Change the core details. Confirmations and reassignments live on the event page.' : 'Type a thought. Speak a thought. Make it a plan.'} accent="teal" Icon={CalendarDays} onTitlePress={handleClose} topInset={0} paddingHorizontal={0} />
 
             <View style={{ gap: 14 }}>
 

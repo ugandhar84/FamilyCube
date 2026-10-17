@@ -50,3 +50,11 @@ export function useStickyNotes(active: FamilyMember, members: FamilyMember[]) {
   const canRemove = (n: StickyNote) => active.role === 'parent' || n.author_id === active.id;
   return { notes, add, remove, canRemove };
 }
+
+/** "Oct 17 · 5:00 PM" — when the note was posted. */
+export function noteStamp(iso: string): string {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${day} · ${time}`;
+}

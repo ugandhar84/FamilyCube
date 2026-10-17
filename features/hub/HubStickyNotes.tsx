@@ -7,7 +7,7 @@ import { View, Text, Pressable, TextInput, Modal, StyleSheet, KeyboardAvoidingVi
 import { Plus, X } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
-import { useStickyNotes, NOTE_MAX, NOTE_COLORS, type NoteColor } from './useStickyNotes';
+import { useStickyNotes, noteStamp, NOTE_MAX, NOTE_COLORS, type NoteColor } from './useStickyNotes';
 
 export function HubStickyNotes({ active, members, colors, isDark }: { active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean }) {
   const { notes, add, remove, canRemove } = useStickyNotes(active, members);
@@ -42,6 +42,7 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
             <View key={n.id} style={[s.note, { backgroundColor: t.bg, transform: [{ rotate: i % 2 ? '1deg' : '-1deg' }] }]}>
               <Text style={[s.body, { color: colors.textPrimary }]}>{n.body}</Text>
               <Text style={[s.by, { color: t.fg }]}>— {first(n.author_id)}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(first).join(', ')}` : ''}</Text>
+              <Text style={[s.when, { color: colors.textTertiary }]}>{noteStamp(n.created_at)}</Text>
               {canRemove(n) && <Pressable onPress={() => remove(n)} hitSlop={8} style={s.x} accessibilityRole="button" accessibilityLabel="Remove note"><X size={13} color={colors.textSecondary} /></Pressable>}
             </View>
           );
@@ -89,6 +90,7 @@ const s = StyleSheet.create({
   note: { width: '47.5%', minHeight: 84, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomRightRadius: 18, borderBottomLeftRadius: 6, padding: 12, gap: 6, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   body: { fontSize: 15, fontWeight: '700', lineHeight: 20 },
   by: { fontSize: 12, fontWeight: '800' },
+  when: { fontSize: 11, fontWeight: '700' },
   x: { position: 'absolute', top: 6, right: 6 },
   add: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0 },
   empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginVertical: 6, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },

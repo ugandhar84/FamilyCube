@@ -27,7 +27,7 @@ import { KioskFormDrawer } from './KioskFormDrawer';
 import { Eyebrow, firstName } from './KioskHomeParts';
 import { useKioskPhotos } from '../useKioskPhotos';
 import { KIOSK_FONT } from '../kioskFonts';
-import { useStickyNotes, NOTE_MAX, type NoteColor } from '@/features/hub/useStickyNotes';
+import { useStickyNotes, noteStamp, NOTE_MAX, type NoteColor } from '@/features/hub/useStickyNotes';
 
 const STATUS: Record<string, string> = { at_home: 'Home', at_school: 'School', at_work: 'Work', in_transit: 'On the move', at_activity: 'Activity' };
 
@@ -195,6 +195,7 @@ export function StickyNotesCard({ active, members }: { active: FamilyMember; mem
             <View key={n.id} style={[s.sticky, { backgroundColor: t.bg, transform: [{ rotate: i % 2 ? '1deg' : '-1deg' }] }]}>
               <Text style={[s.stickyT, { color: k.text }]}>{n.body}</Text>
               <Text style={[s.stickyBy, { color: t.fg }]}>— {firstName(members.find(m => m.id === n.author_id))}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(id => firstName(members.find(m => m.id === id))).join(', ')}` : ''}</Text>
+              <Text style={[s.stickyWhen, { color: k.textMuted }]}>{noteStamp(n.created_at)}</Text>
               {canRemove(n) && <Pressable onPress={() => remove(n)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove note" style={s.stickyX}><X size={14} color={k.textMuted} /></Pressable>}
             </View>
           );
@@ -275,6 +276,7 @@ const s = StyleSheet.create({
   notes: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   sticky: { width: '47.5%', minHeight: 88, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomRightRadius: 18, borderBottomLeftRadius: 6, padding: 12, gap: 6, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   stickyT: { fontSize: 22, lineHeight: 26, fontFamily: KIOSK_FONT.hand.bold },
+  stickyWhen: { fontSize: 15, fontFamily: KIOSK_FONT.hand.semibold, opacity: 0.8 },
   stickyBy: { fontSize: 18, fontFamily: KIOSK_FONT.hand.semibold },
   stickyAdd: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0, transform: [] },
   stickyX: { position: 'absolute', top: 6, right: 6 },

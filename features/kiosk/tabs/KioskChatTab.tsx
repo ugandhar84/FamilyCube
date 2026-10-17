@@ -276,11 +276,12 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // switching never shows the list sliding from the top down to the bottom.
   const [settledChannel, setSettledChannel] = useState<string | null>(null);
   const nearBottom = useRef(true);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState('');
   useEffect(() => {
     nearBottom.current = true;
-    const t = setTimeout(() => setSettledChannel(activeChannel), 450);
+    const t = setTimeout(() => setSettledChannel(activeChannel), 900);
     return () => clearTimeout(t);
   }, [activeChannel]);
 
@@ -789,6 +790,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               data={dayItems}
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
               contentContainerStyle={s.list}
+              initialNumToRender={Math.min(dayItems.length, 60)}
+              windowSize={11}
               onScroll={e => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
                 nearBottom.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 160;
@@ -797,7 +800,12 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               onContentSizeChange={() => {
                 // Stay put if the reader scrolled up; always land at the newest message on open.
                 if (settledChannel !== activeChannel || nearBottom.current) listRef.current?.scrollToEnd({ animated: false });
-                if (settledChannel !== activeChannel) requestAnimationFrame(() => requestAnimationFrame(() => setSettledChannel(activeChannel)));
+                // Rows measure lazily, so the height keeps changing for a moment after open. Stay hidden
+                // and keep pinning to the end until it has been steady for 220ms, then reveal.
+                if (settledChannel !== activeChannel) {
+                  if (settleTimer.current) clearTimeout(settleTimer.current);
+                  settleTimer.current = setTimeout(() => { listRef.current?.scrollToEnd({ animated: false }); setSettledChannel(activeChannel); }, 220);
+                }
               }}
               onScrollToIndexFailed={({ index, averageItemLength }) => {
                 listRef.current?.scrollToOffset({ offset: index * (averageItemLength || 80), animated: false });

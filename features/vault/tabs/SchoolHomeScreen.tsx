@@ -67,6 +67,37 @@ function fmtTime12(t: string): string {
 
 type MainTab = 'schedule' | 'holidays' | 'dates';
 
+/** The distinct terms (Fall, Spring, Q1...) a schedule's classes belong to, in the order they appear. */
+function termsOf(periods: ClassPeriod[]): string[] {
+  return [...new Set(periods.map(p => p.term?.trim()).filter((t): t is string => !!t))];
+}
+
+/** Best guess at which term is running now, from the month and the term's name. Falls back to the first term. */
+function guessCurrentTerm(terms: string[]): string | undefined {
+  if (terms.length === 0) return undefined;
+  const m = new Date().getMonth(); // 0 = Jan
+  const fall = m >= 7;
+  const quarter = m >= 7 && m <= 9 ? 1 : (m >= 10 || m === 0) ? 2 : m <= 3 ? 3 : 4;
+  const hit = terms.find(t => {
+    const x = t.toLowerCase();
+    if (/fall|autumn/.test(x)) return fall;
+    if (/spring/.test(x)) return !fall && m <= 5;
+    if (/summer/.test(x)) return m === 5 || m === 6;
+    const q = x.match(/(?:^|\b)(?:q|quarter|term)\s*([1-4])\b/);
+    if (q) return +q[1] === quarter;
+    const sem = x.match(/(?:semester|sem)\s*([12])\b/);
+    if (sem) return (+sem[1] === 1) === fall;
+    return false;
+  });
+  return hit ?? terms[0];
+}
+
+/** Classes that run in a term: ones tagged with it, plus any with no term (they run all year). */
+function periodsInTerm(periods: ClassPeriod[], term?: string): ClassPeriod[] {
+  return term ? periods.filter(p => !p.term || p.term.trim() === term) : periods;
+}
+
+
 // Days off (not a class day) — used to keep them out of the "other important dates" list.
 const DAY_OFF_RE = /\b(holiday|break|no school|in-?service|staff (professional|development)|teacher work ?day|school closed)\b/i;
 
@@ -75,9 +106,9 @@ function localTodayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const WEEK_DAYS: { key: string; label: string }[] = [
-  { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' }, { key: 'wed', label: 'Wed' },
-  { key: 'thu', label: 'Thu' }, { key: 'fri', label: 'Fri' },
+const WEEK_DAYS: { key: string; label: string; full: string }[] = [
+  { key: 'mon', label: 'Mon', full: 'Monday' }, { key: 'tue', label: 'Tue', full: 'Tuesday' }, { key: 'wed', label: 'Wed', full: 'Wednesday' },
+  { key: 'thu', label: 'Thu', full: 'Thursday' }, { key: 'fri', label: 'Fri', full: 'Friday' },
 ];
 
 /** A kid's whole school week at a glance: each weekday with its periods. */
@@ -133,7 +164,7 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
 
   const todayPeriods = useMemo(() => {
     if (!schedule) return [] as ClassPeriod[];
-    return schedule.periods
+    return periodsInTerm(schedule.periods, guessCurrentTerm(termsOf(schedule.periods)))
       .filter(p => (p.days ?? ['mon', 'tue', 'wed', 'thu', 'fri']).includes(todayKey))
       .sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
   }, [schedule, todayKey]);
@@ -213,6 +244,9 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
   const events = useEventStore(s => s.events);
   const [tab, setTab] = useState<MainTab>('schedule');
   const [view, setView] = useState<'day' | 'week'>('day');
+  const terms = termsOf(schedule?.periods ?? []);
+  const [termPick, setTermPick] = useState<string | undefined>(undefined);
+  const term = termPick ?? guessCurrentTerm(terms);
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
@@ -239,7 +273,7 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
     .slice(0, 40);
 
   const todayKey = DAY_KEYS[new Date().getDay()];
-  const dayPeriods = (key: string) => (schedule?.periods ?? [])
+  const dayPeriods = (key: string) => periodsInTerm(schedule?.periods ?? [], term)
     .filter(p => !p.isLunch && (p.days ?? ['mon', 'tue', 'wed', 'thu', 'fri']).includes(key))
     .sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
 
@@ -278,6 +312,17 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
               </View>
             ) : (
               <>
+                {terms.length > 1 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                    {terms.map(t => (
+                      <TouchableOpacity key={t} onPress={() => setTermPick(t)}
+                        style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5,
+                          borderColor: term === t ? BLUE : border, backgroundColor: term === t ? BLUE + '18' : 'transparent' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: term === t ? BLUE : bodyC }}>{t}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
                 <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : SURFACE, borderRadius: 14, padding: 3 }}>
                   {([['day', 'Today'], ['week', 'This week']] as const).map(([key, label]) => (
                     <TouchableOpacity key={key} onPress={() => setView(key)}
@@ -302,11 +347,16 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                     {WEEK_DAYS.map((d, i) => {
                       const ps = dayPeriods(d.key);
                       return (
-                        <View key={d.key} style={{ flexDirection: 'row', gap: 10, paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-                          <Text style={{ width: 36, fontSize: 13, fontWeight: '800', color: d.key === todayKey ? BLUE : bodyC }}>{d.label}</Text>
-                          <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: ps.length ? titleC : bodyC }}>
-                            {ps.length ? `${fmtTime12(ps[0].startTime)}–${fmtTime12(ps[ps.length - 1].endTime)} · ${ps.map(p => p.subject).join(', ')}` : 'No classes'}
-                          </Text>
+                        <View key={d.key} style={{ gap: 6, paddingTop: i > 0 ? 12 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: d.key === todayKey ? BLUE : titleC }}>{d.full}</Text>
+                          {ps.length === 0 ? (
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No classes</Text>
+                          ) : ps.map(p => (
+                            <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+                              <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.startTime)}–{fmtTime12(p.endTime)}</Text>
+                              <Text style={{ flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '700', color: titleC }} numberOfLines={1}>{p.subject}</Text>
+                            </View>
+                          ))}
                         </View>
                       );
                     })}

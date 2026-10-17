@@ -305,6 +305,8 @@ export interface ExtractedDateTime {
   // LOCATION was filled in, which this exact sentence (a named class, no
   // street address) never had. Null when the sentence only has one time.
   returnTime: string | null;
+  // A later time that is when the ride should ARRIVE ("pick her up at 9 from work to soccer at 10"), not a second ride.
+  arrivalTime?: string | null;
 }
 
 
@@ -437,6 +439,9 @@ export function extractDateTime(input: string): ExtractedDateTime {
   if (times.length > 1 && hasDrop && hasPick) {
     const second = times.find(t => t !== times[0]);
     if (second) result.returnTime = second;
+  } else if (times.length > 1 && hasPick && !hasDrop) {
+    const second = times.find(t => t > times[0]);
+    if (second) result.arrivalTime = second;
   }
   return result;
 }

@@ -499,6 +499,8 @@ export default function JustDescribeItEventScreen({
         setPickupOnly(true); setEvPickupNeeded(true); setEvDropNeeded(false);
         if (loc?.pickup) setEvPickupFrom(loc.pickup);
         if (loc?.dropoff) setEvPickupTo(loc.dropoff);
+        // "...from work to soccer at 10": the later time is when they should arrive, so the ride runs from the spoken start to then.
+        if (detection?.when.arrivalTime) setEvEndTime(detection.when.arrivalTime.slice(0, 5));
       } else if (dir === 'both') {
         // Drop-off at the spoken time, pick-up at the second time (or an hour later when none was said).
         setPickupOnly(false); setEvDropNeeded(true); setEvPickupNeeded(true);
@@ -964,7 +966,7 @@ export default function JustDescribeItEventScreen({
                         {catEmoji ? <Text style={{ fontSize: 14 }}>{catEmoji}</Text> : null}
                         <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? titleC : '#FFFFFF' }}>
                           {catLabel}
-                          {detected.category.kw.length > 0 ? `  · from "${detected.category.kw[0]}"` : ''}
+                          
                         </Text>
                       </View>
                     )}

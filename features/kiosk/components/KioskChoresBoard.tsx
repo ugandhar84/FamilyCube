@@ -66,8 +66,7 @@ export function KioskChoresBoard({ active, members }: {
   const create = useKioskCreateFlow({ active, members });
   const kidRequests = useKidRequestStore(s => s.requests);
   const requestCount = useMemo(() => (active.role === 'parent' ? pendingKidRequests(kidRequests).length : 0), [kidRequests, active.role]);
-  // Parent: Board (per-person columns) or Requests (what the kids are asking
-  // for). Opens on Requests when that is the only thing waiting.
+  // Parent: Board (per-person columns) or Requests (what the kids are asking for).
   const [view, setView] = useState<'board' | 'requests' | null>(null);
 
   const viewId = isParent ? boardId : active.id;
@@ -104,8 +103,8 @@ export function KioskChoresBoard({ active, members }: {
   const pct = total ? (approved.length + submitted.length) / total : 0;
   const earned = approved.reduce((n, q) => n + (q.coins ?? 0), 0);
   const redoQuest = submitted.find(q => q.id === redoId);
-  const anyChoreWaiting = isParent && visible.some(q => q.status === 'pending_approval');
-  const shownView: 'board' | 'requests' = !isParent ? 'board' : (view ?? (requestCount > 0 && !anyChoreWaiting ? 'requests' : 'board'));
+  // Always opens on the Board; Requests is one tap away (its tab shows the count).
+  const shownView: 'board' | 'requests' = isParent ? (view ?? 'board') : 'board';
   const viewer = { id: active.id, role: active.role, isActiveApprover };
 
   const tick = (q: Quest) => {

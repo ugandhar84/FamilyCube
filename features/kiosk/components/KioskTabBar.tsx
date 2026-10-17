@@ -16,7 +16,9 @@ import type { KioskRailItem, KioskTabKey } from '../kioskTabs';
 
 const BAR_SLOTS = 6;
 
-export function KioskTabBar({ items, active, onSelect, badges, leading, trailing, hidden }: {
+export function KioskTabBar({ items, active, onSelect, badges, leading, trailing, hidden, side }: {
+  /** Vertical pill on the left edge instead of the bottom. */
+  side?: boolean;
   items: KioskRailItem[];
   active: KioskTabKey;
   onSelect: (tab: KioskTabKey) => void;
@@ -31,7 +33,7 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
   const { k, isDark } = useKioskColors();
   const insets = useSafeAreaInsets();
   // Floating pill: it sits clear of the bottom edge (and the home-indicator inset) instead of docking to it.
-  const lift = Math.max(insets.bottom, 0) + 10;
+  const lift = side ? 12 : Math.max(insets.bottom, 0) + 10;
   const [moreOpen, setMoreOpen] = useState(false);
   const slide = useRef(new Animated.Value(0)).current;
   const [barH, setBarH] = useState(70);
@@ -79,20 +81,22 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
 
   return (
     <Animated.View
-      onLayout={e => { if (!hidden) setBarH(e.nativeEvent.layout.height); }}
+      onLayout={e => { if (!hidden) setBarH(side ? e.nativeEvent.layout.width : e.nativeEvent.layout.height); }}
       pointerEvents={hidden ? 'none' : 'auto'}
       style={[
-        s.bar, { backgroundColor: isDark ? 'rgba(95,163,125,0.20)' : 'rgba(198,226,208,0.62)', borderColor: isDark ? 'rgba(95,163,125,0.35)' : 'rgba(255,255,255,0.8)' },
-        // Margin gives the page the bar's height back; translate carries the
-        // bar (and the bottom safe-area strip) fully off screen.
-        { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [lift, -barH] }),
-          transform: [{ translateY: slide.interpolate({ inputRange: [0, 1], outputRange: [0, barH + 80] }) }] },
+        s.bar, side && s.barSide, { backgroundColor: isDark ? 'rgba(95,163,125,0.20)' : 'rgba(198,226,208,0.62)', borderColor: isDark ? 'rgba(95,163,125,0.35)' : 'rgba(255,255,255,0.8)' },
+        // Margin gives the page the bar's room back; translate carries the bar fully off screen.
+        side
+          ? { marginLeft: slide.interpolate({ inputRange: [0, 1], outputRange: [lift, -barH] }),
+              transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -(barH + 80)] }) }] }
+          : { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [lift, -barH] }),
+              transform: [{ translateY: slide.interpolate({ inputRange: [0, 1], outputRange: [0, barH + 80] }) }] },
       ]}
     >
       {/* Frosted sage glass: the page shows faintly through a blurred, sage-tinted strip. */}
       <BlurView intensity={55} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: 34, overflow: 'hidden' }]} pointerEvents="none" />
       {moreOpen && (
-        <View style={[s.more, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+        <View style={[s.more, side && s.moreSide, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
           {rest.map(({ key, label, Icon }) => {
             const on = active === key;
             const b = badges?.[key];
@@ -139,6 +143,8 @@ const s = StyleSheet.create({
     borderWidth: 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
   badgeText: { fontSize: 11, fontWeight: '800' },
+  barSide: { flexDirection: 'column', justifyContent: 'space-between', width: 98, marginHorizontal: 0, marginVertical: 12, paddingHorizontal: 6, paddingVertical: KIOSK_SPACE.sm, alignSelf: 'stretch' },
+  moreSide: { right: undefined, left: '100%', bottom: 12, marginBottom: 0, marginLeft: 10 },
   more: {
     position: 'absolute', right: KIOSK_SPACE.lg, bottom: '100%', marginBottom: 8,
     flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 12, width: 420,

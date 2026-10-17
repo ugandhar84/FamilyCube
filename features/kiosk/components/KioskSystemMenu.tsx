@@ -11,7 +11,7 @@
  */
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { Lock, Megaphone, Bell, Sun, MoonStar, MonitorSmartphone, Sparkles, UserCircle2 } from 'lucide-react-native';
+import { Lock, Megaphone, Bell, Sun, MoonStar, MonitorSmartphone, Sparkles, UserCircle2, PanelLeft } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
@@ -20,6 +20,7 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, kioskPastels } from '../kioskPalette';
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import type { KioskTabKey } from '../kioskTabs';
+import { useKioskPrefsStore } from '@/store/kioskPrefsStore';
 import { KioskAvatar } from './KioskAvatar';
 import { KioskNotificationPanel } from './KioskNotificationPanel';
 
@@ -45,6 +46,8 @@ export function KioskSystemMenu({
   // Both are native Modals: their touches never reach the kiosk root, so hold
   // the idle lock off while either is up.
   useKioskLockSuspended(pinTarget !== null);
+  const navSide = useKioskPrefsStore(st => st.navSide);
+  const setNavSide = useKioskPrefsStore(st => st.setNavSide);
   useKioskLockSuspended(notifOpen);
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -131,6 +134,7 @@ export function KioskSystemMenu({
               {tile('Announce', Megaphone, k.pastelAmberCard, k.gold, () => { onClose(); onIntercom(); })}
               {onAskFam && tile('Ask Fam', Sparkles, k.pastelLavCard, k.purple, () => { onClose(); onAskFam(); })}
               {tile(themeLabel, ThemeIcon, k.pastelSageCard, k.sage, cycleTheme)}
+              {tile(navSide ? 'Nav: bottom' : 'Nav: side', PanelLeft, k.pastelLavCard, k.purple, () => { setNavSide(!navSide); onClose(); })}
               {tile('My profile', UserCircle2, k.well, k.textMuted, () => { onClose(); onEditProfile(); })}
             </View>
 

@@ -33,15 +33,15 @@ export function KioskBarProfile({ member, open, onPress }: { member: FamilyMembe
   );
 }
 
-export function KioskBarClock() {
+export function KioskBarClock({ compact }: { compact?: boolean }) {
   const { k } = useKioskColors();
   const now = useNow();
   const weather = useKioskWeather();
   return (
-    <View style={s.clock}>
+    <View style={[s.clock, compact && { alignItems: 'center', paddingLeft: 0, minWidth: 0 }]}>
       <Text style={[s.time, { color: k.text }]}>{now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</Text>
       <Text style={[s.date, { color: k.textMuted }]} numberOfLines={1}>
-        {now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+        {now.toLocaleDateString('en-US', compact ? { weekday: 'short' } : { weekday: 'short', month: 'short', day: 'numeric' })}
         {weather ? ` · ${Math.round(weather.temperature)}${weather.unit}` : ''}
       </Text>
     </View>

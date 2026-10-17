@@ -60,6 +60,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { KioskIntercomModal } from './components/KioskIntercomModal';
 import { useNotifStore } from '@/store/notifStore';
 import { KioskTabBar } from './components/KioskTabBar';
+import { useKioskPrefsStore } from '@/store/kioskPrefsStore';
 import { pendingKidRequests } from './components/KioskKidRequestsPanel';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
@@ -117,6 +118,8 @@ export default function KioskScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Bottom bar slides away while a page is scrolled down, back on scroll up.
   const [barHidden, setBarHidden] = useState(false);
+  const navSide = useKioskPrefsStore(st => st.navSide);
+  useEffect(() => { useKioskPrefsStore.getState().load(); }, []);
   const touchRef = useRef({ x: 0, y: 0, decided: false });
 
   // The kitchen display is landscape-only; restore free rotation on unmount.
@@ -334,6 +337,16 @@ export default function KioskScreen() {
 
   const showStandby = (ambient || standbyPinned) && !locked;
 
+  const tabBar = (
+    <KioskTabBar
+          side={navSide}
+          items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setBarHidden(false); setTab(t); }} badges={tabBadges}
+          leading={<KioskBarProfile member={active} open={menuOpen} onPress={() => setMenuOpen(o => !o)} />}
+          trailing={<KioskBarClock compact={navSide} />}
+          hidden={(!navSide && barHidden) || showStandby}
+        />
+  );
+
   return (
     <KioskActivityProvider value={activityApi}>
       <SafeAreaView
@@ -352,6 +365,7 @@ export default function KioskScreen() {
         )}
 
         <View style={s.row}>
+          {navSide && tabBar}
           {/* Self-service name/DOB/email/avatar edit — same real sheet
               ProfileSettingsScreen.tsx's own (now kiosk-hidden) hero card
               used to open, now reachable via a long-press on the sidebar's
@@ -429,14 +443,9 @@ export default function KioskScreen() {
           </View>
         </View>
 
-        <KioskTabBar
-          items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setBarHidden(false); setTab(t); }} badges={tabBadges}
-          leading={<KioskBarProfile member={active} open={menuOpen} onPress={() => setMenuOpen(o => !o)} />}
-          trailing={<KioskBarClock />}
-          hidden={barHidden || showStandby}
-        />
+        {!navSide && tabBar}
 
-        {barHidden && !showStandby && (
+        {!navSide && barHidden && !showStandby && (
           <Pressable onPress={() => setBarHidden(false)} accessibilityRole="button" accessibilityLabel="Show the menu bar" style={[s.barHandle, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
             <View style={[s.barHandleGrip, { backgroundColor: k.textFaint }]} />
           </Pressable>

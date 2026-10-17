@@ -76,6 +76,7 @@ export function RewardsReviewQueueScreen({ onSelectRow, onClose }: {
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
         <OverlayHeading
+          eyebrow="FAMILY CUBE · REVIEW"
           title="Rewards"
           subtitle={pendingRows.length > 0 ? `${pendingRows.length} redemption${pendingRows.length !== 1 ? 's' : ''} waiting on you` : 'No reward requests waiting'}
           onTitlePress={onClose}

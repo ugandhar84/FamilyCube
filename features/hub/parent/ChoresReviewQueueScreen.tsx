@@ -109,6 +109,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
         <OverlayHeading
+          eyebrow="FAMILY CUBE · REVIEW"
           title="Chores & Quests"
           subtitle={pendingRows.length > 0 ? `${pendingRows.length} chore${pendingRows.length !== 1 ? 's' : ''} need${pendingRows.length === 1 ? 's' : ''} your review` : 'All chores reviewed'}
           onTitlePress={onClose}

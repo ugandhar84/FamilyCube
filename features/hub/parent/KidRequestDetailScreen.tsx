@@ -10,6 +10,7 @@
  * the old HelpDispatchQueue.tsx inline cards — not duplicated, not
  * reinvented.
  */
+import { OverlayHeading } from '@/components/OverlayPage';
 import { PageHeading } from '@/components/PageHeading';
 import React, { useEffect, useState } from 'react';
 import {
@@ -239,7 +240,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · REQUESTS"
         title={`${meta.label} request`}
         subtitle={requester?.name}

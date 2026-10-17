@@ -269,6 +269,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
         <OverlayHeading
+          eyebrow="FAMILY CUBE · REQUESTS"
           title="Kid requests"
           subtitle={subtitle}
           onTitlePress={onClose}

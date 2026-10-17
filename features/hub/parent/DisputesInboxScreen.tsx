@@ -84,6 +84,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
         <OverlayHeading
+          eyebrow="FAMILY CUBE · REVIEW"
           title="Disputes"
           subtitle={openCount > 0 ? `${openCount} dispute${openCount !== 1 ? 's' : ''} need a second look` : 'No open disputes'}
           onTitlePress={onClose}

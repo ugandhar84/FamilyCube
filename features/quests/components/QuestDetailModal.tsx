@@ -16,7 +16,7 @@ import { EditQuestModal } from './EditQuestModal';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { supabase, uploadChoreProofPhoto } from '@/lib/supabase';
-import FullPageOverlay from '@/components/FullPageOverlay';
+import { OverlayPage, OverlayHeading } from '@/components/OverlayPage';
 import { useUIStore } from '@/store/uiStore';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -711,10 +711,10 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
     // content behind it, plus the same eased slide+fade every other
     // full-page screen (grocery's sub-pages, etc.) already uses.
     <>
-    <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
+    <OverlayPage visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
 
-        <PageHeading
+        <OverlayHeading
           eyebrow="FAMILY CUBE · QUESTS"
           title={liveQuest.title}
           accent="primary"
@@ -1695,7 +1695,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
           </View>{/* end padded wrapper */}
         </ScrollView>
       </View>
-    </FullPageOverlay>
+    </OverlayPage>
 
       {/* ── Proof photo viewer — tap-to-enlarge, full screen ──
           Was boxed into a fixed 92%/70% container regardless of the

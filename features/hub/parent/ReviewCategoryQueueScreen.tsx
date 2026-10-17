@@ -54,6 +54,7 @@ export function ReviewCategoryQueueScreen({
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
         <OverlayHeading
+          eyebrow="FAMILY CUBE · REVIEW"
           title={title}
           subtitle={subtitle}
           onTitlePress={onClose}

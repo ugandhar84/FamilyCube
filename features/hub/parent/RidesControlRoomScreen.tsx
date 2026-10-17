@@ -12,6 +12,8 @@ import { useEventStore, selectAllKnownEvents, type FamilyEvent } from '@/store/e
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useLiveTripEta } from '@/lib/hooks/useLiveTripEta';
 import { GEMINI } from '@/constants/geminiRhythm';
+import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
+import { fmtTime } from '@/features/hub/hubUtils';
 
 type FilterKey = 'active' | 'upcoming' | 'history';
 
@@ -145,8 +147,8 @@ function TripCard({ trip, members, onSelect }: {
   );
 }
 
-function EventCard({ event, members, onDispatch }: {
-  event: FamilyEvent; members: FamilyMember[]; onDispatch?: () => void;
+function EventCard({ event, members, onDispatch, onOpen }: {
+  event: FamilyEvent; members: FamilyMember[]; onDispatch?: () => void; onOpen?: () => void;
 }) {
   const { colors, isDark } = useTheme();
   const driverId = event.driverId ?? event.helperId;
@@ -161,12 +163,15 @@ function EventCard({ event, members, onDispatch }: {
   const statusLabel = driverId ? 'Confirmed' : 'Needs a driver';
   const statusColor = driverId ? colors.sky : colors.danger;
   const statusBg    = driverId ? colors.skyLight : (isDark ? colors.danger + '22' : '#FFE8E3');
+  // Times are always 12-hour ("4:45 PM"), never the stored 24-hour "16:45".
+  const when = event.time ? fmtTime(event.time) : '';
   const explanation = driverId
-    ? `${driver?.name?.split(' ')[0] ?? 'A driver'} is confirmed${event.time ? ` for ${event.time}` : ''}${event.location ? ` at ${event.location}` : ''}.`
-    : `No driver yet${event.time ? ` — ${event.time}` : ''}${event.location ? ` at ${event.location}` : ''}. Set one up before it's needed.`;
+    ? `${driver?.name?.split(' ')[0] ?? 'A driver'} is confirmed${when ? ` for ${when}` : ''}${event.location ? ` at ${event.location}` : ''}.`
+    : `No driver yet${when ? ` — ${when}` : ''}${event.location ? ` at ${event.location}` : ''}. Set one up before it's needed.`;
 
   return (
-    <View style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}>
+    <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${event.title}, open details`}
+      style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{
           width: 36, height: 36, borderRadius: 18,
@@ -196,7 +201,7 @@ function EventCard({ event, members, onDispatch }: {
           <Text style={{ fontSize: 13, fontWeight: '600', color: '#FFFFFF' }}>Set up this ride →</Text>
         </Pressable>
       )}
-    </View>
+    </Pressable>
   );
 }
 
@@ -209,6 +214,7 @@ export function RidesControlRoomScreen({
 }) {
   const { colors, isDark } = useTheme();
   const [filter, setFilter] = useState<FilterKey>('active');
+  const [detailEvent, setDetailEvent] = useState<FamilyEvent | null>(null);
 
   const { activeTrips, completedTrips, loadCompletedTrips } = useTripStore();
   const events   = useEventStore(useShallow(selectAllKnownEvents));
@@ -324,8 +330,13 @@ export function RidesControlRoomScreen({
                 : 'Nothing moving right now — dispatch a ride to see it here.')
             : filter === 'upcoming'
               ? (upcomingEvents.length > 0
-                  ? `${upcomingEvents.length} ride${upcomingEvents.length === 1 ? '' : 's'} still need${upcomingEvents.length === 1 ? 's' : ''} a driver.`
-                  : 'Every upcoming ride already has a driver.')
+                  ? (() => {
+                      const needDriver = upcomingEvents.filter(e => !(e.driverId ?? e.helperId)).length;
+                      return needDriver > 0
+                        ? `${needDriver} of ${upcomingEvents.length} upcoming ride${upcomingEvents.length === 1 ? '' : 's'} still need${needDriver === 1 ? 's' : ''} a driver. Tap one for details.`
+                        : `All ${upcomingEvents.length} upcoming ride${upcomingEvents.length === 1 ? ' has' : 's have'} a driver. Tap one for details.`;
+                    })()
+                  : 'No upcoming rides need a driver.')
               : (completedTrips.length > 0
                   ? `Last ${completedTrips.length} completed ride${completedTrips.length === 1 ? '' : 's'}, most recent first.`
                   : 'No completed rides yet.')}
@@ -341,7 +352,7 @@ export function RidesControlRoomScreen({
         {filter === 'upcoming' && (
           upcomingEvents.length === 0
             ? <Text style={{ color: colors.textTertiary, fontSize: 15, textAlign: 'center', paddingVertical: 32 }}>No upcoming rides</Text>
-            : upcomingEvents.map(event => <EventCard key={event.id} event={event} members={members} />)
+            : upcomingEvents.map(event => <EventCard key={event.id} event={event} members={members} onOpen={() => setDetailEvent(event)} />)
         )}
 
         {filter === 'history' && (
@@ -377,6 +388,13 @@ export function RidesControlRoomScreen({
           Connect. Organize. Care. Grow.
         </Text>
       </ScrollView>
+      {detailEvent && (
+        <EventDetailScreen
+          ev={detailEvent}
+          onClose={() => setDetailEvent(null)}
+          onDelete={async (id) => { await useEventStore.getState().deleteEvent(id); setDetailEvent(null); }}
+        />
+      )}
     </SafeAreaView>
   );
 }

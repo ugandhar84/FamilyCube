@@ -239,6 +239,8 @@ export default function JustDescribeItEventScreen({
   const [evDropTo, setEvDropTo]               = useState(ed?.dropLocation ?? '');
   const [evDropDriverId, setEvDropDriverId]   = useState<string | undefined>(ed?.driverId);
   const [evPickupNeeded, setEvPickupNeeded]   = useState(!!linkedPickupLeg);
+  // "Pick up Cherry at 6" means ONE pick-up at 6, not a drop-off at 6 and a pick-up an hour later. Read from the words, editable.
+  const [pickupOnly, setPickupOnly]       = useState(false);
   const [evPickupFrom, setEvPickupFrom]       = useState(linkedPickupLeg?.pickupLocation ?? '');
   const [evPickupTo, setEvPickupTo]           = useState(linkedPickupLeg?.dropLocation ?? '');
   const [evPickupDriverId, setEvPickupDriverId] = useState<string | undefined>(linkedPickupLeg?.driverId);
@@ -441,6 +443,12 @@ export default function JustDescribeItEventScreen({
       );
       if (m) setEvMemberIds([m.id]);
     }
+    // Said only "pick up" (no "drop"): a single pick-up at the spoken time.
+    const said = input.toLowerCase();
+    const onlyPickup = detection?.category.kind === 'event' && detection.category.eventCategory === 'Ride'
+      && /pick[\s-]?up|collect/.test(said) && !/drop[\s-]?(off|in)?\b/.test(said);
+    setPickupOnly(onlyPickup);
+    if (onlyPickup) { setEvPickupNeeded(true); setEvDropNeeded(false); }
     setFormOpen(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   };
@@ -601,6 +609,24 @@ export default function JustDescribeItEventScreen({
         driverStatus: evDropNeeded && evDropDriverId ? (isSelfDrop ? 'confirmed' : 'pending') : undefined,
         familyId, createdBy,
       } as Omit<FamilyEvent, 'id'>;
+
+      if (pickupOnly && evPickupNeeded && evRecurrence === 'once') {
+        const onlyId = await addEvent({
+          ...baseEvent,
+          title: `Pick-up · ${stripLegWords(evTitle.trim())}`,
+          time: evAllDay ? undefined : evTime,
+          endTime: evAllDay ? undefined : addMinutesToHHMM(evTime, PICKUP_LEG_DURATION_MIN),
+          rideRequired: true,
+          pickupLocation: evPickupFrom.trim() || evDropTo.trim() || undefined,
+          dropLocation: evPickupTo.trim() || evDropFrom.trim() || undefined,
+          driverId: evPickupDriverId,
+          driverName: pickupDriver ? pickupDriver.name : undefined,
+          driverStatus: evPickupDriverId ? (isSelfPickup ? 'confirmed' : 'pending') : undefined,
+        } as Omit<FamilyEvent, 'id'>);
+        if (!onlyId) { setSaving(false); return; }
+        handleClose();
+        return;
+      }
 
       const mainEventId = evRecurrence !== 'once'
         ? await addRecurringEvent(baseEvent, {
@@ -1203,6 +1229,17 @@ export default function JustDescribeItEventScreen({
                     <View style={{ gap: 4 }}>
                         <FieldLabel text="Transport" />
                         <View style={{ gap: 16, marginTop: 6 }}>
+
+                          {/* Smart default from what was said; the person can switch it off to plan both legs. */}
+                          {evPickupNeeded && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <View style={{ flex: 1, paddingRight: 12 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Just a pick-up</Text>
+                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{pickupOnly ? `One pick-up at ${fmt12h(evTime)}` : 'Off: separate drop-off and pick-up times'}</Text>
+                              </View>
+                              <Toggle value={pickupOnly} onChange={() => setPickupOnly(v => !v)} />
+                            </View>
+                          )}
 
                           {/* Drop-off leg */}
                           <View style={{ gap: 10 }}>

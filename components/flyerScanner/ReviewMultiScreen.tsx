@@ -5,7 +5,7 @@
  * Full-page conversion of the former AppBottomSheet step body — behavior
  * unchanged.
  */
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { TYPO } from '@/constants/theme';
@@ -19,7 +19,7 @@ export default function ReviewMultiScreen({
   multiCal,
   selectedEvents, setSelEvts,
   kids, allNames, selectedKids, setSelKids,
-  onConfirm, onRescan, onClose,
+  onConfirm, onRescan, onClose, saveProgress,
 }: {
   colors: any; isDark: boolean;
   multiCal: ExtractedCalendar;
@@ -29,10 +29,13 @@ export default function ReviewMultiScreen({
   selectedKids: string[];
   setSelKids: React.Dispatch<React.SetStateAction<string[]>>;
   onConfirm: () => void;
+  saveProgress?: { done: number; total: number } | null;
   onRescan: () => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const busy = !!saveProgress;
+  const ready = selectedKids.length > 0 && selectedEvents.size > 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? colors.background : '#FFFFFF' }}>
@@ -119,15 +122,15 @@ export default function ReviewMultiScreen({
 
       {/* Sticky footer */}
       <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 16, flexDirection: 'row', gap: 10 }}>
-        <Pressable onPress={onRescan} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <Pressable onPress={onRescan} disabled={busy} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface, opacity: busy ? 0.4 : 1 }]}>
           <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
           <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
         </Pressable>
-        <Pressable onPress={onConfirm}
-          style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length && selectedEvents.size ? BRAND.teal : colors.border }]}>
-          <Ionicons name="calendar-outline" size={16} color={selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary} />
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary }}>
-            Import {selectedEvents.size} Event{selectedEvents.size !== 1 ? 's' : ''} →
+        <Pressable onPress={onConfirm} disabled={busy} accessibilityRole="button" accessibilityState={{ busy }}
+          style={[f.submitBtn, { flex: 2, backgroundColor: ready ? BRAND.teal : colors.border }]}>
+          {busy ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="calendar-outline" size={16} color={ready ? '#fff' : colors.textTertiary} />}
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: ready ? '#fff' : colors.textTertiary }}>
+            {busy ? `Adding ${saveProgress!.done} of ${saveProgress!.total}…` : `Import ${selectedEvents.size} Event${selectedEvents.size !== 1 ? 's' : ''} →`}
           </Text>
         </Pressable>
       </View>

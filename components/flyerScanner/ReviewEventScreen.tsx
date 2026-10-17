@@ -8,7 +8,7 @@
  * header, scroll body, sticky action row) rather than a sheet.
  */
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, StyleSheet, Platform } from 'react-native';
+import { ActivityIndicator, View, Text, Pressable, ScrollView, TextInput, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +25,7 @@ export default function ReviewEventScreen({
   colors, isDark,
   event, updateEvent,
   kids, allNames, selectedKids, setSelKids,
-  onConfirm, onRescan, onClose,
+  onConfirm, onRescan, onClose, saveProgress,
 }: {
   colors: any; isDark: boolean;
   event: ExtractedEvent;
@@ -34,10 +34,12 @@ export default function ReviewEventScreen({
   selectedKids: string[];
   setSelKids: React.Dispatch<React.SetStateAction<string[]>>;
   onConfirm: () => void;
+  saveProgress?: { done: number; total: number } | null;
   onRescan: () => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const busy = !!saveProgress;
   const [pickerField, setPickerField] = useState<'date' | 'time' | 'endTime' | 'rsvp' | null>(null);
 
   return (
@@ -251,11 +253,11 @@ export default function ReviewEventScreen({
           <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
           <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
         </Pressable>
-        <Pressable onPress={onConfirm}
+        <Pressable onPress={onConfirm} disabled={busy} accessibilityRole="button" accessibilityState={{ busy }}
           style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length ? BRAND.teal : colors.border }]}>
-          <Ionicons name="calendar-outline" size={16} color={selectedKids.length ? '#fff' : colors.textTertiary} />
+          {busy ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="calendar-outline" size={16} color={selectedKids.length ? '#fff' : colors.textTertiary} />}
           <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length ? '#fff' : colors.textTertiary }}>
-            Add to Schedule →
+            {busy ? 'Adding…' : 'Add to Schedule →'}
           </Text>
         </Pressable>
       </View>

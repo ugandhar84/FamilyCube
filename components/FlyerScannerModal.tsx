@@ -257,11 +257,17 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     setShowConsent(true);
   };
 
+  // One save at a time: a ref (not state) so a fast second tap is refused before React re-renders.
+  const busyRef = useRef(false);
+  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
+
   // ── Save single event ──
   const handleConfirmEvent = async () => {
-    if (!event) return;
+    if (!event || busyRef.current) return;
     if (selectedKids.length === 0) { Alert.alert('Choose at least one kid for this event'); return; }
     if (blockIfPaywalled()) return;
+    busyRef.current = true;
+    setSaveProgress({ done: 0, total: selectedKids.length });
     // Same fire-and-forget bug as handleConfirmMulti below — await each
     // addEvent call and only claim success for the ones that actually
     // persisted (addEvent returns '' on failure, a real row id on success).
@@ -281,14 +287,16 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         approvalPending: false,
       });
       if (id) succeeded++;
+      setSaveProgress({ done: succeeded, total: selectedKids.length });
     }
     if (succeeded === 0) {
+      busyRef.current = false; setSaveProgress(null);
       Alert.alert("Couldn't add event", 'Check your connection and try again.');
       return;
     }
     const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
     showToast(`✓ "${event.title}" added for ${kidNames}`);
-    setTimeout(resetAndClose, 2600);
+    setTimeout(() => { busyRef.current = false; setSaveProgress(null); resetAndClose(); }, 1200);
   };
 
   // Days off on a flyer come as one line per day; a break is one range. Merge same-title days that are back to back
@@ -325,8 +333,10 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     const toAdd = multiCal.events.filter((_, i) => selectedEvents.has(i));
     if (toAdd.length === 0) { Alert.alert('Select at least one event to import'); return; }
     if (blockIfPaywalled()) return;
-    if (importingMulti) return;
+    if (importingMulti || busyRef.current) return;
+    busyRef.current = true;
     setImportingMulti(true);
+    setSaveProgress({ done: 0, total: toAdd.length * selectedKids.length });
     // Was fire-and-forget: addEvent is async and can fail per-call (its own
     // error path already shows a toast), but this loop never awaited any of
     // the resulting promises before showing a hardcoded success toast and
@@ -353,6 +363,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           approvalPending: false,
         });
         if (id) succeeded++; else failed++;
+        setSaveProgress({ done: succeeded + failed, total: toAdd.length * selectedKids.length });
       }
     }
     // Breaks go to each kid's Holidays page as one from–to range per break (and pause that kid's class periods).
@@ -373,6 +384,8 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       }
     }
     setImportingMulti(false);
+    busyRef.current = false;
+    setSaveProgress(null);
     const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
     if (failed === 0) {
       showToast(`✓ ${succeeded} event${succeeded !== 1 ? 's' : ''} imported for ${kidNames}`);
@@ -484,6 +497,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           kids={kids} allNames={allNames}
           selectedKids={selectedKids} setSelKids={setSelKids}
           onConfirm={handleConfirmEvent}
+          saveProgress={saveProgress}
           onRescan={rescan}
           onClose={resetAndClose}
         />
@@ -511,6 +525,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           kids={kids} allNames={allNames}
           selectedKids={selectedKids} setSelKids={setSelKids}
           onConfirm={handleConfirmMulti}
+          saveProgress={saveProgress}
           onRescan={rescan}
           onClose={resetAndClose}
         />

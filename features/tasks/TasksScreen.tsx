@@ -630,8 +630,11 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
             setManualQuestPrefill(prefill as typeof manualQuestPrefill);
             setShowManualQuest(true);
           } else {
-            setManualEventPrefill(prefill as typeof manualEventPrefill);
-            setShowManualEvent(true);
+            // Detected as an event: continue in the full-page event flow (see the Just describe hand-off above).
+            const p = prefill as typeof manualEventPrefill;
+            const [d, t] = (p?.startAt ?? '').split('T');
+            setJustDescribeEventPrefill({ text: p?.title, date: d || undefined, time: t ? t.slice(0, 5) : undefined, auto: true });
+            setShowJustDescribeEvent(true);
           }
         }}
       />

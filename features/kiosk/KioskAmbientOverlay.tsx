@@ -55,6 +55,7 @@ import { CalendarDays, ClipboardCheck, Moon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_AMBIENT_FADE_MS } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { KioskPhotoFade } from './components/KioskPhotoFade';
+import { useIsNight } from './useIsNight';
 
 export interface AmbientNextUp {
   /** Display time, already formatted ("4:45 PM") or undefined for all-day. */
@@ -114,6 +115,7 @@ export function KioskAmbientOverlay({
     return () => { loop.stop(); };
   }, [mounted, drift]);
 
+  const night = useIsNight();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!mounted) return;
@@ -146,8 +148,10 @@ export function KioskAmbientOverlay({
       importantForAccessibility="no-hide-descendants"
     >
       {/* Family memories drift behind the clock, dimmed so the time stays readable. */}
-      <KioskPhotoFade style={StyleSheet.absoluteFill} active={visible} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />
+      {/* At night (9 PM to 6 AM) the photos stop and the screen goes near-black, so a bright frame
+          never lights a sleeping child's room. */}
+      {!night && <KioskPhotoFade style={StyleSheet.absoluteFill} active={visible} />}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: night ? 'rgba(0,0,0,0.78)' : 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />
 
       {/* ── Corner label ── */}
       <View style={s.corner}>

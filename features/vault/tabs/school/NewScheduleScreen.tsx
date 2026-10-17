@@ -14,6 +14,7 @@ import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useSchoolStore, type ClassPeriod } from '@/store/schoolStore';
 import { ClassEditScreen } from './ClassEditScreen';
 import { fmtTime12 } from './TimeField';
+import { SchoolPicker, useFamilySchools } from './SchoolPicker';
 
 const DAY_LABEL: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri' };
 
@@ -27,7 +28,9 @@ export function NewScheduleScreen({ colors, isDark, presetMemberId, onClose, zIn
   const members = useFamilyStore(s => s.members);
   const kids: FamilyMember[] = useMemo(() => members.filter(m => m.role === 'kid' || m.role === 'teen'), [members]);
   const [kidId, setKidId] = useState<string>(presetMemberId ?? (kids.length === 1 ? kids[0].id : ''));
-  const [school, setSchool] = useState('');
+  const familySchools = useFamilySchools();
+  // A sibling's school is the likeliest answer: start there, change with one tap.
+  const [school, setSchool] = useState(() => useSchoolStore.getState().schedules.find(s => s.school?.trim())?.school?.trim() ?? '');
   const [grade, setGrade] = useState('');
   const [classes, setClasses] = useState<ClassPeriod[]>([]);
   const [editing, setEditing] = useState<ClassPeriod | 'new' | null>(null);
@@ -94,15 +97,10 @@ export function NewScheduleScreen({ colors, isDark, presetMemberId, onClose, zIn
                 })}
               </View>
             </View>
-            <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
-              <View style={[field, { flex: 2 }]}>
-                <Text style={label}>School</Text>
-                <TextInput value={school} onChangeText={setSchool} placeholder="School name" placeholderTextColor={bodyC + '88'} style={{ fontSize: 15, color: titleC, padding: 0 }} />
-              </View>
-              <View style={[field, { flex: 1 }]}>
-                <Text style={label}>Grade</Text>
-                <TextInput value={grade} onChangeText={setGrade} placeholder="e.g. 8th" placeholderTextColor={bodyC + '88'} style={{ fontSize: 15, color: titleC, padding: 0 }} />
-              </View>
+            <SchoolPicker value={school} onChange={setSchool} colors={colors} isDark={isDark} />
+            <View style={[field]}>
+              <Text style={label}>Grade</Text>
+              <TextInput value={grade} onChangeText={setGrade} placeholder="e.g. 8th Grade" placeholderTextColor={bodyC + '88'} style={{ fontSize: 15, color: titleC, padding: 0 }} />
             </View>
 
             <Text style={[label, { marginTop: 6, marginBottom: 0 }]}>Classes · {classes.length}</Text>

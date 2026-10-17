@@ -1,3 +1,5 @@
+import { CheckCircle2 } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,19 +83,8 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              A little care, recorded
-            </Text>
-          </TouchableOpacity>
-          {/* Status badge */}
-          <View style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
-            borderRadius: 8, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
-            <Text style={{ fontSize: 12, color: isDark ? BLUE : LINK_BLUE, fontWeight: '600' }}>
-              {done ? 'Completion recorded' : 'Fictional completion receipt'}
-            </Text>
-          </View>
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading eyebrow="FAMILY CUBE · HOME CARE" title="A little care, recorded" subtitle={done ? 'Completion recorded' : 'Fictional completion receipt'} accent="teal" Icon={CheckCircle2} onTitlePress={requestAnimatedClose} topInset={insets.top} />
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>

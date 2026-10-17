@@ -9,6 +9,8 @@
  * it should show the pin and they can pin like 4 location in the same page
  * also they can edit while clicking the perticular card"].
  */
+import { MapPin } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, StyleSheet, Keyboard, ScrollView } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -137,21 +139,7 @@ export function PinStoreLocationSheet({ visible, store, pinnedStores, onClose, o
     <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
       {/* Header — ReviewInbox pattern */}
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-        backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>GROCERIES</Text>
-        </View>
-        <View style={{ gap: 4 }}>
-          <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-          </Pressable>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
-            Pin store location
-          </Text>
-        </View>
-      </View>
+      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Pin store location" subtitle="Get a reminder when you are near this store." accent="teal" Icon={MapPin} onTitlePress={onClose} topInset={insets.top} />
 
       <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>

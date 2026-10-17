@@ -1,3 +1,4 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput,
@@ -226,15 +227,8 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              House documents
-            </Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 14, color: bodyC, marginTop: 6, lineHeight: 20 }}>
-            Insurance, deeds, manuals and warranty cards — kept as raw files, no AI review.
-          </Text>
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading eyebrow="FAMILY CUBE · HOME CARE" title="House documents" subtitle="Insurance, deeds, manuals and warranty cards, kept as raw files with no AI review." accent="teal" Icon={FileText} onTitlePress={requestAnimatedClose} topInset={insets.top} />
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>

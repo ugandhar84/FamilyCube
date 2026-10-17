@@ -1,3 +1,5 @@
+import { ShoppingCart } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useRef, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
@@ -85,23 +87,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
     <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
       {/* Header — ReviewInbox pattern */}
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-        backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
-        <View style={{ gap: 4 }}>
-          <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-          </Pressable>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
-            Start shopping run
-          </Text>
-        </View>
-        {/* Figma subtitle */}
-        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.textSecondary, lineHeight: 20 }}>
-          Choose a store and a time. Pending Kid requests stay out of the run.
-        </Text>
-      </View>
+      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Start shopping run" subtitle="Choose a store and a time. Pending Kid requests stay out of the run." accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
 
       <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>

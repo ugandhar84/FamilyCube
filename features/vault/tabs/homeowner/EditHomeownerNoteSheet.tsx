@@ -1,7 +1,8 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Wrench } from 'lucide-react-native';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { ScanDateField } from '../health/ScanDateField';
 import { CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
@@ -198,16 +199,8 @@ export function EditHomeownerNoteSheet({ visible, note, colors, isDark, onClose,
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6, backgroundColor: canvas }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              Edit {note.title.length > 24 ? note.title.slice(0, 24) + '…' : note.title}
-            </Text>
-          </TouchableOpacity>
-          <View style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
-            borderRadius: 8, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
-            <Text style={{ fontSize: 12, color: isDark ? BLUE : LINK_BLUE, fontWeight: '600' }}>Admin edit · unsaved changes</Text>
-          </View>
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading eyebrow="FAMILY CUBE · HOME CARE" title={`Edit ${note.title.length > 24 ? note.title.slice(0, 24) + '…' : note.title}`} subtitle="Admin edit · unsaved changes" accent="teal" Icon={Wrench} onTitlePress={requestAnimatedClose} topInset={insets.top} />
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>

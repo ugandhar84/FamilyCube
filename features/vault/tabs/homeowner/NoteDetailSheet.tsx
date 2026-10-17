@@ -1,3 +1,4 @@
+import { PageHeading } from '@/components/PageHeading';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Thermometer, ShieldAlert, ScrollText, Zap, Droplets, Refrigerator, TreePine, Pencil, CheckCircle2 } from 'lucide-react-native';
@@ -103,47 +104,9 @@ export function NoteDetailSheet({ visible, note, colors, isDark, onClose, onEdit
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
-            <TouchableOpacity onPress={onEdit}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7,
-                borderRadius: 10, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
-              <Pencil size={13} color={isDark ? BLUE : LINK_BLUE} />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE }}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity onPress={requestAnimatedClose}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? colors.surface : SURFACE,
-              alignItems: 'center', justifyContent: 'center' }}>
-              <CatIcon size={18} color={overdue ? colors.danger : colors.teal} strokeWidth={2} />
-            </View>
-            <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{note.title}</Text>
-          </TouchableOpacity>
-
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
-              backgroundColor: isDark ? colors.surface : SURFACE }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{CATEGORY_LABEL[note.category]}</Text>
-            </View>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
-              backgroundColor: isDark ? colors.surface : SURFACE }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{PRIORITY_LABEL[note.priority] ?? 'Normal'} priority</Text>
-            </View>
-            {note.completedAt ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
-                borderRadius: 8, backgroundColor: isDark ? colors.surface : '#EEF7F0' }}>
-                <CheckCircle2 size={12} color="#2D7A4A" />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: '#2D7A4A' }}>Done</Text>
-              </View>
-            ) : overdue ? (
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
-                backgroundColor: isDark ? colors.surface : '#FBEAE5' }}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.danger }}>Overdue</Text>
-              </View>
-            ) : null}
-          </View>
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading eyebrow="FAMILY CUBE · HOME CARE" title={note.title} subtitle={`${CATEGORY_LABEL[note.category]} · ${PRIORITY_LABEL[note.priority] ?? 'Normal'} priority${note.completedAt ? ' · Done' : overdue ? ' · Overdue' : ''}`} accent={overdue ? 'amber' : 'teal'} Icon={CatIcon} onTitlePress={requestAnimatedClose} topInset={insets.top}
+    right={<TouchableOpacity onPress={onEdit} accessibilityRole="button" accessibilityLabel="Edit note" style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}><Pencil size={13} color={isDark ? BLUE : LINK_BLUE} /><Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? BLUE : LINK_BLUE }}>Edit</Text></TouchableOpacity>} />
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}

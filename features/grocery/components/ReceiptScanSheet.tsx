@@ -8,6 +8,8 @@
  * same as AddItemSheet/CreateRunSheet — this component itself is just the
  * page body, not its own Modal.
  */
+import { ScanLine } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert, ScrollView, StyleSheet,
@@ -232,21 +234,7 @@ export function ReceiptScanSheet({
           [live-requested: "make this scan page header rythm to match
           other sub pages" — was previously borrowed from
           BringInPrescriptionScreen.tsx's med-scan layout instead]. */}
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
-        backgroundColor: pageBg, gap: 8 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: bodyC }}>
-            {(familySurname ?? 'FAMILY SPACE').toUpperCase()}
-          </Text>
-          {memberName && <Text style={{ fontSize: 13, fontWeight: '500', color: accent }}>{memberName}</Text>}
-        </View>
-        <TouchableOpacity onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: titleC }}>
-            Scan Groceries
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Scan Groceries" subtitle="Scan a receipt or a flyer to fill your list." accent="teal" Icon={ScanLine} onTitlePress={handleClose} topInset={insets.top} />
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>

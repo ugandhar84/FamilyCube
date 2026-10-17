@@ -15,6 +15,8 @@
  *  - "Dismiss all · leave list unchanged" link card
  *  - "Add X selected items" primary button
  */
+import { Sparkles } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, Pressable, ScrollView, TextInput,
@@ -269,19 +271,7 @@ export function AiSuggestionsScreen({
     <View style={{ flex: 1, backgroundColor: cardBg }}>
 
       {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-        backgroundColor: cardBg, gap: 8 }}>
-        <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>
-          GROCERIES
-        </Text>
-        <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: P }}>← Groceries</Text>
-        </Pressable>
-        <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: colors.textPrimary }}>
-          AI add suggestions
-        </Text>
-      </View>
+      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="AI add suggestions" accent="pink" Icon={Sparkles} onTitlePress={onClose} topInset={insets.top} />
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>

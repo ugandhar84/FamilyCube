@@ -1,10 +1,11 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Wrench } from 'lucide-react-native';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { ScanDateField } from '../health/ScanDateField';
 import { MAINTENANCE_PRESETS, CATEGORY_LABEL, CATEGORY_EMOJI } from './maintenancePresets';
@@ -194,26 +195,8 @@ export function AddHomeownerNoteSheet({ visible, colors, isDark, onClose, onSave
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              {mode === 'presets' ? 'Start with a suggestion' : 'Add a home care note'}
-            </Text>
-          </TouchableOpacity>
-          {mode === 'presets' && (
-            <Text style={{ fontSize: 14, color: bodyC, marginTop: 6, lineHeight: 20 }}>
-              Choose a starting point, then edit the title, interval and note for your home.
-            </Text>
-          )}
-          {mode === 'custom' && selectedPreset && (
-            <View style={{ marginTop: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-              backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
-              <Text style={{ fontSize: 12, color: isDark ? BLUE : LINK_BLUE, fontWeight: '600', marginBottom: 2 }}>
-                Preset selected · unsaved
-              </Text>
-              <Text style={{ fontSize: 13, color: bodyC, lineHeight: 18 }}>{presetHint}</Text>
-            </View>
-          )}
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading eyebrow="FAMILY CUBE · HOME CARE" title={mode === 'presets' ? 'Start with a suggestion' : 'Add a home care note'} subtitle={mode === 'presets' ? 'Choose a starting point, then edit the title, interval and note for your home.' : selectedPreset ? 'Preset selected · unsaved' : undefined} accent="teal" Icon={Wrench} onTitlePress={requestAnimatedClose} topInset={insets.top} />
         </View>
 
         {mode === 'presets' ? (

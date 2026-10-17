@@ -26,9 +26,9 @@ import { PageHeading } from '@/components/PageHeading';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
-import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets } from 'expo-audio';
+import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, AudioModule, RecordingPresets } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Mic, Square, X, Pause, Info } from 'lucide-react-native';
+import { Mic, Square, X, Pause, Play, Info } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { fmtDate, fmtTime } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
@@ -123,6 +123,73 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   // when the recorder was paused, not once genuinely stopped.
   const [reviewingStop, setReviewingStop] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // Review before submitting: the person can listen back to the recording first. The local copy is kept until they
+  // submit, delete or close; if it is gone (the sheet was reopened later) the stored, encrypted audio is fetched and
+  // decrypted into the cache just for playback.
+  const [localUri, setLocalUri] = useState<string | null>(null);
+  const [recordedSecs, setRecordedSecs] = useState(0);
+  const [playUri, setPlayUri] = useState<string | null>(null);
+  const [loadingPlayback, setLoadingPlayback] = useState(false);
+  const player = useAudioPlayer(playUri ?? undefined);
+  const playStatus = useAudioPlayerStatus(player);
+  const dropLocalCopy = () => {
+    if (localUri) FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+    setLocalUri(null); setPlayUri(null);
+  };
+  const togglePlayback = async () => {
+    try {
+      if (playStatus.playing) { player.pause(); return; }
+      await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+      if (!playUri) {
+        let uri = localUri;
+        if (!uri && pendingRecord?.file_path) {
+          setLoadingPlayback(true);
+          const { downloadBytesViaUrl } = await import('./recordsDownload');
+          const buf = await downloadBytesViaUrl(pendingRecord.file_path, familyId, 'medical-audio');
+          const bytes = new Uint8Array(buf);
+          let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+          uri = `${FileSystem.cacheDirectory}review_${Date.now()}.m4a`;
+          await FileSystem.writeAsStringAsync(uri, btoa(bin), { encoding: 'base64' as any });
+          setLocalUri(uri);
+        }
+        if (!uri) return;
+        setPlayUri(uri);          // the player loads the source, then plays from the effect below
+        setWantPlay(true);
+        return;
+      }
+      if (playStatus.didJustFinish || (playStatus.duration && playStatus.currentTime >= playStatus.duration - 0.2)) player.seekTo(0);
+      player.play();
+    } catch (e: any) {
+      showToast(e?.message ?? 'Could not play the recording', 'error');
+    } finally { setLoadingPlayback(false); }
+  };
+  const [wantPlay, setWantPlay] = useState(false);
+
+  // Reopening the same appointment must not look like the recording vanished: restore an unsubmitted recording into
+  // the review step, and show when a summary has already been saved for this visit.
+  const [savedVisit, setSavedVisit] = useState<MedRecord | null>(null);
+  useEffect(() => {
+    if (!visible || !familyId || !memberId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('medical_records').select('*')
+        .eq('family_id', familyId).eq('member_id', memberId).eq('tag', 'visit_recording')
+        .eq('title', `${eventTitle} — ${eventDate}`).order('created_at', { ascending: false }).limit(1);
+      const rec = (data?.[0] ?? null) as MedRecord | null;
+      if (cancelled || !rec) { if (!cancelled) setSavedVisit(null); return; }
+      if (!rec.ai_analyzed && rec.file_path) {
+        setPendingRecord(prev => prev ?? rec);
+        setReviewingStop(true);
+        setSavedVisit(null);
+      } else if (rec.ai_analyzed) {
+        setSavedVisit(rec);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [visible, familyId, memberId, eventTitle, eventDate]);
+  useEffect(() => {
+    if (wantPlay && playUri && playStatus.isLoaded) { setWantPlay(false); player.play(); }
+  }, [wantPlay, playUri, playStatus.isLoaded]);
   const [analyzing, setAnalyzing] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -289,6 +356,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     // trustworthy as either alone, and strictly safer than picking one and
     // hoping.
     const dur = Math.max(elapsed, wallClockElapsedSecs());
+    setRecordedSecs(dur);
     await recorder.stop();
     const uri = recorder.uri;
     setRecording(false);
@@ -332,8 +400,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         .from('medical-audio')
         .upload(fileName, (await (await import('@/lib/fileCrypto')).encryptFileBytes(familyId, bytes)), { contentType: 'application/octet-stream', upsert: false });
       if (upErr || !up) throw new Error(upErr?.message ?? 'Upload failed');
-      // The recording is safely in storage now; drop the temporary copy on this phone.
-      FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      // Keep the local copy for the review step; it is deleted on submit, delete or close.
+      setLocalUri(uri);
 
       const { data: rec, error: insErr } = await supabase.from('medical_records').insert({
         family_id: familyId, member_id: memberId, uploaded_by: actorId,
@@ -378,6 +446,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       if (pendingRecord.file_path) await removeAudio(pendingRecord.file_path);
       await supabase.from('medical_records').delete().eq('id', pendingRecord.id);
     }
+    dropLocalCopy();
     setReviewingStop(false);
     setPendingRecord(null);
     onClose();
@@ -421,6 +490,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   };
 
   const reset = () => {
+    try { player.pause(); } catch {}
+    dropLocalCopy();
     setPendingRecord(null);
     setPendingAnalysis(null);
     setNotMedical(null);
@@ -556,6 +627,23 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
               <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 12, lineHeight: 17 }}>
                 The raw audio is deleted once you approve the summary (or after 7 days if you leave it).
               </Text>
+              <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 18, padding: 14,
+                backgroundColor: isDark ? colors.surface : GEMINI.surface }}>
+                <TouchableOpacity onPress={togglePlayback} accessibilityRole="button" accessibilityLabel={playStatus.playing ? 'Pause recording' : 'Play recording'}
+                  style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
+                  {loadingPlayback ? <ActivityIndicator color={colors.textInverse} /> : playStatus.playing
+                    ? <Pause size={22} color={colors.textInverse} /> : <Play size={22} color={colors.textInverse} fill={colors.textInverse} />}
+                </TouchableOpacity>
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Listen before you submit</Text>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' }}>
+                    <View style={{ height: '100%', width: `${playStatus.duration ? Math.min(100, (playStatus.currentTime / playStatus.duration) * 100) : 0}%`, backgroundColor: colors.primary }} />
+                  </View>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, fontVariant: ['tabular-nums'] }}>
+                    {formatElapsed(playStatus.currentTime || 0)} / {formatElapsed(playStatus.duration || recordedSecs)}
+                  </Text>
+                </View>
+              </View>
               <View style={{ gap: 10, width: '100%', marginTop: 6 }}>
                 <TouchableOpacity onPress={submitForAnalysis}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.primary, paddingVertical: 14 }}>
@@ -624,6 +712,13 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             </View>
           ) : (
             <View style={{ gap: 20, alignItems: 'center', paddingVertical: 20 }}>
+              {!!savedVisit && (
+                <View style={{ width: '100%', borderRadius: 16, padding: 14, gap: 4, backgroundColor: colors.tealLight }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: colors.teal }}>This visit already has a saved summary</Text>
+                  {!!savedVisit.ai_summary && <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }} numberOfLines={4}>{savedVisit.ai_summary}</Text>}
+                  <Text style={{ fontSize: 12, color: colors.textTertiary }}>Open it any time from {memberName}'s Records. Recording again adds a second one.</Text>
+                </View>
+              )}
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 }}>
                 Record this appointment to get an AI summary with discussion topics and next steps, saved
                 to {memberName}'s Records.

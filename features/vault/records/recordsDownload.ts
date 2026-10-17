@@ -24,7 +24,7 @@ async function signedUrl(filePath: string, bucket: 'medical-records' | 'medical-
   return data.signedUrl;
 }
 
-async function downloadBytesViaUrl(filePath: string, familyId: string, bucket: 'medical-records' | 'medical-audio' = 'medical-records'): Promise<ArrayBuffer> {
+export async function downloadBytesViaUrl(filePath: string, familyId: string, bucket: 'medical-records' | 'medical-audio' = 'medical-records'): Promise<ArrayBuffer> {
   const url = await signedUrl(filePath, bucket);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);

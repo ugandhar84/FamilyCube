@@ -5,7 +5,7 @@
  * column as small chips. Tapping an event or a chore opens its details.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Animated, Easing, View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { localDateStr } from '@/lib/dates';
@@ -33,7 +33,17 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent, onOpenCh
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const today = localDateStr();
-  useEffect(() => { const t = setTimeout(() => ref.current?.scrollTo({ y: Math.max(0, ((nowMin / 60) - H0 - 2) * HH), animated: false }), 80); return () => clearTimeout(t); }, [nowMin]);
+  // The "now" bar: a pill with the time and a line that gently pulses; the board glides to it on open.
+  const pulse = useRef(new Animated.Value(0)).current;
+  const grow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0, duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+    ])).start();
+    Animated.timing(grow, { toValue: 1, duration: 700, delay: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [pulse, grow]);
+  useEffect(() => { const t = setTimeout(() => ref.current?.scrollTo({ y: Math.max(0, ((nowMin / 60) - H0 - 2) * HH), animated: true }), 450); return () => clearTimeout(t); }, [nowMin]);
 
   const cols = useMemo(() => people.map((m, i) => {
     const ev = events.filter(e => !e.allDay && e.time && [e.memberId, ...(e.memberIds ?? [])].includes(m.id));
@@ -85,7 +95,12 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent, onOpenCh
             </View>
           ))}
           {nowMin >= H0 * 60 && nowMin <= (H0 + HOURS) * 60 && (
-            <View pointerEvents="none" style={[s.now, { top: top(nowMin), backgroundColor: k.primary }]} />
+            <View pointerEvents="none" style={[s.nowWrap, { top: top(nowMin) }]}>
+              <Animated.View style={[s.nowPill, { backgroundColor: k.primary, opacity: grow, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] }) }] }]}>
+                <Text style={[s.nowT, { color: k.onPrimary }]}>{fmt12(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)}</Text>
+              </Animated.View>
+              <Animated.View style={[s.nowLine, { backgroundColor: k.primary, opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }), transform: [{ scaleX: grow }] }]} />
+            </View>
           )}
         </View>
       </ScrollView>
@@ -108,5 +123,8 @@ const s = StyleSheet.create({
   bS: { fontSize: 15, fontFamily: KIOSK_FONT.hand.semibold },
   chip: { position: 'absolute', left: 3, right: 3, height: 30, borderRadius: 12, borderWidth: 2, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7 },
   cT: { flex: 1, fontSize: 17, fontFamily: KIOSK_FONT.hand.bold },
-  now: { position: 'absolute', left: 52, right: 0, height: 3, borderRadius: 2, zIndex: 5 },
+  nowWrap: { position: 'absolute', left: 0, right: 0, height: 0, zIndex: 5, flexDirection: 'row', alignItems: 'center' },
+  nowPill: { position: 'absolute', left: -2, top: -11, borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, width: 58, alignItems: 'center' },
+  nowT: { fontSize: 11, fontWeight: '800' },
+  nowLine: { position: 'absolute', left: 56, right: 0, top: -1.5, height: 3, borderRadius: 2 },
 });

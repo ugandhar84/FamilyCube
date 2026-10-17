@@ -137,9 +137,6 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors, nextUp 
           </Text>
         </View>
       )}
-      <Text style={[s.fine, { color: colors.textTertiary }]}>
-        Agenda, household presence and messages are hidden while the display is locked.
-      </Text>
     </View>
   );
 
@@ -192,9 +189,6 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors, nextUp 
           {!selected ? 'Choose your name' : needsPin ? 'Enter personal PIN' : `Unlock as ${selected.name?.trim().split(' ')[0]}`}
         </Text>
       </Pressable>
-      <Text style={[s.fine, { color: colors.textTertiary, marginTop: KIOSK_SPACE.sm }]}>
-        Auto-locked after 2 minutes. Health, private records and precise location stay on trusted personal devices.
-      </Text>
     </View>
   );
 

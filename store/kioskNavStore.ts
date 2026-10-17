@@ -33,12 +33,18 @@ interface KioskNavState {
   pendingTab: KioskNavTab | null;
   setPendingTab: (tab: KioskNavTab) => void;
   consumePendingTab: () => void;
+  /** One-shot: the Chat tab opens this member's direct message on mount
+   *  (set by Find's "Message" button), then clears it. */
+  pendingDmMemberId: string | null;
+  setPendingDm: (memberId: string | null) => void;
 }
 
 export const useKioskNavStore = create<KioskNavState>((set) => ({
   pendingTab: null,
   setPendingTab: (tab) => set({ pendingTab: tab }),
   consumePendingTab: () => set({ pendingTab: null }),
+  pendingDmMemberId: null,
+  setPendingDm: (memberId) => set({ pendingDmMemberId: memberId }),
 }));
 
 // Phone tab route -> kiosk rail tab. See this file's own header comment for

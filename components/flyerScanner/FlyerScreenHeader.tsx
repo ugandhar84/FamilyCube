@@ -6,6 +6,8 @@
  * than inventing a new header style or reaching for PageHeading (neither
  * reference screen uses it — see module header of those two files).
  */
+import { ScanLine } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,16 +28,7 @@ export default function FlyerScreenHeader({
   const linkC  = isDark ? colors.primary : '#294FC7';
 
   return (
-    <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-      <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>{backLabel}</Text>
-      </TouchableOpacity>
-      <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 10, lineHeight: 36 }}>
-        {title}
-      </Text>
-      {subtitle ? (
-        <Text style={{ fontSize: 13, color: bodyC, marginTop: 4, lineHeight: 18 }}>{subtitle}</Text>
-      ) : null}
-    </View>
+    <PageHeading eyebrow="FAMILY CUBE · FLYER SCAN" title={title} subtitle={subtitle} accent="teal"
+      Icon={ScanLine} onTitlePress={onBack} topInset={insets.top} />
   );
 }

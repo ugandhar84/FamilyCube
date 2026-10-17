@@ -36,6 +36,7 @@
  * HealthFigmaList.tsx (pre-existing, sound, flat-Figma shell — kept as-is,
  * just now driven by useHealthRecords.ts's state instead of HealthTab's).
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -234,17 +235,12 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
       {!hideHeader && (
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8, backgroundColor: pageBg, gap: 10 }}>
-          <Pressable onPress={handleClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              Health records
-            </Text>
-          </Pressable>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>
-            {kidView
+        <View style={{ backgroundColor: pageBg }}>
+          <PageHeading eyebrow="FAMILY CUBE · HEALTH" title="Health records"
+            subtitle={kidView
               ? 'Only you and your parents can see these records.'
               : `Visible to ${activeMember?.name ?? 'you'} and other parents in the family.`}
-          </Text>
+            accent="pink" Icon={Shield} onTitlePress={handleClose} topInset={insets.top} />
         </View>
       )}
 
@@ -419,12 +415,9 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
       <FullPageOverlay visible={showDocuments} onDismiss={() => setShowDocuments(false)} zIndex={49}>
         {(requestAnimatedClose) => (
           <View style={{ flex: 1, backgroundColor: pageBg }}>
-            <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-              <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-                <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-                  Health documents
-                </Text>
-              </TouchableOpacity>
+            <View style={{ backgroundColor: pageBg }}>
+              <PageHeading eyebrow="FAMILY CUBE · HEALTH" title="Health documents" subtitle="Labs, discharge papers, imaging and insurance cards."
+                accent="pink" Icon={FolderOpen} onTitlePress={requestAnimatedClose} topInset={insets.top} />
             </View>
             <RecordsTabComp colors={colors} isDark={isDark} />
           </View>

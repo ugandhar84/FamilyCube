@@ -1,3 +1,5 @@
+import { Pencil } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
@@ -330,22 +332,9 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-          {/* ── Top bar: ‹ back + title ── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: (ownTopInset ? insets.top : 0) + 16, paddingBottom: 8 }}>
-            <TouchableOpacity onPress={dismiss} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 22, color: colors.pink, fontWeight: '400', lineHeight: 26, marginTop: -1 }}>‹</Text>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.pink }}>Back</Text>
-            </TouchableOpacity>
-            <View style={{ flex: 1 }} />
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>
-                {locked ? 'Adjust Chore' : 'Edit Chore'}
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
-                {locked ? 'Date & description locked (in progress)' : 'Edit title, assignment & more'}
-              </Text>
-            </View>
-          </View>
+          <PageHeading eyebrow="FAMILY CUBE · TASKS" title={locked ? 'Adjust Chore' : 'Edit Chore'}
+            subtitle={locked ? 'Date & description locked (in progress)' : 'Edit title, assignment & more'}
+            accent="pink" Icon={Pencil} onTitlePress={dismiss} topInset={ownTopInset ? insets.top : 0} />
 
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
 

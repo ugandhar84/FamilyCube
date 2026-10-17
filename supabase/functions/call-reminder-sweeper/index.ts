@@ -213,7 +213,8 @@ serve(async (req) => {
       const dueAt = localWallClockToUTC(`${e.date}T${t24}:00`, (e as any).timezone || 'UTC');
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
-        const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);
+        // Everyone on the event: its own person AND every attendee (an event for two kids used to ring only the first).
+        const ids = [...new Set([...(e.member_id ? [e.member_id] : []), ...(e.member_ids ?? [])])];
         // A driver/helper assigned directly on calendar_events (the normal
         // path every ride/event creation form actually writes to — see
         // EventFormModal.tsx) never gets a row in event_participants unless
@@ -372,7 +373,8 @@ serve(async (req) => {
           : [...new Set([
               ...(missedParticipantsByEvent[m.item_id] ?? []),
               ...directDriverHelperIds,
-              ...(source.member_id ? [source.member_id] : (source.member_ids ?? [])),
+              ...(source.member_id ? [source.member_id] : []),
+              ...(source.member_ids ?? []),
             ])];
         if (memberIds.length === 0) continue;
 

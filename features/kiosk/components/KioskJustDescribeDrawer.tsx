@@ -16,7 +16,7 @@
  * Parent-only: a kid's "+" goes through Ask a parent instead. Times are 12h.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, StyleSheet, Animated, Easing, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Mic, Square, Sparkles, Clock, User, Users, Repeat, Coins, Camera, Calendar, CalendarClock, MapPin, Car,
@@ -426,14 +426,13 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
           <View style={s.composerBar}>
             <Pressable onPress={listening ? stopVoice : () => dictation.start()} accessibilityRole="button" accessibilityLabel={listening ? 'Stop listening' : 'Speak'}
               style={({ pressed }) => [s.micBtn, { backgroundColor: listening ? k.danger : k.primary }, pressed && { opacity: 0.85 }]}>
-              {listening ? <Square size={18} color={k.onAccent} fill={k.onAccent} /> : <Mic size={22} color={k.onPrimary} strokeWidth={2.2} />}
-              {listening ? <Waveform color={k.onAccent} /> : <Text style={[s.micText, { color: k.onPrimary }]}>Speak</Text>}
+              {listening ? <Square size={18} color={k.onAccent} fill={k.onAccent} /> : <Mic size={24} color={k.onPrimary} strokeWidth={2.2} />}
+              {listening && <Waveform color={k.onAccent} />}
             </Pressable>
             <View style={{ flex: 1 }} />
             <Pressable onPress={aiFill} disabled={!input.trim() || aiBusy} accessibilityRole="button" accessibilityLabel="Auto-fill with AI"
               style={({ pressed }) => [s.aiBtn, { backgroundColor: k.pastelAmberCard, opacity: input.trim() ? 1 : 0.45 }, pressed && { opacity: 0.8 }]}>
-              <Sparkles size={18} color={k.gold} strokeWidth={2.2} />
-              <Text style={[s.micText, { color: k.gold }]}>{aiBusy ? 'Thinking…' : 'Auto-fill'}</Text>
+              {aiBusy ? <ActivityIndicator size="small" color={k.gold} /> : <Sparkles size={22} color={k.gold} strokeWidth={2.2} />}
             </Pressable>
           </View>
         </View>
@@ -626,9 +625,9 @@ const s = StyleSheet.create({
   composerInput: { minHeight: 96, fontSize: KIOSK_TYPO.heading, fontWeight: '600', letterSpacing: -0.2, textAlignVertical: 'top' },
   clearBtn: { position: 'absolute', top: KIOSK_SPACE.md, right: KIOSK_SPACE.md, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   composerBar: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
-  micBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54, borderRadius: 27, paddingHorizontal: 22 },
+  micBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, minWidth: 56, minHeight: 56, borderRadius: 28, paddingHorizontal: 16 },
   micText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  aiBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 54, borderRadius: 27, paddingHorizontal: 18 },
+  aiBtn: { alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28 },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 100, paddingHorizontal: 14, paddingVertical: 9 },
   pillText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },

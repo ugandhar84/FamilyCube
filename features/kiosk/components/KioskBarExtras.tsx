@@ -28,7 +28,7 @@ export function KioskBarProfile({ member, open, onPress }: { member: FamilyMembe
           size={36} bgColor={k.well} k={k}
         />
       </View>
-      <Text style={[s.name, { color: open ? '#8EA3DD' : 'rgba(255,255,255,0.66)' }]} numberOfLines={1}>{first}</Text>
+      <Text style={[s.name, { color: open ? k.primary : k.textFaint }]} numberOfLines={1}>{first}</Text>
     </Pressable>
   );
 }
@@ -39,8 +39,8 @@ export function KioskBarClock() {
   const weather = useKioskWeather();
   return (
     <View style={s.clock}>
-      <Text style={[s.time, { color: '#FFFFFF' }]}>{now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</Text>
-      <Text style={[s.date, { color: 'rgba(255,255,255,0.66)' }]} numberOfLines={1}>
+      <Text style={[s.time, { color: k.text }]}>{now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</Text>
+      <Text style={[s.date, { color: k.textMuted }]} numberOfLines={1}>
         {now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
         {weather ? ` · ${Math.round(weather.temperature)}${weather.unit}` : ''}
       </Text>

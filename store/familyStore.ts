@@ -191,6 +191,8 @@ export interface FamilyMember {
   // scheduled for permanent purge 7 days from this timestamp unless
   // restored (PIN re-entry or, for auth-linked members, a fresh login).
   deletedAt?: string;
+  /** Set when an admin removed this member on purpose (the person cannot restore themselves). */
+  removedBy?: string;
   // Per-category push/panel notification opt-outs (Profile page's
   // Notifications section) — keyed by the same NotifCategory buckets
   // family-notifier's own categoryFor() groups every real notification
@@ -423,6 +425,7 @@ function fromRow(row: any): FamilyMember {
     appleCalendarSyncEnabled: row.apple_calendar_sync_enabled ?? false,
     authUserId:         row.auth_user_id ?? undefined,
     deletedAt:          row.deleted_at ?? undefined,
+    removedBy:          row.removed_by ?? undefined,
     createdAt:          row.created_at ?? undefined,
     // notification_prefs was added to the type but never actually wired
     // into fromRow/toRow — every toggle write via updateMember() was
@@ -745,7 +748,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // block the (already-instant, local) profile switch on a network round
     // trip — the switch has already happened above by the time this lands.
     const switched = get().members.find(m => m.id === id);
-    if (switched?.deletedAt) {
+    if (switched?.deletedAt && !switched.removedBy) {
       const deletedMs = new Date(switched.deletedAt).getTime();
       const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
       if (Date.now() - deletedMs < SEVEN_DAYS_MS) {
@@ -1003,8 +1006,10 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 
+    // removed_by marks this as a deliberate admin removal: no auto-restore, and the person's own login loses access.
+    const removerId = prevActiveId && prevActiveId !== id ? prevActiveId : null;
     const { error } = await supabase.from('members')
-      .update({ deleted_at: deletedAtIso })
+      .update({ deleted_at: deletedAtIso, ...(removerId ? { removed_by: removerId } : {}) })
       .eq('id', id);
     if (error) {
       console.warn('[familyStore] removeMember (soft-delete) failed:', error.message);

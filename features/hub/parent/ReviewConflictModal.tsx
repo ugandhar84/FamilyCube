@@ -1,7 +1,9 @@
-import { PageHeading } from '@/components/PageHeading';
-import FullPageOverlay from '@/components/FullPageOverlay';
+import { OverlayPage, OverlayHeading } from '@/components/OverlayPage';
+import { useEffect } from 'react';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useUIStore } from '@/store/uiStore';
 import { View, Text, Pressable, Modal, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
@@ -27,6 +29,15 @@ export function ReviewConflictModal({
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const activeMember = members.find(m => m.id === activeMemberId);
 
+  const insets = useSafeAreaInsets();
+  // Cover the tab bar while this page is open, like every other full-page overlay.
+  useEffect(() => {
+    if (!visible) return;
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => { showTabBar(); useUIStore.getState().setFullBleedScreenActive(false); };
+  }, [visible]);
+
   if (!conflictEvent) return null;
 
   const rows = [
@@ -43,10 +54,10 @@ export function ReviewConflictModal({
   const borderColor = isDark ? colors.border : GEMINI.border;
 
   return (
-    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={60} backgroundColor={colors.background}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+    <OverlayPage visible={visible} onDismiss={onClose} zIndex={60} backgroundColor={colors.background}>
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
         {/* ── Page header ── */}
-        <PageHeading
+        <OverlayHeading
           eyebrow="FAMILY CUBE · SCHEDULE"
           title="One decision"
         subtitle={relatedContext[0]?.meta && relatedContext[0].meta !== 'Also today' ? relatedContext[0].meta : 'These events overlap'}
@@ -56,8 +67,8 @@ export function ReviewConflictModal({
         />
 
         <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: 120 }}
+          style={{ flexGrow: 0, flexShrink: 1 }}
+          contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: RHYTHM.section }}
           showsVerticalScrollIndicator={false}
         >
           {/* Options list */}
@@ -87,28 +98,22 @@ export function ReviewConflictModal({
         </ScrollView>
 
         {/* Fixed bottom action bar */}
-        <View style={{
-          position: 'absolute', left: 16, right: 16, bottom: 32,
-          flexDirection: 'row', gap: 10, padding: 10,
-          borderWidth: 1, borderColor: borderColor, borderRadius: 22,
-          backgroundColor: isDark ? colors.card : 'rgba(255,255,255,0.97)',
-          shadowColor: 'rgba(44,39,34,0.20)', shadowOffset: { width: 0, height: 8 }, shadowOpacity: isDark ? 0 : 1, shadowRadius: 20,
-        }}>
+        <View style={{ flexDirection: 'row', gap: RHYTHM.item, paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: Math.max(insets.bottom, RHYTHM.page) }}>
           <AnimatedPressable
             onPress={onClose}
-            style={{ flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: colors.surface }}
+            style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: colors.surface }}
           >
             <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Not now</Text>
           </AnimatedPressable>
           <AnimatedPressable
             onPress={() => { onApprove(); onClose(); }}
-            style={{ flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.pink }}
+            style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.pink }}
           >
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#FFFFFF' }}>Approve plan →</Text>
           </AnimatedPressable>
         </View>
-      </SafeAreaView>
-    </FullPageOverlay>
+      </View>
+    </OverlayPage>
   );
 }
 

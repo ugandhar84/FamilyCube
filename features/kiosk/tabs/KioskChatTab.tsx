@@ -272,18 +272,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // that's the one confirmed-working pattern in this codebase.
   const [threadOpen, setThreadOpen] = useState(false);
   const listRef = useRef<FlatList>(null);
-  // A thread is hidden until it has been placed at its newest message, so opening or
-  // switching never shows the list sliding from the top down to the bottom.
-  const [settledChannel, setSettledChannel] = useState<string | null>(null);
-  const nearBottom = useRef(true);
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState('');
-  useEffect(() => {
-    nearBottom.current = true;
-    const t = setTimeout(() => setSettledChannel(activeChannel), 900);
-    return () => clearTimeout(t);
-  }, [activeChannel]);
 
   // Keyboard opening can leave the latest message behind it until the list
   // re-settles at its own end — same "scroll after layout, not during
@@ -291,7 +281,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const show = Keyboard.addListener(showEvt, () => {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 50);
     });
     return () => show.remove();
   }, []);
@@ -430,8 +420,12 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     return items;
   }, [msgs]);
 
+  // The list is inverted (newest message at the bottom, index 0), the same way the phone's chat works, so a
+  // thread opens at its newest message without ever scrolling. The data is the day groups, newest first.
+  const listData = useMemo(() => [...dayItems].reverse(), [dayItems]);
+
   const scrollToQuotedMsg = (replyToId: string) => {
-    const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
+    const idx = listData.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
     if (idx < 0) return;
     listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
     setHighlightedMsgId(replyToId);
@@ -469,7 +463,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
 
     const sentMsgId = await sendMessage(activeChannel, active.id, finalText, localAttachUri ?? undefined, localAttachUri ? localAttachType : undefined, replyingTo ?? undefined);
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
 
     if (localAttachUri && sentMsgId) {
       try {
@@ -744,7 +738,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     onPress={() => {
                       const next = (searchMatchIdx - 1 + msgs.length) % msgs.length;
                       setSearchMatchIdx(next);
-                      const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                      const idx = listData.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                       if (idx >= 0) {
                         listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
                         setHighlightedMsgId(msgs[next].id);
@@ -761,7 +755,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     onPress={() => {
                       const next = (searchMatchIdx + 1) % msgs.length;
                       setSearchMatchIdx(next);
-                      const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                      const idx = listData.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                       if (idx >= 0) {
                         listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
                         setHighlightedMsgId(msgs[next].id);
@@ -784,29 +778,14 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
 
-          <View style={{ flex: 1, opacity: settledChannel === activeChannel ? 1 : 0 }}>
+          <View style={{ flex: 1 }}>
             <FlatList
               ref={listRef}
-              data={dayItems}
+              data={listData}
+              inverted
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
               contentContainerStyle={s.list}
-              initialNumToRender={Math.min(dayItems.length, 60)}
               windowSize={11}
-              onScroll={e => {
-                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-                nearBottom.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 160;
-              }}
-              scrollEventThrottle={100}
-              onContentSizeChange={() => {
-                // Stay put if the reader scrolled up; always land at the newest message on open.
-                if (settledChannel !== activeChannel || nearBottom.current) listRef.current?.scrollToEnd({ animated: false });
-                // Rows measure lazily, so the height keeps changing for a moment after open. Stay hidden
-                // and keep pinning to the end until it has been steady for 220ms, then reveal.
-                if (settledChannel !== activeChannel) {
-                  if (settleTimer.current) clearTimeout(settleTimer.current);
-                  settleTimer.current = setTimeout(() => { listRef.current?.scrollToEnd({ animated: false }); setSettledChannel(activeChannel); }, 220);
-                }
-              }}
               onScrollToIndexFailed={({ index, averageItemLength }) => {
                 listRef.current?.scrollToOffset({ offset: index * (averageItemLength || 80), animated: false });
                 setTimeout(() => listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 200);
@@ -824,9 +803,9 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 const msg = item.msg;
                 const isMe = msg.senderId === active.id;
                 const sender = memberMap[msg.senderId];
-                // Non-inverted, chronological list: older item is at index-1, newer at index+1.
-                const olderItem = index > 0 ? dayItems[index - 1] : null;
-                const newerItem = index < dayItems.length - 1 ? dayItems[index + 1] : null;
+                // Inverted list, newest first: the older item is at index+1, the newer one at index-1.
+                const olderItem = index < listData.length - 1 ? listData[index + 1] : null;
+                const newerItem = index > 0 ? listData[index - 1] : null;
                 const olderMsg = olderItem?.type === 'msg' ? olderItem.msg : null;
                 const newerMsg = newerItem?.type === 'msg' ? newerItem.msg : null;
                 const isGroupFirst = !olderMsg || olderMsg.senderId !== msg.senderId;

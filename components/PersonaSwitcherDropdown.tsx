@@ -23,7 +23,10 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import FullPageOverlay from './FullPageOverlay';
+import { PageHeading } from './PageHeading';
+import { Lock } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
@@ -83,9 +86,9 @@ function ArrowLeftIcon({ c }: { c: string }) {
 // ── PIN pad (compact, reused for locked profile switch) ────────────────────────
 const PIN_LENGTH = 4;
 
-function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
+function PinPad({ member, isDark, onSuccess, onCancel, siblings, fullPage = false }: {
   member: FamilyMember; isDark: boolean; onSuccess: () => void; onCancel: () => void;
-  siblings: string[];
+  siblings: string[]; fullPage?: boolean;
 }) {
   const { colors } = useTheme();
   const [digits, setDigits] = useState('');
@@ -168,8 +171,8 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
   const KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
   return (
-    <View style={{ paddingHorizontal: 18, paddingVertical: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+    <View style={{ paddingHorizontal: fullPage ? 24 : 18, paddingVertical: fullPage ? 8 : 16 }}>
+      {!fullPage && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <TouchableOpacity onPress={onCancel} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <ArrowLeftIcon c={colors.textSecondary} />
         </TouchableOpacity>
@@ -187,7 +190,7 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
           <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{member.name}</Text>
           <Text style={{ fontSize: 10, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>Enter PIN to switch</Text>
         </View>
-      </View>
+      </View>}
 
       <RNAnimated.View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 18, transform: [{ translateX: shake }] }}>
         {Array.from({ length: PIN_LENGTH }).map((_, i) => (
@@ -205,12 +208,29 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
         </Text>
       )}
 
-      <View style={{ gap: 8 }}>
+      <View style={{ gap: fullPage ? 14 : 8, alignItems: fullPage ? 'center' : undefined }}>
         {[0, 3, 6, 9].map(row => (
-          <View key={row} style={{ flexDirection: 'row', gap: 8 }}>
+          <View key={row} style={{ flexDirection: 'row', gap: fullPage ? 24 : 8 }}>
             {KEYS.slice(row, row + 3).map((k, ci) => {
-              if (k === '') return <View key={ci} style={{ flex: 1 }} />;
               const isBackspace = k === '⌫';
+              if (fullPage) {
+                // iOS passcode keypad: round keys with the letters under each digit; no key where the blank is.
+                const LETTERS: Record<string, string> = { '2': 'ABC', '3': 'DEF', '4': 'GHI', '5': 'JKL', '6': 'MNO', '7': 'PQRS', '8': 'TUV', '9': 'WXYZ' };
+                if (k === '') return <View key={ci} style={{ width: 78, height: 78 }} />;
+                return (
+                  <TouchableOpacity key={ci} onPress={() => isBackspace ? del() : press(k)} activeOpacity={0.55}
+                    style={{ width: 78, height: 78, borderRadius: 39, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: isBackspace ? 'transparent' : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.07)') }}>
+                    {isBackspace
+                      ? <BackspaceIcon c={colors.textPrimary} />
+                      : <>
+                          <Text style={{ fontSize: 32, fontWeight: '400', color: colors.textPrimary, lineHeight: 36 }}>{k}</Text>
+                          {!!LETTERS[k] && <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textSecondary, marginTop: -2 }}>{LETTERS[k]}</Text>}
+                        </>}
+                  </TouchableOpacity>
+                );
+              }
+              if (k === '') return <View key={ci} style={{ flex: 1 }} />;
               return (
                 <TouchableOpacity key={ci}
                   style={{ flex: 1, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
@@ -300,6 +320,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
   const [switchingFamily, setSwitchingFamily] = useState(false);
   const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   // Was a flat maxHeight:380 regardless of screen size — clipped the list
   // (a 6th+ member cut off mid-row) even on tall phones with plenty of
   // room below. Sizes against the actual available space under the panel
@@ -428,10 +449,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
               </View>
             )}
 
-            {pinTarget ? (
-              <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)}
-                siblings={members.map(mb => mb.name)} />
-            ) : (
+            {pinTarget ? null : (
               <ScrollView style={{ maxHeight: listMaxHeight }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
                 {members.map(m => (
                   <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark}
@@ -442,6 +460,26 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
           </TouchableOpacity>
         </SafeAreaView>
       </TouchableOpacity>
+
+      {/* PIN entry is a full page (same shell as the other pages: heading, X to close, slide-in, swipe back). */}
+      <FullPageOverlay visible={!!pinTarget} onDismiss={() => setPinTarget(null)} zIndex={100} backgroundColor={isDark ? colors.background : GEMINI.canvas}>
+        {(requestClose) => pinTarget ? (
+          <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · SWITCH PROFILE" title="Enter PIN" subtitle={`Switching to ${pinTarget.name}`}
+              accent="primary" Icon={Lock} onTitlePress={requestClose} topInset={insets.top} />
+            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+              <FamilyAvatar name={pinTarget.name} emoji={pinTarget.emoji} avatarUrl={pinTarget.avatarUrl} siblings={members.map(mb => mb.name)} size={72}
+                ringColor={accent(pinTarget.role, colors)} ringWidth={3} bgColor={accent(pinTarget.role, colors) + '22'} />
+            </View>
+            <PinPad fullPage member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={requestClose}
+              siblings={members.map(mb => mb.name)} />
+            <TouchableOpacity onPress={requestClose} accessibilityRole="button" accessibilityLabel="Cancel"
+              style={{ alignSelf: 'flex-end', marginRight: 40, marginTop: 18, padding: 10 }}>
+              <Text style={{ fontSize: 18, fontWeight: '500', color: colors.textPrimary }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </FullPageOverlay>
     </Modal>
   );
 }

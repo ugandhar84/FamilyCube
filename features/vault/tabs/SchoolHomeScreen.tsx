@@ -78,6 +78,67 @@ function prettySubject(raw: string): string {
   }).join(' ');
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const ymd = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+/** A month at a glance: every day inside a holiday is filled; tap one to edit that holiday. */
+function HolidayMonthGrid({ holidays, colors, isDark, onPickHoliday }: {
+  holidays: SchoolHoliday[]; colors: any; isDark: boolean; onPickHoliday?: (h: SchoolHoliday) => void;
+}) {
+  const todayStr = localTodayStr();
+  const firstUpcoming = holidays.find(h => h.endDate >= todayStr);
+  const seed = firstUpcoming ? firstUpcoming.startDate > todayStr ? firstUpcoming.startDate : todayStr : todayStr;
+  const [{ y, m }, setCursor] = useState(() => ({ y: +seed.slice(0, 4), m: +seed.slice(5, 7) - 1 }));
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const first = new Date(y, m, 1).getDay(); // 0 = Sun
+  const daysIn = new Date(y, m + 1, 0).getDate();
+  const cells: (number | null)[] = [...Array(first).fill(null), ...Array.from({ length: daysIn }, (_, i) => i + 1)];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
+  const holidayOn = (d: string) => holidays.find(h => d >= h.startDate && d <= h.endDate);
+  const step = (n: number) => setCursor(c => { const t = new Date(c.y, c.m + n, 1); return { y: t.getFullYear(), m: t.getMonth() }; });
+
+  return (
+    <View style={[{ borderRadius: 18, backgroundColor: cardBg, padding: RHYTHM.card, gap: 8 }, !isDark && CARD_SHADOW]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <TouchableOpacity onPress={() => step(-1)} hitSlop={10}><Text style={{ fontSize: 20, fontWeight: '800', color: BLUE }}>‹</Text></TouchableOpacity>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>{MONTH_NAMES[m]} {y}</Text>
+        <TouchableOpacity onPress={() => step(1)} hitSlop={10}><Text style={{ fontSize: 20, fontWeight: '800', color: BLUE }}>›</Text></TouchableOpacity>
+      </View>
+      <View style={{ flexDirection: 'row' }}>
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+          <Text key={i} style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '800', color: bodyC }}>{d}</Text>
+        ))}
+      </View>
+      {weeks.map((w, wi) => (
+        <View key={wi} style={{ flexDirection: 'row' }}>
+          {w.map((d, di) => {
+            if (!d) return <View key={di} style={{ flex: 1, height: 38 }} />;
+            const ds = ymd(y, m, d);
+            const h = holidayOn(ds);
+            const isToday = ds === todayStr;
+            const weekend = di === 0 || di === 6;
+            return (
+              <TouchableOpacity key={di} disabled={!h || !onPickHoliday} onPress={() => h && onPickHoliday?.(h)} activeOpacity={0.7}
+                style={{ flex: 1, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10, margin: 1,
+                  backgroundColor: h ? (isDark ? colors.amber + '33' : colors.amberLight) : 'transparent',
+                  borderWidth: isToday ? 1.5 : 0, borderColor: BLUE }}>
+                <Text style={{ fontSize: 13, fontWeight: h || isToday ? '800' : '600', color: h ? colors.amber : weekend ? bodyC + '99' : titleC }}>{d}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ width: 12, height: 12, borderRadius: 4, backgroundColor: isDark ? colors.amber + '55' : colors.amberLight }} />
+        <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>No school</Text>
+      </View>
+    </View>
+  );
+}
+
 /** A steady colour per subject, so the same class always looks the same. */
 function subjectTone(subject: string, colors: any): { fg: string; bg: string } {
   const tones = [
@@ -493,32 +554,45 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                   )}
                 </View>
               )}
-              <View style={card as any}>
-                {holidays.length === 0 ? (
+              <HolidayMonthGrid holidays={holidays} colors={colors} isDark={isDark}
+                onPickHoliday={canEdit && !selecting ? (h) => setEditingHoliday(h) : undefined} />
+              {holidays.length === 0 ? (
+                <View style={card as any}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No holidays added yet. Scan a school calendar flyer or add one.</Text>
-                ) : holidays.map((h, i) => {
-                  const on = picked.has(h.id);
-                  return (
-                    <TouchableOpacity key={h.id} activeOpacity={selecting || canEdit ? 0.6 : 1}
-                      onPress={() => { if (selecting) setPicked(prev => { const n = new Set(prev); on ? n.delete(h.id) : n.add(h.id); return n; }); else if (canEdit) setEditingHoliday(h); }}
-                      style={{ flexDirection: 'row', gap: 10, alignItems: 'center', paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-                      {selecting ? (
-                        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
-                          borderColor: on ? BLUE : border, backgroundColor: on ? BLUE : 'transparent' }}>
-                          {on && <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>✓</Text>}
+                </View>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {holidays.map(h => {
+                    const on = picked.has(h.id);
+                    const n = Math.round((new Date(h.endDate + 'T12:00:00').getTime() - new Date(h.startDate + 'T12:00:00').getTime()) / 86400000) + 1;
+                    const past = h.endDate < localTodayStr();
+                    return (
+                      <TouchableOpacity key={h.id} activeOpacity={selecting || canEdit ? 0.7 : 1}
+                        onPress={() => { if (selecting) setPicked(prev => { const nx = new Set(prev); on ? nx.delete(h.id) : nx.add(h.id); return nx; }); else if (canEdit) setEditingHoliday(h); }}
+                        style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12, opacity: past ? 0.55 : 1 }}>
+                        <View style={{ width: 62, alignItems: 'flex-end', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: titleC }}>{fmtDateShort(h.startDate)}</Text>
+                          {h.endDate !== h.startDate ? <Text style={{ fontSize: 11, fontWeight: '600', color: bodyC }}>{fmtDateShort(h.endDate)}</Text> : null}
                         </View>
-                      ) : <PartyPopper size={16} color={colors.amber} />}
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>{h.reason}</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, marginTop: 1 }}>
-                          {h.startDate === h.endDate ? fmtDate(h.startDate) : `${fmtDate(h.startDate)} – ${fmtDate(h.endDate)}`}
-                        </Text>
-                      </View>
-                      {canEdit && !selecting ? <Text style={{ fontSize: 12, fontWeight: '800', color: BLUE }}>Edit</Text> : null}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                        <View style={{ flex: 1, flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? colors.amber + '22' : colors.amberLight,
+                          borderWidth: selecting && on ? 2 : 0, borderColor: BLUE }}>
+                          <View style={{ width: 5, backgroundColor: colors.amber }} />
+                          <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, gap: 2 }}>
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: titleC }} numberOfLines={2}>{h.reason}</Text>
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{n} day{n !== 1 ? 's' : ''}{h.startDate !== h.endDate ? ` · ${fmtDate(h.startDate)} – ${fmtDate(h.endDate)}` : ` · ${fmtDate(h.startDate)}`}</Text>
+                          </View>
+                          {selecting ? (
+                            <View style={{ alignSelf: 'center', marginRight: 12, width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+                              borderColor: on ? BLUE : border, backgroundColor: on ? BLUE : 'transparent' }}>
+                              {on && <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>✓</Text>}
+                            </View>
+                          ) : canEdit ? <Text style={{ alignSelf: 'center', paddingRight: 12, fontSize: 12, fontWeight: '800', color: colors.amber }}>Edit</Text> : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
               {selecting && picked.size > 0 && (
                 <TouchableOpacity disabled={deleting}
                   onPress={() => Alert.alert(`Delete ${picked.size} holiday${picked.size !== 1 ? 's' : ''}?`, `Classes on those days are put back on ${kid.name.split(' ')[0]}'s schedule.`, [

@@ -124,6 +124,9 @@ import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidCheckInTile, KioskKidMineTile, KidRequestsSheet } from '../components/KioskKidQuickActions';
+import { KioskHomeParent } from '../components/KioskHomeParent';
+import { KioskHomeKid } from '../components/KioskHomeKid';
+import { KioskHomeBoard } from '../components/KioskHomeBoard';
 import { KioskSimpleChecklist } from '../components/KioskSimpleChecklist';
 import { KidChoresWidget, KioskMyStuffPanel, KioskMyRequestsPanel, KioskUpForGrabsPanel, KioskCheerSquadPanel, requestDisplayTitle } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
@@ -201,8 +204,10 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function KioskOverviewTab({
-  active, members, onNavigate, onIntercom, colors, isDark: phoneDark,
+  active, members, onNavigate, onIntercom, onLock, familyName, colors, isDark: phoneDark,
 }: {
+  onLock?: () => void;
+  familyName?: string;
   active: FamilyMember;
   members: FamilyMember[];
   /** Jump to another kiosk tab — the mockup's quick-action buttons. */
@@ -1402,9 +1407,28 @@ export function KioskOverviewTab({
     return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   }, []);
 
+  // New landscape Home — replaces the old widget wall. One screen: the
+  // household board, plus the two things that need a human: the kid's
+  // tap-to-finish day and a parent's single "Needs you" row. Everything
+  // else lives on its own tab. (Old body below is unreachable and slated
+  // for removal once the new Home is signed off.)
+  // The old widget wall below is unreachable and slated for deletion; the
+  // non-literal flag keeps TS from narrowing its hook-derived values to never.
+  const NEW_HOME: boolean = Boolean(1);
+  if (NEW_HOME) {
+    if (isParent) return <KioskHomeParent active={active} members={members} onNavigate={onNavigate} onIntercom={onIntercom} />;
+    if (isKid || isTeen) return <KioskHomeKid active={active} members={members} onNavigate={onNavigate} />;
+    // Senior keeps the simple household board.
+    return (
+      <View style={{ flex: 1, padding: 20 }}>
+        <KioskHomeBoard active={active} members={members} onIntercom={onIntercom} onLock={onLock} familyName={familyName} />
+      </View>
+    );
+  }
   return (
     <>
     <ScrollView ref={rootScrollRef} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+      <KioskHomeBoard members={members} onIntercom={onIntercom} onLock={onLock} familyName={familyName} />
       {/* Greeting hero — senior-only now. Kid/teen moved onto the same
           twoColRow/centerCol/sideCol layout parent already uses (see that
           block's own header comment below), which has no greeting hero at

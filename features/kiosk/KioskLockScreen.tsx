@@ -36,7 +36,6 @@ import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { KioskAvatar } from './components/KioskAvatar';
 import { useKioskWeather } from './useKioskWeather';
 import { useKioskMeals, todayMealDay } from './useKioskMeals';
 
@@ -51,7 +50,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 }) {
   const { k } = useKioskColors();
   const { isDark } = useTheme();
-  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const canvas = k.bg;
   const cardBg = isDark ? colors.card : GEMINI.cardBg;
   const cardShadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
   const ink = isDark ? colors.textPrimary : GEMINI.titleColor;
@@ -125,7 +124,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 
   const rightCol = (
     <View style={[s.card, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
-      <Lock size={22} color={colors.primary} />
+      <Lock size={22} color={k.primary} />
       <Text style={[s.cardTitle, { color: ink }]}>Hello again. Who's here?</Text>
       <Text style={[s.cardBody, { color: body }]}>
         Choose your name, then confirm{`\u00A0`}with your personal PIN if you have one.
@@ -144,18 +143,12 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
               accessibilityState={{ selected: active }}
               accessibilityLabel={firstName}
             >
-              <KioskAvatar
-                name={m.name}
-                emoji={m.emoji}
-                avatarUrl={m.avatarUrl}
-                siblings={visibleMembers.filter(x => x.id !== m.id).map(x => x.name)}
-                size={KIOSK_HIT.avatar * 0.7}
-                ringWidth={active ? 3 : 1.5}
-                ringColor={active ? colors.primary : colors.border}
-                bgColor={colors.surface}
-                k={k}
-              />
-              <Text style={[s.chipName, { color: active ? colors.primary : colors.textPrimary }]} numberOfLines={1}>
+              <View style={[s.initial, { backgroundColor: active ? k.primary : k.well, borderColor: active ? k.primary : k.cardBorder }]}>
+                <Text style={[s.initialText, { color: active ? k.onPrimary : k.text }]}>
+                  {(firstName[0] ?? '?').toUpperCase()}
+                </Text>
+              </View>
+              <Text style={[s.chipName, { color: active ? k.primary : colors.textPrimary }]} numberOfLines={1}>
                 {firstName}
               </Text>
             </Pressable>
@@ -171,13 +164,22 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
       <Pressable
         onPress={confirm}
         disabled={!selected}
-        style={[s.primaryBtn, { backgroundColor: colors.primary, opacity: selected ? 1 : 0.4 }]}
+        style={[s.primaryBtn, { backgroundColor: k.primary, opacity: selected ? 1 : 0.4 }]}
         accessibilityRole="button"
       >
         <Text style={s.primaryBtnText}>
           {!selected ? 'Choose your name' : needsPin ? 'Enter personal PIN' : `Unlock as ${selected.name?.trim().split(' ')[0]}`}
         </Text>
       </Pressable>
+      {selected && needsPin && (
+        <Pressable
+          onPress={() => setPinTarget(selected)}
+          style={[s.secondaryBtn, { borderColor: k.cardBorderStrong }]}
+          accessibilityRole="button"
+        >
+          <Text style={[s.secondaryBtnText, { color: k.text }]}>Use personal PIN instead</Text>
+        </Pressable>
+      )}
       <Text style={[s.fine, { color: colors.textTertiary, marginTop: KIOSK_SPACE.sm }]}>
         Auto-locked after 2 minutes. Health, private records and precise location stay on trusted personal devices.
       </Text>
@@ -196,6 +198,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
       </View>
 
       <PinEntryModal
+        inline
         visible={pinTarget !== null}
         member={pinTarget}
         onSuccess={(member) => { onUnlock(member.id); setPinTarget(null); }}
@@ -235,11 +238,15 @@ const s = StyleSheet.create({
   chipScroll: { maxHeight: 240, flexGrow: 0, marginVertical: KIOSK_SPACE.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md },
   chip: { alignItems: 'center', gap: 6, width: 84 },
+  initial: { width: 60, height: 60, borderRadius: 30, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  initialText: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
   chipName: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', textAlign: 'center' },
   primaryBtn: {
     minHeight: 52, borderRadius: KIOSK_RADIUS.md, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: KIOSK_SPACE.lg,
   },
   primaryBtnText: { color: '#FFFFFF', fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  secondaryBtn: { minHeight: 52, borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  secondaryBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   emptyState: { fontSize: KIOSK_TYPO.body, fontWeight: '600', paddingVertical: KIOSK_SPACE.md },
 });

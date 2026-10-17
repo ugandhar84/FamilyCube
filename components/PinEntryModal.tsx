@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, Pressable, StyleSheet, Animated, Vibration,
+  View, Text, Pressable, StyleSheet, Animated, Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -87,7 +87,7 @@ interface PinEntryModalProps {
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-export default function PinEntryModal({ visible, member, onSuccess, onCancel }: PinEntryModalProps) {
+function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalProps) {
   const { colors, isDark } = useTheme();
   // On a kiosk/tablet device this renders as a centered, shaped card
   // (matching KioskFormDrawer's own centered "dialog" variant — same
@@ -293,37 +293,31 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
     </>
   );
 
-  if (isTablet) {
-    return (
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-        <Pressable style={styles.tabletScrim} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close">
-          <Pressable
-            style={[styles.tabletCard, { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {content}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    );
-  }
-
+  // Inline, not a native Modal: rendered as an absolute full-parent layer so
+  // the PIN prompt is part of the screen instead of a popup ("no more
+  // popup/alerts — all should be inline, including pin ask").
+  if (!visible) return null;
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onCancel}
-    >
-      <View style={[styles.sheet, { backgroundColor: isDark ? colors.surface : colors.background }]}>
-        {content}
-      </View>
-    </Modal>
+    <View style={[StyleSheet.absoluteFill, styles.inlineLayer, { zIndex: 1000, elevation: 1000 }]} pointerEvents="box-none">
+      <Pressable style={[styles.tabletScrim, !isTablet && { padding: 0, alignItems: 'stretch', backgroundColor: 'transparent' }]} onPress={isTablet ? onCancel : undefined} accessibilityRole="button" accessibilityLabel="Close">
+        <Pressable
+          style={[
+            isTablet ? styles.tabletCard : styles.inlineFull,
+            { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border },
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          {content}
+        </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  inlineLayer: { alignItems: 'stretch', justifyContent: 'center' },
+  inlineFull: { flex: 1, width: '100%', alignSelf: 'stretch', alignItems: 'center', paddingTop: 56 },
   sheet: {
     flex: 1,
     alignItems: 'center',
@@ -394,3 +388,40 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 });
+
+// ─── Root-hosted presentation ────────────────────────────────────────────────
+// A PIN prompt used to be a native Modal; now it is an in-screen layer. Most
+// callers sit inside small containers (e.g. the kiosk header) that would clip
+// it, so by default it is drawn by <PinEntryHost/> mounted once at the app
+// root. Pass `inline` where the caller is itself a full-screen root (the kiosk
+// lock screen is a native Modal, which a root host would sit behind).
+type PinHostState = { props: PinEntryModalProps | null };
+const hostListeners = new Set<(s: PinHostState) => void>();
+let hostState: PinHostState = { props: null };
+const setHost = (props: PinEntryModalProps | null) => {
+  hostState = { props };
+  hostListeners.forEach(l => l(hostState));
+};
+
+export function PinEntryHost() {
+  const [st, setSt] = useState<PinHostState>(hostState);
+  useEffect(() => {
+    hostListeners.add(setSt);
+    return () => { hostListeners.delete(setSt); };
+  }, []);
+  if (!st.props) return null;
+  return <PinEntryLayer {...st.props} />;
+}
+
+export default function PinEntryModal(props: PinEntryModalProps & { inline?: boolean }) {
+  const { inline, ...rest } = props;
+  const { visible, member, onSuccess, onCancel } = rest;
+  useEffect(() => {
+    if (inline) return;
+    if (visible && member) setHost({ visible, member, onSuccess, onCancel });
+    else setHost(null);
+  }, [inline, visible, member, onSuccess, onCancel]);
+  useEffect(() => () => { if (!inline) setHost(null); }, [inline]);
+  if (!inline) return null;
+  return <PinEntryLayer {...rest} />;
+}

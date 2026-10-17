@@ -77,15 +77,15 @@ const light = {
   // shadow + a genuinely white card against a warm off-white page, which is
   // the light-mode equivalent of dark mode's fill-based elevation.
   /** Page ground. */
-  bg: '#ECE6DE',
+  bg: '#FFFFFF',
   /** Raised card / panel fill. */
   card: '#FFFFFF',
   /** Hover / pressed / selected fill for a card or row. */
-  cardHover: '#F1EADF',
+  cardHover: '#F7F2E9',
   /** Inset well INSIDE a card (the mockup's nested `bg-hub-bg` blocks). */
-  well: '#F0EDE6',
+  well: '#F2ECE1',
   /** Hairline borders and dividers. */
-  cardBorder: '#DDD6CC',
+  cardBorder: '#E6DED2',
   /** Stronger border for a focused / active surface. */
   cardBorderStrong: '#CDBCA5',
 
@@ -100,13 +100,13 @@ const light = {
   // the same color, now legible on all three grounds rather than on the
   // most flattering one.
   /** Terracotta. Main brand, primary actions, active nav. 4.8:1 on well. */
-  primary: '#B04710',
-  primaryPress: '#8A3A0D',
-  primarySoft: 'rgba(176,71,16,0.10)',
-  primaryEdge: 'rgba(176,71,16,0.30)',
+  primary: '#CF4F28',
+  primaryPress: '#B04016',
+  primarySoft: 'rgba(207,79,40,0.12)',
+  primaryEdge: 'rgba(207,79,40,0.32)',
 
   /** Sage. CONNECT / parent role / confirmed / online. 4.7:1 on well. */
-  sage: '#377551',
+  sage: '#3D7A5A',
   sageSoft: 'rgba(55,117,81,0.10)',
   sageEdge: 'rgba(55,117,81,0.28)',
 

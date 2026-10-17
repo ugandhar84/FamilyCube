@@ -10,6 +10,7 @@ import { updateStreak, awardCoins } from '@/lib/db/rewards';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { PinEntryHost } from '@/components/PinEntryModal';
 import AppAlert from '@/components/AppAlert';
 import AppToast from '@/components/AppToast';
 import OfflineBanner from '@/components/OfflineBanner';
@@ -1551,6 +1552,7 @@ export default function RootLayout() {
       <ThemeProvider>
         <RootNavigator />
         <AppAlert />
+        <PinEntryHost />
         <AppToast />
         <OfflineBanner />
       </ThemeProvider>

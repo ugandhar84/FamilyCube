@@ -54,7 +54,6 @@ const config = {
       // idioms to the same single value.
       UISupportedInterfaceOrientations: ["UIInterfaceOrientationPortrait"],
       "UISupportedInterfaceOrientations~ipad": [
-        "UIInterfaceOrientationPortrait",
         "UIInterfaceOrientationLandscapeLeft",
         "UIInterfaceOrientationLandscapeRight",
       ],

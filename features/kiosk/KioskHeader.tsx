@@ -46,9 +46,9 @@
  * the real hazard the filter prevents: it sets them active, and every
  * subsequent write goes out under a member id the backend considers gone.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Lock, Megaphone, Bell, Sun, MoonStar, MonitorSmartphone } from 'lucide-react-native';
+import { Lock, Megaphone, Bell, Sun, MoonStar, MonitorSmartphone, Sparkles } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
@@ -62,7 +62,7 @@ import { useNotifStore } from '@/store/notifStore';
 import type { KioskTabKey } from './kioskTabs';
 
 export function KioskHeader({
-  members, activeId, onSwitch, onIntercom, onLock, onNavigate,
+  members, activeId, onSwitch, onIntercom, onLock, onNavigate, onAskFam, onEditProfile,
 }: {
   members: FamilyMember[];
   activeId: string;
@@ -77,6 +77,10 @@ export function KioskHeader({
    *  panel when a row is tapped, so navigation stays inside kiosk chrome
    *  instead of a bare router.push to a phone-only route. */
   onNavigate: (tab: KioskTabKey) => void;
+  /** Parent only: opens the real Ask Family AI (replaces the old sidebar button). */
+  onAskFam?: () => void;
+  /** Long-press the active avatar to edit own profile (replaces the sidebar identity card). */
+  onEditProfile?: () => void;
 }) {
   const { k, isDark } = useKioskColors();
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
@@ -114,6 +118,10 @@ export function KioskHeader({
   useKioskLockSuspended(pinTarget !== null);
 
   const weather = useKioskWeather();
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const i = setInterval(() => setNow(new Date()), 15_000); return () => clearInterval(i); }, []);
+  const clockText = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const dateText = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const cycleTheme = () => {
@@ -156,6 +164,7 @@ export function KioskHeader({
               <Pressable
                 key={m.id}
                 onPress={() => handleSwitch(m.id)}
+                onLongPress={isActive ? onEditProfile : undefined}
                 style={({ pressed }) => [s.avatarItem, pressed && { opacity: 0.7 }]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isActive }}
@@ -172,8 +181,8 @@ export function KioskHeader({
                     emoji={m.emoji}
                     avatarUrl={m.avatarUrl}
                     siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
-                    size={42}
-                    ringWidth={2.5}
+                    size={52}
+                    ringWidth={3}
                     ringColor={isActive ? tint : k.cardBorder}
                     bgColor={isActive ? tint + (isDark ? '2E' : '1F') : k.well}
                     k={k}
@@ -211,6 +220,19 @@ export function KioskHeader({
           switches to (a command) — tapping cycles
           system -> light -> dark -> system. */}
       <View style={s.right}>
+        <View style={s.clockCol}>
+          <Text style={[s.clock, { color: k.text }]}>{clockText}</Text>
+          <Text style={[s.date, { color: k.textMuted }]} numberOfLines={1}>
+            {dateText}{weather ? ` · ${Math.round(weather.temperature)}${weather.unit}` : ''}
+          </Text>
+        </View>
+        {onAskFam && (
+          <HeaderButton
+            Icon={Sparkles} label="Ask Fam" accent={k.purple} k={k} isDark={isDark}
+            onPress={onAskFam}
+            hint="Ask the family AI assistant"
+          />
+        )}
         {/* Weather — moved out from beside the live dot to its own chip
             here, roughly the same footprint as an avatar (42px), so it
             reads as its own glanceable readout rather than small print
@@ -219,24 +241,6 @@ export function KioskHeader({
             of avatar"]. Still renders only once a real reading has come
             back (useKioskWeather returns null otherwise) — never a
             placeholder. */}
-        {weather && (
-          <View
-            style={[s.weatherChip, { backgroundColor: k.well, borderColor: k.cardBorder }]}
-            accessible accessibilityRole="text"
-            accessibilityLabel={`${weather.temperature}${weather.unit}, ${weather.condition}`}
-          >
-            <Text style={s.weatherIcon}>{weather.icon}</Text>
-            <Text style={[s.weatherText, { color: k.textMuted }]} numberOfLines={1}>
-              {weather.temperature}{weather.unit}
-            </Text>
-          </View>
-        )}
-        <HeaderButton
-          Icon={themeIcon} label={themeLabel} accent={k.textMuted} k={k} isDark={isDark}
-          onPress={cycleTheme}
-          hint={`Display theme: ${themeLabel}. Tap to change.`}
-          neutral
-        />
         <HeaderButton
           Icon={Megaphone} label="Announcement" accent={k.primary} k={k} isDark={isDark}
           onPress={onIntercom}
@@ -345,20 +349,23 @@ const s = StyleSheet.create({
   brandText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6, maxWidth: 130 },
   avatarScroll: { flex: 1, minWidth: 0 },
   avatarRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
-  avatarItem: { alignItems: 'center', gap: 3, width: 58 },
+  avatarItem: { alignItems: 'center', gap: 4, width: 72 },
   avatarRing: {
     width: 42, height: 42, borderRadius: 21, borderWidth: 2.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarRingWrap: { width: 42, height: 42 },
+  avatarRingWrap: { width: 52, height: 52 },
   avatarEmoji: { fontSize: 19 },
   pinBadge: {
     position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
     borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
   },
-  avatarName: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  avatarName: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
 
   right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginLeft: 'auto' },
+  clockCol: { alignItems: 'flex-end', marginRight: KIOSK_SPACE.sm },
+  clock: { fontSize: 30, fontWeight: '800', letterSpacing: -1, fontVariant: ['tabular-nums'] },
+  date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   weatherChip: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,
     height: KIOSK_HIT.min, minWidth: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.sm,

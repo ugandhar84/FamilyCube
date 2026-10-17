@@ -1559,6 +1559,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    // A personal task (someone's own private reminder) never notifies anyone.
+    const qid = (payload as any)?.questId ?? (payload as any)?.choreId;
+    if (qid) {
+      const { data: pq } = await supabase.from('chore_tasks').select('is_personal').eq('id', qid).maybeSingle();
+      if (pq?.is_personal) return new Response(JSON.stringify({ ok: true, skipped: 'personal task' }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+
     // Resolve push tokens — caller can pass directly or let us look them up
     let pushTokens: string[] = tokens ?? [];
     let resolvedMemberIds: string[] = memberIds ?? [];

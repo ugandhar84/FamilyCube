@@ -26,6 +26,7 @@ import PinEntryModal from '@/components/PinEntryModal';
 import type { FamilyMember } from '@/store/familyStore';
 import { ParentView } from './ParentView';
 import { HubStickyNotes } from './HubStickyNotes';
+import { HubMyList } from './HubMyList';
 import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
@@ -694,6 +695,7 @@ export default function HubScreen() {
         scrollEventThrottle={isParent ? 100 : undefined}
       >
         {(isParent || active.role === 'kid' || isTeen) && headerEl}
+        <HubMyList active={active} colors={colors} isDark={isDark} />
         <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (
           <ParentView

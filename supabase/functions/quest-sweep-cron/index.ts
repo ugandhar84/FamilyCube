@@ -59,7 +59,8 @@ serve(async (req) => {
     let q = supabase
       .from('chore_tasks')
       .select('id, title, status, due_date, family_id')
-      .in('status', ['todo', 'in_progress']);
+      .in('status', ['todo', 'in_progress'])
+      .eq('is_personal', false); // a private personal task never notifies anyone
     if (familyId) q = q.eq('family_id', familyId);
     const { data: chores, error } = await q;
     if (error) throw new Error(`Chore fetch: ${error.message}`);

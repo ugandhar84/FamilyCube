@@ -27,6 +27,7 @@ import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import type { KioskTabKey } from '../kioskTabs';
 import { KioskRedoReasonDialog } from './KioskRedoReasonDialog';
 import { KioskFamilyBoard } from './KioskFamilyBoard';
+import { KioskSimpleChecklist } from './KioskSimpleChecklist';
 import { KioskJustDescribeTaskDrawer, KioskJustDescribeEventDrawer } from './KioskJustDescribeDrawer';
 import { FamilyNowCard, HomeChatsCard, HomeMedsCard, StickyNotesCard, HomeMemoriesCard } from './KioskHomeWidgets';
 import {
@@ -152,6 +153,11 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
           <FamilyNowCard members={members} onOpenMap={goMap} />
           <HomeChatsCard active={active} members={members} />
           <HomeMedsCard active={active} members={members} ownOnly={false} />
+          <Section label="MY LIST" accent={k.sage} k={k}>
+            <RaisedCard k={k} isDark={isDark} style={{ padding: KIOSK_SPACE.sm }}>
+              <KioskSimpleChecklist bare active={active} members={members} k={k} isDark={isDark} onOpenTasks={() => onNavigate('tasks')} />
+            </RaisedCard>
+          </Section>
           <StickyNotesCard active={active} members={members} />
           <HomeMemoriesCard onOpen={goMemories} />
           <Pressable onPress={onIntercom} accessibilityRole="button" accessibilityLabel="Intercom" style={[s.talk, { backgroundColor: k.purpleSoft }]}>

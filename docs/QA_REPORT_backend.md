@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T15:29:25.765Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T15:38:22.140Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**63 passed, 0 failed, 6 findings.**
+**66 passed, 0 failed, 6 findings.**
 
 ## Sticky notes
 
@@ -72,7 +72,7 @@ Run: 2026-10-17T15:29:25.765Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 3658e54f-1353-4d8f-a93c-e7eae08463af is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 65a10c1a-6b1b-41a5-8d4a-68ceeb89b72e is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -83,13 +83,16 @@ Run: 2026-10-17T15:29:25.765Z against a throwaway scratch family (real rows, rea
 | PASS | a kid finishes their own zero-coin task with one tap | null |
 | PASS | a kid cannot self-approve a task that pays coins | A child/teenager cannot approve their own chore — requires a parent or an active temporary-approver grant. |
 | PASS | a parent-trusted task completes on one tap | null |
+| PASS | a kid’s own zero-coin task is flagged personal (so no notifications) | true |
+| PASS | a kid’s own task that pays coins is not personal | false |
+| PASS | a parent-assigned task is not personal | false |
 
 ## Rewards
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792250944541"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792250944541"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792251482442"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792251482442"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |

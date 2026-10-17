@@ -167,6 +167,12 @@ try {
   r = await rpc(mia, 'submit_chore', { p_chore_id: trusted.choreId, p_member_id: mia });
   check(G, 'a parent-trusted task completes on one tap', r.ok, r.error);
 
+  const flags = (await call({ action: 'read', table: 'chore_tasks', familyId: F })).rows ?? [];
+  const flagOf = id => flags.find(c => c.id === id)?.is_personal;
+  check(G, 'a kid’s own zero-coin task is flagged personal (so no notifications)', flagOf(own.choreId) === true, String(flagOf(own.choreId)));
+  check(G, 'a kid’s own task that pays coins is not personal', flagOf(coinTask.choreId) === false, String(flagOf(coinTask.choreId)));
+  check(G, 'a parent-assigned task is not personal', flagOf(trusted.choreId) === false, String(flagOf(trusted.choreId)));
+
   /* ───────── Rewards ───────── */
   const H = 'Rewards';
   await call({ action: 'set_coins', familyId: F, memberId: mia, mainCoins: 100 });

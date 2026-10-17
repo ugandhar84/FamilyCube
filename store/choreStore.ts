@@ -1836,7 +1836,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // through calendar_events rather than giving chores their own push
     // path). linkedEventId already existed as a column but was previously
     // always null — this is the first real writer of it.
-    if (confirmed.dueDate && confirmed.dueTime && !confirmed.linkedEventId) {
+    // A personal task is a private reminder: it gets no calendar event (and so no reminder pushes).
+    const isPersonalTask = !!confirmed.createdById && confirmed.createdById === confirmed.assignedToId && !!(confirmed as any).trustedAutoApprove
+      && ((confirmed as any).basePoints || (confirmed as any).coinsReward || 0) + ((confirmed as any).bonusCoins || 0) === 0;
+    if (confirmed.dueDate && confirmed.dueTime && !confirmed.linkedEventId && !isPersonalTask) {
       // addEvent is async (eventStore.ts's DB-is-truth conversion) — was a
       // real bug here: this fire-and-forget block never awaited it, so
       // linkedEventId was a Promise object, not a real event id, silently

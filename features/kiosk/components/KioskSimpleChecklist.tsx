@@ -19,6 +19,7 @@ import { localDateStr } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { kioskPastels, type KioskColors } from '../kioskPalette';
 import { fmt12 } from './KioskHomeParts';
+import { addPersonalTask, quickDeadlines, deadlineLabel } from '@/lib/personalTasks';
 import { visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader } from './KioskOS';
 import { ListChecks } from 'lucide-react-native';
@@ -62,17 +63,14 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
 
   // The kid's own entry: no coins, no review — a plain reminder for
   // themselves (trusted so one tap completes it).
+  const [deadlineKey, setDeadlineKey] = useState('today');
   const addOwn = () => {
     const title = draft.trim();
     if (!title) return;
-    addQuest({
-      title, coins: 0, xpReward: 0, status: 'todo', isPool: false,
-      assignedToId: active.id, createdById: active.id,
-      trustedAutoApprove: true, photoRequired: false,
-      dueDate: localDateStr(), recurrence: 'once', questType: 'general',
-    });
-    setDraft(''); setAdding(false);
-    showToast('Added to your day ✓');
+    const dl = quickDeadlines().find(d => d.key === deadlineKey) ?? quickDeadlines()[1];
+    addPersonalTask(active, title, dl);
+    setDraft(''); setAdding(false); setDeadlineKey('today');
+    showToast('Added to your list ✓');
   };
 
   const tap = (q: Quest) => {
@@ -120,13 +118,14 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[s.title, { color: k.text, flex: 0 }]} numberOfLines={2}>{q.title}</Text>
-                <Text style={[s.subT, { color: k.textMuted }]} numberOfLines={1}>{q.dueTime ? `Due ${fmt12(q.dueTime)} · ` : ''}tap when finished</Text>
+                <Text style={[s.subT, { color: k.textMuted }]} numberOfLines={1}>{(q as any).dueDate || q.dueTime ? `${deadlineLabel((q as any).dueDate, q.dueTime)} · ` : ''}tap when finished</Text>
               </View>
               {!!q.coins && <View style={[s.coinPill, { backgroundColor: k.pastelAmberCard }]}><Text style={[s.coinT, { color: k.gold }]}>🪙 {q.coins}</Text></View>}
             </Pressable>
           );
         })}
         {adding ? (
+          <View style={{ gap: 8 }}>
           <View style={[s.row, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
             <TextInput
               value={draft} onChangeText={setDraft} autoFocus maxLength={80}
@@ -137,6 +136,16 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
             <Pressable onPress={addOwn} style={[s.addBtn, { backgroundColor: k.sage }]} accessibilityRole="button" accessibilityLabel="Add">
               <Check size={22} color={k.onPrimary} strokeWidth={3} />
             </Pressable>
+          </View>
+          <Text style={[s.subT, { color: k.textFaint }]}>DEADLINE</Text>
+          <View style={s.dlRow}>
+            {quickDeadlines().map(d => (
+              <Pressable key={d.key} onPress={() => setDeadlineKey(d.key)} accessibilityRole="button" accessibilityState={{ selected: deadlineKey === d.key }}
+                style={[s.dlChip, { backgroundColor: deadlineKey === d.key ? k.primary : k.well }]}>
+                <Text style={[s.dlT, { color: deadlineKey === d.key ? k.onPrimary : k.textMuted }]}>{d.label}</Text>
+              </Pressable>
+            ))}
+          </View>
           </View>
         ) : (
           <Pressable
@@ -180,6 +189,9 @@ const s = StyleSheet.create({
   rowNext: { borderWidth: 3 },
   addBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   title: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  dlRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  dlChip: { minHeight: 44, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  dlT: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   subT: { fontSize: KIOSK_TYPO.label, fontWeight: '700', marginTop: 1 },
   coinPill: { borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
   coinT: { fontSize: 13, fontWeight: '800' },

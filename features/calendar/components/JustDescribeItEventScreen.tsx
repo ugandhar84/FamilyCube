@@ -241,6 +241,38 @@ export default function JustDescribeItEventScreen({
   const [evPickupNeeded, setEvPickupNeeded]   = useState(!!linkedPickupLeg);
   // "Pick up Cherry at 6" means ONE pick-up at 6, not a drop-off at 6 and a pick-up an hour later. Read from the words, editable.
   const [pickupOnly, setPickupOnly]       = useState(false);
+  const rideMode: 'none' | 'dropoff' | 'pickup' | 'both' =
+    pickupOnly && evPickupNeeded ? 'pickup'
+    : evDropNeeded && evPickupNeeded ? 'both'
+    : evDropNeeded ? 'dropoff'
+    : evPickupNeeded ? 'pickup' : 'none';
+  // Changing the ride re-times the legs: a single pick-up happens AT the event time; with both, the drop-off is at the start
+  // and the pick-up at the end (an hour later by default); the spoken time is never silently lost.
+  const setRideMode = (mode: 'none' | 'dropoff' | 'pickup' | 'both') => {
+    const from = rideMode;
+    if (mode === from) return;
+    if (from === 'pickup' && (mode === 'both')) {
+      const pickAt = evTime;
+      setEvTime(pickAt < '01:00' ? '00:00' : addMinutesToHHMM(pickAt, -60));
+      setEvEndTime(pickAt);
+    }
+    if (from === 'both' && mode === 'pickup') setEvTime(evEndTime);
+    if (from === 'dropoff' && mode === 'both') { /* start stays the drop-off; the end is the pick-up */ }
+    if (from === 'both' && mode === 'dropoff') { /* keep the start as the drop-off time */ }
+    if (from === 'pickup' && mode === 'dropoff') { /* same single time */ }
+    setPickupOnly(mode === 'pickup');
+    setEvDropNeeded(mode === 'dropoff' || mode === 'both');
+    setEvPickupNeeded(mode === 'pickup' || mode === 'both');
+    if (mode === 'pickup' || mode === 'both') {
+      const venue = evDropTo || evLocation.trim();
+      if (!evPickupFrom) setEvPickupFrom(venue);
+      if (!evPickupTo) setEvPickupTo(evDropFrom);
+      if (!evPickupDriverId && evDropDriverId) setEvPickupDriverId(evDropDriverId);
+    }
+    if (mode === 'dropoff' || mode === 'both') {
+      if (!evDropTo && evLocation.trim()) setEvDropTo(evLocation.trim());
+    }
+  };
   const [evPickupFrom, setEvPickupFrom]       = useState(linkedPickupLeg?.pickupLocation ?? '');
   const [evPickupTo, setEvPickupTo]           = useState(linkedPickupLeg?.dropLocation ?? '');
   const [evPickupDriverId, setEvPickupDriverId] = useState<string | undefined>(linkedPickupLeg?.driverId);
@@ -1244,31 +1276,34 @@ export default function JustDescribeItEventScreen({
                         so this section always shows now. */}
                     <View style={{ gap: 4 }}>
                         <FieldLabel text="Transport" />
-                        <View style={{ gap: 16, marginTop: 6 }}>
+                        <View style={{ gap: 12, marginTop: 6 }}>
 
-                          {/* Smart default from what was said; the person can switch it off to plan both legs. */}
-                          {evPickupNeeded && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <View style={{ flex: 1, paddingRight: 12 }}>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Just a pick-up</Text>
-                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{pickupOnly ? `One pick-up at ${fmt12h(evTime)}` : 'Off: separate drop-off and pick-up times'}</Text>
-                              </View>
-                              <Toggle value={pickupOnly} onChange={() => setPickupOnly(v => !v)} />
+                          {/* One clear choice for the ride. Pre-set from what was said; changing it re-times the legs sensibly. */}
+                          <View style={{ gap: 8 }}>
+                            <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#F0EDE6', borderRadius: 14, padding: 3 }}>
+                              {([['none', 'No ride'], ['dropoff', 'Drop-off'], ['pickup', 'Pick-up'], ['both', 'Both ways']] as const).map(([key, label]) => (
+                                <TouchableOpacity key={key} onPress={() => setRideMode(key)} accessibilityRole="button" accessibilityState={{ selected: rideMode === key }}
+                                  style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 11, backgroundColor: rideMode === key ? (isDark ? colors.card : '#FFFFFF') : 'transparent' }}>
+                                  <Text style={{ fontSize: 13, fontWeight: rideMode === key ? '800' : '600', color: rideMode === key ? titleC : tertiaryC }} numberOfLines={1}>{label}</Text>
+                                </TouchableOpacity>
+                              ))}
                             </View>
-                          )}
+                            <Text style={{ fontSize: 12, color: tertiaryC }}>
+                              {rideMode === 'none' ? 'No driver needed.'
+                                : rideMode === 'dropoff' ? `Someone drives them there at ${fmt12h(evTime)}.`
+                                : rideMode === 'pickup' ? `Someone picks them up at ${fmt12h(evTime)}.`
+                                : `Drop-off at ${fmt12h(evTime)}, pick-up at ${fmt12h(evEndTime)}.`}
+                            </Text>
+                          </View>
 
-                          {/* Drop-off leg */}
+                          {/* Drop-off leg (hidden while this is just a pick-up) */}
+                          {rideMode === 'dropoff' || rideMode === 'both' ? (
                           <View style={{ gap: 10 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                               <View>
                                 <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Drop-off</Text>
-                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`Getting there · ${fmt12h(evTime)}`}</Text>
+                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`At ${fmt12h(evTime)}`}</Text>
                               </View>
-                              <Toggle value={evDropNeeded} onChange={() => {
-                                const next = !evDropNeeded;
-                                setEvDropNeeded(next);
-                                if (next && !evDropTo && evLocation.trim()) setEvDropTo(evLocation.trim());
-                              }} />
                             </View>
                             {evDropNeeded && (
                               <View style={{ gap: 8 }}>
@@ -1314,26 +1349,18 @@ export default function JustDescribeItEventScreen({
                               </View>
                             )}
                           </View>
+                          ) : null}
 
                           {/* Pick-up leg */}
-                          {!evAllDay && (
+                          {!evAllDay && (rideMode === 'pickup' || rideMode === 'both') && (
                             <>
-                              <View style={{ height: 1, backgroundColor: colors.border }} />
+                              {rideMode === 'both' && <View style={{ height: 1, backgroundColor: colors.border }} />}
                               <View style={{ gap: 10 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                   <View>
                                     <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Pick-up</Text>
-                                    <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`Getting home · ${fmt12h(evEndTime)}`}</Text>
+                                    <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`At ${fmt12h(pickupOnly ? evTime : evEndTime)}`}</Text>
                                   </View>
-                                  <Toggle value={evPickupNeeded} onChange={() => {
-                                    const next = !evPickupNeeded;
-                                    setEvPickupNeeded(next);
-                                    const venue = evDropTo || evLocation.trim();
-                                    if (next && !evPickupFrom) setEvPickupFrom(venue);
-                                    if (next && !evPickupTo) setEvPickupTo(evDropFrom);
-                                    // Default to the same driver as drop-off (user can change)
-                                    if (next && !evPickupDriverId && evDropDriverId) setEvPickupDriverId(evDropDriverId);
-                                  }} />
                                 </View>
                                 {evPickupNeeded && (
                                   <View style={{ gap: 8 }}>

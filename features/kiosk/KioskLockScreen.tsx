@@ -192,15 +192,6 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors, nextUp 
           {!selected ? 'Choose your name' : needsPin ? 'Enter personal PIN' : `Unlock as ${selected.name?.trim().split(' ')[0]}`}
         </Text>
       </Pressable>
-      {selected && needsPin && (
-        <Pressable
-          onPress={() => setPinTarget(selected)}
-          style={[s.secondaryBtn, { borderColor: k.cardBorderStrong }]}
-          accessibilityRole="button"
-        >
-          <Text style={[s.secondaryBtnText, { color: k.text }]}>Use personal PIN instead</Text>
-        </Pressable>
-      )}
       <Text style={[s.fine, { color: colors.textTertiary, marginTop: KIOSK_SPACE.sm }]}>
         Auto-locked after 2 minutes. Health, private records and precise location stay on trusted personal devices.
       </Text>

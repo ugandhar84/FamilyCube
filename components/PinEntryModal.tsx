@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/chatCrypto';
 import { useDeviceClass } from '@/lib/useDeviceClass';
 import { KIOSK_RADIUS } from '@/features/kiosk/kioskTheme';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PIN_LENGTH = 4;
@@ -46,7 +47,7 @@ function PinDots({ entered, shaking, color }: { entered: number; shaking: Animat
 
 // ─── Number key ───────────────────────────────────────────────────────────────
 function Key({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePress = () => {
@@ -62,16 +63,15 @@ function Key({ label, onPress, disabled }: { label: string; onPress: () => void;
 
   return (
     <Pressable allowRapidPress onPress={handlePress} disabled={disabled} style={styles.keyWrap}>
-      <Animated.View style={[styles.key, {
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
+      {/* Figma rhythm: bright white round keys that lift off the cream card with a real shadow, no border. */}
+      <Animated.View style={[styles.key, isDark ? { backgroundColor: colors.surface, borderColor: colors.border } : { backgroundColor: GEMINI.cardBg, borderWidth: 0, ...GEMINI.cardShadow, shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }, {
         transform: [{ scale }],
         opacity: disabled ? 0.4 : 1,
       }]}>
         {label === '⌫' ? (
-          <Ionicons name="backspace-outline" size={22} color={colors.textSecondary} />
+          <Ionicons name="backspace-outline" size={24} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />
         ) : (
-          <Text style={[styles.keyText, { color: colors.textPrimary }]}>{label}</Text>
+          <Text style={[styles.keyText, { color: isDark ? colors.textPrimary : GEMINI.titleColor }]}>{label}</Text>
         )}
       </Animated.View>
     </Pressable>
@@ -109,7 +109,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
   const shakeAnim    = useRef(new Animated.Value(0)).current;
   const lockInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const accentColor = member?.role === 'parent' ? colors.parent : colors.kid;
+  const accentColor = isDark ? (member?.role === 'parent' ? colors.parent : colors.kid) : GEMINI.blue;
 
   const [verifying, setVerifying] = useState(false);
 
@@ -246,16 +246,16 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
       {/* Avatar */}
       <View style={styles.avatarSection}>
         <View style={[styles.avatarCircle, {
-          backgroundColor: (member.role === 'parent' ? colors.parentLight : colors.kidLight),
+          backgroundColor: GEMINI.cardBg,
           borderColor: accentColor,
         }]}>
           <Text style={styles.avatarEmoji}>{member.emoji ?? member.name[0]}</Text>
         </View>
-        <Text style={[styles.memberName, { color: colors.textPrimary }]}>{member.name}</Text>
+        <Text style={[styles.memberName, { color: isDark ? colors.textPrimary : GEMINI.titleColor }]}>{member.name}</Text>
         <Text style={[styles.roleTag, { color: accentColor }]}>
           {member.role === 'parent' ? '👑 Parent' : '🌟 Kid'}
         </Text>
-        <Text style={[styles.prompt, { color: colors.textSecondary }]}>
+        <Text style={[styles.prompt, { color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '700' }]}>
           {locked ? `🔒 Locked for ${lockRemaining}s` : 'Enter PIN to switch profile'}
         </Text>
       </View>
@@ -287,7 +287,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
       </View>
 
       {/* Forgot PIN hint */}
-      <Text style={[styles.hint, { color: colors.textTertiary }]}>
+      <Text style={[styles.hint, { color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }]}>
         Forgot PIN? Ask a parent to reset it in Settings.
       </Text>
     </>
@@ -303,7 +303,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
         <Pressable
           style={[
             isTablet ? styles.tabletCard : styles.inlineFull,
-            { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border },
+            { backgroundColor: isDark ? colors.surface : GEMINI.canvas, borderColor: isDark ? colors.border : GEMINI.border },
           ]}
           onPress={(e) => e.stopPropagation()}
         >

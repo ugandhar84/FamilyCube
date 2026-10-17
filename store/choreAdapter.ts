@@ -184,6 +184,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     cancelledAt:      undefined,
 
     photoRequired:    c.requiresPhotoProof,
+    trustedAutoApprove: c.trustedAutoApprove ?? false,
     photoUrl:         c.submissionPhotoUrl,
     photoUrls:        c.submissionPhotoUrl ? [c.submissionPhotoUrl] : [],
     videoUrl:         undefined,
@@ -263,6 +264,7 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     status:            (q.questType === 'grandparent_quest' ? 'pending_parent_approval' : 'todo') as any,
     assignedToId:      q.assignedToId ?? (q.assignedToIds?.[0]),
     requiresPhotoProof: q.photoRequired ?? false,
+    trustedAutoApprove: q.trustedAutoApprove ?? false,
     dueDate:           q.dueDate,
     dueTime:           q.dueTime,
     // Some creation paths (e.g. JustDescribeItScreen.tsx's quick-capture
@@ -395,6 +397,7 @@ export function useQuestStore() {
       }
       if (updates.difficulty    !== undefined) choreUpdates.difficulty        = updates.difficulty;
       if (updates.photoRequired !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
+      if (updates.trustedAutoApprove !== undefined) choreUpdates.trustedAutoApprove = updates.trustedAutoApprove;
       if (updates.assignedToId  !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
       if (updates.linkedEventId !== undefined) choreUpdates.linkedEventId     = updates.linkedEventId;
       if ((updates as any).isPool !== undefined) choreUpdates.isPool          = (updates as any).isPool;
@@ -581,6 +584,7 @@ useQuestStore.getState = () => {
       if (updates.category       !== undefined) choreUpdates.category          = updates.category as any;
       if (updates.difficulty     !== undefined) choreUpdates.difficulty        = updates.difficulty;
       if (updates.photoRequired  !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
+      if (updates.trustedAutoApprove !== undefined) choreUpdates.trustedAutoApprove = updates.trustedAutoApprove;
       if (updates.assignedToId   !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
       if (updates.linkedEventId  !== undefined) choreUpdates.linkedEventId     = updates.linkedEventId;
       if (updates.dueDate        !== undefined) choreUpdates.dueDate           = updates.dueDate;

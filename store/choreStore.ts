@@ -125,6 +125,8 @@ export interface ChoreTask {
   // for the claimant's Accept/Hand-back card. See propose_terms_change RPC.
   pendingTerms?: { old: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; changedBy: string; changedAt: string };
   requiresPhotoProof: boolean;
+  /** Parent-marked "trusted" chore: submit auto-approves and pays, no review. */
+  trustedAutoApprove?: boolean;
   difficulty?: 'easy' | 'medium' | 'hard' | 'hero';
   recurrenceRule: RecurrenceRule;
   instanceDate?: string;
@@ -784,6 +786,7 @@ function choreFromRow(row: any): ChoreTask {
     isPrivateParent:         row.category_type === 'parent_only_quest',
     updatedAt:               row.updated_at ?? undefined,
     requiresPhotoProof:      row.requires_photo ?? row.requires_photo_proof ?? false,
+    trustedAutoApprove:      row.trusted_auto_approve ?? false,
     recurrenceRule:          (typeof row.recurrence_rule === 'object' && row.recurrence_rule)
                                ? row.recurrence_rule
                                : { frequency: 'once' as const },
@@ -1745,6 +1748,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       invite_grandparents:      chore.inviteGrandparents ?? false,
       is_open_to_teens:         chore.isOpenToTeens ?? false,
       requires_photo:           chore.requiresPhotoProof,
+      trusted_auto_approve:     chore.trustedAutoApprove ?? false,
       recurrence_rule:          chore.recurrenceRule,
       instance_date:            chore.instanceDate,
       due_date:                 chore.dueDate,
@@ -1877,7 +1881,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // coinsReward edit fall through to the general propose_terms_change
       // path instead, an inconsistent lock on the same underlying "how
       // much does this quest pay" concept.
-      const editableFields = ['title', 'description', 'basePoints', 'coinsReward', 'targetChildIds', 'questMode', 'requiresPhotoProof'];
+      const editableFields = ['title', 'description', 'basePoints', 'coinsReward', 'targetChildIds', 'questMode', 'requiresPhotoProof', 'trustedAutoApprove'];
       if (editableFields.some(f => f in rawUpdates)) {
         console.warn(`[choreStore] blocked edit to grandparent_quest ${id} — status is ${prevChore.status}, not pending_parent_approval`);
         showToast("This chore has already been reviewed — it can't be edited anymore", 'error');
@@ -2141,6 +2145,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('alertCall'          in updates) patch.alert_call               = updates.alertCall ?? false;
     if ('alertCallLeadMinutes' in updates) patch.alert_call_lead_minutes = updates.alertCallLeadMinutes ?? 10;
     if ('requiresPhotoProof' in updates) patch.requires_photo           = updates.requiresPhotoProof;
+    if ('trustedAutoApprove' in updates) patch.trusted_auto_approve     = updates.trustedAutoApprove;
     if ('inviteGrandparents' in updates) patch.invite_grandparents      = updates.inviteGrandparents;
     if ('isOpenToTeens'      in updates) patch.is_open_to_teens         = updates.isOpenToTeens;
     if ('recurrenceRule'     in updates) patch.recurrence_rule          = updates.recurrenceRule;
@@ -2797,7 +2802,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       dbInsert('point_transactions', {
         id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
         transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
-        notes: result.auto_approved ? 'Chore auto-approved (redo cap reached)' : 'Chore approved', created_at: now, wallet,
+        notes: result.auto_approved ? 'Chore auto-approved' : 'Chore approved', created_at: now, wallet,
       });
     }
     if (newStatus === 'pending_approval') notifyQuestSubmitted(chore);

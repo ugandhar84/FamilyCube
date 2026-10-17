@@ -3438,7 +3438,10 @@ function RedoReasonSheet({ target, k, onClose, onSend }: {
         {REJECTION_PRESETS.map(p => (
           <KioskPill
             key={p.key} label={p.label} selected={preset === p.key}
-            onPress={() => setPreset(p.key)} accent={k.danger} k={k}
+            onPress={() => {
+              if (p.key === 'CUSTOM') { setPreset(p.key); return; }
+              onSend(p.label, p.key); setPreset(null); setCustomMsg('');
+            }} accent={k.danger} k={k}
           />
         ))}
       </View>

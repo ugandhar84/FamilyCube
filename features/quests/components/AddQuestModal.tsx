@@ -123,6 +123,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const [isPool,       setIsPool]       = useState(false);
   const [maxClaimants, setMaxClaimants] = useState<number>(1); // pool: how many kids can claim
   const [photoReq,     setPhotoReq]     = useState(prefill?.photoRequired ?? false);
+  const [trusted,      setTrusted]      = useState(false);
   const [desc,         setDesc]         = useState('');
   const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
   const [bonusCoins,   setBonusCoins]   = useState('');
@@ -488,7 +489,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
     setCategory('Other'); setCategoryTouched(false);
     setAssignIds([]); setIsPool(false); setMaxClaimants(1);
-    setPhotoReq(false); setDueDate(defaultDue()); setIsAdultTask(false);
+    setPhotoReq(false); setTrusted(false); setDueDate(defaultDue()); setIsAdultTask(false);
     setShowDatePick(false); setShowTimePick(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
@@ -632,6 +633,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       dueTime: fmtTimeLabel(dueDate),
       alertCall, alertCallLeadMinutes,
       photoRequired: routineType === 'shopping' ? true : photoReq,
+      trustedAutoApprove: trusted && !photoReq && routineType !== 'shopping',
       createdById: activeMemberId,
       isAdultTask,
       questType: resolvedQuestType,
@@ -1089,6 +1091,24 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
             ) : (isRoutine && routineType === 'citizenship') ? (
               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 3 }}>no reward</Text>
             ) : null}
+
+
+            {!photoReq && routineType !== 'shopping' && (
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginTop: 10,
+                  backgroundColor: trusted ? colors.tealLight : colors.card,
+                  borderWidth: 1.5, borderColor: trusted ? colors.teal : colors.border }}
+                onPress={() => setTrusted(t => !t)} activeOpacity={0.8}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: trusted ? colors.teal : colors.textPrimary }}>✅ Trusted chore</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Paid right away when done — no review needed</Text>
+                </View>
+                <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: trusted ? colors.teal : colors.border, justifyContent: 'center', padding: 2 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.card, alignSelf: trusted ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* Hardness — its own row now that Coins/Bonus/Photo share one above */}
             <View style={{ marginTop: 10, marginBottom: 14 }}>

@@ -82,6 +82,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const [isPool,       setIsPool]       = useState(quest.isPool ?? false);
   const [assignIds,         setAssignIds]         = useState<string[]>(quest.assignedToId ? [quest.assignedToId] : (quest.assignedToIds ?? []));
   const [photoReq,          setPhotoReq]          = useState(quest.photoRequired ?? false);
+  const [trusted,           setTrusted]           = useState(quest.trustedAutoApprove ?? false);
   const [isAdultTask,       setIsAdultTask]        = useState(quest.isAdultTask ?? false);
   const [inviteGrandparent, setInviteGrandparent] = useState(quest.inviteGrandparents ?? false);
   // Live QA finding (docs/qa_form_combinations_audit.html, High): this
@@ -268,6 +269,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         // correctly changed to parent_only_quest server-side.
         isPool: isAdultTask ? isPool : (isPool || assignIds.length === 0),
         photoRequired: photoReq,
+        trustedAutoApprove: trusted && !photoReq,
         isAdultTask,
         inviteGrandparents: inviteGrandparent,
         isOpenToTeens: teensOnly,
@@ -298,6 +300,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         // correctly changed to parent_only_quest server-side.
         isPool: isAdultTask ? isPool : (isPool || assignIds.length === 0),
         photoRequired: photoReq,
+        trustedAutoApprove: trusted && !photoReq,
         isAdultTask,
         inviteGrandparents: inviteGrandparent,
         isOpenToTeens: teensOnly,
@@ -795,6 +798,23 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                     <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: photoReq ? 'flex-end' : 'flex-start' }} />
                   </View>
                 </TouchableOpacity>
+
+            {!photoReq && (
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginTop: 0,
+                  backgroundColor: trusted ? colors.tealLight : colors.card,
+                  borderWidth: 1.5, borderColor: trusted ? colors.teal : colors.border }}
+                onPress={() => setTrusted(t => !t)} activeOpacity={0.8}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: trusted ? colors.teal : colors.textPrimary }}>✅ Trusted chore</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Paid right away when done — no review needed</Text>
+                </View>
+                <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: trusted ? colors.teal : colors.border, justifyContent: 'center', padding: 2 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.card, alignSelf: trusted ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
+            )}
               </View>
 
               {/* ── Category + Difficulty ── */}

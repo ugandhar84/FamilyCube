@@ -295,7 +295,7 @@ const GROUP_CHANNEL_NAMES: Record<string, string> = {
   parents: '#parents-vault',
   seniors_a: 'Grandparents',
   seniors_b: 'Grandparents',
-  seniors_all: '#the-grand-squad',
+  seniors_all: 'Grandparent squad',
 };
 const _ensuredGroupChannels = new Set<string>();
 async function ensureGroupChannelRow(channelId: string, senderId: string): Promise<void> {

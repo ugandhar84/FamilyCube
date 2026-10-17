@@ -68,21 +68,10 @@ export function buildGroupChannels(members: FamilyMember[]): GroupChannel[] {
     { id: 'parents', label: '🔒 #parents-vault', isDM: false, lock: true },
   ];
 
-  const labelA = sideLabel(parents[0]);
-  const labelB = sideLabel(parents[1]);
-  if (sideA.length > 0) {
-    channels.push({ id: 'seniors_a', label: `👶 ${labelA ?? 'Grandparents'} Grands`, isDM: false, lock: false, seniorOnly: true });
-  }
-  if (sideB.length > 0) {
-    channels.push({ id: 'seniors_b', label: `👶 ${labelB ?? 'Grandparents'} Grands`, isDM: false, lock: false, seniorOnly: true });
-  }
-  // Unlinked seniors (no side determined) fold into whichever side channel
-  // exists, or get their own fallback channel if neither side is set up yet.
-  if (unlinked.length > 0 && sideA.length === 0 && sideB.length === 0) {
-    channels.push({ id: 'seniors_a', label: '👵 Grandparents', isDM: false, lock: false, seniorOnly: true });
-  }
+  // One shared grandparent channel for every grandparent plus the whole family (the old per-side
+  // channels were retired). seniors_a / seniors_b ids stay valid in the database for old messages only.
   if (seniors.length > 0) {
-    channels.push({ id: 'seniors_all', label: '#the-grand-squad', isDM: false, lock: false, seniorOnly: true });
+    channels.push({ id: 'seniors_all', label: '👵 Grandparent squad', isDM: false, lock: false });
   }
   return channels;
 }

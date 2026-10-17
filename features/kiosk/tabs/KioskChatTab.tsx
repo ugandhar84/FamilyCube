@@ -178,8 +178,6 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       // a parent-count heuristic.
       // The Parents Vault is a phone-only channel; the shared wall display never lists it.
       .filter(ch => ch.id !== 'parents')
-      // Grandparent channels are hidden on the kiosk for everyone except a grandparent signed in here.
-      .filter(ch => isSenior || !ch.id.startsWith('seniors_'))
       .filter(ch => !ch.lock || isParent)
       .filter(ch => !ch.seniorOnly || isSenior || isParent)
       .filter(ch => {

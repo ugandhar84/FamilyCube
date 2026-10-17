@@ -22,6 +22,7 @@ export interface ExtractedTask {
   pickupLocation: string | null;
   dropoffLocation: string | null;
   rideDirection: 'pickup' | 'dropoff' | 'both' | null;
+  returnTime?: string | null; // 'HH:MM', second leg of a both-ways ride
 }
 
 export interface ExtractedErrand {

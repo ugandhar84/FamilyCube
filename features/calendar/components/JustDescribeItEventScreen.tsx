@@ -524,8 +524,25 @@ export default function JustDescribeItEventScreen({
       );
       if (result?.task?.title) {
         // Always open the form and fill it — never overwrite what the user typed
-        setEvTitle(result.task.title);
+        const t = result.task;
         if (!formOpen) openInlineForm();
+        setEvTitle(t.title);
+        // Fill the ride from the AI's reading only where the built-in reader left it empty — never override a choice already made.
+        const local = detection?.rideDirection ?? null;
+        const dir = t.category === 'transport' || t.rideDirection ? t.rideDirection : null;
+        if (dir && !local && !evDropNeeded && !evPickupNeeded) {
+          setRideMode(dir);
+          if (dir === 'both' && t.returnTime && /^\d{2}:\d{2}$/.test(t.returnTime)) setEvEndTime(t.returnTime);
+        } else if (dir === 'both' && local === 'both' && !detection?.when.returnTime && t.returnTime && /^\d{2}:\d{2}$/.test(t.returnTime)) {
+          setEvEndTime(t.returnTime);
+        }
+        if (dir) {
+          if (t.dropoffLocation) { setEvDropTo(prev => prev || t.dropoffLocation!); setEvPickupTo(prev => prev); }
+          if (t.pickupLocation) setEvPickupFrom(prev => prev || t.pickupLocation!);
+        }
+        if (t.startAt?.includes('T') && !timeTouched.current && !detection?.when.time) {
+          setEvTime(t.startAt.split('T')[1].slice(0, 5));
+        }
       }
     } catch { /* silently fail */ }
     finally { setAiAutoFilling(false); }

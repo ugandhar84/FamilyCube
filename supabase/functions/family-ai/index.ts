@@ -585,6 +585,10 @@ Return JSON: {
       "dropoff". Both a pickup location AND a dropoff location named, or language
       implying a round trip ("...then pick me up after at 6pm") -> "both". Null if
       category isn't transport or direction is unclear.
+    returnTime: string | null — ONLY when rideDirection is "both": the 24h "HH:MM" clock
+      time of the second leg (the pick-up after a drop-off), e.g. "drop her at 6 and pick
+      her up at 7" -> "19:00" for 7pm. Null otherwise. Use am/pm context sensibly (evening
+      activities are PM).
   },
   errand: null | {
     category: one of ${JSON.stringify(errandSubcategories)} (pick the closest match, never invent a new value — this must be one of these exact values, they map directly to a database constraint),

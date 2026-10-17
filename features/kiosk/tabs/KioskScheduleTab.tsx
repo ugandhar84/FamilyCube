@@ -375,6 +375,18 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     });
   }, [cursor, eventsByDate, todayStr]);
 
+  // Day = one wide column for the cursor day, full day (6 AM–11 PM) at a
+  // readable hour height, scrolled to the current time when it's today.
+  const dayColumns = useMemo(() => {
+    const ds = toDateStr(cursor);
+    return [{
+      key: ds,
+      label: cursor.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+      isToday: ds === todayStr,
+      events: eventsByDate[ds] ?? [],
+    }];
+  }, [cursor, eventsByDate, todayStr]);
+
   const shiftCursor = (dir: 1 | -1) => {
     if (viewMode === 'month') setCursor(c => new Date(c.getFullYear(), c.getMonth() + dir, 1));
     // Agenda pages by its own window length, so Next/Prev step to the next
@@ -618,9 +630,11 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         />
       )}
       {viewMode === 'day' && (
-        <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
-          members={members} active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress} onLongPressEvent={routeLongPress} />
+        <KioskTimeGrid
+          columns={dayColumns} members={members} active={active}
+          involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
+          hourHeight={76} startHour={6} endHour={23} autoScrollToNow detailed
+        />
       )}
 
       <KioskEventEditor event={editingEvent} active={active} members={members} onClose={() => setEditingEvent(null)} colors={colors} isDark={isDark} />
@@ -1424,124 +1438,6 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
         ))}
       </View>
     </View>
-  );
-}
-
-// ── Day — hour-by-hour agenda, richer than a single strip column since a
-// day view has the whole kiosk width to spend on it. ──────────────────────
-const DAY_START_HOUR = 6;
-const DAY_END_HOUR = 22;
-
-function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress, onLongPressEvent }: {
-  cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; colors: any; isDark: boolean;
-  members: FamilyMember[]; active: FamilyMember;
-  involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  /** Plain tap — opens KioskEventDetailSheet. */
-  onEventPress: (ev: FamilyEvent) => void;
-  /** Long-press — opens the full KioskEventEditor drawer. */
-  onLongPressEvent: (ev: FamilyEvent) => void;
-}) {
-  const { k } = useKioskColors();
-  const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
-  const [claimNote, setClaimNote] = useState<Record<string, string>>({});
-  const canClaim = active.role === 'parent';
-  const dateStr = toDateStr(cursor);
-  const dayEvents = useMemo(
-    () => (eventsByDate[dateStr] ?? []).slice().sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')),
-    [eventsByDate, dateStr],
-  );
-  const timed = dayEvents.filter(ev => !!ev.time);
-  const allDay = dayEvents.filter(ev => !ev.time);
-  const hours = useMemo(() => Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }, (_, i) => DAY_START_HOUR + i), []);
-
-  const eventsAtHour = (h: number) => timed.filter(ev => {
-    const hr = parseInt(ev.time!.split(':')[0], 10);
-    return hr === h;
-  });
-
-  return (
-    <ScrollView style={s.dayRoot} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      {allDay.length > 0 && (
-        <View style={s.dayAllDayRow}>
-          {allDay.map(ev => {
-            // Day view previously applied NO sensitivity redaction at all —
-            // only Agenda did — so a sensitive event a viewer isn't
-            // entitled to read leaked its full title here. Same shared
-            // predicate, same three states.
-            const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
-            if (vis === 'hidden') return null;
-            if (vis === 'busy-block') {
-              return (
-                <View key={ev.id} style={[s.dayAllDayChip, { backgroundColor: k.well, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }]}
-                  accessibilityRole="text" accessibilityLabel="Busy, all day">
-                  <Lock size={15} color={k.textFaint} />
-                  <Text style={[s.dayAllDayText, { color: k.textMuted }]} numberOfLines={1}>Busy</Text>
-                </View>
-              );
-            }
-            const involved = involvedFor(ev);
-            const rs = assigneeStyle(involved[0], colors, isDark);
-            return (
-              <Pressable key={ev.id} onPress={() => onEventPress(ev)}
-                accessibilityRole="button"
-                accessibilityLabel={`${ev.title}, all day`}
-                accessibilityHint="Opens this event"
-                style={[s.dayAllDayChip, { backgroundColor: rs.badge }]}>
-                <Text style={[s.dayAllDayText, { color: rs.text }]} numberOfLines={1}>{ev.title}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-      {hours.map(h => {
-        const hourEvents = eventsAtHour(h);
-        const label = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
-        return (
-          <View key={h} style={[s.dayHourRow, { borderTopColor: k.cardBorder }]}>
-            <Text style={[s.dayHourLabel, { color: k.textFaint }]}>{label}</Text>
-            <View style={s.dayHourEvents}>
-              {hourEvents.map(ev => {
-                const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
-                if (vis === 'hidden') return null;
-                if (vis === 'busy-block') {
-                  return <KioskBusyBlock key={ev.id} time={ev.time} endTime={ev.endTime} k={k} />;
-                }
-                const assignee = eventAssignee(ev);
-                const isRide = !!ev.rideRequired || ev.category === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title);
-                const needsDriver = isRide && !assignee.name;
-                return (
-                  // Day is the phone's own "detail density" — CalendarScreen
-                  // .tsx mounts the full EventCardTimeline in exactly this
-                  // view (:1642) — so it gets the same rich card Agenda now
-                  // does, minus the leading time chip (the hour gutter to
-                  // the left already states the hour).
-                  <KioskEventCard
-                    key={ev.id}
-                    ev={ev}
-                    members={members}
-                    active={active}
-                    colors={colors} isDark={isDark}
-                    k={k}
-                    density="day"
-                    onPress={() => onLongPressEvent(ev)}
-                    onOpenDetail={() => onEventPress(ev)}
-                    claimNote={claimNote[ev.id]}
-                    onClaim={needsDriver && canClaim ? () => {
-                      claimHelperSlot(
-                        ev.id, 'driver', active.name, undefined,
-                        () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
-                        (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
-                      );
-                    } : undefined}
-                  />
-                );
-              })}
-            </View>
-          </View>
-        );
-      })}
-      {/* End-of-list add button removed — the header carries it now. */}
-    </ScrollView>
   );
 }
 

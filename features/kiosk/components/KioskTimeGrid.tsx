@@ -8,13 +8,14 @@
  * canViewSensitiveEventDetail is re-applied here so a sensitive title can't
  * leak through a new view). Times are 12h (CLAUDE.md rule 9).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { canViewSensitiveEventDetail, type FamilyEvent } from '@/store/eventStore';
 import { fmtTime } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE } from '../kioskTheme';
 import { useKioskColors, kioskPastels } from '../kioskPalette';
+import { fmt12, useNow } from './KioskHomeParts';
 
 export interface GridColumn {
   key: string;
@@ -60,17 +61,28 @@ function place(events: FamilyEvent[], active: FamilyMember): { timed: Placed[]; 
   return { timed: laned.map(l => ({ ...l, lanes })), allDay };
 }
 
-export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPress, onEventLongPress }: {
+export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPress, onEventLongPress, hourHeight, startHour, endHour, autoScrollToNow, detailed }: {
   columns: GridColumn[];
   members: FamilyMember[];
   active: FamilyMember;
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onEventPress: (ev: FamilyEvent) => void;
   onEventLongPress?: (ev: FamilyEvent) => void;
+  /** Fixed hour height (px). Omit to fit the whole range on screen. */
+  hourHeight?: number;
+  /** Force the visible hour range (e.g. 6 and 23 for a full day). */
+  startHour?: number;
+  endHour?: number;
+  /** Scroll so the current time sits near the top third when today is shown. */
+  autoScrollToNow?: boolean;
+  /** Wider blocks: add who / where under the time. */
+  detailed?: boolean;
 }) {
   const { k, isDark } = useKioskColors();
   const pastels = kioskPastels(k);
   const [bodyH, setBodyH] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const nowDate = useNow();
   const pastelFor = (ev: FamilyEvent) => {
     const who = involvedFor(ev)[0];
     if (!who) return { col: k.well, card: k.well, fg: k.textMuted };
@@ -86,16 +98,26 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
       lo = Math.min(lo, Math.floor(t.start / 60));
       hi = Math.max(hi, Math.ceil(t.end / 60));
     }
-    return { h0: Math.max(5, lo), h1: Math.min(24, hi) };
-  }, [placed]);
+    return { h0: startHour ?? Math.max(5, lo), h1: endHour ?? Math.min(24, hi) };
+  }, [placed, startHour, endHour]);
   const hours = h1 - h0;
-  const hourH = Math.max(40, bodyH > 0 ? bodyH / hours : 46);
+  const hourH = hourHeight ?? Math.max(40, bodyH > 0 ? bodyH / hours : 46);
   const contentH = hours * hourH;
 
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowMin = nowDate.getHours() * 60 + nowDate.getMinutes();
   const showNow = nowMin >= h0 * 60 && nowMin <= h1 * 60;
   const hasAllDay = placed.some(p => p.allDay.length > 0);
+  const todayShown = columns.some(c => c.isToday);
+
+  // Land on "now" whenever the view opens or the day changes to today.
+  const dayKey = columns.map(c => c.key).join('|');
+  useEffect(() => {
+    if (!autoScrollToNow || !todayShown || bodyH <= 0) return;
+    const y = ((nowMin - h0 * 60) / 60) * hourH - bodyH * 0.3;
+    const t = setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: true }), 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoScrollToNow, todayShown, bodyH, dayKey, h0, hourH]);
 
   return (
     <View style={s.wrap}>
@@ -129,6 +151,7 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
       )}
 
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }} showsVerticalScrollIndicator={false}
         onLayout={(e: LayoutChangeEvent) => setBodyH(e.nativeEvent.layout.height)}
       >
@@ -163,6 +186,11 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
                     <Text style={[s.evTime, { color: k.textMuted }]} numberOfLines={1}>
                       {fmtTime(ev.time ?? '')}{ev.endTime ? ` – ${fmtTime(ev.endTime)}` : ''}
                     </Text>
+                    {detailed && !busy && height >= 66 && (
+                      <Text style={[s.evTime, { color: k.textMuted }]} numberOfLines={1}>
+                        {[who.map(w => w.name.trim().split(' ')[0]).join(', '), (ev as any).location || (ev as any).venueLocation || ''].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
                     {!busy && lanes < 3 && who[0] && height >= 50 && (
                       <View style={[s.dot, { backgroundColor: k.card }]}>
                         <Text style={[s.dotText, { color: tone.fg }]}>{who[0].name.trim().charAt(0).toUpperCase()}</Text>
@@ -174,8 +202,13 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
             </View>
           ))}
           </View>
-          {showNow && columns.some(c => c.isToday) && (
-            <View pointerEvents="none" style={[s.now, { top: ((nowMin - h0 * 60) / 60) * hourH, backgroundColor: k.primary }]} />
+          {showNow && todayShown && (
+            <View pointerEvents="none" style={[s.nowWrap, { top: ((nowMin - h0 * 60) / 60) * hourH }]}>
+              <View style={[s.nowPill, { backgroundColor: k.primary }]}>
+                <Text style={[s.nowPillText, { color: k.onPrimary }]} numberOfLines={1}>{fmt12(`${nowDate.getHours()}:${String(nowDate.getMinutes()).padStart(2, '0')}`)}</Text>
+              </View>
+              <View style={[s.nowLine, { backgroundColor: k.primary }]} />
+            </View>
           )}
         </View>
       </ScrollView>
@@ -203,5 +236,8 @@ const s = StyleSheet.create({
   evTime: { fontSize: KIOSK_TYPO.label, fontWeight: '600', marginTop: 1 },
   dot: { position: 'absolute', right: 6, bottom: 5, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   dotText: { fontSize: 10.5, fontWeight: '800' },
-  now: { position: 'absolute', left: AXIS_W - 6, right: 0, height: 2 },
+  nowWrap: { position: 'absolute', left: 0, right: 0, height: 22, marginTop: -11, flexDirection: 'row', alignItems: 'center', zIndex: 5 },
+  nowPill: { width: AXIS_W - 2, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  nowPillText: { fontSize: 10.5, fontWeight: '800' },
+  nowLine: { flex: 1, height: 2 },
 });

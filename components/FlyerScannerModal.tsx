@@ -76,7 +76,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
   const { addEvent } = useEventStore();
-  const { schedules, addSchedule, updateSchedule } = useSchoolStore();
+  const { schedules, addSchedule, updateSchedule, addHoliday } = useSchoolStore();
   const { tier, isTrial } = useSubscriptionStore();
   const activeMember = members.find(m => m.id === activeMemberId);
   const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(activeMemberId ?? undefined);
@@ -291,6 +291,32 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     setTimeout(resetAndClose, 2600);
   };
 
+  // Days off on a flyer come as one line per day; a break is one range. Merge same-title days that are back to back
+  // (a weekend in between does not break a range) into "from – to".
+  const isDayOff = (ev: { title: string; category?: string | null }) =>
+    ev.category === 'Holiday' || /\b(holiday|break|no school|in-?service|staff (professional|development)|teacher work ?day|school closed)\b/i.test(ev.title);
+  const holidayRanges = (events: { title: string; date?: string | null; category?: string | null }[]) => {
+    const dayNum = (d: string) => Math.round(new Date(d + 'T12:00:00').getTime() / 86400000);
+    const byTitle = new Map<string, string[]>();
+    for (const ev of events) {
+      if (!ev.date || !isDayOff(ev)) continue;
+      byTitle.set(ev.title, [...(byTitle.get(ev.title) ?? []), ev.date]);
+    }
+    const out: { reason: string; startDate: string; endDate: string }[] = [];
+    byTitle.forEach((dates, reason) => {
+      const sorted = [...new Set(dates)].sort();
+      let start = sorted[0], prev = sorted[0];
+      for (const d of sorted.slice(1)) {
+        const gap = dayNum(d) - dayNum(prev);
+        const weekendBridge = gap <= 3 && new Date(prev + 'T12:00:00').getDay() === 5;
+        if (gap > 1 && !weekendBridge) { out.push({ reason, startDate: start, endDate: prev }); start = d; }
+        prev = d;
+      }
+      out.push({ reason, startDate: start, endDate: prev });
+    });
+    return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  };
+
   // ── Save multi calendar events ──
   const [importingMulti, setImportingMulti] = useState(false);
   const handleConfirmMulti = async () => {
@@ -327,6 +353,23 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           approvalPending: false,
         });
         if (id) succeeded++; else failed++;
+      }
+    }
+    // Breaks go to each kid's Holidays page as one from–to range per break (and pause that kid's class periods).
+    if (succeeded > 0) {
+      const ranges = holidayRanges(toAdd);
+      for (const kidId of selectedKids) {
+        const kid = members.find(m => m.id === kidId);
+        if (!kid || ranges.length === 0) continue;
+        if (!useSchoolStore.getState().schedules.find(sc => sc.memberId === kidId)) {
+          addSchedule({ memberId: kidId, memberName: kid.name, semester: 'Fall' as any, year: new Date().getFullYear(),
+            school: multiCal.school ?? undefined, lunchPeriod: 'B' as any, dayType: 'Regular' as any, periods: [] });
+        }
+        const have = useSchoolStore.getState().schedules.find(sc => sc.memberId === kidId)?.holidays ?? [];
+        for (const r of ranges) {
+          if (have.some(h => h.reason === r.reason && h.startDate === r.startDate && h.endDate === r.endDate)) continue;
+          try { await addHoliday(kidId, r); } catch { /* the calendar rows already saved; the range is a bonus */ }
+        }
       }
     }
     setImportingMulti(false);

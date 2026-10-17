@@ -6,7 +6,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { fmtTime } from '../hubUtils';
-import { MapPin, AlertTriangle } from 'lucide-react-native';
+import { MapPin, AlertTriangle, Car } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { GEMINI } from '@/constants/geminiRhythm';
 
@@ -182,6 +182,13 @@ export function NextUpTimeline({
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                   <AlertTriangle size={11} color={colors.danger} />
                   <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>Needs a driver</Text>
+                </View>
+              ) : (ev.rideRequired || ev.category === 'Ride') && assignee.name ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Car size={11} color={assignee.status === 'confirmed' ? colors.teal : colors.amber} />
+                  <Text style={{ color: assignee.status === 'confirmed' ? colors.teal : colors.amber, fontSize: 11, fontWeight: '700' }} numberOfLines={1}>
+                    {`${assignee.name.split(' ')[0]} is driving${assignee.status === 'confirmed' ? '' : ' · waiting to confirm'}`}
+                  </Text>
                 </View>
               ) : null}
               {displayLocation && !conflictReasons?.get(ev.id) ? (

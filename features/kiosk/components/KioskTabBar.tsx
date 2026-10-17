@@ -56,16 +56,16 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
       accessibilityRole="tab" accessibilityState={{ selected: on }}
       accessibilityLabel={badge ? `${label}, ${badge} waiting` : label}
     >
-      {on && <View style={[s.indicator, { backgroundColor: k.primary }]} />}
-      <View style={[s.tile, { backgroundColor: on ? k.primary : tone.card }]}>
-        <Icon size={22} color={on ? k.onPrimary : tone.fg} strokeWidth={2.2} />
+      {on && <View style={[s.indicator, { backgroundColor: BAR_BLUE }]} />}
+      <View style={[s.tile, { backgroundColor: on ? BAR_BLUE : tone.card }]}>
+        <Icon size={22} color={on ? '#14121A' : tone.fg} strokeWidth={2.2} />
         {!!badge && (
-          <View style={[s.badge, { backgroundColor: k.primary, borderColor: k.card }]}>
-            <Text style={[s.badgeText, { color: k.onPrimary }]}>{badge > 9 ? '9+' : badge}</Text>
+          <View style={[s.badge, { backgroundColor: BAR_BLUE, borderColor: BAR_BG }]}>
+            <Text style={[s.badgeText, { color: '#14121A' }]}>{badge > 9 ? '9+' : badge}</Text>
           </View>
         )}
       </View>
-      <Text style={[s.label, { color: on ? k.primary : k.textMuted }]} numberOfLines={1}>
+      <Text style={[s.label, { color: on ? BAR_BLUE : 'rgba(255,255,255,0.66)' }]} numberOfLines={1}>
         {label === 'Overview' ? 'Home' : label}
       </Text>
     </Pressable>
@@ -77,7 +77,7 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
       onLayout={e => { if (!hidden) setBarH(e.nativeEvent.layout.height); }}
       pointerEvents={hidden ? 'none' : 'auto'}
       style={[
-        s.bar, { backgroundColor: k.card, borderTopColor: k.cardBorder },
+        s.bar, { backgroundColor: BAR_BG, borderTopColor: 'rgba(255,255,255,0.08)' },
         // Margin gives the page the bar's height back; translate carries the
         // bar (and the bottom safe-area strip) fully off screen.
         { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -barH] }),
@@ -115,6 +115,10 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
     </Animated.View>
   );
 }
+
+/** The bottom strip is a warm near-black in light and dark mode, so the pastel tiles pop. */
+export const BAR_BG = '#17151D';
+export const BAR_BLUE = '#8EA3DD';
 
 const s = StyleSheet.create({
   bar: {

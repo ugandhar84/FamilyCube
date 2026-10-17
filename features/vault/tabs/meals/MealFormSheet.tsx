@@ -5,7 +5,9 @@ import {
   Animated, Easing, FlatList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Mic, MicOff, X } from 'lucide-react-native';
+import { ChevronLeft, Mic, MicOff, X, ChefHat } from 'lucide-react-native';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { PageHeading } from '@/components/PageHeading';
 import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
 import { supabase } from '@/lib/supabase';
 import { em } from './styles';
@@ -80,19 +82,6 @@ export default function MealFormSheet({
   const insets = useSafeAreaInsets();
   const { members } = useFamilyStore();
   const isEdit = !!editingMeal;
-
-  // Page-slide animation: slides in from the right like a navigation push
-  const slideAnim = useRef(new Animated.Value(400)).current;
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (visible) {
-      slideAnim.setValue(400); fadeAnim.setValue(0);
-      Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(fadeAnim,  { toValue: 1, duration: 200, easing: Easing.out(Easing.quad),  useNativeDriver: true }),
-      ]).start();
-    }
-  }, [visible]);
 
   // Auto-grow heights for multiline fields
   const [ingredientsH, setIngredientsH] = useState(110);
@@ -239,53 +228,30 @@ export default function MealFormSheet({
   const activeMember = members.find(m => (m as any).active) ?? members[0];
 
   return (
-    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
+    // Full-page overlay like every other form page: slides in from the right, edge-swipe goes back, and the X / the
+    // title use the same animated exit.
+    <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={isDark ? colors.background : GEMINI.canvas}>
+    {(requestClose) => (
+    <>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
 
-              {/* ── Header — canvas + explicit X close (kept — this is a
-                  form, not a drill-in page, so a dedicated close affordance
-                  stays alongside the tappable title) [live-requested:
-                  "make the gemini rythem everywhere in the meals"]. ── */}
-              <View style={{
-                paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
-                borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
-                backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 6,
-              }}>
-                {/* Family chrome */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColorLight) }}>
-                    FAMILY CUBE / {familyName.toUpperCase()}
-                  </Text>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
-                    {(activeMember as any)?.name} · {(activeMember as any)?.role === 'parent' ? 'Parent / Admin' : 'Member'}
-                  </Text>
-                </View>
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
-                  <TouchableOpacity onPress={onClose}
-                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface,
-                      alignItems: 'center', justifyContent: 'center' }}>
-                    <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
+              <PageHeading
+                eyebrow="FAMILY CUBE · MEALS"
+                title={isEdit ? `Edit ${type}` : 'Add a meal'}
+                subtitle={day ? `${day} · new draft` : 'Editing this meal'}
+                accent="amber"
+                Icon={ChefHat}
+                topInset={insets.top}
+                onTitlePress={requestClose}
+                right={
+                  <TouchableOpacity onPress={requestClose} accessibilityRole="button" accessibilityLabel="Close"
+                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                      alignItems: 'center', justifyContent: 'center', ...(isDark ? null : GEMINI.cardShadow) }}>
+                    <X size={18} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
                   </TouchableOpacity>
-                </View>
-
-                {/* Status pill + title */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                  <View style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
-                    backgroundColor: colors.amberLight }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>
-                      {day ? `${day} · new draft` : 'edited draft'}
-                    </Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-                  <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-                    {isEdit ? `Edit ${type}` : 'Add a meal'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                }
+              />
 
               {/* ── Scrollable form body ── */}
               <ScrollView
@@ -669,7 +635,7 @@ export default function MealFormSheet({
                         {isEdit ? 'Save changes' : 'Add meal'}
                       </Text>}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingVertical: 12 }}>
+                <TouchableOpacity onPress={requestClose} style={{ alignItems: 'center', paddingVertical: 12 }}>
                   <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>
                     Cancel · back to week
                   </Text>
@@ -689,6 +655,8 @@ export default function MealFormSheet({
         colors={colors}
         timeLabel="🕐 What time is this meal?"
       />
-    </Animated.View>
+    </>
+    )}
+    </FullPageOverlay>
   );
 }

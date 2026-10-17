@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T16:04:40.928Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T16:07:11.064Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**66 passed, 0 failed, 6 findings.**
+**68 passed, 0 failed, 4 findings.**
 
 ## Sticky notes
 
@@ -72,7 +72,7 @@ Run: 2026-10-17T16:04:40.928Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 630db181-0c0c-4843-b946-88a748975ed6 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 3ea11579-48e4-4976-802c-ca72d3b0c4bd is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -91,8 +91,8 @@ Run: 2026-10-17T16:04:40.928Z against a throwaway scratch family (real rows, rea
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792253061615"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792253061615"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792253211264"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792253211264"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
@@ -103,7 +103,7 @@ Run: 2026-10-17T16:04:40.928Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | an event is created for a kid |  |
 | PASS | the kid can read today’s events | 1 |
-| NOTE | a kid can delete a family event at the table level | The kiosk hides delete from kids, but the table policy allows it for any family member. |
+| PASS | a kid cannot delete a family event |  |
 
 ## Kid requests
 
@@ -111,7 +111,7 @@ Run: 2026-10-17T16:04:40.928Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a kid sends a request | null |
 | NOTE | another kid/teen can read a different kid’s requests | kid_requests SELECT is family-wide at the table level. |
-| NOTE | a kid can approve their own request at the table level | The kiosk and phone only offer Approve to parents; the table policy accepts an update from the requesting kid. |
+| PASS | a kid cannot approve their own request | new row violates row-level security policy for table "kid_requests" |
 
 ## Health records
 

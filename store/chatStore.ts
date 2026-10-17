@@ -106,6 +106,7 @@ const CHANNEL_CACHE_LIMIT  = 50;
 // Global unread-badge subscription state — see ensureGlobalUnreadSubscription.
 let _globalUnreadSub: ReturnType<typeof supabase.channel> | null = null;
 let _globalUnreadMemberId: string | null = null;
+let _dmPollTimer: ReturnType<typeof setInterval> | null = null;
 let _openChannelId: string | null = null;
 
 // ─── DM channel-id fix (critical privacy bug) ──────────────────────────────
@@ -633,7 +634,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // Lets ChatScreen tell the global unread listener which channel is
   // currently open/visible, so a message arriving on it doesn't flash the
   // badge on before markChannelRead's own zero-out lands a moment later.
-  setOpenChannelId: (channelId) => { _openChannelId = channelId; },
+  setOpenChannelId: (channelId) => {
+    _openChannelId = channelId;
+    // Realtime evaluates row-level security with no per-request identity, so on a shared device (kiosk, or a
+    // phone where people PIN-switch) it can silently drop DM inserts for the person actually using it. While a DM
+    // is open, also pull the latest page every few seconds and merge anything new; harmless when realtime works.
+    if (_dmPollTimer) { clearInterval(_dmPollTimer); _dmPollTimer = null; }
+    if (channelId && (channelId.startsWith('dm_') || channelId.startsWith('couple_'))) {
+      const poll = async () => {
+        try {
+          const { data } = await supabase.from('chat_messages').select('*').eq('channel_id', channelId)
+            .order('created_at', { ascending: false }).limit(20);
+          const known = new Set((get().channels[channelId]?.messages ?? []).map(m => m.id));
+          const fresh = ((data ?? []) as DBRow[]).filter(r => !known.has(r.id)).reverse();
+          for (const r of fresh) get()._upsertMessage(channelId, await rowToMessage(r));
+        } catch { /* next tick retries */ }
+      };
+      _dmPollTimer = setInterval(poll, 4000);
+    }
+  },
 
   // Per-message read-receipt rows for the messages currently on screen —
   // drives the avatar stack under a group message. Also inserts a receipt

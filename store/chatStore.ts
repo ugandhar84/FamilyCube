@@ -106,6 +106,10 @@ const CHANNEL_CACHE_LIMIT  = 50;
 // Global unread-badge subscription state — see ensureGlobalUnreadSubscription.
 let _globalUnreadSub: ReturnType<typeof supabase.channel> | null = null;
 let _globalUnreadMemberId: string | null = null;
+/** True when this channel's thread is on screen right now (a push/toast for it would just be noise). */
+export function isChatChannelOpen(channelId: string | undefined | null): boolean {
+  return !!channelId && !!_openChannelId && (channelId === _openChannelId || toBareChannelId(channelId) === _openChannelId);
+}
 let _dmPollTimer: ReturnType<typeof setInterval> | null = null;
 let _openChannelId: string | null = null;
 

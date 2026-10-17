@@ -35,7 +35,7 @@ import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, isChatChannelOpen } from '@/store/chatStore';
 import { useTripStore } from '@/store/tripStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
@@ -843,6 +843,8 @@ function RootNavigator() {
       const title = content?.title ?? 'New notification';
       const body  = content?.body ?? undefined;
       const data  = (content?.data ?? undefined) as Record<string, any> | undefined;
+      // Already looking at this conversation: the message is on screen, so no banner for it.
+      if ((data?.type === 'chat_message' || data?.type === 'chat_mention') && isChatChannelOpen(data?.channelId)) return;
       showInAppToast({ title, body, type: data?.type, data });
 
       // Was: relied entirely on the recipient's own games:{familyId}

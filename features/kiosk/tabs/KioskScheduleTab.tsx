@@ -54,6 +54,7 @@ import {
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { KioskAvatar } from '../components/KioskAvatar';
 import { KioskTimeGrid } from '../components/KioskTimeGrid';
+import { KioskDayEventsPanel } from '../components/KioskDayEventsPanel';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -589,39 +590,24 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       )}
 
       {viewMode === 'month' && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-          <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} selected={selectedDate} colors={colors} isDark={isDark}
-            active={active}
-            involvedFor={involvedFor}
-            onDayPress={setSelectedDate} />
-          <View style={{ paddingHorizontal: 4, paddingTop: 14, gap: 10 }}>
-            <DayEventsSummaryCard
-              dateLabel={selectedDate === todayStr ? 'Today' : parseDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              // Month's summary card is the phone's own DayEventsSummaryCard,
-              // reused verbatim — it takes an already-filtered list (on the
-              // phone CalendarScreen filters before passing) and applies no
-              // sensitivity rule of its own, so kiosk must not hand it a raw
-              // list. Only 'full' events go in: a busy-block placeholder
-              // can't be expressed through this component's props without
-              // forking it, and this is a secondary summary beneath the
-              // grid, not the surface a viewer relies on to spot a taken
-              // slot — Agenda and Day both render the real busy block.
-              events={(eventsByDate[selectedDate] ?? []).filter(
-                ev => canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) === 'full',
-              )}
-              members={members}
-              colors={colors} isDark={isDark}
-              isViewerParent={active.role === 'parent'}
-              onSelectEvent={routeEventPress}
-            />
-            {/* This used to carry an "Add for this day" button, justified by
-                Month otherwise being the one mode with no route to the
-                composer. That's no longer true — the header's own
-                Add/Ask button is present in every mode — so it went with
-                the other below-the-fold duplicates. Mobile's Month has no
-                card-embedded "+" either; creation there is the screen FAB. */}
+        // Month grid on the left, the selected day's events as a list on the
+        // right — nothing below the grid, so the whole month fits on screen.
+        <View style={s.monthSplit}>
+          <View style={{ flex: 1.7, minWidth: 0 }}>
+            <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} selected={selectedDate} colors={colors} isDark={isDark}
+              active={active} members={members}
+              involvedFor={involvedFor}
+              onDayPress={setSelectedDate} />
           </View>
-        </ScrollView>
+          <View style={{ flex: 1, minWidth: 280, maxWidth: 380 }}>
+            <KioskDayEventsPanel
+              dateLabel={selectedDate === todayStr ? 'Today' : parseDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              events={eventsByDate[selectedDate] ?? []}
+              members={members} active={active} involvedFor={involvedFor}
+              onEventPress={routeEventPress}
+            />
+          </View>
+        </View>
       )}
       {viewMode === 'week' && (
         <KioskTimeGrid
@@ -1317,9 +1303,9 @@ function KioskEventCard({
 // rule: a 'hidden' event must not contribute a dot (that leaks that
 // something exists), while a 'busy-block' one must (its whole purpose is
 // signalling the slot is taken).
-function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, active, involvedFor, onDayPress }: {
+function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, active, members, involvedFor, onDayPress }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; selected: string; colors: any; isDark: boolean;
-  active: FamilyMember;
+  active: FamilyMember; members: FamilyMember[];
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onDayPress: (dateStr: string) => void;
 }) {
@@ -1403,14 +1389,16 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                       overflow line reads cleanly at this cell height)
                       before falling back to a count. */}
                   <View style={s.monthBadges}>
-                    {dayEvents.slice(0, 3).map(ev => {
+                    {dayEvents.slice(0, 2).map(ev => {
                       // A busy-block event still shows a badge (the slot IS
                       // taken) but with NEUTRAL text/color and no title —
                       // its category/assignee-derived color or title would
                       // identify what the hidden event is, exactly what the
                       // detail redaction withholds.
                       const redacted = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'full';
-                      const cs = kioskCatAccent(ev.category ?? 'Event', k);
+                      const who0 = involvedFor(ev)[0];
+                      const pc = kioskPastels(k)[Math.max(0, members.findIndex(m => m.id === who0?.id)) % 4];
+                      const cs = who0 ? { soft: pc.card, fg: pc.fg } : kioskCatAccent(ev.category ?? 'Event', k);
                       return (
                         <View
                           key={ev.id}
@@ -1428,8 +1416,8 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                         </View>
                       );
                     })}
-                    {dayEvents.length > 3 && (
-                      <Text style={[s.monthMore, { color: k.textFaint }]}>+{dayEvents.length - 3} more</Text>
+                    {dayEvents.length > 2 && (
+                      <Text style={[s.monthMore, { color: k.textFaint }]}>+{dayEvents.length - 2} more</Text>
                     )}
                   </View>
                 </Pressable>
@@ -1579,7 +1567,8 @@ const s = StyleSheet.create({
   // than six thin bands — this is the primary control in Month view.
   // Grown from 88 — a cell now stacks up to 3 title badges under the day
   // number instead of a single row of dots, so it needs real height.
-  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.sm, minHeight: 130 },
+  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.xs + 2, minHeight: 76 },
+  monthSplit: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.md, paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
   monthDayNum: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   monthBadges: { gap: 3, marginTop: KIOSK_SPACE.xs },
   monthBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },

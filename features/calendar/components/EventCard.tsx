@@ -19,7 +19,7 @@
  * owns no business logic — purely presentational.
  */
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Animated, Easing } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Alert, Animated, Easing } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect, ClipPath, Defs, G } from 'react-native-svg';
@@ -159,12 +159,27 @@ function shortAddress(addr: string, maxLen = 22): string {
   const short = parts.length > 1 ? `${parts[0].trim()}, ${parts[1].trim()}` : addr;
   return short.length <= maxLen + 6 ? short : addr.slice(0, maxLen).trimEnd() + '…';
 }
-function openInMaps(addr: string) {
-  const encoded = encodeURIComponent(addr);
-  const url = Platform.OS === 'ios'
-    ? `https://maps.apple.com/?q=${encoded}`
-    : `https://maps.google.com/?q=${encoded}`;
-  Linking.openURL(url).catch(() => Linking.openURL(`https://maps.google.com/?q=${encoded}`));
+// Tapping an address asks which maps app to use (Apple Maps or Google Maps). Google Maps opens its own app when it is
+// installed (comgooglemaps needs LSApplicationQueriesSchemes) and falls back to the web page otherwise; Android offers its
+// default maps app and Google Maps.
+export async function openInMaps(addr: string) {
+  const q = encodeURIComponent(addr);
+  const open = (url: string) => Linking.openURL(url).catch(() => Linking.openURL(`https://maps.google.com/?q=${q}`).catch(() => {}));
+  const openGoogle = async () => {
+    if (Platform.OS === 'ios' && await Linking.canOpenURL('comgooglemaps://').catch(() => false)) return open(`comgooglemaps://?q=${q}`);
+    return open(`https://www.google.com/maps/search/?api=1&query=${q}`);
+  };
+  Alert.alert('Open in Maps', addr, Platform.OS === 'ios'
+    ? [
+        { text: 'Apple Maps', onPress: () => open(`https://maps.apple.com/?q=${q}`) },
+        { text: 'Google Maps', onPress: openGoogle },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    : [
+        { text: 'Default Maps app', onPress: () => open(`geo:0,0?q=${q}`) },
+        { text: 'Google Maps', onPress: openGoogle },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
 }
 export function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWeight = '600' }: {
   addr: string; color: string; fontSize?: number; iconSize?: number; fontWeight?: string;

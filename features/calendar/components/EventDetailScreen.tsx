@@ -16,6 +16,7 @@ import {
   ActivityIndicator, TextInput, Animated, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MapPin } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
@@ -30,6 +31,7 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 import RecordVisitSheet from '@/features/vault/records/RecordVisitSheet';
+import { openInMaps } from '@/features/calendar/components/EventCard';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -715,11 +717,13 @@ export default function EventDetailScreen({
 
             {liveEv.location ? (
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                <Text style={{ fontSize: 18, marginTop: 1 }}>📍</Text>
+                <MapPin size={20} color={accent} style={{ marginTop: 2 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.6,
                     textTransform: 'uppercase', color: colors.textTertiary }}>Location</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>{liveEv.location}</Text>
+                  <TouchableOpacity onPress={() => openInMaps(liveEv.location!)} activeOpacity={0.7} accessibilityRole="link" accessibilityLabel={`Open ${liveEv.location} in maps`}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: accent }}>{liveEv.location}</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             ) : (cat === 'Ride' || cat === 'Sports' || cat === 'School' || cat === 'Medical' || liveEv.rideRequired) && !liveEv.pickupLocation && !liveEv.dropLocation && (
@@ -747,14 +751,24 @@ export default function EventDetailScreen({
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.5,
                       textTransform: 'uppercase', color: colors.textTertiary }}>Pick up</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>{liveEv.pickupLocation}</Text>
+                    <TouchableOpacity onPress={() => openInMaps(liveEv.pickupLocation!)} activeOpacity={0.7} accessibilityRole="link">
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
+                        <MapPin size={14} color={accent} style={{ marginTop: 2 }} />
+                        <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: accent }}>{liveEv.pickupLocation}</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 )}
                 {liveEv.dropLocation && (
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.5,
                       textTransform: 'uppercase', color: colors.textTertiary }}>Drop off</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>{liveEv.dropLocation}</Text>
+                    <TouchableOpacity onPress={() => openInMaps(liveEv.dropLocation!)} activeOpacity={0.7} accessibilityRole="link">
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
+                        <MapPin size={14} color={accent} style={{ marginTop: 2 }} />
+                        <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: accent }}>{liveEv.dropLocation}</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>

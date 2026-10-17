@@ -46,6 +46,8 @@ const config = {
       tinted: "./assets/icon-dark.png",
     },
     infoPlist: {
+      // Lets the app ask whether Google Maps is installed (opens addresses there, else Apple Maps).
+      LSApplicationQueriesSchemes: ["comgooglemaps"],
       // Phones stay portrait-only (unchanged). iPads — including a wall-mounted
       // "kitchen hub" scenario — can rotate to landscape. iOS reads the
       // idiom-suffixed key for iPad and falls back to the base key for iPhone,

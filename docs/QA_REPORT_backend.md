@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T06:33:53.224Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**43 passed, 0 failed, 4 findings.**
+**48 passed, 0 failed, 2 findings.**
 
 ## Sticky notes
 
@@ -10,7 +10,7 @@ Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | parent posts a note for everyone | null |
 | PASS | parent posts a note for one kid | null |
-| PASS | kid sees the note shared with them and the note for everyone | Mia: cleats in the garage / Pasta at 6:30 for everyone |
+| PASS | kid sees the note shared with them and the note for everyone | Pasta at 6:30 for everyone / Mia: cleats in the garage |
 | PASS | a teen does NOT see a note shared only with another kid | Pasta at 6:30 for everyone |
 | PASS | kid writes a note to the parents | null |
 | PASS | the other parent sees the kid’s note | 2 |
@@ -42,7 +42,8 @@ Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a kid proposes a recipe (pending) | null |
 | PASS | a parent approves it | null |
-| NOTE | a kid can insert a recipe as already approved | The kiosk always sends status "pending" for kids, but the table accepts "approved" from a kid. A check or trigger would make the approval step enforceable. |
+| PASS | a kid inserting an "approved" recipe is stored as pending | status: pending |
+| PASS | a kid cannot approve their own recipe | only a parent can approve a recipe |
 | PASS | a parent can delete a recipe | null |
 
 ## Groceries
@@ -58,7 +59,9 @@ Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | parent adds a medication for a kid | null |
 | PASS | the kid marks their own dose taken | ["2026-10-17/13:00"] |
-| NOTE | another kid/teen can mark someone else’s dose | toggle_medication_dose accepted a different family member. The kiosk only offers a kid their own doses, but the RPC does not enforce it. |
+| PASS | a different teen cannot mark the kid’s dose | only the person taking it or a parent can log this dose |
+| PASS | the public anon key cannot mark doses | {"code":"P0001","details":null,"hint":null,"message":"not signed in"} |
+| PASS | a parent can log a kid’s dose | null |
 | NOTE | a grandparent can read 1 family medication row(s) | Read access is family-wide at the table level; the apps filter to own medications for kids/teens/seniors client-side. |
 
 ## Chores
@@ -67,7 +70,7 @@ Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member cfcb2315-e9d1-4cf5-b14a-226af7ad7ae9 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 0b580b33-bccb-4244-92c2-b8dcf0db07ee is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -80,8 +83,8 @@ Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, rea
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792218522711"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792218522711"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792218826767"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792218826767"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |

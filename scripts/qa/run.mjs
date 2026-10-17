@@ -91,7 +91,9 @@ try {
   r = await as(sarah, 'family_recipes', 'update', { row: { status: 'approved' }, match: { id: rid } });
   check(C, 'a parent approves it', r.ok && rows(r)[0]?.status === 'approved', r.error);
   r = await as(mia, 'family_recipes', 'insert', { row: { id: rid + 'b', family_id: F, title: 'Second', ingredients: [], prep_steps: [], dietary_tags: [], created_by: mia, status: 'approved' } });
-  if (r.ok) finding(C, 'a kid can insert a recipe as already approved', 'The kiosk always sends status "pending" for kids, but the table accepts "approved" from a kid. A check or trigger would make the approval step enforceable.');
+  check(C, 'a kid inserting an "approved" recipe is stored as pending', r.ok && rows(r)[0]?.status === 'pending', `status: ${rows(r)[0]?.status}`);
+  r = await as(mia, 'family_recipes', 'update', { row: { status: 'approved' }, match: { id: rid + 'b' } });
+  check(C, 'a kid cannot approve their own recipe', !r.ok || rows(r)[0]?.status !== 'approved', r.error ?? rows(r)[0]?.status);
   r = await as(sarah, 'family_recipes', 'delete', { match: { id: rid } });
   check(C, 'a parent can delete a recipe', rows(r).length === 1, r.error);
 
@@ -111,8 +113,11 @@ try {
   r = await call({ action: 'rpc', actingMemberId: mia, fnName: 'toggle_medication_dose', args: { p_med_id: medId, p_entry: `${today}|13:00`, p_mark_taken: true, p_today: today, p_modified_by: mia } });
   check(E, 'the kid marks their own dose taken', r.ok && Array.isArray(r.data) && r.data.includes(`${today}|13:00`), r.error ?? JSON.stringify(r.data));
   r = await call({ action: 'rpc', actingMemberId: zane, fnName: 'toggle_medication_dose', args: { p_med_id: medId, p_entry: `${today}|19:00`, p_mark_taken: true, p_today: today, p_modified_by: zane } });
-  if (r.ok) finding(E, 'another kid/teen can mark someone else’s dose', 'toggle_medication_dose accepted a different family member. The kiosk only offers a kid their own doses, but the RPC does not enforce it.');
-  else check(E, 'a different teen cannot mark the kid’s dose', true, r.error);
+  check(E, 'a different teen cannot mark the kid’s dose', !r.ok, r.error ?? 'accepted');
+  const anonRpc = await (await fetch(`${URL}/rest/v1/rpc/toggle_medication_dose`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_med_id: medId, p_entry: `${today}|07:30`, p_mark_taken: true, p_today: today, p_modified_by: mia }) })).json();
+  check(E, 'the public anon key cannot mark doses', !!anonRpc.code || !!anonRpc.message, JSON.stringify(anonRpc).slice(0, 100));
+  r = await call({ action: 'rpc', actingMemberId: alex, fnName: 'toggle_medication_dose', args: { p_med_id: medId, p_entry: `${today}|07:30`, p_mark_taken: true, p_today: today, p_modified_by: alex } });
+  check(E, 'a parent can log a kid’s dose', r.ok, r.error);
   r = await as(nana, 'family_medications', 'select', { match: { family_id: F } });
   finding(E, `a grandparent can read ${rows(r).length} family medication row(s)`, 'Read access is family-wide at the table level; the apps filter to own medications for kids/teens/seniors client-side.');
   /* ───────── Chores ───────── */

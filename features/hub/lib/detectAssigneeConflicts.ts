@@ -11,6 +11,7 @@
  */
 import type { FamilyEvent } from '@/store/eventStore';
 import { eventAssignee } from '@/store/eventStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 function minutesBetween(a: string, b: string): number {
   const [ah, am] = a.split(':').map(Number);
@@ -63,6 +64,30 @@ export function detectAssigneeConflicts(events: FamilyEvent[]): Map<string, stri
         if (!reasons.has(a.id)) reasons.set(a.id, label);
         if (!reasons.has(b.id)) reasons.set(b.id, label);
       }
+    }
+  }
+  // Same PERSON in two overlapping events (as the one it is for, or as its driver/helper): an appointment for Ugandhar and
+  // a pick-up Ugandhar drives at the same time is a clash even though only one of them names an assignee.
+  const people = (e: FamilyEvent): string[] => {
+    const ids = new Set<string>();
+    if (e.memberId) ids.add(e.memberId);
+    e.memberIds?.forEach(id => ids.add(id));
+    const a = eventAssignee(e);
+    if (a.id && a.status !== 'rejected') ids.add(a.id);
+    return [...ids];
+  };
+  const timedAll = events.filter(e => !!e.time && e.category !== 'Work' && !e.allDay);
+  const members = useFamilyStore.getState().members;
+  for (let i = 0; i < timedAll.length; i++) {
+    for (let j = i + 1; j < timedAll.length; j++) {
+      const a = timedAll[i], b = timedAll[j];
+      if (a.date !== b.date) continue;
+      const shared = people(a).find(id => people(b).includes(id));
+      if (!shared || !eventsConflict(a, b)) continue;
+      const name = members.find(m => m.id === shared)?.name.split(' ')[0] ?? 'Someone';
+      const label = `${name} has 2 events at once`;
+      if (!reasons.has(a.id)) reasons.set(a.id, label);
+      if (!reasons.has(b.id)) reasons.set(b.id, label);
     }
   }
   return reasons;

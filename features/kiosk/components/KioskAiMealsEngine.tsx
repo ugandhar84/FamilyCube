@@ -46,6 +46,7 @@ function dayInfo(day: string, weekOffset = 0) {
   const d = dayDate(day, weekOffset);
   return { date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), isPast: d < today };
 }
+const MealTypesIdx = (t: string) => MEAL_TYPES.indexOf(t as MealType);
 const defaultDay = (aiDay: string) => (dayInfo(aiDay).isPast ? `next-${aiDay}` : aiDay);
 const resolveDay = (key: string) => (key.startsWith('next-') ? { day: key.slice(5), offset: 1 } : { day: key, offset: 0 });
 
@@ -156,6 +157,24 @@ export function KioskAiMealsEngine({ familyId, members, existingMeals, onPlanSav
   };
   const picked = Object.values(selected).reduce((n, a) => n + a.length, 0);
 
+  /** Live view of the two weeks as they will look after Confirm: what is planned now plus every pick. */
+  const preview = useMemo(() => {
+    const todayStr = localDateStr(new Date());
+    return [0, 1].flatMap(offset => DAYS_ORDER.map((dn, i) => {
+      const date = dayDate(dn, offset);
+      const wk = localDateStr(dayDate('Mon', offset));
+      const have = existingMeals.filter(m => m.week_of === wk && m.day === dn && !(m.ai_generated && wk === curWeek))
+        .map(m => ({ title: m.title, type: (m.type ?? 'dinner').toLowerCase(), emoji: m.emoji ?? '🍽️', mine: false }));
+      const mine = all.filter(s => isPicked(s.day, s.i)).filter(s => {
+        const r = resolveDay(assignedOf(s.day, s.i));
+        return r.day === dn && r.offset === offset;
+      }).map(s => ({ title: s.mealName, type: typeOf(`${s.day}-${s.i}`), emoji: s.emoji ?? '🍽️', mine: true }));
+      const list = [...have, ...mine].sort((a, b) => MEAL_TYPES.indexOf(a.type as MealType) - MealTypesIdx(b.type));
+      return { key: `${offset}-${dn}`, dn, date, today: localDateStr(date) === todayStr, list };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, selected, dayOverrides, mealTypes, existingMeals]);
+
   const toggle = (day: string, i: number) => {
     const rowKey = `${day}-${i}`;
     setSelected(p => {
@@ -261,6 +280,25 @@ export function KioskAiMealsEngine({ familyId, members, existingMeals, onPlanSav
         {!!aiError && <Text style={[s.sub, { color: k.danger }]}>{aiError}</Text>}
         {cacheLoading && <ActivityIndicator color={k.gold} />}
         {!!options && !!when && <Text style={[s.sub, { color: k.textFaint }]}>Last suggestions from {when}. They stay here until you confirm a plan or regenerate.</Text>}
+
+        {!!options && (
+          <View style={{ gap: 8 }}>
+            <Text style={[s.eb, { color: k.purple }]}>YOUR WEEKS · UPDATES AS YOU PICK</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {preview.map(d => (
+                <View key={d.key} style={[s.pvCol, { backgroundColor: d.today ? k.primarySoft : k.well }]}>
+                  <Text style={[s.pvHead, { color: k.textFaint }]}>{d.dn.toUpperCase()} {d.date.getDate()}</Text>
+                  {d.list.length === 0 ? <Text style={[s.pvEmpty, { color: k.textFaint }]}>Free</Text> : d.list.map((m, mi) => (
+                    <View key={mi} style={[s.pvMeal, { backgroundColor: m.mine ? k.pastelLavCard : k.card, borderColor: m.mine ? k.primary : 'transparent' }]}>
+                      <Text style={[s.pvType, { color: k.textFaint }]}>{m.type.toUpperCase()}{m.mine ? ' · NEW' : ''}</Text>
+                      <Text style={[s.pvTitle, { color: k.text }]} numberOfLines={2}>{m.emoji} {m.title}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {options?.map((d, di) => (
           <View key={d.day} style={{ gap: 8 }}>
@@ -381,5 +419,11 @@ const s = StyleSheet.create({
   dayPill: { minWidth: 58, borderRadius: 16, paddingHorizontal: 8, paddingVertical: 6, alignItems: 'center' },
   dayT: { fontSize: 12, fontWeight: '800' },
   dayD: { fontSize: 10.5, fontWeight: '700' },
+  pvCol: { width: 132, borderRadius: 18, padding: 8, gap: 6 },
+  pvHead: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  pvEmpty: { fontSize: 12, fontWeight: '700', paddingVertical: 6 },
+  pvMeal: { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 8, paddingVertical: 6 },
+  pvType: { fontSize: 9.5, fontWeight: '800', letterSpacing: 0.6 },
+  pvTitle: { fontSize: 12.5, fontWeight: '800' },
   confirm: { position: 'absolute', right: 22, bottom: 14, minHeight: 54, borderRadius: KIOSK_RADIUS.lg, paddingHorizontal: 26, alignItems: 'center', justifyContent: 'center' },
 });

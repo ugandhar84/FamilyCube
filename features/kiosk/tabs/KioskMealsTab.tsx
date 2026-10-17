@@ -821,7 +821,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         )}
         {area === 'recipes' && <KioskRecipeBook active={active} members={members} />}
         {area === 'ai' && !isKidOrTeen && !!familyId && (
-          <KioskAiMealsEngine familyId={familyId} members={members} existingMeals={[...meals, ...nextMeals]} onPlanSaved={() => reloadMeals()} />
+          <KioskAiMealsEngine familyId={familyId} members={members} existingMeals={[...meals, ...nextMeals]} onPlanSaved={() => { reloadMeals(); setArea('plan'); }} />
         )}
         {(area === 'runs' || area === 'history' || area === 'insights') && !isKidOrTeen && (
           <KioskGroceryInsights area={area} familyId={familyId ?? ''} runs={runs} items={items} boughtItems={boughtItems} members={members} k={k} onOpenRun={setViewingRun} onNewRun={() => setNewRunOpen(true)} />

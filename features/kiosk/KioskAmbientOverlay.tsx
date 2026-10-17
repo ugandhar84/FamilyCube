@@ -56,6 +56,7 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_AMBIENT_FADE_MS } from './
 import { useKioskColors } from './kioskPalette';
 import { KioskPhotoFade } from './components/KioskPhotoFade';
 import { useIsNight } from './useIsNight';
+import { useKioskPhotos } from './useKioskPhotos';
 
 export interface AmbientNextUp {
   /** Display time, already formatted ("4:45 PM") or undefined for all-day. */
@@ -116,6 +117,9 @@ export function KioskAmbientOverlay({
   }, [mounted, drift]);
 
   const night = useIsNight();
+  const { photos } = useKioskPhotos();
+  // With memories to show (and not at night), the idle screen is a photo frame with a small clock.
+  const frame = photos.length > 0 && !night;
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!mounted) return;
@@ -147,11 +151,18 @@ export function KioskAmbientOverlay({
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      {/* Family memories drift behind the clock, dimmed so the time stays readable. */}
-      {/* At night (9 PM to 6 AM) the photos stop and the screen goes near-black, so a bright frame
-          never lights a sleeping child's room. */}
-      {!night && <KioskPhotoFade style={StyleSheet.absoluteFill} active={visible} />}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: night ? 'rgba(0,0,0,0.78)' : 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />
+      {/* Photo-frame mode: the family's memories fill the screen in a framed print, the clock is small.
+          At night (9 PM to 6 AM) the photos stop and the screen goes near-black, so a bright frame never
+          lights a sleeping child's room. */}
+      {frame ? (
+        <View style={s.frameWrap} pointerEvents="none">
+          <View style={s.matte}>
+            <KioskPhotoFade style={s.framePhoto} active={visible} caption />
+          </View>
+        </View>
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: night ? 'rgba(0,0,0,0.78)' : 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />
+      )}
 
       {/* ── Corner label ── */}
       <View style={s.corner}>
@@ -161,8 +172,15 @@ export function KioskAmbientOverlay({
         </Text>
       </View>
 
-      {/* ── The clock ── */}
-      <Animated.View style={[s.center, { transform: [{ translateY }] }]}>
+      {/* ── The clock ── (small pill over the photo frame; large on its own) */}
+      {frame && (
+        <View style={s.clockPill}>
+          <Text style={s.pillClock}>{clock}</Text>
+          <Text style={s.pillDate}>{date}</Text>
+          {!!nextUp && <Text style={s.pillNext} numberOfLines={1}>Next · {nextUp.time ? `${nextUp.time} ` : ''}{nextUp.title}</Text>}
+        </View>
+      )}
+      {!frame && <Animated.View style={[s.center, { transform: [{ translateY }] }]}>
         <Text
           style={[s.clock, { color: k.standbyText }]}
           numberOfLines={1}
@@ -177,10 +195,10 @@ export function KioskAmbientOverlay({
         >
           {date}
         </Text>
-      </Animated.View>
+      </Animated.View>}
 
       {/* ── Glass status panel ── */}
-      {(nextUp || eventCount > 0 || choreCount > 0) && (
+      {!frame && (nextUp || eventCount > 0 || choreCount > 0) && (
         <View style={[s.glass, { backgroundColor: k.glass, borderColor: k.glassEdge }]}>
           {nextUp ? (
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -232,6 +250,13 @@ export function KioskAmbientOverlay({
 
 const s = StyleSheet.create({
   root: { alignItems: 'center', justifyContent: 'center', padding: KIOSK_SPACE.xxl },
+  frameWrap: { ...StyleSheet.absoluteFillObject, padding: 56, paddingTop: 84, paddingBottom: 96, alignItems: 'center', justifyContent: 'center' },
+  matte: { flex: 1, alignSelf: 'stretch', backgroundColor: '#F7F2EA', padding: 18, borderRadius: 6, shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
+  framePhoto: { flex: 1, borderRadius: 2 },
+  clockPill: { position: 'absolute', right: 70, bottom: 118, backgroundColor: 'rgba(10,9,16,0.62)', borderRadius: 18, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'flex-end' },
+  pillClock: { color: '#FFFFFF', fontSize: 40, fontWeight: '300', fontVariant: ['tabular-nums'] },
+  pillNext: { color: '#E8C375', fontSize: 14, fontWeight: '800', marginTop: 4, maxWidth: 320 },
+  pillDate: { color: 'rgba(255,255,255,0.8)', fontSize: 15, fontWeight: '600' },
   corner: {
     position: 'absolute', top: KIOSK_SPACE.xxl, left: KIOSK_SPACE.xxl,
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,

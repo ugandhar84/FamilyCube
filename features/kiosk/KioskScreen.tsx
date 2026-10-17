@@ -59,6 +59,7 @@ import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityCon
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { KioskIntercomModal } from './components/KioskIntercomModal';
 import { useNotifStore } from '@/store/notifStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { KioskTabBar } from './components/KioskTabBar';
 import { useKioskPrefsStore } from '@/store/kioskPrefsStore';
 import { pendingKidRequests } from './components/KioskKidRequestsPanel';
@@ -390,7 +391,10 @@ export default function KioskScreen() {
                   k={k}
                   onClose={onClose}
                 >
-                  {children}
+                  {/* Figma rhythm: a cream canvas with bright shadowed cards on it. */}
+                  <View style={{ backgroundColor: isDark ? 'transparent' : GEMINI.canvas, borderRadius: 24, padding: isDark ? 0 : 14 }}>
+                    {children}
+                  </View>
                 </KioskFormDrawer>
               )}
             />

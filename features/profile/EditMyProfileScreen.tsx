@@ -210,7 +210,7 @@ export function EditMyProfileScreen({
   const body = (
     <>
       <View style={{
-        borderRadius: 22, borderWidth: 1, padding: 20, alignItems: 'center',
+        borderRadius: 22, borderWidth: isDark ? 1 : 0, padding: 20, ...(isDark ? null : GEMINI.cardShadow), alignItems: 'center',
         backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor: inputBorder,
         marginBottom: 14,
       }}>
@@ -268,14 +268,14 @@ export function EditMyProfileScreen({
       </View>
 
       <View style={{
-        borderRadius: 22, borderWidth: 1, padding: 20,
+        borderRadius: 22, borderWidth: isDark ? 1 : 0, padding: 20, ...(isDark ? null : GEMINI.cardShadow),
         backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor: inputBorder,
       }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: fieldLabelClr, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
+        <Text style={{ fontSize: 11, fontWeight: '800', color: fieldLabelClr, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
           Your Details
         </Text>
 
-        <Text style={{ fontSize: 13, color: fieldLabelClr, marginBottom: 8 }}>Name</Text>
+        <Text style={{ fontSize: 13, fontWeight: '800', color: fieldLabelClr, marginBottom: 8 }}>Name</Text>
         <TextInput
           value={name} onChangeText={setName} onBlur={() => setTouched(t => ({ ...t, name: true }))}
           placeholder="e.g. Emma" maxLength={60} placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
@@ -289,7 +289,7 @@ export function EditMyProfileScreen({
           <Text style={{ fontSize: 12, fontWeight: '500', color: colors.danger, marginTop: 4 }}>{nameError}</Text>
         ) : null}
 
-        <Text style={{ fontSize: 13, color: fieldLabelClr, marginBottom: 8, marginTop: 14 }}>
+        <Text style={{ fontSize: 13, fontWeight: '800', color: fieldLabelClr, marginBottom: 8, marginTop: 14 }}>
           Date of birth <Text style={{ fontWeight: '400' }}>(optional)</Text>
         </Text>
         <TouchableOpacity
@@ -326,7 +326,7 @@ export function EditMyProfileScreen({
           </View>
         )}
 
-        <Text style={{ fontSize: 13, color: fieldLabelClr, marginBottom: 8, marginTop: 14 }}>
+        <Text style={{ fontSize: 13, fontWeight: '800', color: fieldLabelClr, marginBottom: 8, marginTop: 14 }}>
           Email {hasRealAuth ? <Text style={{ fontWeight: '400' }}>(from your sign-in, can't be edited here)</Text> : <Text style={{ fontWeight: '400' }}>(optional)</Text>}
         </Text>
         <TextInput
@@ -368,14 +368,14 @@ export function EditMyProfileScreen({
 
       {isParentAdmin && (
         <View style={{
-          borderRadius: 22, borderWidth: 1, padding: 20,
+          borderRadius: 22, borderWidth: isDark ? 1 : 0, padding: 20, ...(isDark ? null : GEMINI.cardShadow),
           backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor: inputBorder,
           marginTop: 14,
         }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: fieldLabelClr, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: fieldLabelClr, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
             Family
           </Text>
-          <Text style={{ fontSize: 13, color: fieldLabelClr, marginBottom: 8 }}>Family name</Text>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: fieldLabelClr, marginBottom: 8 }}>Family name</Text>
           <TextInput
             value={familyNameInput} onChangeText={setFamilyNameInput}
             placeholder="e.g. The Parkers" maxLength={60} placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}

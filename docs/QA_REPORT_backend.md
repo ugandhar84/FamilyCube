@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T16:27:50.895Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T16:33:35.105Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**77 passed, 0 failed, 1 findings.**
+**106 passed, 0 failed, 1 findings.**
 
 ## Sticky notes
 
@@ -74,7 +74,7 @@ Run: 2026-10-17T16:27:50.895Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 73ef14bf-34c0-4335-94e4-a24bbde09de7 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 8892348a-3db7-4e94-9ddc-7b00d6545cf0 is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -93,8 +93,8 @@ Run: 2026-10-17T16:27:50.895Z against a throwaway scratch family (real rows, rea
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792254448094"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792254448094"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792254747485"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792254747485"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
@@ -141,4 +141,38 @@ Run: 2026-10-17T16:27:50.895Z against a throwaway scratch family (real rows, rea
 | Result | Check | Detail |
 |---|---|---|
 | NOTE | a kid can read 0 location row(s) | member_locations is readable family-wide (the kiosk only shows people who chose to share). |
+
+## Chat
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | group channel all can be created | null |
+| PASS | group channel parents can be created | null |
+| PASS | group channel seniors_all can be created | null |
+| PASS | a parent posts in the family channel | null |
+| PASS | a kid reads the family channel | 1 |
+| PASS | a grandparent does not read the family channel (they have the squad) | 0 |
+| PASS | a kid cannot post in the parents channel | new row violates row-level security policy for table "chat_messages" |
+| PASS | the other parent posts in the parents channel | null |
+| PASS | a teen cannot read the parents channel | 0 |
+| PASS | a kid posts in the Grandparent squad | null |
+| PASS | a grandparent reads the Grandparent squad | 1 |
+| PASS | a parent opens a DM with a kid | null |
+| PASS | the parent sends in the DM | null |
+| PASS | the kid receives the DM | 1 |
+| PASS | the kid replies in the DM | null |
+| PASS | another teen cannot read someone else's DM | 0 |
+| PASS | another teen cannot post in someone else's DM | new row violates row-level security policy for table "chat_messages" |
+| PASS | the other parent cannot read someone else's DM | 0 |
+| PASS | the other parent cannot post in someone else's DM | new row violates row-level security policy for table "chat_messages" |
+| PASS | a grandparent cannot read someone else's DM | 0 |
+| PASS | a grandparent cannot post in someone else's DM | new row violates row-level security policy for table "chat_messages" |
+| PASS | a member cannot send a chat message as someone else | sender_id must match the caller's own member id |
+| PASS | a kid opens a DM with a teen | null |
+| PASS | the teen receives the kid’s DM | 1 |
+| PASS | a parent cannot read the kid and teen’s private DM | 0 |
+| PASS | only the sender can delete a message | only the original sender can delete this message |
+| PASS | the sender can edit their own message | 1 |
+| PASS | the other person cannot rewrite the message | only the original sender can edit this message |
+| PASS | the public anon key cannot read chat | [] |
 

@@ -255,6 +255,67 @@ try {
   r = await as(mia, 'member_locations', 'select', { match: {} });
   finding(M2, `a kid can read ${rows(r).length} location row(s)`, 'member_locations is readable family-wide (the kiosk only shows people who chose to share).');
 
+  /* ───────── Chat ───────── */
+  const CH = 'Chat';
+  const dmId = (a, b) => `dm_${[a, b].sort().join('_')}`;
+  const msg = (ch, sender, text = 'enc') => ({ id: crypto.randomUUID(), channel_id: ch, sender_id: sender, text, timestamp: Date.now() });
+  const mkChan = async (who, id, type, members) => (await as(who, 'chat_channels', 'insert', { noReturn: true, row: { id, family_id: F, type, name: id.slice(0, 20), member_ids: members, icon: '💬' } }));
+  // group channels the app creates lazily (family-scoped ids)
+  for (const g of ['all', 'parents', 'seniors_all']) { r = await mkChan(alex, `${F}::${g}`, 'group', []); check(CH, `group channel ${g} can be created`, r.ok, r.error); }
+  r = await as(alex, 'chat_messages', 'insert', { noReturn: true, row: msg(`${F}::all`, alex) });
+  check(CH, 'a parent posts in the family channel', r.ok, r.error);
+  r = await as(mia, 'chat_messages', 'select', { match: { channel_id: `${F}::all` } });
+  check(CH, 'a kid reads the family channel', rows(r).length === 1, r.error ?? rows(r).length);
+  r = await as(nana, 'chat_messages', 'select', { match: { channel_id: `${F}::all` } });
+  check(CH, 'a grandparent does not read the family channel (they have the squad)', rows(r).length === 0, rows(r).length);
+  r = await as(mia, 'chat_messages', 'insert', { noReturn: true, row: msg(`${F}::parents`, mia) });
+  check(CH, 'a kid cannot post in the parents channel', !r.ok, r.error ?? 'insert succeeded');
+  r = await as(sarah, 'chat_messages', 'insert', { noReturn: true, row: msg(`${F}::parents`, sarah) });
+  check(CH, 'the other parent posts in the parents channel', r.ok, r.error);
+  r = await as(zane, 'chat_messages', 'select', { match: { channel_id: `${F}::parents` } });
+  check(CH, 'a teen cannot read the parents channel', rows(r).length === 0, rows(r).length);
+  r = await as(mia, 'chat_messages', 'insert', { noReturn: true, row: msg(`${F}::seniors_all`, mia) });
+  check(CH, 'a kid posts in the Grandparent squad', r.ok, r.error);
+  r = await as(nana, 'chat_messages', 'select', { match: { channel_id: `${F}::seniors_all` } });
+  check(CH, 'a grandparent reads the Grandparent squad', rows(r).length === 1, r.error ?? rows(r).length);
+  // DMs
+  const dmAM = dmId(alex, mia);
+  r = await mkChan(alex, dmAM, 'direct', [alex, mia]);
+  check(CH, 'a parent opens a DM with a kid', r.ok, r.error);
+  r = await as(alex, 'chat_messages', 'insert', { noReturn: true, row: msg(dmAM, alex) });
+  check(CH, 'the parent sends in the DM', r.ok, r.error);
+  r = await as(mia, 'chat_messages', 'select', { match: { channel_id: dmAM } });
+  check(CH, 'the kid receives the DM', rows(r).length === 1, r.error ?? rows(r).length);
+  r = await as(mia, 'chat_messages', 'insert', { noReturn: true, row: msg(dmAM, mia) });
+  check(CH, 'the kid replies in the DM', r.ok, r.error);
+  for (const [who, name] of [[zane, 'another teen'], [sarah, 'the other parent'], [nana, 'a grandparent']]) {
+    r = await as(who, 'chat_messages', 'select', { match: { channel_id: dmAM } });
+    check(CH, `${name} cannot read someone else's DM`, rows(r).length === 0, rows(r).length);
+    r = await as(who, 'chat_messages', 'insert', { noReturn: true, row: msg(dmAM, who) });
+    check(CH, `${name} cannot post in someone else's DM`, !r.ok, r.error ?? 'insert succeeded');
+  }
+  r = await as(mia, 'chat_messages', 'insert', { noReturn: true, row: msg(dmAM, alex) });
+  check(CH, 'a member cannot send a chat message as someone else', !r.ok, r.error ?? 'insert succeeded');
+  const dmMZ = dmId(mia, zane);
+  r = await mkChan(mia, dmMZ, 'direct', [mia, zane]);
+  check(CH, 'a kid opens a DM with a teen', r.ok, r.error);
+  r = await as(mia, 'chat_messages', 'insert', { noReturn: true, row: msg(dmMZ, mia) });
+  r = await as(zane, 'chat_messages', 'select', { match: { channel_id: dmMZ } });
+  check(CH, 'the teen receives the kid’s DM', rows(r).length === 1, r.error ?? rows(r).length);
+  r = await as(alex, 'chat_messages', 'select', { match: { channel_id: dmMZ } });
+  check(CH, 'a parent cannot read the kid and teen’s private DM', rows(r).length === 0, rows(r).length);
+  // delete / edit
+  r = await as(zane, 'chat_messages', 'select', { match: { channel_id: dmMZ } });
+  const mzMsg = rows(r)[0]?.id;
+  r = await as(zane, 'chat_messages', 'delete', { match: { id: mzMsg } });
+  check(CH, 'only the sender can delete a message', rows(r).length === 0 || !r.ok, r.error ?? `deleted ${rows(r).length}`);
+  r = await as(mia, 'chat_messages', 'update', { row: { text: 'edited' }, match: { id: mzMsg } });
+  check(CH, 'the sender can edit their own message', r.ok && rows(r).length === 1, r.error ?? rows(r).length);
+  r = await as(zane, 'chat_messages', 'update', { row: { text: 'hacked' }, match: { id: mzMsg } });
+  check(CH, 'the other person cannot rewrite the message', !r.ok || rows(r).length === 0, r.error ?? `updated ${rows(r).length}`);
+  const anonChat = await (await fetch(`${URL}/rest/v1/chat_messages?select=id&channel_id=eq.${encodeURIComponent(dmAM)}`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } })).json();
+  check(CH, 'the public anon key cannot read chat', Array.isArray(anonChat) && anonChat.length === 0, JSON.stringify(anonChat).slice(0, 80));
+
 } catch (e) {
   check('Harness', 'suite ran to the end', false, e.message);
 } finally {

@@ -584,10 +584,57 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const deleteMed = (m: Medication) => confirmDelete(`Delete ${m.name}?`, () => supabase.from('family_medications').delete().eq('id', m.id));
   const deleteVax = (v: Vaccine) => confirmDelete(`Delete ${v.title}?`, () => supabase.from('family_vaccines').delete().eq('id', v.id));
   const deleteRec = (r: MedRecord) => confirmDelete(`Delete ${r.title}?`, () => supabase.from('medical_records').delete().eq('id', r.id));
+  // Multi-select delete for medications and vaccines (parents and teens only; kids never delete).
+  const [selecting, setSelecting] = useState(false);
+  const [selIds, setSelIds] = useState<Set<string>>(new Set());
+  const toggleSel = (id: string) => setSelIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const endSelect = () => { setSelecting(false); setSelIds(new Set()); };
+  useEffect(() => { endSelect(); }, [area]);
+  const deleteSelected = () => {
+    const ids = [...selIds];
+    if (ids.length === 0) return;
+    const table = area === 'vax' ? 'family_vaccines' : 'family_medications';
+    const noun = area === 'vax' ? 'vaccine' : 'medication';
+    Alert.alert(`Delete ${ids.length} ${noun}${ids.length > 1 ? 's' : ''}?`, 'This removes them for everyone in the family. It cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        if (table === 'family_medications') await supabase.from(table).update({ deleted_by: activeMemberId ?? null, notes: 'Removed from the kiosk', updated_at: new Date().toISOString() }).in('id', ids);
+        const { error } = await supabase.from(table).delete().in('id', ids);
+        if (error) { showToast('Could not delete them'); return; }
+        showToast(`${ids.length} ${noun}${ids.length > 1 ? 's' : ''} removed`);
+        endSelect(); loadSidebar();
+      } },
+    ]);
+  };
+  const selectBar = () => selecting ? (
+    <View style={[s.selBar, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+      <Text style={[s.dName, { color: k.text, flex: 1 }]}>{selIds.size} selected</Text>
+      <Btn kind="sec" label="Cancel" onPress={endSelect} />
+      <Btn kind="dg" label={selIds.size ? `Delete ${selIds.size}` : 'Delete'} Icon={Trash2} onPress={deleteSelected} />
+    </View>
+  ) : null;
+  const selectBtn = () => !isKid ? <Btn kind="sec" label={selecting ? 'Done selecting' : 'Select'} Icon={Check} onPress={() => (selecting ? endSelect() : setSelecting(true))} /> : null;
+  const selMark = (id: string) => selecting ? (
+    <Pressable onPress={() => toggleSel(id)} accessibilityRole="checkbox" accessibilityState={{ checked: selIds.has(id) }} accessibilityLabel="Select"
+      style={[StyleSheet.absoluteFill, { borderRadius: 24, borderWidth: selIds.has(id) ? 3 : 0, borderColor: k.primary, backgroundColor: selIds.has(id) ? 'rgba(88,114,196,0.10)' : 'transparent', alignItems: 'flex-end', padding: 12 }]}>
+      <View style={[s.selDot, { backgroundColor: selIds.has(id) ? k.primary : k.card, borderColor: k.primary }]}>{selIds.has(id) && <Check size={18} color={k.onPrimary} />}</View>
+    </Pressable>
+  ) : null;
   const markRefilled = async (m: Medication) => {
     const next = new Date(); next.setDate(next.getDate() + 30);
     await supabase.from('family_medications').update({ pills_remaining: 60, refill_date: next.toISOString().slice(0, 10) }).eq('id', m.id);
     showToast(`${m.name} refilled`); loadSidebar();
+  };
+  const [downloading, setDownloading] = useState(false);
+  const downloadRecs = async (recs: MedRecord[]) => {
+    const withFile = recs.filter(r => !!r.file_path);
+    if (withFile.length === 0) { showToast('No files attached to download'); return; }
+    setDownloading(true);
+    try {
+      const { downloadSingle, downloadZip } = await import('@/features/vault/records/recordsDownload');
+      if (withFile.length === 1) await downloadSingle(withFile[0]); else await downloadZip(withFile);
+    } catch (e: any) { showToast('Download failed: ' + (e?.message ?? 'please try again')); }
+    finally { setDownloading(false); }
   };
   const markVaxDone = async (v: Vaccine) => { await supabase.from('family_vaccines').update({ done: !v.done }).eq('id', v.id); loadSidebar(); setOpenVax(null); };
   const exportPdf = async () => {
@@ -686,7 +733,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       });
       return (
         <>
-          <Head title={isKid ? 'My medications' : 'All medications'} right={!isKid ? <Btn label="Add medication" Icon={Plus} onPress={() => setShowAddMed(true)} /> : undefined} />
+          <Head title={isKid ? 'My medications' : 'All medications'} right={!isKid ? <View style={s.wrapRow}>{selectBtn()}<Btn label="Add medication" Icon={Plus} onPress={() => setShowAddMed(true)} /></View> : undefined} />
           {whoRow}
           <View style={s.wrapRow}>
             <View style={[s.search, { backgroundColor: k.well }]}><Search size={16} color={k.textFaint} /><TextInput value={medQuery} onChangeText={setMedQuery} placeholder="Search medications" placeholderTextColor={k.textFaint} style={[s.searchIn, { color: k.text }]} accessibilityLabel="Search medications" /></View>
@@ -718,10 +765,12 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                     {!isKid && <Btn kind="sec" label="Edit" onPress={() => setEditMed(m)} />}
                     {!isKid && <Btn kind="dg" label="Delete" onPress={() => deleteMed(m)} />}
                   </View>
+                  {selMark(m.id)}
                 </View>
               );
             })}
           </View>
+          {selectBar()}
         </>
       );
     }
@@ -749,7 +798,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       const l = inScope(sideVaxes).filter(v => vaxStatus === 'all' || (vaxStatus === 'done' && v.done) || (vaxStatus === 'pending' && !v.done) || (vaxStatus === 'due' && !v.done && v.next_due_date && (new Date(v.next_due_date).getTime() - Date.now()) / 86400000 <= 30));
       return (
         <>
-          <Head title="Vaccines" right={<View style={s.wrapRow}><Btn kind="sec" label="Scan a vaccine record" Icon={ScanLine} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} /><Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} /></View>} />{whoRow}
+          <Head title="Vaccines" right={<View style={s.wrapRow}>{selectBtn()}<Btn kind="sec" label="Scan a vaccine record" Icon={ScanLine} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} /><Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} /></View>} />{whoRow}
           <View style={s.wrapRow}>{([['all', 'All'], ['pending', 'Pending'], ['done', 'Done'], ['due', 'Due soon']] as const).map(([key, t], i) => <Chip2 key={key} label={t} on={vaxStatus === key} onPress={() => setVaxStatus(key)} i={i} />)}</View>
           <View style={{ gap: 8 }}>
             {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No vaccines match.</Text> : (() => {
@@ -765,13 +814,14 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   {list.map((v, i) => {
                     const tone = pastels[i % 4];
                     return (
-                      <Pressable key={v.id} onPress={() => setOpenVax(v)} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vrow, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                      <Pressable key={v.id} onPress={() => (selecting ? toggleSel(v.id) : setOpenVax(v))} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vrow, { backgroundColor: tone.col, borderColor: tone.card }]}>
                   <KioskAvatar name={nameOf(v.member_id)} size={32} bgColor={tone.card} k={k} />
                   <View style={{ flex: 1.4, minWidth: 0 }}><Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{v.title}</Text><Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{nameOf(v.member_id)}</Text></View>
                   <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.date ? fmtDateDisplay(new Date(v.date + 'T00:00:00')) : 'Not given yet'}</Text>
                   <Text style={[s.sm, { color: k.textMuted, width: 90 }]}>Dose {v.series_current}/{v.series_total}</Text>
                   <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.next_due_date ? `Due ${fmtDateDisplay(new Date(v.next_due_date + 'T00:00:00'))}` : ''}</Text>
                   <Pill2 t={v.done ? 'Done' : 'Pending'} tone={v.done ? 'g' : 'a'} />
+                  {selecting && <View style={[s.selDot, { backgroundColor: selIds.has(v.id) ? k.primary : k.card, borderColor: k.primary }]}>{selIds.has(v.id) && <Check size={18} color={k.onPrimary} />}</View>}
                 </Pressable>
                     );
                   })}
@@ -779,6 +829,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
               ));
             })()}
           </View>
+          {selectBar()}
         </>
       );
     }
@@ -787,7 +838,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       const l = inScope(sideRecords).filter(r => (recTag === 'all' || r.tag === recTag) && (!recQuery || r.title.toLowerCase().includes(recQuery.toLowerCase())));
       return (
         <>
-          <Head title="All records" right={<Btn label="Bring in a document" Icon={Plus} onPress={() => setArea('bring')} />} />{whoRow}
+          <Head title="All records" right={<View style={s.wrapRow}><Btn kind="sec" label={downloading ? 'Preparing…' : 'Download all'} Icon={Download} onPress={() => downloadRecs(l)} /><Btn label="Bring in a document" Icon={Plus} onPress={() => setArea('bring')} /></View>} />{whoRow}
           <View style={[s.search, { backgroundColor: k.well }]}><Search size={16} color={k.textFaint} /><TextInput value={recQuery} onChangeText={setRecQuery} placeholder="Search records" placeholderTextColor={k.textFaint} style={[s.searchIn, { color: k.text }]} accessibilityLabel="Search records" /></View>
           <View style={s.wrapRow}><Chip2 label="All" on={recTag === 'all'} onPress={() => setRecTag('all')} i={0} />{TAGS.map(([key, t, e], i) => <Chip2 key={key} label={`${e} ${t}`} on={recTag === key} onPress={() => setRecTag(key)} i={i + 1} />)}</View>
           <View style={s.grid}>
@@ -891,6 +942,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
               {find.length > 0 && <><Text style={[s.eb, { color: k.gold }]}>KEY FINDINGS</Text>{find.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelAmber }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
               {fu.length > 0 && <><Text style={[s.eb, { color: k.sage }]}>FOLLOW-UP ACTIONS</Text>{fu.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelSage }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
               {!!openRec.notes && <><Text style={[s.eb, { color: k.textFaint }]}>NOTES</Text><Text style={[s.sm, { color: k.textMuted }]}>{openRec.notes}</Text></>}
+              {!!openRec.file_path && <Btn kind="sec" label={downloading ? 'Preparing…' : 'Download file'} Icon={Download} onPress={() => downloadRecs([openRec])} />}
               {!own && <Btn kind="dg" label="Delete record" Icon={Trash2} onPress={() => deleteRec(openRec)} />}
             </View>
           );
@@ -906,6 +958,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             {!!openVax.location && <View style={[s.tg, { backgroundColor: k.well }]}><Text style={[s.sm, { color: k.textMuted }]}>Location</Text><Text style={[s.dName, { color: k.text }]}>{openVax.location}</Text></View>}
             {!!openVax.notes && <View style={[s.tg, { backgroundColor: k.pastelAmber }]}><Text style={[s.sm, { color: k.textMuted }]}>Notes</Text><Text style={[s.dName, { color: k.text }]}>{openVax.notes}</Text></View>}
             {!own && <Btn kind="sec" label={openVax.done ? 'Mark as pending' : 'Mark dose given'} onPress={() => markVaxDone(openVax)} />}
+            {!isKid && <Btn kind="dg" label="Delete vaccine" Icon={Trash2} onPress={() => deleteVax(openVax)} />}
           </View>
         )}
       </KioskFormDrawer>
@@ -957,6 +1010,8 @@ const s = StyleSheet.create({
   recIc: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   hero: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, borderRadius: 26, borderWidth: 1.5, padding: 16 },
   heroIc: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  selBar: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, borderWidth: 1.5, padding: 14, marginTop: 10 },
+  selDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   vrow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8, minHeight: 56 },
   vc: { flexGrow: 1, flexBasis: 230, maxWidth: '33%', borderRadius: 18, borderWidth: 1.5, padding: 10, gap: 6 },
   tg: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },

@@ -5,7 +5,7 @@
  * Heart replaces the dot of the "i" in "Family" (dotless ı + absolute SVG).
  */
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, AppState } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
   useSharedValue, useAnimatedStyle,
@@ -235,7 +235,18 @@ function useLastLogin(memberId: string | null | undefined): string | null {
     }
     let live = true;
     _loginSeen[memberId].then(t => { if (live) setText(t); });
-    return () => { live = false; };
+    // Coming back to the app after a long break counts as a new visit too.
+    let hiddenAt = 0;
+    const sub = AppState.addEventListener('change', st => {
+      if (st === 'background') hiddenAt = Date.now();
+      else if (st === 'active' && hiddenAt && Date.now() - hiddenAt > 30 * 60_000) {
+        hiddenAt = 0;
+        _loginSeen[memberId] = Promise.resolve(supabase.rpc('touch_member_login', { p_member_id: memberId }))
+          .then(({ data }) => (data ? fmtLogin(String(data)) : null)).catch(() => null);
+        _loginSeen[memberId].then(t => { if (live) setText(t); });
+      }
+    });
+    return () => { live = false; sub.remove(); };
   }, [memberId]);
   return text;
 }
@@ -296,7 +307,7 @@ export default function AppHeader({
             <View>
               <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700', letterSpacing: 0.1 }} numberOfLines={1}>{greeting}</Text>
               <Text style={{ fontSize: 20, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, letterSpacing: -0.5, marginTop: 1 }} numberOfLines={1}>{firstName}</Text>
-              {!!lastLogin && <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }} numberOfLines={1}>Last login {lastLogin}</Text>}
+              {!!lastLogin && <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }} numberOfLines={1}>Last visited {lastLogin}</Text>}
             </View>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

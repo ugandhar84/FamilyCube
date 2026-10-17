@@ -141,11 +141,23 @@ async function rotateChatMessages(job: RotationJob): Promise<void> {
   const oldKey = await getActiveFamilyKey(job.familyId);
   if (!oldKey) return;
 
+  // chat_messages has no foreign key to chat_channels, so PostgREST cannot embed one in the other (the old
+  // `chat_channels!inner(family_id)` embed failed with "Could not find a relationship"). Look the family's channel
+  // ids up first and filter the messages by them.
+  const { data: chans, error: chanErr } = await supabase.from('chat_channels').select('id').eq('family_id', job.familyId);
+  if (chanErr) throw chanErr;
+  const channelIds = (chans ?? []).map(c => c.id as string);
+  if (channelIds.length === 0) {
+    job.cursor.chatDone = true;
+    await writeJob(job);
+    return;
+  }
+
   while (true) {
     let query = supabase
       .from('chat_messages')
-      .select('id, text, channel_id, chat_channels!inner(family_id)')
-      .eq('chat_channels.family_id', job.familyId)
+      .select('id, text, channel_id')
+      .in('channel_id', channelIds)
       .not('text', 'is', null)
       .order('id', { ascending: true })
       .limit(BATCH_SIZE);

@@ -50,11 +50,11 @@ function choreTypeLabel(categoryType: string): string {
 
 function statusLabel(status: string): string {
   switch (status) {
-    case 'pending_approval': return 'Awaiting review';
+    case 'pending_approval': return 'Waiting on you';
     case 'approved':         return 'Approved';
     case 'auto_approved':    return 'Auto-approved';
-    case 'declined':         return 'Declined';
-    case 'redo_requested':   return 'Redo requested';
+    case 'declined':         return 'Try again';
+    case 'redo_requested':   return 'Try again';
     case 'completed':        return 'Completed';
     default:                 return status;
   }

@@ -48,7 +48,7 @@ export function QuestFilters({
   // alongside active ones instead of being segregated into their own view.
   const STATUS_TABS: { key: TabStatus; label: string }[] = [
     { key: 'todo',      label: 'To Do' },
-    { key: 'review',    label: 'In Review' },
+    { key: 'review',    label: 'Waiting' },
     { key: 'completed', label: 'Completed' },
     { key: 'all',       label: 'All' },
   ];

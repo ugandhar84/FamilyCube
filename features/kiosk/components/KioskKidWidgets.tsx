@@ -253,7 +253,7 @@ export function KidChoresWidget({ active, members, k, isDark, onOpenTasks, style
   // with MOCK filterpills"].
   const FILTERS: { key: string; label: string; statuses: string[] }[] = [
     { key: 'all',    label: 'All',          statuses: [] },
-    { key: 'review', label: 'Needs review', statuses: ['pending_approval', 'declined'] },
+    { key: 'review', label: 'Waiting', statuses: ['pending_approval', 'declined'] },
     { key: 'todo',   label: 'To do',        statuses: ['todo', 'claimed', 'in_progress'] },
     { key: 'done',   label: 'Done',         statuses: ['approved', 'done'] },
   ];
@@ -1232,7 +1232,7 @@ function ChoreCardRow({
         {!isDone && !btn && inReview && (
           <View style={[s.taskGhostPill, { backgroundColor: k.well, borderColor: k.cardBorder, opacity: 0.6 }]}>
             <Text style={[s.taskGhostPillText, { color: k.textFaint, fontFamily: fontExtrabold }]} numberOfLines={1}>
-              Awaiting review
+              Waiting on a grown-up
             </Text>
           </View>
         )}

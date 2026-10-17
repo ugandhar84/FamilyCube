@@ -31,8 +31,8 @@ import type { KioskColors } from './kioskPalette';
 export const COLUMN_STATUSES: { key: string; label: string; statuses: string[] }[] = [
   { key: 'todo',     label: 'To Do',       statuses: ['todo'] },
   { key: 'progress', label: 'In Progress', statuses: ['claimed', 'in_progress'] },
-  { key: 'redo',     label: 'Needs Redo',  statuses: ['declined'] },
-  { key: 'review',   label: 'In Review',   statuses: ['pending_approval'] },
+  { key: 'redo',     label: 'Try again',  statuses: ['declined'] },
+  { key: 'review',   label: 'Waiting',   statuses: ['pending_approval'] },
 ];
 
 /** Chores this viewer is allowed to see at all on a shared kiosk. */
@@ -191,7 +191,7 @@ export type KioskTabStatus = 'all' | 'todo' | 'review' | 'completed';
 export const KIOSK_STATUS_TABS: { key: KioskTabStatus; label: string }[] = [
   { key: 'all',    label: 'All' },
   { key: 'todo',   label: 'To Do' },
-  { key: 'review', label: 'In Review' },
+  { key: 'review', label: 'Waiting' },
 ];
 
 /**

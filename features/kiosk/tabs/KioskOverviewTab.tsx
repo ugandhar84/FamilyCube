@@ -3557,7 +3557,7 @@ function SeniorTasksWidget({ active, quests, k, isDark, onOpenTasks, style }: {
               <View style={[s.seniorTaskDot, { backgroundColor: q.status === 'pending_approval' ? k.gold : k.purple }]} />
               <Text style={[s.seniorTaskTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
               {q.status === 'pending_approval' && (
-                <Text style={[s.seniorTaskMeta, { color: k.gold }]}>Awaiting review</Text>
+                <Text style={[s.seniorTaskMeta, { color: k.gold }]}>Waiting on a grown-up</Text>
               )}
             </View>
           ))}

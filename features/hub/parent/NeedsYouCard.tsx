@@ -51,7 +51,7 @@ export type NeedsYouItem =
 // card) instead of a one-off full-button pattern unique to this card.
 function statusFor(kind: NeedsYouItem['kind']): { label: string; color: (colors: any) => string } {
   if (kind === 'conflict')  return { label: 'Scheduling conflict', color: (c) => c.danger };
-  if (kind === 'approval')  return { label: 'Awaiting review',     color: (c) => c.amber };
+  if (kind === 'approval')  return { label: 'Waiting on you',     color: (c) => c.amber };
   return { label: 'In backlog', color: (c) => c.textTertiary };
 }
 

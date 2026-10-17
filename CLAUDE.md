@@ -188,6 +188,17 @@ The brand palette already has `*Light` variants: `colors.primaryLight`, `colors.
 
 ---
 
+## Spacing rhythm — uniform on every page
+
+Use `RHYTHM` from `constants/theme.ts` (or `PageBody` / `Section` from `components/PageLayout.tsx`), never ad-hoc numbers:
+- **Page edges** `RHYTHM.page` = 20.
+- **Between sections** (a heading plus its block) `RHYTHM.section` = 24.
+- **Between components inside a section** (cards, rows, banners, buttons) `RHYTHM.item` = 12.
+- **Inside a card or banner** `RHYTHM.card` = 16 padding.
+- Spacing comes from the container's `gap`. Children do **not** add their own `marginTop`/`marginBottom` for outer spacing (that double-spaces).
+- A page heading is `PageHeading` (it supplies its own top/bottom padding). Do not wrap it in a View that adds padding or a divider line.
+- Buttons are at least 48 high (`paddingVertical` 13–14, radius 14); banners are radius 18 with a 44 icon tile.
+
 ## Full-Page Detail/Overlay Screens — render as a sibling, not an early-return
 
 **Reference implementation: `features/quests/QuestsScreen.tsx` → `QuestDetailModal.tsx`.** Any new full-page detail/overlay screen (event detail, member detail, etc.) must follow this exact shape:

@@ -5,6 +5,7 @@ import { GroceryRun } from '@/store/groceryStore';
 import { FlatSectionHeader } from './FlatSectionHeader';
 import { RunCard } from './RunCard';
 import { s } from './styles';
+import { RHYTHM } from '@/constants/theme';
 
 // ─── "Runs" tab body — active / draft / done run lists ─────────────────────
 
@@ -19,10 +20,10 @@ export function RunsTabBody({
   isKid: boolean; colors: any; isDark: boolean; P: string;
 }) {
   return (
-    <View style={{ padding: 20, gap: 14 }}>
+    <View style={{ padding: RHYTHM.page, gap: RHYTHM.section }}>
       {/* Start-a-trip banner: says what a shopping trip is for, with the action inside it. */}
       {!isKid && (
-        <View style={{ borderRadius: 20, padding: 18, gap: 14, backgroundColor: isDark ? colors.tealLight : colors.tealLight,
+        <View style={{ borderRadius: 20, padding: RHYTHM.card + 2, gap: RHYTHM.item + 2, backgroundColor: isDark ? colors.tealLight : colors.tealLight,
           borderWidth: 1, borderColor: colors.teal + '33' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : '#FFFFFF' }}>

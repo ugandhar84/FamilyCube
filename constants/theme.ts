@@ -61,6 +61,13 @@ export type TypoKey = keyof typeof TYPO;
 // (29/700/-0.5 titles in 33 places; header insets.top + 12 / bottom 16; 20px
 // content gutters in 45). New and updated pages use these instead of local
 // numbers. Colours are applied at the call site from useTheme().
+/**
+ * One spacing rhythm for every page. Between SECTIONS (a heading plus its block): `section`. Between COMPONENTS inside a
+ * section (cards, rows, banners, buttons): `item`. Inside a card or banner: `card`. Page edges: `page`. Tight inline
+ * gaps (icon + label): `inline`. Containers use `gap`, children never add their own outer margins.
+ */
+export const RHYTHM = { page: 20, section: 24, item: 12, card: 16, inline: 8 } as const;
+
 export const PAGE = {
   title:    { fontSize: 29, fontWeight: '700', letterSpacing: -0.5 } as const,
   eyebrow:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.6 } as const,

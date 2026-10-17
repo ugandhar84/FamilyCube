@@ -58,11 +58,11 @@ export default function DayCard({ day, meals, members, onRecipe, onEdit, onDelet
   const [chefPickerMealId, setChefPickerMealId] = useState<string | null>(null);
 
   return (
-    <View style={{ marginBottom: 20 }}>
+    <View style={{ marginBottom: 24 }}>
       {/* Day heading */}
       <Text style={{
         fontSize: 20, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
-        marginBottom: 10, marginTop: 4,
+        marginBottom: 12,
       }}>
         {fmtDayHeading(day)}
       </Text>

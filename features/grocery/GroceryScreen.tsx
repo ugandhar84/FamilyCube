@@ -53,6 +53,7 @@ import { s } from './components/styles';
 import { showToast } from '@/components/AppToast';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { RHYTHM } from '@/constants/theme';
 import { OverlayPage } from '@/components/OverlayPage';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -810,7 +811,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             <PartnerStatusBar familyId={familyId} currentMemberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
             <SmartRestockBanner familyId={familyId} colors={colors} isDark={isDark}
               onAddItem={(name, category) => addItem({ familyId, addedBy: activeMemberId ?? '', name, category })} />
-            <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 20, gap: 14 }}>
+            <View style={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, paddingBottom: RHYTHM.page, gap: RHYTHM.section }}>
               {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={P} /> : (
                 <>
                   {categorisedItems.supplies.length > 0 && (

@@ -1,5 +1,6 @@
 import { ComponentType } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { RHYTHM } from '@/constants/theme';
 
 // ─── FlatSectionHeader — Figma plain bold category heading ───────────────────
 export function FlatSectionHeader({ Icon, emoji, title, badge, badgeColor, accent, colors, onAction, actionIcon }: {
@@ -8,7 +9,7 @@ export function FlatSectionHeader({ Icon, emoji, title, badge, badgeColor, accen
   onAction?: () => void; actionIcon?: React.ReactNode;
 }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, marginTop: 8 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: RHYTHM.item }}>
       <Text style={{ flex: 1, fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>
         {title}
       </Text>

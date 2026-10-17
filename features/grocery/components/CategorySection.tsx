@@ -35,14 +35,14 @@ export function CategorySection({
   );
 
   return (
-    <View style={{ marginBottom: 20 }}>
+    <View>
       <FlatSectionHeader emoji={emoji} title={label} accent={color} colors={colors} badge={`${pending} left`} />
 
       {storeGroups.map(([store, storeItems]) => {
         const isPinnable = store !== 'Any store' && !isKid && !!onPinStore;
         const isPinned = !!pinnedStores?.[store];
         return (
-        <View key={store} style={{ marginBottom: 10 }}>
+        <View key={store} style={{ marginBottom: 12 }}>
           {storeGroups.length > 1 && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.7 }}>

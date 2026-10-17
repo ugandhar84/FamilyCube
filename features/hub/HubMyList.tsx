@@ -94,13 +94,13 @@ export function HubMyList({ active, colors, isDark }: { active: FamilyMember; co
 }
 
 const s = StyleSheet.create({
-  wrap: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, gap: 8 },
+  wrap: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8, gap: 8 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, padding: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   ring: { width: 26, height: 26, borderRadius: 13, borderWidth: 2.5 },
   title: { fontSize: 15, fontWeight: '700' },
   sub: { fontSize: 12, fontWeight: '700', marginTop: 1 },
-  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginVertical: 4, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
+  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginTop: 12, marginBottom: 4, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
   emptyT: { fontSize: 14, fontWeight: '700' },
   add: { borderRadius: 16, padding: 12, gap: 10 },
   input: { fontSize: 16, fontWeight: '700', paddingVertical: 6 },

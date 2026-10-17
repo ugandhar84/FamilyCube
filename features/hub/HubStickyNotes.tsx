@@ -86,10 +86,10 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
 }
 
 const s = StyleSheet.create({
-  wrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 22, gap: 8 },
+  wrap: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, gap: 4 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   scroller: { marginHorizontal: -16, overflow: 'visible' },
-  grid: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14 },
+  grid: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 6 },
   note: { width: 190, minHeight: 120, borderRadius: 3, borderBottomRightRadius: 20, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 10, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 3, height: 7 }, elevation: 8 },
   tape: { position: 'absolute', top: -8, alignSelf: 'center', width: 56, height: 16, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', transform: [{ rotate: '-3deg' }] },
   fold: { position: 'absolute', right: 0, bottom: 0, width: 22, height: 22, borderTopLeftRadius: 18, borderBottomRightRadius: 20, backgroundColor: 'rgba(0,0,0,0.10)' },
@@ -98,7 +98,7 @@ const s = StyleSheet.create({
   when: { fontSize: 11, fontWeight: '700' },
   x: { position: 'absolute', top: 6, right: 6 },
   add: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0, transform: [] },
-  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 14, marginBottom: 22, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
+  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 10, marginBottom: 6, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
   emptyT: { fontSize: 14, fontWeight: '700' },
   modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 10 },

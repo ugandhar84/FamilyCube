@@ -29,6 +29,7 @@ import { FileText as FileTextIcon, Camera, Image as ImageIcon, FolderOpen, X, Sh
 import PhotoRedactModal, { RedactableImage } from '@/components/PhotoRedactModal';
 import { RecordForm, TAGS, BLANK_FORM, fmtSize } from '@/features/vault/records/types';
 import { fmtDate, fmtDateDisplay } from '@/features/vault/tabs/health/types';
+import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
 import { useKioskColors } from '../kioskPalette';
@@ -65,6 +66,15 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{ asset: ImagePicker.ImagePickerAsset; redactImg: RedactableImage } | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  // iOS cannot present a picker, camera or second Modal on top of this drawer's own Modal: it
+  // silently fails and leaves the screen frozen. So the drawer steps aside while one is up.
+  const [picking, setPicking] = useState(false);
+  useKioskLockSuspended(picking);
+  const withPicker = async (run: () => Promise<void>) => {
+    setPicking(true);
+    await new Promise(r => setTimeout(r, 450));
+    try { await run(); } finally { setPicking(false); }
+  };
 
   useEffect(() => {
     if (visible) {
@@ -79,29 +89,29 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
   }), [form.title, selMember]);
   const canSubmit = !errors.title && !errors.member;
 
-  const pickFromFiles = async () => {
+  const pickFromFiles = () => withPicker(async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
     if (!result.canceled && result.assets[0]) setFile(result.assets[0]);
-  };
+  });
 
   const openRedactFor = async (asset: ImagePicker.ImagePickerAsset) => {
     const base64 = asset.base64 ?? await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' as any });
     setPendingPhoto({ asset, redactImg: { base64, mimeType: asset.mimeType ?? 'image/jpeg' } });
   };
 
-  const pickFromCamera = async () => {
+  const pickFromCamera = () => withPicker(async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Camera access needed', 'Please allow camera access in Settings.'); return; }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false, base64: true });
     if (!result.canceled && result.assets[0]) await openRedactFor(result.assets[0]);
-  };
+  });
 
-  const pickFromLibrary = async () => {
+  const pickFromLibrary = () => withPicker(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Photo library access needed', 'Please allow photo library access in Settings.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false, base64: true });
     if (!result.canceled && result.assets[0]) await openRedactFor(result.assets[0]);
-  };
+  });
 
   const handleRedactConfirm = async (finalImages: RedactableImage[]) => {
     if (!pendingPhoto) return;
@@ -126,7 +136,7 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
   return (
     <>
       <KioskFormDrawer
-        visible={visible} title="Upload Medical Record" subtitle="Same real form as the phone app"
+        visible={visible && !picking && !pendingPhoto} title="Upload Medical Record" subtitle="Same real form as the phone app"
         accent={k.blue} Icon={FileTextIcon} k={k} onClose={onClose}
         variant="drawer"
         submitLabel="Save to Vault" onSubmit={handleSave}

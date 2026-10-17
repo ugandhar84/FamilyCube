@@ -752,10 +752,20 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           <Head title="Vaccines" right={<Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} />} />{whoRow}
           <View style={s.wrapRow}>{([['all', 'All'], ['pending', 'Pending'], ['done', 'Done'], ['due', 'Due soon']] as const).map(([key, t], i) => <Chip2 key={key} label={t} on={vaxStatus === key} onPress={() => setVaxStatus(key)} i={i} />)}</View>
           <View style={{ gap: 8 }}>
-            {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No vaccines match.</Text> : l.map((v, i) => {
-              const tone = pastels[i % 4];
-              return (
-                <Pressable key={v.id} onPress={() => setOpenVax(v)} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vrow, { backgroundColor: tone.col, borderColor: tone.card }]}>
+            {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No vaccines match.</Text> : (() => {
+              // Grouped by month and year given (or due, when not given yet), newest first.
+              const keyOf = (v: Vaccine) => (v.date || v.next_due_date || '').slice(0, 7);
+              const groups = new Map<string, Vaccine[]>();
+              [...l].sort((a, b) => (b.date || b.next_due_date || '').localeCompare(a.date || a.next_due_date || '')).forEach(v => { const g = keyOf(v); groups.set(g, [...(groups.get(g) ?? []), v]); });
+              return [...groups.entries()].map(([g, list], gi) => (
+                <View key={g || 'none'} style={{ gap: 8 }}>
+                  <Text style={[s.eb, { color: k.textFaint, marginTop: gi ? 8 : 0 }]}>
+                    {g ? new Date(g + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase() : 'NO DATE'} · {list.length}
+                  </Text>
+                  {list.map((v, i) => {
+                    const tone = pastels[i % 4];
+                    return (
+                      <Pressable key={v.id} onPress={() => setOpenVax(v)} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vrow, { backgroundColor: tone.col, borderColor: tone.card }]}>
                   <KioskAvatar name={nameOf(v.member_id)} size={32} bgColor={tone.card} k={k} />
                   <View style={{ flex: 1.4, minWidth: 0 }}><Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{v.title}</Text><Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{nameOf(v.member_id)}</Text></View>
                   <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.date ? fmtDateDisplay(new Date(v.date + 'T00:00:00')) : 'Not given yet'}</Text>
@@ -763,8 +773,11 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.next_due_date ? `Due ${fmtDateDisplay(new Date(v.next_due_date + 'T00:00:00'))}` : ''}</Text>
                   <Pill2 t={v.done ? 'Done' : 'Pending'} tone={v.done ? 'g' : 'a'} />
                 </Pressable>
-              );
-            })}
+                    );
+                  })}
+                </View>
+              ));
+            })()}
           </View>
         </>
       );

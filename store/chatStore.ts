@@ -110,6 +110,7 @@ let _globalUnreadMemberId: string | null = null;
 export function isChatChannelOpen(channelId: string | undefined | null): boolean {
   return !!channelId && !!_openChannelId && (channelId === _openChannelId || toBareChannelId(channelId) === _openChannelId);
 }
+let _clearsFor: string | null = null;
 let _dmPollTimer: ReturnType<typeof setInterval> | null = null;
 let _openChannelId: string | null = null;
 
@@ -458,6 +459,10 @@ interface ChatState {
   // policy needed). Currently only exposed in the UI for the Just Us
   // channel, per explicit request.
   clearChannel:  (channelId: string) => Promise<void>;
+  /** Hides this conversation's history up to now for the signed-in member only; nobody else's history changes. */
+  clearChannelForMe: (channelId: string, memberId: string) => Promise<void>;
+  loadClears: (memberId: string) => Promise<void>;
+  clearedAt: Record<string, string>;
   // Re-sends a failed message (status: 'failed') using the args captured
   // at failure time — the tap-to-retry counterpart to the automatic
   // background retry flushOfflineQueue already does.
@@ -505,6 +510,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastActivity: {},
   readReceipts: {},
   unreadCounts: {},
+  clearedAt: {},
 
   channelState: (id) => get().channels[id] ?? emptyChannel(),
 
@@ -715,6 +721,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   loadChannel: async (channelId) => {
+    const meNow = (() => { try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().activeMemberId as string | null; } catch { return null; } })();
+    if (meNow && _clearsFor !== meNow) {
+      _clearsFor = meNow;
+      await get().loadClears(meNow).catch(() => { _clearsFor = null; });
+    }
     const current = get().channels[channelId];
     // Already subscribed — skip entirely (re-renders must not re-subscribe)
     if (get()._subs[channelId]) return;
@@ -755,7 +766,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (error) throw error;
 
       const rows   = (data ?? []) as DBRow[];
-      const msgs   = await Promise.all(rows.map(rowToMessage));
+      const cutAt = get().clearedAt[channelId];
+      const msgs   = (await Promise.all(rows.map(rowToMessage))).filter(m => !cutAt || m.timestamp > cutAt);
       msgs.reverse(); // oldest first for display
 
       const hasMore   = rows.length === PAGE_SIZE;
@@ -914,6 +926,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   reset: () => {
+    _clearsFor = null;
     for (const sub of Object.values(get()._subs)) {
       if (sub) supabase.removeChannel(sub as any);
     }
@@ -1261,6 +1274,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get()._removeMessage(channelId, messageId);
   },
 
+  loadClears: async (memberId) => {
+    const { data } = await supabase.from('member_chat_clears').select('channel_id, cleared_at').eq('member_id', memberId);
+    const map: Record<string, string> = {};
+    for (const r of (data ?? []) as any[]) map[toBareChannelId(r.channel_id)] = r.cleared_at;
+    set({ clearedAt: map });
+  },
+
+  clearChannelForMe: async (channelId, memberId) => {
+    const now = new Date().toISOString();
+    const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
+    const { error } = await supabase.from('member_chat_clears')
+      .upsert({ member_id: memberId, channel_id: dbChannelId, cleared_at: now }, { onConflict: 'member_id,channel_id' });
+    if (error) throw error;
+    set(s => {
+      const ch = s.channels[channelId];
+      return {
+        clearedAt: { ...s.clearedAt, [channelId]: now },
+        unreadCounts: { ...s.unreadCounts, [channelId]: 0 },
+        channels: ch ? { ...s.channels, [channelId]: { ...ch, messages: [] } } : s.channels,
+      };
+    });
+    get().markChannelRead(channelId, memberId).catch(() => {});
+    AsyncStorage.removeItem(CHANNEL_CACHE_PREFIX + channelId).catch(() => {});
+  },
+
   clearChannel: async (channelId) => {
     const { error } = await supabase.from('chat_messages').delete().eq('channel_id', channelId);
     if (error) {
@@ -1389,6 +1427,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Internal helpers ──────────────────────────────────────────────────────
 
   _upsertMessage: (channelId, msg) => {
+    const cut = get().clearedAt[channelId];
+    if (cut && msg.timestamp <= cut) return; // hidden by this member's "clear chat for me"
     set(s => {
       const ch   = s.channels[channelId] ?? emptyChannel();
       const msgs = ch.messages.filter(m => m.id !== msg.id);

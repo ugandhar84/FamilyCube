@@ -1300,37 +1300,23 @@ export default function ChatScreen() {
           </Pressable>
         )}
 
-        {/* Just Us — "Clear all messages" in one shot, per explicit
-            request. Irreversible (real DB delete, not a local hide), so
-            gated behind a confirm dialog. Deliberately not offered on any
-            other channel — a shared family/DM history isn't "mine alone"
-            to wipe the way a private 2-person thread reasonably can be. */}
-        {openCoupleChannel && (
-          <Pressable
-            onPress={() => Alert.alert(
-              'Clear all messages?',
-              'This deletes every message in Just Us for both of you. This can\'t be undone.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Clear All', style: 'destructive',
-                  onPress: () => clearChannel(channelId).catch((e: any) => {
-                    // Was a fixed "check your connection" message regardless
-                    // of the real error — made this genuinely undiagnosable
-                    // from the field [live-reported: "clear all messages is
-                    // not working on this just us could not clear messages
-                    // check your connection error"]. Surface the real
-                    // Postgres/Supabase error text instead.
-                    console.warn('[ChatScreen] clearChannel failed', e);
-                    Alert.alert('Could not clear messages', e?.message ?? 'Check your connection and try again.');
-                  }),
-                },
-              ],
-            )}
-            style={[s.iconBtn, { backgroundColor: isDark ? colors.surface : '#F0EDE6', borderColor: isDark ? colors.border : GEMINI.border }]}>
-            <Trash2 size={15} color={colors.danger} />
-          </Pressable>
-        )}
+        {/* Clear chat for me: hides the history up to now on this account only; the other people keep theirs. */}
+        <Pressable
+          onPress={() => Alert.alert(
+            'Clear this chat?',
+            'This only clears your view. Everyone else in the chat keeps their messages.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Clear for me', style: 'destructive',
+                onPress: () => useChatStore.getState().clearChannelForMe(channelId, activeMemberId ?? '').catch((e: any) => {
+                  Alert.alert('Could not clear the chat', e?.message ?? 'Check your connection and try again.');
+                }) },
+            ],
+          )}
+          accessibilityRole="button" accessibilityLabel="Clear chat for me"
+          style={[s.iconBtn, { backgroundColor: isDark ? colors.surface : '#F0EDE6', borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Trash2 size={15} color={colors.danger} />
+        </Pressable>
 
         <Pressable onPress={() => setSearchOpen(v => !v)}
           style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : (isDark ? colors.surface : '#F0EDE6'), borderColor: searchOpen ? colors.primary : (isDark ? colors.border : GEMINI.border) }]}>

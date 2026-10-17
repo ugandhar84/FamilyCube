@@ -53,6 +53,7 @@ import {
 import {
   Send, Lock, ShieldCheck, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
   MapPin, X, XCircle, CornerUpLeft, Pencil, Search, ChevronLeft, ChevronRight, type LucideIcon,
+  Trash2,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -789,6 +790,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               accessibilityLabel={searchOpen ? 'Close search' : 'Search messages'}
             >
               {searchOpen ? <X size={16} color={k.primary} /> : <Search size={16} color={k.textMuted} />}
+            </Pressable>
+            <Pressable
+              onPress={() => Alert.alert('Clear this chat?', 'This only clears your view. Everyone else in the chat keeps their messages.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Clear for me', style: 'destructive', onPress: () => useChatStore.getState().clearChannelForMe(activeChannel, active.id).catch(() => showToast('Could not clear the chat')) },
+              ])}
+              hitSlop={10}
+              style={[s.threadSearchBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]}
+              accessibilityRole="button" accessibilityLabel="Clear chat for me"
+            >
+              <Trash2 size={16} color={k.danger} />
             </Pressable>
           </View>
 

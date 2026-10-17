@@ -9,7 +9,7 @@
  * leak through a new view). Times are 12h (CLAUDE.md rule 9).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { Animated, Easing, View, Text, Pressable, ScrollView, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { canViewSensitiveEventDetail, type FamilyEvent } from '@/store/eventStore';
 import { fmtTime } from '@/lib/dates';
@@ -107,7 +107,16 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
   const contentH = hours * hourH;
 
   const nowMin = nowDate.getHours() * 60 + nowDate.getMinutes();
-  const showNow = nowMin >= h0 * 60 && nowMin <= h1 * 60;
+  // The "now" bar's animation (same as the Home board): the pill pulses, the line breathes, and it sweeps in on open.
+  const pulse = useRef(new Animated.Value(0)).current;
+  const grow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0, duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+    ])).start();
+    Animated.timing(grow, { toValue: 1, duration: 700, delay: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [pulse, grow]);
   const hasAllDay = placed.some(p => p.allDay.length > 0);
   const todayShown = columns.some(c => c.isToday);
 
@@ -116,7 +125,7 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
   useEffect(() => {
     if (!autoScrollToNow || !todayShown || bodyH <= 0) return;
     const y = ((nowMin - h0 * 60) / 60) * hourH - bodyH / 2;
-    const t = setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: true }), 60);
+    const t = setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: true }), 450);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoScrollToNow, todayShown, bodyH, dayKey, h0, hourH]);
@@ -204,12 +213,12 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
             </View>
           ))}
           </View>
-          {showNow && todayShown && (
-            <View pointerEvents="none" style={[s.nowWrap, { top: ((nowMin - h0 * 60) / 60) * hourH }]}>
-              <View style={[s.nowPill, { backgroundColor: k.primary }]}>
+          {todayShown && (
+            <View pointerEvents="none" style={[s.nowWrap, { top: Math.min(Math.max(((nowMin - h0 * 60) / 60) * hourH, 11), contentH - 11) }]}>
+              <Animated.View style={[s.nowPill, { backgroundColor: k.primary, opacity: grow, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] }) }] }]}>
                 <Text style={[s.nowPillText, { color: k.onPrimary }]} numberOfLines={1}>{fmt12(`${nowDate.getHours()}:${String(nowDate.getMinutes()).padStart(2, '0')}`)}</Text>
-              </View>
-              <View style={[s.nowLine, { backgroundColor: k.primary }]} />
+              </Animated.View>
+              <Animated.View style={[s.nowLine, { backgroundColor: k.primary, opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }), transform: [{ scaleX: grow }] }]} />
             </View>
           )}
         </View>
@@ -241,5 +250,5 @@ const s = StyleSheet.create({
   nowWrap: { position: 'absolute', left: 0, right: 0, height: 22, marginTop: -11, flexDirection: 'row', alignItems: 'center', zIndex: 5 },
   nowPill: { width: AXIS_W - 2, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   nowPillText: { fontSize: 10.5, fontWeight: '800' },
-  nowLine: { flex: 1, height: 2 },
+  nowLine: { flex: 1, height: 3, borderRadius: 2 },
 });

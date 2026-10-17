@@ -5,12 +5,17 @@
 import { useState } from 'react';
 import { View, Text, Pressable, TextInput, Modal, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { Plus, X } from 'lucide-react-native';
+import { useFonts } from 'expo-font';
+import { Caveat_600SemiBold, Caveat_700Bold } from '@expo-google-fonts/caveat';
 import type { FamilyMember } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
 import { useStickyNotes, noteStamp, NOTE_MAX, NOTE_COLORS, type NoteColor } from './useStickyNotes';
 
 export function HubStickyNotes({ active, members, colors, isDark }: { active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean }) {
   const { notes, add, remove, canRemove } = useStickyNotes(active, members);
+  // Same handwriting as the kiosk sticky notes.
+  const [handLoaded] = useFonts({ Caveat_600SemiBold, Caveat_700Bold });
+  const hand = handLoaded ? { bold: 'Caveat_700Bold', semi: 'Caveat_600SemiBold' } : null;
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
   const [color, setColor] = useState<NoteColor>('amber');
@@ -42,9 +47,9 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
             <View key={n.id} style={[s.note, { backgroundColor: t.bg, transform: [{ rotate: `${[-1.8, 1.4, -0.8, 2][i % 4]}deg` }] }]}>
               <View style={s.tape} />
               <View style={s.fold} />
-              <Text style={[s.body, { color: '#2C2722' }]}>{n.body}</Text>
-              <Text style={[s.by, { color: t.fg }]}>— {first(n.author_id)}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(first).join(', ')}` : ''}</Text>
-              <Text style={[s.when, { color: '#2C2722', opacity: 0.7 }]}>{noteStamp(n.created_at)}</Text>
+              <Text style={[s.body, { color: '#2C2722' }, hand && { fontFamily: hand.bold, fontSize: 24, lineHeight: 26, fontWeight: undefined }]}>{n.body}</Text>
+              <Text style={[s.by, { color: t.fg }, hand && { fontFamily: hand.semi, fontSize: 18, fontWeight: undefined }]}>— {first(n.author_id)}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(first).join(', ')}` : ''}</Text>
+              <Text style={[s.when, { color: '#2C2722', opacity: 0.7 }, hand && { fontFamily: hand.semi, fontSize: 15, fontWeight: undefined }]}>{noteStamp(n.created_at)}</Text>
               {canRemove(n) && <Pressable onPress={() => remove(n)} hitSlop={8} style={s.x} accessibilityRole="button" accessibilityLabel="Remove note"><X size={13} color={colors.textSecondary} /></Pressable>}
             </View>
           );
@@ -60,7 +65,7 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
           <View style={[s.sheet, { backgroundColor: isDark ? colors.card : '#FFFFFF' }]}>
             <Text style={[s.sheetT, { color: colors.textPrimary }]}>New sticky note</Text>
             <TextInput value={text} onChangeText={setText} maxLength={NOTE_MAX} multiline autoFocus placeholder="e.g. Soccer cleats are in the garage" placeholderTextColor={colors.textTertiary}
-              style={[s.input, { color: colors.textPrimary, backgroundColor: tone[color].bg }]} accessibilityLabel="Note" />
+              style={[s.input, { color: colors.textPrimary, backgroundColor: tone[color].bg }, hand && { fontFamily: hand.bold, fontSize: 24, fontWeight: undefined }]} accessibilityLabel="Note" />
             <Text style={[s.count, { color: colors.textTertiary }]}>{text.length}/{NOTE_MAX}</Text>
             <Text style={[s.eyebrow, { color: colors.textTertiary }]}>SHARE WITH</Text>
             <View style={s.chips}>
@@ -90,7 +95,7 @@ const s = StyleSheet.create({
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   scroller: { marginHorizontal: -20, overflow: 'visible' },
   grid: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 4, paddingBottom: 6 },
-  note: { width: 190, minHeight: 120, borderRadius: 3, borderBottomRightRadius: 20, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 10, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 3, height: 7 }, elevation: 8 },
+  note: { width: 200, minHeight: 130, borderRadius: 3, borderBottomRightRadius: 20, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 10, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 3, height: 7 }, elevation: 8 },
   tape: { position: 'absolute', top: -8, alignSelf: 'center', width: 56, height: 16, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', transform: [{ rotate: '-3deg' }] },
   fold: { position: 'absolute', right: 0, bottom: 0, width: 22, height: 22, borderTopLeftRadius: 18, borderBottomRightRadius: 20, backgroundColor: 'rgba(0,0,0,0.10)' },
   body: { fontSize: 15, fontWeight: '700', lineHeight: 20 },

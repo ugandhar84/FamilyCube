@@ -154,6 +154,9 @@ export function NextUpTimeline({
           const wantsAddress = !displayLocation && !conflictReasons?.get(ev.id) &&
             (ev.category === 'Ride' || ev.category === 'Sports' || ev.category === 'School' || ev.category === 'Medical' || ev.rideRequired);
 
+          // A ride with nobody driving yet is the thing a parent most needs to see on this card.
+          const needsDriver = (ev.rideRequired || ev.category === 'Ride') && !assignee.name && !ev.driverId && !ev.helperId;
+
           return (
           <AnimatedPressable
             key={ev.id}
@@ -175,6 +178,12 @@ export function NextUpTimeline({
               <Text style={{ fontSize: 14, color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontWeight: '400' }} numberOfLines={1}>
                 {ev.title}
               </Text>
+              {needsDriver ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <AlertTriangle size={11} color={colors.danger} />
+                  <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>Needs a driver</Text>
+                </View>
+              ) : null}
               {displayLocation && !conflictReasons?.get(ev.id) ? (
                 // Address itself opens Maps directly — previously just
                 // plain text, no way to actually navigate there without

@@ -535,7 +535,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   }, [sideRecords, isKid]);
   /* ───────── area-menu layout (Health & Records) ───────── */
   const pastels = kioskPastels(k);
-  type HArea = 'today' | 'meds' | 'refills' | 'vax' | 'records' | 'visit' | 'bring' | 'scanrx' | 'ai' | 'export';
+  type HArea = 'today' | 'meds' | 'refills' | 'vax' | 'records' | 'visit' | 'bring' | 'ai' | 'export';
   const [area, setArea] = useState<HArea>('today');
   const [who, setWho] = useState<string>('all');
   const [medStatus, setMedStatus] = useState<'active' | 'taken' | 'pending' | 'overdue' | 'all'>('active');
@@ -657,7 +657,6 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       { id: 'records', label: 'All records', Icon: FolderOpen, badge: attn.length || undefined },
       { id: 'visit', label: 'Record a visit', Icon: Mic },
       { id: 'bring', label: 'Bring in a document', Icon: FileText },
-      { id: 'scanrx', label: 'Scan a prescription', Icon: ScanLine },
       { id: 'ai', label: 'Ask health AI', Icon: Sparkles },
       ...(own ? [] : [{ id: 'export' as HArea, label: 'Export PDF', Icon: FileDown }]),
     ];
@@ -859,11 +858,10 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         </>
       );
     }
-    if (area === 'visit' || area === 'bring' || area === 'scanrx') {
+    if (area === 'visit' || area === 'bring') {
       const cfg = {
         visit: { title: 'Record a visit', big: 'Capture the appointment', txt: 'Add the visit as a record with the doctor, date and notes. Recording audio for an AI summary is available from a phone.', btn: 'Add the visit record', Icon: Mic, run: () => setShowAddRecord(true) },
         bring: { title: 'Bring in a document', big: 'Choose how to bring it in', txt: 'Add a photo or PDF of a lab, discharge paper, imaging or insurance card. You check the details before it is saved.', btn: 'Bring in a document', Icon: FileText, run: () => setShowAddRecord(true) },
-        scanrx: { title: 'Scan a prescription', big: 'Bring in a prescription', txt: 'Take a photo of the label. The medication, dose and doctor are filled in for you to confirm before anything is saved.', btn: 'Scan a prescription', Icon: ScanLine, run: () => { setScanMode('rx'); setShowScanSheet(true); } },
       }[area];
       return (
         <>
@@ -872,7 +870,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             <View style={[s.heroIc, { backgroundColor: k.pastelLavCard }]}><cfg.Icon size={30} color={k.purple} /></View>
             <View style={{ flex: 1 }}><Text style={[s.mcName, { color: k.text }]}>{cfg.big}</Text><Text style={[s.sm, { color: k.textMuted }]}>{cfg.txt}</Text></View>
           </View>
-          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{(area === 'bring' || area === 'scanrx') && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
+          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{area === 'bring' && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
         </>
       );
     }

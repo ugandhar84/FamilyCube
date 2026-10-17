@@ -966,7 +966,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ciphertext = await encryptWithFamilyKey(familyId, text);
     } catch (e: any) {
       const noKey = /No family key|security code/i.test(e?.message ?? '');
-      showToast(noKey ? 'This device needs the family security code before it can send messages.' : (e?.message ?? 'Could not send the message.'), noKey ? 'warning' : 'error');
+      showToast(noKey ? 'This device needs the family security code before it can send messages. Ask the family admin for it.' : (e?.message ?? 'Could not send the message.'), noKey ? 'warning' : 'error');
       return undefined;
     }
 

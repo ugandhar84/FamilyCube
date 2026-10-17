@@ -811,7 +811,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           {keyLocked && (
             <View style={s.amber} accessibilityRole="alert">
               <Text style={s.amberT}>🔒 This iPad doesn’t have your family security code yet</Text>
-              <Text style={s.amberS}>Messages can’t be read or sent until you enter it. Find it on a phone under Profile → Data recovery.</Text>
+              <Text style={s.amberS}>Messages can’t be read or sent until you enter it. Ask the family admin (a parent) for the code, then type it here.</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                 <TextInput value={codeDraft} onChangeText={setCodeDraft} placeholder="Family security code" placeholderTextColor="#A8803A" autoCapitalize="characters" autoCorrect={false}
                   style={s.amberInput} accessibilityLabel="Family security code" onSubmitEditing={unlockWithCode} />

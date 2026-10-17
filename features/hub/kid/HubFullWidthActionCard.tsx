@@ -8,7 +8,9 @@
  * pill picker.
  */
 import type { ReactNode } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
+import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 export function HubFullWidthActionCard({
@@ -25,16 +27,15 @@ export function HubFullWidthActionCard({
   children?: ReactNode;
 }) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
-      style={({ pressed }) => ({
+      style={{
         marginHorizontal: 16, marginTop: 14,
         backgroundColor: isDark ? colors.card : GEMINI.cardBg,
         borderRadius: 16, padding: 16, gap: 10,
         borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
-        opacity: pressed ? 0.85 : 1,
         ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
-      })}
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{
@@ -62,8 +63,9 @@ export function HubFullWidthActionCard({
             </Text>
           </View>
         )}
+        <ChevronRight size={18} color={colors.textTertiary} strokeWidth={2.2} />
       </View>
       {children}
-    </Pressable>
+    </AnimatedPressable>
   );
 }

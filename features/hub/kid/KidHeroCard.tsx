@@ -49,7 +49,12 @@ export function KidHeroCard({
 
   return (
     <View style={{
-      marginHorizontal: 16, marginTop: 12, marginBottom: 16,
+      // No marginBottom — NextUpTimeline right below (rendered via
+      // KidTodaySection/HubTimelineSection) already supplies its own
+      // marginTop: 14, so adding a trailing margin here doubled the MY
+      // PULSE → NEXT UP gap to 28px ["still there is more gap see in
+      // teens"].
+      marginHorizontal: 16, marginTop: 12,
       flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16, padding: 18,
       borderWidth: 1, borderColor: colors.border, borderRadius: 24,
       backgroundColor: colors.tealLight,

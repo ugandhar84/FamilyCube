@@ -51,34 +51,25 @@ export function MedicationAlertPage({ active, onClose }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        {!sent && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Ask Parent</Text>
-            </Pressable>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-        )}
         <PageHeading
           title="Medication Alert"
           subtitle={sent ? undefined : 'Urgent — your parent is notified right away.'}
           accent="primary"
           Icon={Pill}
-          topInset={0}
+          topInset={insets.top}
+          eyebrow="FAMILY CUBE · ASK PARENT"
+          onTitlePress={onClose}
         />
       </View>
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={{ gap: 16 }}>
+        <View style={{ gap: 12 }}>
         {sent ? (
           <SentConfirmation
             title="Sent · awaiting a reply"

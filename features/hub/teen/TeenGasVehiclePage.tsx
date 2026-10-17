@@ -9,11 +9,11 @@
  * Shows the FULL fill-up and issue-report history (not sliced to the old
  * sheet's top 3/5), plus a form to log a new fill-up or report an issue.
  */
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Fuel, AlertTriangle, Check, X } from 'lucide-react-native';
+import { Fuel, AlertTriangle, Check, X, TrendingUp } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
@@ -23,9 +23,28 @@ import { FieldCard, FieldCardSection } from '../kid/forms/shared/FieldCard';
 const GAS_LOG_KEY = (memberId: string) => `@familycube_gas_log_${memberId}`;
 const ISSUE_LOG_KEY = (memberId: string) => `@familycube_issue_log_${memberId}`;
 
-type GasEntry = { id: string; date: string; gallons: string; odometer: string; note: string };
+type GasEntry = { id: string; date: string; gallons: string; odometer: string; note: string; cost?: string };
 type IssueEntry = { id: string; date: string; detail: string };
-type TabKey = 'fillups' | 'issues';
+type TabKey = 'fillups' | 'issues' | 'trends';
+type TrendPeriod = 'monthly' | 'quarterly' | 'yearly';
+
+// "YYYY-MM-DD" → the bucket key + a human label for that bucket, per period.
+function trendBucket(dateStr: string, period: TrendPeriod): { key: string; label: string } | null {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0-11
+  if (period === 'monthly') {
+    const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    return { key, label };
+  }
+  if (period === 'quarterly') {
+    const q = Math.floor(month / 3) + 1;
+    return { key: `${year}-Q${q}`, label: `Q${q} '${String(year).slice(2)}` };
+  }
+  return { key: `${year}`, label: `${year}` };
+}
 
 export function TeenGasVehiclePage({
   activeId, today, onReportIssue, onClose,
@@ -41,10 +60,12 @@ export function TeenGasVehiclePage({
   const [issueLog, setIssueLog] = useState<IssueEntry[]>([]);
   const [newGallons, setNewGallons] = useState('');
   const [newOdo, setNewOdo] = useState('');
+  const [newCost, setNewCost] = useState('');
   const [newGasNote, setNewGasNote] = useState('');
   const [vehicleIssue, setVehicleIssue] = useState('');
   const [issueSent, setIssueSent] = useState(false);
   const [tab, setTab] = useState<TabKey>('fillups');
+  const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>('monthly');
 
   const canvas = isDark ? colors.background : GEMINI.canvas;
 
@@ -62,12 +83,27 @@ export function TeenGasVehiclePage({
 
   const addGasEntry = () => {
     if (!newGallons.trim()) return;
-    const entry: GasEntry = { id: Date.now().toString(), date: today, gallons: newGallons, odometer: newOdo, note: newGasNote };
+    const entry: GasEntry = { id: Date.now().toString(), date: today, gallons: newGallons, odometer: newOdo, note: newGasNote, cost: newCost };
     const updated = [entry, ...gasLog];
     setGasLog(updated);
     persistGasLog(updated);
-    setNewGallons(''); setNewOdo(''); setNewGasNote('');
+    setNewGallons(''); setNewOdo(''); setNewCost(''); setNewGasNote('');
   };
+
+  // Monthly/quarterly/yearly gallons + spend trends, newest bucket first.
+  const trendRows = useMemo(() => {
+    const buckets = new Map<string, { label: string; gallons: number; cost: number; count: number }>();
+    for (const entry of gasLog) {
+      const bucket = trendBucket(entry.date, trendPeriod);
+      if (!bucket) continue;
+      const existing = buckets.get(bucket.key) ?? { label: bucket.label, gallons: 0, cost: 0, count: 0 };
+      existing.gallons += parseFloat(entry.gallons) || 0;
+      existing.cost += parseFloat(entry.cost ?? '') || 0;
+      existing.count += 1;
+      buckets.set(bucket.key, existing);
+    }
+    return [...buckets.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([key, v]) => ({ key, ...v }));
+  }, [gasLog, trendPeriod]);
 
   const reportIssue = () => {
     if (!vehicleIssue.trim()) return;
@@ -84,21 +120,14 @@ export function TeenGasVehiclePage({
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-          <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Teen Hub</Text>
-          </Pressable>
-          <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={18} color={colors.textSecondary} />
-          </Pressable>
-        </View>
         <PageHeading
+          eyebrow="FAMILY CUBE · GAS & VEHICLE"
           title="Gas & Vehicle"
           subtitle="Log fill-ups and keep a record of reported issues."
           accent="primary"
           Icon={Fuel}
-          topInset={0}
+          onTitlePress={onClose}
+          topInset={insets.top}
         />
       </View>
 
@@ -114,6 +143,7 @@ export function TeenGasVehiclePage({
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {([
               { key: 'fillups' as TabKey, label: 'Fill-Ups' },
+              { key: 'trends' as TabKey, label: 'Trends' },
               { key: 'issues' as TabKey, label: 'Issues' },
             ]).map(({ key, label }) => (
               <Pressable key={key} onPress={() => setTab(key)}
@@ -126,7 +156,55 @@ export function TeenGasVehiclePage({
             ))}
           </View>
 
-          {tab === 'fillups' ? (
+          {tab === 'trends' ? (
+            <>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {([
+                  { key: 'monthly' as TrendPeriod, label: 'Monthly' },
+                  { key: 'quarterly' as TrendPeriod, label: 'Quarterly' },
+                  { key: 'yearly' as TrendPeriod, label: 'Yearly' },
+                ]).map(({ key, label }) => (
+                  <Pressable key={key} onPress={() => setTrendPeriod(key)}
+                    style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
+                      backgroundColor: trendPeriod === key ? colors.primary : (isDark ? colors.surface : GEMINI.cardBg),
+                      borderWidth: 1, borderColor: trendPeriod === key ? colors.primary : colors.border }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
+                      color: trendPeriod === key ? '#fff' : colors.textSecondary }}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {trendRows.length === 0 ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontWeight: '600' }}>
+                    Log a fill-up to see trends here.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {trendRows.map(row => (
+                    <View key={row.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                      padding: 12, borderRadius: 14,
+                      backgroundColor: isDark ? colors.primary + '10' : colors.primaryLight,
+                      borderWidth: 1, borderColor: colors.primary + '30' }}>
+                      <TrendingUp size={16} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+                          {row.label}
+                        </Text>
+                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+                          {row.gallons.toFixed(1)} gal · {row.count} fill-up{row.count === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.primary }}>
+                        ${row.cost.toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          ) : tab === 'fillups' ? (
             <>
               <FieldCardSection title="Log a fill-up" colors={colors} isDark={isDark}>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -145,6 +223,13 @@ export function TeenGasVehiclePage({
                     />
                   </FieldCard>
                 </View>
+                <FieldCard label="Cost ($, optional)" focused={newCost.length > 0} colors={colors} isDark={isDark}>
+                  <TextInput
+                    style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary, padding: 0 }}
+                    placeholder="0.00" placeholderTextColor={colors.textTertiary}
+                    keyboardType="decimal-pad" value={newCost} onChangeText={setNewCost}
+                  />
+                </FieldCard>
                 <FieldCard label="Note (optional)" focused={newGasNote.length > 0} colors={colors} isDark={isDark}>
                   <TextInput
                     style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary, padding: 0 }}

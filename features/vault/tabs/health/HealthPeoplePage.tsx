@@ -100,7 +100,7 @@ export default function HealthPeoplePage({ onClose }: { onClose?: () => void }) 
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 24, paddingTop: 10, gap: 12 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12 }}>
 
         {/* ── Family-wide "what needs attention" banner — same intro-banner
             rhythm School's "Scan a schedule flyer" / Home Care's "Add a

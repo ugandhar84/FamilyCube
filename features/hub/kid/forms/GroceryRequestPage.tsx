@@ -104,23 +104,14 @@ export function GroceryRequestPage({ active, onClose }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        {!sent && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Ask Parent</Text>
-            </Pressable>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-        )}
         <PageHeading
           title="Request Groceries"
           subtitle={sent ? undefined : (canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added')}
           accent="teal"
           Icon={ShoppingCart}
-          topInset={0}
+          topInset={insets.top}
+          eyebrow="FAMILY CUBE · ASK PARENT"
+          onTitlePress={onClose}
         />
       </View>
 
@@ -128,10 +119,10 @@ export function GroceryRequestPage({ active, onClose }: {
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, paddingBottom: 48, gap: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={{ gap: 16 }}>
+        <View style={{ gap: 12 }}>
         {sent ? (
           <SentConfirmation
             title="Sent · awaiting a reply"

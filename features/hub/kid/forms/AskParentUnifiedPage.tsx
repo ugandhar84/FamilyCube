@@ -685,38 +685,18 @@ export function AskParentUnifiedPage({ active, members, familyId, initialType = 
         contentContainerStyle={{ paddingBottom: 48 }}
       >
         <View style={{ backgroundColor: canvas }}>
-          {!isSentForCurrentType && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-              {/* Back/Close used to always fully exit Ask Parent, even once
-                  revealed showed a type's field cards — a kid who picked
-                  the wrong category (or just wants to try another type)
-                  had no way back to the pill picker short of leaving the
-                  whole flow [live-requested: "close or the back should go
-                  back to the page it originated"]. Now, once revealed,
-                  both step back to the pill-selection page instead; only
-                  pre-reveal (or once a request is already sent) do they
-                  exit via onClose. editRideEvent always exits via onClose —
-                  there's no pill picker to step back to when editing an
-                  existing ride. */}
-              <Pressable onPress={() => (revealed && !editRideEvent) ? setRevealed(false) : onClose()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Ask Parent</Text>
-              </Pressable>
-              <Pressable onPress={() => (revealed && !editRideEvent) ? setRevealed(false) : onClose()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <X size={18} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-          )}
           <PageHeading
             title={isSentForCurrentType ? 'Sent' : (revealed ? meta.pageTitle : 'Ask Parent')}
             subtitle={isSentForCurrentType ? undefined : (revealed ? meta.subtitle : 'What do you need?')}
             accent="pink"
             Icon={revealed ? meta.Icon : MessageCircle}
-            topInset={0}
+            topInset={insets.top}
+            eyebrow="FAMILY CUBE · ASK PARENT"
+            onTitlePress={() => (revealed && !editRideEvent && !isSentForCurrentType) ? setRevealed(false) : onClose()}
           />
         </View>
 
-        <View style={{ padding: 20, paddingTop: 0, gap: 16 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 20, gap: 12 }}>
         {type === 'ride' && rideDone ? (
           <SentConfirmation
             title={`Sent to ${parentNames.length > 0 ? parentNames.join(' and ') : 'your parents'}!`}

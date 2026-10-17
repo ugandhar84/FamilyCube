@@ -13,6 +13,7 @@
  * store for an informational stub Figma panel would be scope creep this
  * rebuild explicitly avoids.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -98,16 +99,15 @@ export function SchoolDayScreen({ visible, colors, isDark, memberId, memberName,
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              {firstName}'s school day
-            </Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 14, color: bodyC, marginTop: 4 }}>
-            Your own schedule{yearLabel ? ` · ${yearLabel}` : ''}
-          </Text>
-
+        <PageHeading
+          eyebrow="FAMILY CUBE · SCHOOL"
+          title={`${firstName}'s school day`}
+          subtitle={`Your own schedule${yearLabel ? ` · ${yearLabel}` : ''}`}
+          accent="sky"
+          topInset={insets.top}
+          onTitlePress={requestAnimatedClose}
+        />
+        <View style={{ paddingHorizontal: 20, paddingBottom: 6 }}>
           {/* Sub-card */}
           <View style={{ marginTop: 10, borderWidth: 1, borderColor: border, borderRadius: 12,
             backgroundColor: cardBg, paddingHorizontal: 14, paddingVertical: 10 }}>

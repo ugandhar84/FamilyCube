@@ -48,7 +48,7 @@ export function FamilyPulseCard({
   }, []);
 
   // Show a low-height placeholder while loading so cards below it still render
-  if (sharingIds === null) return <View style={{ marginHorizontal: 20, marginTop: 18, height: 120, borderRadius: 24, backgroundColor: colors.tealLight, opacity: 0.5 }} />;
+  if (sharingIds === null) return <View style={{ marginHorizontal: 20, marginTop: 14, height: 120, borderRadius: 24, backgroundColor: colors.tealLight, opacity: 0.5 }} />;
 
   const sharingCount = members.filter(m => sharingIds.has(m.id)).length;
   const mostRecent = members.find(m => sharingIds.has(m.id));
@@ -59,7 +59,7 @@ export function FamilyPulseCard({
       // (block-level DOM, margins collapse to the larger value) — RN never
       // collapses margins, so only marginTop is set here (no marginBottom)
       // to avoid doubling every inter-card gap versus the Figma source.
-      marginHorizontal: 20, marginTop: 18,
+      marginHorizontal: 20, marginTop: 14,
       flexDirection: 'row', flexWrap: 'wrap',
       gap: 16, padding: 20,
       borderWidth: 1, borderColor: colors.border, borderRadius: 24,

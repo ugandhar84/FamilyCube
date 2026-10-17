@@ -97,23 +97,14 @@ export function TeenCashOutPage({
     return (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         <View style={{ backgroundColor: canvas }}>
-          {!sent && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-              <Pressable onPress={backToHistory} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Cash Out</Text>
-              </Pressable>
-              <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <X size={18} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-          )}
           <PageHeading
-            title="Cash Out Earnings"
+            eyebrow="FAMILY CUBE · CASH OUT"
+          title="Cash Out Earnings"
             subtitle={sent ? undefined : 'Request a payout for completed errands.'}
             accent="amber"
             Icon={CreditCard}
-            topInset={0}
+            onTitlePress={backToHistory}
+          topInset={insets.top}
           />
         </View>
 
@@ -197,21 +188,14 @@ export function TeenCashOutPage({
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-          <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Teen Hub</Text>
-          </Pressable>
-          <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={18} color={colors.textSecondary} />
-          </Pressable>
-        </View>
         <PageHeading
+          eyebrow="FAMILY CUBE · CASH OUT"
           title="Cash Out"
           subtitle={`Balance: ${balance} coins`}
           accent="amber"
           Icon={CreditCard}
-          topInset={0}
+          onTitlePress={onClose}
+          topInset={insets.top}
         />
       </View>
 

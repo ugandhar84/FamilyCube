@@ -17,6 +17,7 @@
  * deliberately so every "edit something about yourself/family" sub-page
  * looks identical.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput,
@@ -411,23 +412,19 @@ export function EditMyProfileScreen({
   return (
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={60} backgroundColor={isDark ? colors.background : GEMINI.canvas}>
       <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: GEMINI.blue }}>← Profile</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: GEMINI.blue, marginTop: 12 }}>Your account</Text>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor, marginTop: 4, lineHeight: 36 }}>
-            Edit my profile
-          </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 6, lineHeight: 18, marginBottom: 4 }}>
-            Your own name, photo, birthday, and email.
-          </Text>
-        </View>
+        <PageHeading
+          eyebrow="FAMILY CUBE · PROFILE"
+          title="Edit my profile"
+          subtitle="Your own name, photo, birthday, and email."
+          accent="primary"
+          topInset={insets.top}
+          onTitlePress={onClose}
+        />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: insets.bottom + 4 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 4 }}
           >
             {body}
           </ScrollView>

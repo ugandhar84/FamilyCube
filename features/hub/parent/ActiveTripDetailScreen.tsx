@@ -3,11 +3,13 @@ import {
   View, Text, ScrollView, Pressable, TouchableOpacity, TextInput, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { Car } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTripStore, type TripPhase } from '@/store/tripStore';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 const STAGES: { phase: TripPhase; label: string }[] = [
@@ -56,6 +58,8 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
   const familyName = useFamilyStore(s => s.familyName);
   const activeMember = members.find(m => m.id === activeMemberId);
   const [etaNote, setEtaNote] = useState('');
+  const sendRequest = useKidRequestStore(s => s.sendRequest);
+  const [passengerSent, setPassengerSent] = useState<'ready' | 'late' | null>(null);
 
   const trip = activeTrips.find(t => t.id === tripId) ?? completedTrips.find(t => t.id === tripId);
   const isCompleted = !!trip?.completedAt;
@@ -86,7 +90,15 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
   const pickupName = pickupMember?.name ?? linkedEvent?.title ?? 'Family';
 
   const activeIdx = phaseIndex(trip.phase);
-  const nextStage = STAGES[activeIdx + 1];
+  const canDrive = !isCompleted
+    && (activeMemberId === trip.driverMemberId || activeMember?.role === 'parent');
+  const nextStage = canDrive ? STAGES[activeIdx + 1] : undefined;
+  const isPassenger = !!activeMemberId && activeMemberId === trip.pickupMemberId;
+  const statusLine =
+    trip.phase === 'assigned' ? `${driverName} hasn't left yet`
+    : trip.phase === 'en_route' ? `${driverName} is on the way${isPassenger ? ' — get ready' : ''}`
+    : trip.phase === 'picked_up' ? `${pickupName} is picked up, heading home`
+    : `Arrived`;
 
   async function handleAdvance() {
     if (!nextStage || !trip) return;
@@ -96,32 +108,15 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top', 'bottom']}>
-      {/* ── Fixed page header ── */}
-      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
-            {familyName?.toUpperCase() ?? 'FAMILY'}
-          </Text>
-          {activeMember ? (
-            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-              {activeMember.name} · {activeMember.role}
-            </Text>
-          ) : null}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Family rides</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              {linkedEvent?.title ?? `Picking up ${pickupName}`}
-            </Text>
-          </View>
-          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? colors.surface : '#F0EDE6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-          </Pressable>
-        </View>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · RIDES"
+        title={linkedEvent?.title ?? `Picking up ${pickupName}`}
+        subtitle="Trip details and live progress."
+        accent="sky"
+        Icon={Car}
+        onTitlePress={onClose}
+        topInset={0}
+      />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -231,7 +226,39 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
             [live-requested: "why we are not showing the full details upon
             clicking on it?" — reuse this screen but drop the in-progress
             action controls for a finished ride]. */}
-        {!isCompleted && (
+        {!isCompleted && !canDrive && (
+          <View style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}>
+            <Text style={[s.overline, { color: colors.textTertiary }]}>STATUS</Text>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{statusLine}</Text>
+          </View>
+        )}
+
+        {isPassenger && !isCompleted && trip.phase !== 'arrived' && (
+          <View style={{ gap: 10 }}>
+            {([
+              { key: 'ready' as const, label: passengerSent === 'ready' ? "Sent · you're ready ✓" : "I'm ready / outside",
+                detail: `I'm ready for pickup! 🎒 (${driverName} is driving)`, urgency: 'normal' as const },
+              { key: 'late' as const, label: passengerSent === 'late' ? 'Sent · running late ✓' : 'Running late',
+                detail: `Running a bit late 🏃 — ${driverName}, please wait`, urgency: 'soon' as const },
+            ]).map(a => (
+              <TouchableOpacity
+                key={a.key}
+                disabled={passengerSent === a.key}
+                onPress={() => {
+                  if (!activeMemberId) return;
+                  sendRequest({ type: 'checkin', fromMemberId: activeMemberId, detail: a.detail, urgency: a.urgency });
+                  setPassengerSent(a.key);
+                }}
+                style={[s.btnPrimary, { backgroundColor: a.key === 'ready' ? colors.teal : colors.amber, opacity: passengerSent === a.key ? 0.6 : 1 }]}
+                activeOpacity={0.85}
+              >
+                <Text style={s.btnPrimaryText}>{a.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {canDrive && (
           <View style={[s.card, { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderColor }]}>
             <Text style={[s.overline, { color: colors.textTertiary }]}>DRIVER UPDATE</Text>
             <TextInput
@@ -273,7 +300,7 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
         )}
 
         {/* Skip to complete */}
-        {trip.phase !== 'arrived' && (
+        {canDrive && trip.phase !== 'arrived' && (
           <TouchableOpacity
             onPress={async () => {
               await advancePhase(trip.id, 'arrived', etaNote || undefined);

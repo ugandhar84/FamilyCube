@@ -697,9 +697,30 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 }
 
 let taskDefined = false;
+// Serializes overlapping invocations of the task body below — iOS can
+// deliver a burst of location updates close together, and nothing
+// previously stopped two deliveries from running this async body
+// concurrently. setActiveMemberIdHeaderOverride is ONE shared module-level
+// var on the single Supabase client (see its own comment in supabase.ts),
+// so two overlapping runs raced it: run A sets the override, awaits the
+// (now 3x) encryptLocationText calls added for shared-family-key
+// encryption, and while it's still awaiting, run B fires, sets its own
+// override, finishes, and clears it back to undefined in its `finally` —
+// so when run A finally reaches its upsert, the override is gone (or
+// belongs to a different invocation), and the write goes out with no/wrong
+// x-active-member-id header, which RLS's `member_id = resolve_active_member_id()`
+// check then rejects [live-reported: repeating "member_locations upsert
+// failed: new row violates row-level security policy" after shared-key
+// encryption added the extra awaits]. Chaining each run onto the previous
+// one's promise makes them run strictly one-at-a-time instead.
+let taskQueue: Promise<void> = Promise.resolve();
 function ensureTaskDefined(tm: TaskManagerAPI) {
   if (taskDefined || tm.isTaskDefined(LOCATION_TASK_NAME)) { taskDefined = true; return; }
-  tm.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
+  tm.defineTask(LOCATION_TASK_NAME, ({ data, error }) => {
+    taskQueue = taskQueue.then(() => runLocationTask(data, error));
+    return taskQueue;
+  });
+  async function runLocationTask(data: unknown, error: { message: string } | null) {
     // Whole-body try/catch — this callback is invoked directly by the
     // native TaskManager bridge, not from any JS call site that could ever
     // .catch() it itself. Before this, only the inner reverse-geocode and
@@ -909,7 +930,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // whoever the person actually switches to.
       setActiveMemberIdHeaderOverride(undefined);
     }
-  });
+  }
   taskDefined = true;
 }
 

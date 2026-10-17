@@ -1,3 +1,4 @@
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, Animated, Easing, Pressable } from 'react-native';
 import { router } from 'expo-router';
@@ -731,15 +732,21 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // the full animation. The hook pattern can't be used here because ParentView
   // is a child inside HubScreen's ScrollView and useFocusEffect never fires.
   const CARD_COUNT = 7;
-  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0))).current;
-  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(18))).current;
+  // Start barely-faded, not fully invisible — see KidView.tsx for full
+  // rationale: if the mount-triggered Animated.start() below ever gets
+  // dropped/raced, worst case is a slightly faded card, never a fully
+  // blank screen. The real fade+slide-up bounce still plays normally.
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0.4))).current;
+  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(8))).current;
 
   const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
 
+  const hasAnimatedIn = useRef(false);
   useEffect(() => {
-    if (focusKey === 0) return; // not yet focused — stay invisible until first focus
-    opacities.forEach(v => v.setValue(0));
-    translateYs.forEach(v => v.setValue(18));
+    if (focusKey === 0 && hasAnimatedIn.current) return;
+    hasAnimatedIn.current = true;
+    opacities.forEach(v => v.setValue(0.4));
+    translateYs.forEach(v => v.setValue(8));
     const anims = opacities.map((op, i) =>
       Animated.parallel([
         Animated.timing(op, { toValue: 1, duration: 280, delay: 60 + i * 55,
@@ -749,6 +756,11 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
       ])
     );
     Animated.parallel(anims).start();
+    const failSafe = setTimeout(() => {
+      opacities.forEach(v => v.setValue(1));
+      translateYs.forEach(v => v.setValue(0));
+    }, 900);
+    return () => clearTimeout(failSafe);
   }, [focusKey]);
 
   // Parent Hub is now a pixel-faithful rebuild of the Figma Make
@@ -789,7 +801,12 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
       <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
         {needsYouCards.length > 0 ? (
+          // No marginBottom here — NextUpTimeline right below already
+          // supplies its own marginTop: 14, so adding a trailing margin
+          // here doubled the NEEDS YOU → NEXT UP gap to 28px
+          // ["in parents view see the next up top padding too hight"].
           <View>
+
             <View style={{ marginHorizontal: 20, marginTop: 14, alignSelf: 'flex-start' }}>
               <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.amber, marginBottom: 6, opacity: 0.6 }} />
               <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>NEEDS YOU</Text>
@@ -1056,15 +1073,15 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         }}
       />
 
-      <Modal visible={showKidProposals} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowKidProposals(false)}>
-        <KidProposalReviewScreen onClose={() => setShowKidProposals(false)} />
-      </Modal>
+      <FullPageOverlay visible={showKidProposals} onDismiss={() => setShowKidProposals(false)} zIndex={52} backgroundColor={colors.background}>
+        {(close) => <KidProposalReviewScreen onClose={close} />}
+      </FullPageOverlay>
 
 
       {/* ── Send appreciation ─────────────────────────────────────── */}
-      <Modal visible={showSendAppreciation} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSendAppreciation(false)}>
-        <SendAppreciationScreen onClose={() => setShowSendAppreciation(false)} />
-      </Modal>
+      <FullPageOverlay visible={showSendAppreciation} onDismiss={() => setShowSendAppreciation(false)} zIndex={52} backgroundColor={colors.background}>
+        {(close) => <SendAppreciationScreen onClose={close} />}
+      </FullPageOverlay>
     </>
   );
 }

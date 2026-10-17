@@ -7,6 +7,8 @@
  * Uses AppBottomSheet as the container (the canonical modal bottom sheet).
  */
 
+import { PageHeading } from '@/components/PageHeading';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
@@ -163,36 +165,20 @@ export function CreateResponsibilitySheet({
     : new Date(dueDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+    <FullPageOverlay visible={visible} onDismiss={handleClose} zIndex={60} backgroundColor={isDark ? '#0E0C13' : '#FFFFFF'}>
       <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }} edges={['top', 'bottom']}>
-        {/* ── Fixed page header ───────────────────────────────────────────── */}
-        <View style={[s.pageHeader, { borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)' }]}>
-          <View style={s.chromeRow}>
-            <Text style={[s.chromeFamilyName, { color: colors.textTertiary }]}>
-              {familyName?.toUpperCase() ?? 'FAMILY'}
-            </Text>
-            {activeMember ? (
-              <Text style={[s.chromeMember, { color: colors.teal }]}>
-                {activeMember.name} · {activeMember.role}
-              </Text>
-            ) : null}
-          </View>
-          <View style={s.titleRow}>
-            <View style={{ flex: 1 }}>
-              <TouchableOpacity onPress={handleClose} style={{ alignSelf: 'flex-start' }}>
-                <Text style={[s.backLinkText, { color: colors.teal }]}>← Tasks</Text>
-              </TouchableOpacity>
-              <Text style={[s.pageTitle, { color: colors.textPrimary }]}>Assign a task</Text>
-            </View>
-            <Pressable onPress={handleClose} style={[s.closeBtn, { backgroundColor: colors.surface }]}>
-              <X size={16} color={colors.textSecondary} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
+        {/* ── Page header ── */}
+        <PageHeading
+          eyebrow="FAMILY CUBE · TASKS"
+          title="Assign a task"
+          accent="primary"
+          topInset={0}
+          onTitlePress={handleClose}
+        />
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 16, paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -519,7 +505,7 @@ export function CreateResponsibilitySheet({
           />
         )}
       </SafeAreaView>
-    </Modal>
+    </FullPageOverlay>
   );
 }
 

@@ -456,15 +456,27 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // Same staggered-entrance pattern as ParentView.tsx — one Animated.Value
   // pair per top-level section below (Hero / Needs You / Today / Quests /
   // More+Games), driven by focusKey (0 = subpage pop, show immediately).
-  const CARD_COUNT = 5;
-  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0))).current;
-  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(18))).current;
+  const CARD_COUNT = 7;
+  // Start barely-faded (opacity 0.4 / translateY 8), NOT fully invisible
+  // (0 / 18) — a PIN-switch mounts a brand-new KidView instance without any
+  // real tab-focus event (HubScreen's own useFocusEffect never fires for
+  // it), so if the mount-triggered Animated.start() below ever gets
+  // dropped/raced (confirmed happening in practice — native-driver
+  // animations queued right as a navigator stack swaps can silently no-op),
+  // the worst case is now cards sitting slightly faded/offset, never a
+  // fully blank screen [live-reported repeatedly, incl. "fucking killing
+  // the app"]. The real fade+slide-up bounce on load still plays normally
+  // every time the effect does fire.
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0.4))).current;
+  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(8))).current;
   const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
 
+  const hasAnimatedIn = useRef(false);
   useEffect(() => {
-    if (focusKey === 0) return;
-    opacities.forEach(v => v.setValue(0));
-    translateYs.forEach(v => v.setValue(18));
+    if (focusKey === 0 && hasAnimatedIn.current) return;
+    hasAnimatedIn.current = true;
+    opacities.forEach(v => v.setValue(0.4));
+    translateYs.forEach(v => v.setValue(8));
     const anims = opacities.map((op, i) =>
       Animated.parallel([
         Animated.timing(op, { toValue: 1, duration: 280, delay: 60 + i * 55, easing: Easing.out(Easing.quad), useNativeDriver: true }),
@@ -472,6 +484,11 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
       ])
     );
     Animated.parallel(anims).start();
+    const failSafe = setTimeout(() => {
+      opacities.forEach(v => v.setValue(1));
+      translateYs.forEach(v => v.setValue(0));
+    }, 900);
+    return () => clearTimeout(failSafe);
   }, [focusKey]);
 
   return (
@@ -543,6 +560,7 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
             onConfirmPickup={confirmPickup}
             onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
             onOpenHistory={() => onOpenMyChoresTab('review')}
+            hasChoresCard={todoQuests.length > 0 || bountyQuests.length > 0}
           />
         </Animated.View>
       )}
@@ -572,6 +590,9 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
           ].filter(s => s.value > 0) : undefined}
           colors={colors} isDark={isDark}
         />
+      </Animated.View>
+
+      <Animated.View style={{ opacity: cardAnims[5].opacity, transform: [{ translateY: cardAnims[5].translateY }] }}>
         <RideStatusCard
           colors={colors} isDark={isDark}
           pendingCount={myPendingRides.length}
@@ -588,15 +609,24 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
             <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
           </View>
         )}
+      </Animated.View>
 
-        {/* Dinner preview — same card/nav as the Parent Hub's "Tonight" slot
-            instead of the Play Games tile [live-requested: "instead of
-            playgames in the kids hub show the dinner card similar to the
-            parent.. and navigate to dinner landing page"]. Opens the
-            shared MealsScreen via setOpenMealsScreenRequested, same as
-            ParentView — no role-gating on that path, works identically
-            for kids. */}
-        <View style={{ marginTop: 14 }}>
+      {/* Dinner preview — same card/nav as the Parent Hub's "Tonight" slot
+          instead of the Play Games tile [live-requested: "instead of
+          playgames in the kids hub show the dinner card similar to the
+          parent.. and navigate to dinner landing page"]. Opens the
+          shared MealsScreen via setOpenMealsScreenRequested, same as
+          ParentView — no role-gating on that path, works identically
+          for kids. */}
+      <Animated.View style={{ opacity: cardAnims[6].opacity, transform: [{ translateY: cardAnims[6].translateY }] }}>
+        {/* TonightMealCard hardcodes marginHorizontal: 20 (Parent Hub's own
+            card inset) — Kid Hub uses 16 everywhere else, so this wrapper
+            pulls it back in by the 4px difference instead of editing the
+            shared component (would change Parent's own rhythm) ["dinner
+            card left and right paddins are too much to the frame"].
+            marginTop stays off this wrapper — TonightMealCard already
+            supplies its own. */}
+        <View style={{ marginHorizontal: -4 }}>
           <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
         </View>
       </Animated.View>

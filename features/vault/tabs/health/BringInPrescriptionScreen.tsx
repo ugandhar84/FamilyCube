@@ -10,6 +10,7 @@
  * This screen calls the same pickImage / pickAndScan handlers that
  * ScanReviewSheet's old inline page-1 did, so no scan logic moves.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -83,22 +84,14 @@ export default function BringInPrescriptionScreen({
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
       {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: bodyC, textTransform: 'uppercase' }}>
-            Family Cube{familySurname ? ` / ${familySurname.toUpperCase()}` : ''}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? bodyC : LINK_BLUE }}>
-            {ownerMember?.name ?? '—'} · Record owner
-          </Text>
-        </View>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 12 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
-          {isRx ? 'Scan prescription' : 'Scan vaccine record'}
-        </Text>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · HEALTH"
+        title={isRx ? 'Scan prescription' : 'Scan vaccine record'}
+        subtitle={`${ownerMember?.name ?? '—'} · Record owner`}
+        accent="pink"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>

@@ -12,6 +12,7 @@
  * BODY_CLR/BLUE/BORDER/CARD_BG use the exact hex this redesign's brief
  * specifies, with useTheme() colors.* as the dark-mode fallback.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -167,12 +168,14 @@ export function CreateScheduleScreen({ visible, colors, isDark, parentName, onCl
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              Create a schedule
-            </Text>
-          </TouchableOpacity>
+        <PageHeading
+          eyebrow="FAMILY CUBE · SCHOOL"
+          title="Create a schedule"
+          accent="sky"
+          topInset={insets.top}
+          onTitlePress={requestAnimatedClose}
+        />
+        <View style={{ paddingHorizontal: 20, paddingBottom: 6 }}>
           <View style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
             borderRadius: 8, backgroundColor: isDark ? colors.surface : '#EEF3FB' }}>
             <Text style={{ fontSize: 12, color: isDark ? BLUE : LINK_BLUE, fontWeight: '600' }}>

@@ -337,21 +337,6 @@ export function AccountSection({ colors, isDark }: { colors: any; isDark: boolea
         </View>
       )}
 
-      {/* PIN-switched into a sub-profile — never show a real Sign Out
-          here; only a Lock/"Switch back" is safe. */}
-      {!viewingOwnProfile && authOwnerMember && (
-        <View style={cardStyle(colors.pinkLight)}>
-          <Row
-            Icon={Lock}
-            accentFg={colors.pink ?? colors.accent}
-            label="Lock & Switch Back"
-            subtitle={`Return to ${authOwnerMember.name.split(' ')[0]}'s profile`}
-            onPress={() => router.replace('/(auth)/profile-picker' as any)}
-            colors={colors} isDark={isDark}
-          />
-        </View>
-      )}
-
       {/* Danger zone — amber pastel card, red accents inside (the danger
           color itself still reads as the warning, the amber card just
           keeps this consistent with the rest of the pastel-card rhythm

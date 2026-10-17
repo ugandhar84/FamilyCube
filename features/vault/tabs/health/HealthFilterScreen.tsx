@@ -17,6 +17,7 @@
  * equivalent for vaccines; medications have no date-range filter at all
  * today. This is a documented gap, not something presented as working.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -130,13 +131,13 @@ export default function HealthFilterScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-            Filter health records
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · HEALTH"
+        title="Filter health records"
+        accent="pink"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}>

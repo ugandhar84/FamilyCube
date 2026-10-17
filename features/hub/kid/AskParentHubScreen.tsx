@@ -122,7 +122,7 @@ export function AskParentHubScreen({ onClose, onSelect, activeMemberId }: {
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
         <PageHeading
-          eyebrow="ASK PARENT"
+          eyebrow="FAMILY CUBE · ASK PARENT"
           title="Ask Parent"
           subtitle="Pick what you need help with"
           accent="pink"
@@ -134,7 +134,7 @@ export function AskParentHubScreen({ onClose, onSelect, activeMemberId }: {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* ── My Requests — tabbed status view of this kid's own

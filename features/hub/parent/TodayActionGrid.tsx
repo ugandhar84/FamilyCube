@@ -102,7 +102,7 @@ export function TodayActionGrid({
 
   return (
     <View>
-      <View style={{ marginHorizontal: 20, marginTop: 26 }}>
+      <View style={{ marginHorizontal: 20, marginTop: 14 }}>
         <View style={{ alignSelf: 'flex-start' }}>
           <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.primary, marginBottom: 6, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>QUICK ACTIONS</Text>

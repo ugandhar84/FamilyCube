@@ -10,6 +10,7 @@
  * the old HelpDispatchQueue.tsx inline cards — not duplicated, not
  * reinvented.
  */
+import { PageHeading } from '@/components/PageHeading';
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Image,
@@ -120,11 +121,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
   if (!req) {
     return (
       <View style={{ flex: 1, backgroundColor: canvas }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 8 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.teal }}>‹ Back</Text>
-          </TouchableOpacity>
-        </View>
+        <PageHeading eyebrow="FAMILY CUBE · REQUESTS" title="Request" accent="teal" topInset={insets.top} onTitlePress={onClose} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <Text style={{ fontSize: 15, color: colors.textSecondary }}>Request not found</Text>
         </View>
@@ -242,12 +239,14 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      {/* Top bar — "‹ Back" link, matching QuestDetailModal exactly */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={{ fontSize: 16, fontWeight: '600', color: colors.teal }}>‹ Back</Text>
-        </TouchableOpacity>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · REQUESTS"
+        title={`${meta.label} request`}
+        subtitle={requester?.name}
+        accent="teal"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
         {/* ── Context block ── */}

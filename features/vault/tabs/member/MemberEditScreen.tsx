@@ -11,6 +11,7 @@
  * implementation — one fewer place behavior could drift between mobile's
  * full-page screen and kiosk's own KioskFormDrawer shell.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ActivityIndicator, Image,
@@ -50,14 +51,14 @@ export function MemberEditScreen({
   return (
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={zIndex}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>‹ {member.name}</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 26, fontWeight: '800', color: colors.textPrimary, marginTop: 8 }}>
-            Edit Member
-          </Text>
-        </View>
+        <PageHeading
+          eyebrow="FAMILY CUBE · MEMBERS"
+          title="Edit Member"
+          subtitle={member.name}
+          accent="primary"
+          topInset={insets.top}
+          onTitlePress={onClose}
+        />
 
         <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 40 }}>

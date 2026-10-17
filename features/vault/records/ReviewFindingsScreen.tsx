@@ -33,6 +33,7 @@
  *   `wasRedacted`/`redactionCount` passed in by the caller from real
  *   state) — never asserted unconditionally.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -119,20 +120,17 @@ export default function ReviewFindingsScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 10, lineHeight: 36 }}>
-          Check the findings
-        </Text>
-        <View style={{ backgroundColor: BLUE + '15', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', marginTop: 8 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: BLUE }}>Draft findings · nothing saved</Text>
-        </View>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · RECORDS"
+        title="Check the findings"
+        subtitle="Draft findings · nothing saved"
+        accent="pink"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19 }}>
           Review every field before approving — AI can misread medical text.

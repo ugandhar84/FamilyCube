@@ -28,6 +28,7 @@
  *   this flow" is therefore NOT accurate for every path and is not shipped
  *   verbatim. The copy below is scoped to what's actually true per source.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -94,25 +95,17 @@ export default function BringInDocumentScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: bodyC, textTransform: 'uppercase' }}>
-            Family Cube{familySurname ? ` / ${familySurname.toUpperCase()}` : ''}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? bodyC : LINK_BLUE }}>
-            {ownerName} · Record owner
-          </Text>
-        </View>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginTop: 12 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 4, lineHeight: 36 }}>
-          Bring in a document
-        </Text>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · RECORDS"
+        title="Bring in a document"
+        subtitle={`${ownerName} · Record owner`}
+        accent="pink"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ backgroundColor: BLUE + '15', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>

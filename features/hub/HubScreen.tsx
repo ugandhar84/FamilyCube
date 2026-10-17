@@ -220,7 +220,8 @@ export default function HubScreen() {
   }, [memoriesRequest]);
   useEffect(() => {
     const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals || showRewards || showMemories
-      || showMyChores || piggyBankModal || showAskParentHub || !!askParentDestination;
+      || showMyChores || piggyBankModal || showAskParentHub || !!askParentDestination
+      || teenTutorOpen || teenCashOutOpen || teenGasVehicleOpen;
     useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
     // Live direction: "remove the bottom nav on the sub pages" — the
     // Figma mocks for every one of these full-page screens
@@ -235,7 +236,7 @@ export default function HubScreen() {
     if (anyFullBleedOpen) hideTabBar(); else showTabBar();
     return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
   }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals, showRewards, showMemories,
-      showMyChores, piggyBankModal, showAskParentHub, askParentDestination]);
+      showMyChores, piggyBankModal, showAskParentHub, askParentDestination, teenTutorOpen, teenCashOutOpen, teenGasVehicleOpen]);
   const describeFullFormRef = useRef<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>(null);
 
   // Drive ParentView's entrance animation from HubScreen's focus events —
@@ -250,10 +251,42 @@ export default function HubScreen() {
 
   useEffect(() => {
     if (!loaded) loadFromStorage();
+  }, [loaded]);
+
+  // Was a plain `useEffect` keyed on `[loaded]` (useFamilyStore's own flag)
+  // — fired exactly once, on the first loaded:false→true transition, and
+  // never again. HubScreen stays mounted across tab switches (see the
+  // FreeBusy useFocusEffect comment above), so if any of these three loads
+  // raced a not-yet-ready familyId/auth session on that one cold-start
+  // fire and came back empty, nothing ever retried — the only thing that
+  // visibly "fixed" it was switching tabs away and back, which happened to
+  // re-trigger each store's realtime resubscribe, not these loaders
+  // [live-reported: Hub cards across all 3 roles sometimes missing on
+  // first load, fixed by navigating away and back]. useFocusEffect reruns
+  // on every Hub focus — cheap, since each loadX already no-ops/caches
+  // internally — so a failed/empty first fetch gets a real retry instead
+  // of depending on an unrelated realtime reconnect to paper over it.
+  useFocusEffect(useCallback(() => {
     loadQuests();
     loadEvents();
     loadRewards();
-  }, [loaded]);
+  }, []));
+
+  // A PIN-switch to a different member happens WITHOUT any navigation —
+  // the user stays on the Hub tab the whole time — so useFocusEffect above
+  // never fires for it at all; it only fires on a real screen-focus event
+  // (switching tabs away and back). That's exactly why "navigate away/back
+  // fixes it" was the only known workaround [live-reported via screenshots:
+  // switching to a kid via PIN leaves the Hub entirely blank until the user
+  // leaves and returns to the tab]. Re-run the same three loaders directly
+  // off activeMemberId changing, independent of focus, so a PIN-switch
+  // alone retriggers them.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    loadQuests();
+    loadEvents();
+    loadRewards();
+  }, [activeMemberId]);
 
   const familyId = (members[0] as any)?.familyId as string | undefined;
   useEffect(() => {
@@ -449,7 +482,9 @@ export default function HubScreen() {
   const isTeen   = active?.role === 'teen';
   const isKid    = !isParent && !isSenior && !isTeen;
 
-  if (!active) return null;
+  if (!active) {
+    return null;
+  }
 
   // Derived Teen Tutor/Cash-Out data — same logic TeenView.tsx already has,
   // duplicated here (cheap) so KidOverlays (rendered outside the
@@ -646,7 +681,7 @@ export default function HubScreen() {
         // this is now MORE than Figma's 22px, never less). kid/teen/senior
         // keep the original 2px (unaffected — their SafeAreaView top inset
         // still sits above their ScrollView).
-        contentContainerStyle={{ paddingTop: isParent ? 59 : 2, paddingBottom: 100 }}
+        contentContainerStyle={{ paddingTop: isParent ? 59 : 2, paddingBottom: 140 }}
         onScroll={isParent ? (e) => {
           const y = e.nativeEvent.contentOffset.y;
           setStatusBarHidden(prev => {

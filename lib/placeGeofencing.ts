@@ -39,6 +39,9 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     if (error) { console.warn('[placeGeofencing] task error:', error.message); return; }
     const { eventType, region } = (data as { eventType: number; region: Location.LocationRegion }) ?? {};
     if (!region?.identifier) return;
+    // iOS shares one region pool across geofencing tasks and can deliver a
+    // store region ("<familyId>:<store>") here; place ids are plain UUIDs.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(region.identifier)) return;
     const memberId = await AsyncStorage.getItem(MEMBER_KEY).catch(() => null);
     if (!memberId) return;
     const event = eventType === Location.GeofencingEventType.Enter ? 'enter' : 'exit';

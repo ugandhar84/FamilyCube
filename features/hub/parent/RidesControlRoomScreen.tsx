@@ -3,7 +3,8 @@ import {
   View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { Car } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTripStore, type Trip, type TripPhase } from '@/store/tripStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -248,32 +249,15 @@ export function RidesControlRoomScreen({
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top', 'bottom']}>
-      {/* ── Fixed page header ── */}
-      <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
-            {familyName?.toUpperCase() ?? 'FAMILY'}
-          </Text>
-          {activeMember ? (
-            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-              {activeMember.name} · {activeMember.role}
-            </Text>
-          ) : null}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, marginTop: 4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              Family rides
-            </Text>
-          </View>
-          <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? colors.surface : '#F0EDE6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-            <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-          </Pressable>
-        </View>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · RIDES"
+        title="Family rides"
+        subtitle="Track pickups, upcoming rides and past trips."
+        accent="sky"
+        Icon={Car}
+        onTitlePress={onClose}
+        topInset={0}
+      />
 
       <ScrollView
         style={{ flex: 1 }}

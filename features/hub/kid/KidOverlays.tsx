@@ -112,16 +112,19 @@ export function KidOverlays({
   return (
     <>
       <FullPageOverlay visible={piggyBankModal} onDismiss={() => setPiggyBankModal(false)} zIndex={50} backgroundColor={kidAskCanvas}>
+{(close) => (
         <PiggyBankScreen
-          onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
+          onClose={close} colors={colors} isDark={isDark}
           mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
           doneToday={doneToday} streak={streak} level={level} memberId={active.id}
         />
+)}
       </FullPageOverlay>
 
       <FullPageOverlay visible={showMyChores} onDismiss={() => { setShowMyChores(false); setMyChoresInitialTab?.(undefined); }} zIndex={50} backgroundColor={kidAskCanvas}>
+{(close) => (
         <MyChoresScreen
-          onClose={() => { setShowMyChores(false); setMyChoresInitialTab?.(undefined); }}
+          onClose={close}
           active={active} members={members} familyId={familyId ?? ''}
           todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
           declinedQuests={declinedQuests} approvedQuests={approvedQuests} poolQuests={poolQuests} allQuests={quests}
@@ -143,54 +146,72 @@ export function KidOverlays({
             if (chore) setDeclineQuest(chore);
           }}
         />
+)}
       </FullPageOverlay>
 
       {/* Ask Parent — full-page landing hub, stacked sibling. Picking a
           destination opens the matching full-page form ABOVE it (zIndex 51)
           without closing the hub underneath. */}
       <FullPageOverlay visible={showAskParentHub} onDismiss={closeAskParentHub} zIndex={50} backgroundColor={kidAskCanvas}>
+{(close) => (
         <AskParentHubScreen
-          onClose={closeAskParentHub}
+          onClose={close}
           onSelect={(destination) => setAskParentDestination(destination)}
           activeMemberId={active.id}
         />
+)}
       </FullPageOverlay>
       <FullPageOverlay visible={!!askParentDestination} onDismiss={() => setAskParentDestination(null)} zIndex={51} backgroundColor={kidAskCanvas}>
-        {askParentDestination && (
+{(close) => (
+        askParentDestination ? (
           <AskParentUnifiedPage
             active={active} members={members} familyId={familyId ?? ''}
             initialType={askParentDestination as AskFormType}
-            onClose={() => setAskParentDestination(null)}
+            onClose={close}
           />
-        )}
+        ) : null
+)}
       </FullPageOverlay>
 
       {/* Teen-only — Tutor / Cash-Out, converted from TeenTileSheet bottom
           sheets to full-page overlays matching the Ask-Parent rhythm
           ["touturing and cashout should be full page overlay with figma
           /gemini rythem"]. */}
-      <FullPageOverlay visible={!!teenTutorOpen} onDismiss={() => closeTeenTutor?.()} zIndex={50} backgroundColor={kidAskCanvas}>
+      {/* zIndex 55 (above every other top-level-50 Hub overlay, e.g.
+          HubScreen's showGrocery/showMeals/showRewards/showMemories) —
+          these three were tied at 50 with those unrelated overlays, so if
+          one of those was ever left `true` underneath (state not reset on
+          its own dismiss path), swiping back out of a Teen overlay could
+          reveal it instead of the Hub [live-reported: "back swipe or close
+          of gas log page is going to [Grocery]"]. */}
+      <FullPageOverlay visible={!!teenTutorOpen} onDismiss={() => closeTeenTutor?.()} zIndex={55} backgroundColor={kidAskCanvas}>
+{(close) => (
         <TeenTutorPage
           siblings={teenSiblings ?? []} pendingOffers={teenPendingOffers ?? []}
           onSend={(kid, subject, note) => onSendTutorOffer?.(kid, subject, note)}
           onCancel={(id) => onCancelTutorOffer?.(id)}
-          onClose={() => closeTeenTutor?.()}
+          onClose={close}
         />
+)}
       </FullPageOverlay>
-      <FullPageOverlay visible={!!teenCashOutOpen} onDismiss={() => closeTeenCashOut?.()} zIndex={50} backgroundColor={kidAskCanvas}>
+      <FullPageOverlay visible={!!teenCashOutOpen} onDismiss={() => closeTeenCashOut?.()} zIndex={55} backgroundColor={kidAskCanvas}>
+{(close) => (
         <TeenCashOutPage
           balance={teenBalance ?? 0}
           cashOuts={teenCashOuts ?? []}
           onRequest={(amount, method) => onRequestCashOut?.(amount, method)}
-          onClose={() => closeTeenCashOut?.()}
+          onClose={close}
         />
+)}
       </FullPageOverlay>
-      <FullPageOverlay visible={!!teenGasVehicleOpen} onDismiss={() => closeTeenGasVehicle?.()} zIndex={50} backgroundColor={kidAskCanvas}>
+      <FullPageOverlay visible={!!teenGasVehicleOpen} onDismiss={() => closeTeenGasVehicle?.()} zIndex={55} backgroundColor={kidAskCanvas}>
+{(close) => (
         <TeenGasVehiclePage
           activeId={active.id} today={teenToday ?? ''}
           onReportIssue={(detail) => onReportVehicleIssue?.(detail)}
-          onClose={() => closeTeenGasVehicle?.()}
+          onClose={close}
         />
+)}
       </FullPageOverlay>
     </>
   );

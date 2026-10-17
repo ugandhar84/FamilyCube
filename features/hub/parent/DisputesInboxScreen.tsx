@@ -115,7 +115,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* 24h eligibility notice — a parent-vs-parent approval dispute (flag

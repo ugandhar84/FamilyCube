@@ -4,6 +4,7 @@
  * Figma-faithful: mint member-identity card → standalone textarea field →
  * white preview card → primary + secondary CTAs → mint info module.
  */
+import { PageHeading } from '@/components/PageHeading';
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, TouchableOpacity,
@@ -91,43 +92,13 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
-      {/* ── Header ── */}
-      <View style={{
-        paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : GEMINI.border,
-        backgroundColor: canvas, gap: 8,
-      }}>
-        {/* Household chrome */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 15 }}>
-            {familyName?.toUpperCase() ?? 'FAMILY SPACE'}
-          </Text>
-          {activeMember && (
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>
-              {activeMember.name}
-            </Text>
-          )}
-        </View>
-
-        {/* Page introduction */}
-        <View style={{ gap: 4 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Hub</Text>
-          </TouchableOpacity>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              Send appreciation
-            </Text>
-            <Pressable
-              onPress={onClose}
-              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
-            >
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · REVIEW"
+        title="Send appreciation"
+        accent="pink"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView
         style={{ flex: 1 }}

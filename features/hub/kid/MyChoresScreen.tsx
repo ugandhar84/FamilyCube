@@ -87,7 +87,7 @@ export function MyChoresScreen({
     <View style={{ flex: 1, backgroundColor: canvas }} {...swipePan.panHandlers}>
       <View style={{ backgroundColor: canvas }}>
         <PageHeading
-          eyebrow="MY CHORES"
+          eyebrow="FAMILY CUBE · MY CHORES"
           title="Chores"
           subtitle="What's left, what's waiting, and what you've finished."
           accent="teal"

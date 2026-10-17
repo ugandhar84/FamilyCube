@@ -77,15 +77,15 @@ const light = {
   // shadow + a genuinely white card against a warm off-white page, which is
   // the light-mode equivalent of dark mode's fill-based elevation.
   /** Page ground. */
-  bg: '#F7F3EC',
+  bg: '#ECE6DE',
   /** Raised card / panel fill. */
   card: '#FFFFFF',
   /** Hover / pressed / selected fill for a card or row. */
   cardHover: '#F1EADF',
   /** Inset well INSIDE a card (the mockup's nested `bg-hub-bg` blocks). */
-  well: '#F2ECE1',
+  well: '#F0EDE6',
   /** Hairline borders and dividers. */
-  cardBorder: '#E4D9C9',
+  cardBorder: '#DDD6CC',
   /** Stronger border for a focused / active surface. */
   cardBorderStrong: '#CDBCA5',
 
@@ -132,9 +132,9 @@ const light = {
 
   // ── Text ──────────────────────────────────────────────────────────────
   /** Primary text. 13.9:1 */
-  text: '#2C2722',
+  text: '#0D1210',
   /** Secondary: descriptions, metadata. 5.6:1 — AA for body. */
-  textMuted: '#6B5F52',
+  textMuted: '#3D4D47',
   /** Tertiary: timestamps, captions, eyebrows. 3.6:1 on the worst ground
    *  (`well`) — deliberately an AA-large token, never used below
    *  KIOSK_TYPO.caption. Taken a step deeper than a typical tertiary grey

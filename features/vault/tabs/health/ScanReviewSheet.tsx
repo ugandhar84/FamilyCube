@@ -482,7 +482,7 @@ export default function ScanReviewSheet({
                 page 1 uses BringInPrescriptionScreen's own header */}
             {scanPage === 2 && (
               <>
-                <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4 }}>
+                <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 12 }}>
                   <TouchableOpacity
                     onPress={!scanning && !rxSaving ? () => { setScanPage(1); clearScan(); } : closeScanSheet}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

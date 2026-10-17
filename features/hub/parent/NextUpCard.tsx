@@ -88,7 +88,7 @@ export function NextUpTimeline({
   const periodWord = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
 
   return (
-    <View style={{ marginHorizontal: 20, marginTop: 26 }}>
+    <View style={{ marginHorizontal: 20, marginTop: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <View>
           <View style={{ alignSelf: 'flex-start' }}>

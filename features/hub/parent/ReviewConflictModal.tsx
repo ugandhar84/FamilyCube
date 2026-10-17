@@ -1,3 +1,5 @@
+import { PageHeading } from '@/components/PageHeading';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { View, Text, Pressable, Modal, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
@@ -39,36 +41,21 @@ export function ReviewConflictModal({
   const borderColor = isDark ? colors.border : GEMINI.border;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
+    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={60} backgroundColor={colors.background}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
-        {/* ── Fixed page header ── */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : GEMINI.border, gap: 8 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textTertiary }}>
-              {familyName?.toUpperCase() ?? 'FAMILY'}
-            </Text>
-            {activeMember ? (
-              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>
-                {activeMember.name} · {activeMember.role}
-              </Text>
-            ) : null}
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textTertiary, marginBottom: 2 }}>Needs you before 16:00</Text>
-              <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, lineHeight: 34, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-                One decision
-              </Text>
-            </View>
-            <Pressable onPress={onClose} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
+        {/* ── Page header ── */}
+        <PageHeading
+          eyebrow="FAMILY CUBE · SCHEDULE"
+          title="One decision"
+        subtitle="Needs you before 4:00 PM"
+          accent="amber"
+          topInset={0}
+          onTitlePress={onClose}
+        />
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 16, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
         >
           {/* Options list */}
@@ -119,7 +106,7 @@ export function ReviewConflictModal({
           </AnimatedPressable>
         </View>
       </SafeAreaView>
-    </Modal>
+    </FullPageOverlay>
   );
 }
 

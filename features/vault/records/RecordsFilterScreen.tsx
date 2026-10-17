@@ -7,6 +7,7 @@
  * place (unused by RecordsTab.tsx after this change) rather than deleted,
  * in case anything else still imports it.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check } from 'lucide-react-native';
@@ -83,17 +84,16 @@ export default function RecordsFilterScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: pageBg }}>
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
-        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, marginTop: 10, lineHeight: 36 }}>
-          Filter records
-        </Text>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · RECORDS"
+        title="Filter records"
+        accent="pink"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         <View style={contentGroupStyle(cardBg, isDark, border)}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>

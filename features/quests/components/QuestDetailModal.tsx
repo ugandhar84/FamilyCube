@@ -1,3 +1,4 @@
+import { PageHeading } from '@/components/PageHeading';
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Modal, StyleSheet, TextInput, ActivityIndicator, Alert, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -713,29 +714,21 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
     <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
 
-        {/* Top bar */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: (ownTopInset ? insets.top : 0) + 12, paddingBottom: 8 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.teal }}>‹ Back</Text>
-          </TouchableOpacity>
-          <View style={{ flex: 1 }} />
-          {/* canEdit prop is role-only (isParent) — was letting a parent open
-              Edit on an already-approved/declined chore with nothing left to
-              change, stale-state risk same as EventDetailScreen's past-event
-              gating. actions.canEdit (deriveQuestActions) already factors in
-              !done && !declined on top of the role check — use that instead. */}
-          {canEdit && actions.canEdit && (
+        <PageHeading
+          eyebrow="FAMILY CUBE · QUESTS"
+          title={liveQuest.title}
+          accent="primary"
+          topInset={ownTopInset ? insets.top : 0}
+          onTitlePress={onClose}
+          right={canEdit && actions.canEdit ? (
             <TouchableOpacity
               onPress={() => setEditing(true)}
-              style={{
-                paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
-                borderWidth: 1.5, borderColor: colors.border,
-              }}
+              style={{ paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: colors.border }}
             >
               <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>Edit</Text>
             </TouchableOpacity>
-          )}
-        </View>
+          ) : undefined}
+        />
 
         <ScrollView
           contentContainerStyle={{ paddingBottom: 60 }}
@@ -749,9 +742,6 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
               IN that pill ("Awaiting review · Leo") rather than needing
               room next to a long title. */}
           <View style={{ paddingHorizontal: 20, paddingTop: 6, marginBottom: 14, gap: 8 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', letterSpacing: -0.5, color: colors.textPrimary, lineHeight: 41 }}>
-              {liveQuest.title}
-            </Text>
             {/* Live direction: "call reminder should go to the same row
                 right side so we can save space" — the status pill and the
                 call-reminder toggle now share one row (pill left, a

@@ -26,6 +26,7 @@ import { Megaphone, X, Send, Check, AlertTriangle } from 'lucide-react-native';
 import { KioskModalHost } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { useKioskIntercom, INTERCOM_PRESETS, type IntercomResult } from '../useKioskIntercom';
 
 export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
@@ -56,15 +57,15 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
           accessibilityLabel="Close intercom"
         />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.center} pointerEvents="box-none">
-          <View style={[s.sheet, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+          <View style={[s.sheet, isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow, { backgroundColor: isDark ? k.card : GEMINI.cardBg, borderColor: isDark ? k.cardBorder : GEMINI.border }]}>
             <View style={s.head}>
               <View style={[s.headIcon, { backgroundColor: k.primarySoft, borderColor: k.primaryEdge }]}>
                 <Megaphone size={24} color={k.primary} />
               </View>
-              <View style={{ flex: 1, minWidth: 0 }} accessible accessibilityRole="header" accessibilityLabel="House intercom">
-                <Text style={[s.title, { color: k.text }]} numberOfLines={1}>House Intercom</Text>
-                <Text style={[s.sub, { color: k.textMuted }]} numberOfLines={2}>
-                  Send an announcement to everyone's phone
+              <View style={{ flex: 1, minWidth: 0 }} accessible accessibilityRole="header" accessibilityLabel="A word from the kitchen">
+                <Text style={[s.title, { color: isDark ? k.text : GEMINI.titleColor }]} numberOfLines={1}>A word from the kitchen</Text>
+                <Text style={[s.sub, { color: isDark ? k.textMuted : GEMINI.bodyColor }]} numberOfLines={2}>
+                  Send to every family device. Nothing private is shared.
                 </Text>
               </View>
               <Pressable
@@ -91,7 +92,7 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
                     onPress={() => send(`${p.emoji} ${p.text}`)}
                     style={({ pressed }) => [
                       s.preset,
-                      { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
+                      { backgroundColor: pressed ? k.cardHover : (isDark ? k.well : GEMINI.surface), borderColor: isDark ? k.cardBorder : GEMINI.border },
                       sending && { opacity: 0.5 },
                     ]}
                     accessibilityRole="button"
@@ -100,7 +101,7 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
                     accessibilityState={{ disabled: sending }}
                   >
                     <Text style={s.presetEmoji}>{p.emoji}</Text>
-                    <Text style={[s.presetText, { color: k.text }]} numberOfLines={2}>{p.text}</Text>
+                    <Text style={[s.presetText, { color: isDark ? k.text : GEMINI.titleColor }]} numberOfLines={2}>{p.text}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -112,7 +113,7 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
                 <TextInput
                   value={draft}
                   onChangeText={t => { setDraft(t); if (result) setResult(null); }}
-                  placeholder="Or type your own announcement…"
+                  placeholder="Quick text — type your own message…"
                   placeholderTextColor={k.textFaint}
                   style={[s.input, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
                   multiline
@@ -168,6 +169,11 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
                   </Text>
                 </View>
               )}
+              <View style={[s.result, { backgroundColor: isDark ? k.well : GEMINI.surface, borderColor: isDark ? k.cardBorder : GEMINI.border }]}>
+                <Text style={[s.resultText, { color: isDark ? k.textMuted : GEMINI.bodyColor, fontWeight: '600' }]}>
+                  Messages also post to family chat so nobody misses them. Your own phone is skipped.
+                </Text>
+              </View>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>

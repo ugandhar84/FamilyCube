@@ -8,6 +8,7 @@
  * here is implemented as populating the add-form, then on save doing
  * removeHoliday + addHoliday — never a new store action.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -166,12 +167,14 @@ export function HolidaysScreen({ visible, colors, isDark, memberId, memberName, 
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-            <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-              A break in the timetable
-            </Text>
-          </TouchableOpacity>
+        <PageHeading
+          eyebrow="FAMILY CUBE · SCHOOL"
+          title="A break in the timetable"
+          accent="sky"
+          topInset={insets.top}
+          onTitlePress={requestAnimatedClose}
+        />
+        <View style={{ paddingHorizontal: 20, paddingBottom: 6 }}>
           <Text style={{ fontSize: 14, color: bodyC, marginTop: 6, lineHeight: 20 }}>
             {schedule?.school ? `${activeMemberName.split(' ')[0]}'s schedule · ${schedule.school}` : `${activeMemberName.split(' ')[0]}'s schedule`}
           </Text>

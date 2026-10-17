@@ -17,11 +17,12 @@ export function KidTodaySection({
 }) {
   return (
     // NextUpTimeline (rendered inside HubTimelineSection) hardcodes its own
-    // marginHorizontal: 20 / marginTop: 26 for Parent's Hub rhythm — this
-    // negative-margin wrapper pulls it back to the 16px horizontal inset /
-    // 14px vertical gap used by every other Kid Hub section, without
-    // touching NextUpCard.tsx (shared with Parent).
-    <View style={{ marginHorizontal: -4, marginTop: -12 }}>
+    // marginHorizontal: 20 / marginTop: 14 for the shared Hub rhythm — this
+    // negative-margin wrapper pulls it back to the 16px horizontal inset
+    // used by every other Kid Hub section, without touching NextUpCard.tsx
+    // (shared with Parent). marginTop is no longer offset here since
+    // NextUpCard.tsx's own marginTop (14) now already matches Kid's rhythm.
+    <View style={{ marginHorizontal: -4 }}>
       <HubTimelineSection active={active} members={members} events={events} colors={colors} isDark={isDark} />
     </View>
   );

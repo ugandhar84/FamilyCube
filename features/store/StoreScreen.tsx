@@ -15,7 +15,8 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
-import { Flame } from 'lucide-react-native';
+import { Flame, Coins } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { fmtDateShort } from '@/lib/dates';
@@ -297,7 +298,7 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
     <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
       {(requestAnimatedClose) => (
       <View style={{ flex: 1, backgroundColor: canvas }}>
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 12 }}>
           {reward && (
             <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
@@ -435,7 +436,7 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
           {/* Header */}
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+          <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 12 }}>
             <TouchableOpacity activeOpacity={0.7} onPress={requestAnimatedClose}>
               <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
                 {editing ? 'Edit Perk' : 'New Perk'}
@@ -723,48 +724,30 @@ export default function StoreScreen({
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-      {/* ── ReviewInbox-style header ── */}
       {!hideHeader && (
-        <View style={{
-          paddingHorizontal: 20,
-          paddingTop: insets.top + 12,
-          paddingBottom: 16,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
-          backgroundColor: canvas,
-          gap: 6,
-        }}>
-          {canRedeemSelf && (
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99,
-                backgroundColor: isDark ? colors.card : '#FDF3D8' }}>
-                <Text style={{ fontSize: 13, fontWeight: '900',
-                  color: isDark ? colors.amber : AMBER_TXT }}>
-                  {myCoins}
-                </Text>
-                <Text style={{ fontSize: 13 }}>🪙</Text>
-              </View>
+        <PageHeading
+          eyebrow="FAMILY CUBE · PERKS STORE"
+          title="Perks Store"
+          subtitle={isParent ? 'Manage your family perks catalog.' : 'Browse and redeem perks with your coins.'}
+          accent="amber"
+          Icon={Coins}
+          topInset={insets.top}
+          onTitlePress={onClose}
+          right={canRedeemSelf ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+              paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99,
+              backgroundColor: isDark ? colors.card : '#FDF3D8' }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? colors.amber : AMBER_TXT }}>{myCoins}</Text>
+              <Text style={{ fontSize: 13 }}>🪙</Text>
             </View>
-          )}
-          <TouchableOpacity activeOpacity={0.7} onPress={onClose} disabled={!onClose}>
-            <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34,
-              letterSpacing: -0.5, color: colors.textPrimary }}>
-              Perks Store
-            </Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-            {isParent
-              ? 'Manage your family perks catalog.'
-              : 'Browse and redeem perks with your coins.'}
-          </Text>
-        </View>
+          ) : undefined}
+        />
       )}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         style={{ flex: 1, backgroundColor: canvas }}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: insets.bottom + 48 }}>
 
         {/* ── AI Perks banner (parent) ── */}
         {isParent && (

@@ -9,6 +9,7 @@
  * Sections: hero · info card · inline notes · who's involved (actions)
  *           · RSVP (optional events) · conflicts · activity log
  */
+import { PageHeading } from '@/components/PageHeading';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
@@ -612,18 +613,14 @@ export default function EventDetailScreen({
     <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
-        {/* ── Top bar ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 10, gap: 8 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.teal }}>‹ Back</Text>
-          </TouchableOpacity>
-          <View style={{ flex: 1 }} />
-          {/* A past event is read-only — editing/action-center controls on
-              something already over invite stale-state confusion (e.g.
-              "confirming" a drive that already happened). Delete stays
-              available since removing a stale past entry is still a
-              legitimate cleanup action. */}
+        <PageHeading
+          eyebrow="FAMILY CUBE · SCHEDULE"
+          title={liveEv.title}
+          accent="teal"
+          topInset={insets.top}
+          onTitlePress={onClose}
+          right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {!isPast && (
             <TouchableOpacity onPress={() => setEditing(true)}
               style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5, borderColor: colors.border }}>
@@ -637,7 +634,9 @@ export default function EventDetailScreen({
               {deleting ? '…' : 'Delete'}
             </Text>
           </TouchableOpacity>
-        </View>
+            </View>
+          }
+        />
 
         <ScrollView contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">
@@ -646,10 +645,7 @@ export default function EventDetailScreen({
           <View style={{ paddingHorizontal: 20, paddingTop: 8, marginBottom: 20 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start',
               justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-              <Text style={{ flex: 1, fontSize: 28, fontWeight: '800', letterSpacing: -0.5,
-                color: colors.textPrimary, lineHeight: 34 }}>
-                {liveEv.title}
-              </Text>
+              <View style={{ flex: 1 }} />
               <View style={{ marginTop: 5, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
                 backgroundColor: statusInfo.color + '18', borderWidth: 1.5, borderColor: statusInfo.color + '50' }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: statusInfo.color }}>

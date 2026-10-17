@@ -76,7 +76,7 @@ export function PiggyBankScreen({
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
         <PageHeading
-          eyebrow="PIGGY BANK"
+          eyebrow="FAMILY CUBE · PIGGY BANK"
           title="Piggy Bank"
           subtitle="Your coin balance & cash-out value"
           accent="amber"

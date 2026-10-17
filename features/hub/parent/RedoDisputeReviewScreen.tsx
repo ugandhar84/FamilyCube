@@ -20,6 +20,7 @@
  * state with an explanation instead of a generic failed-save toast if the
  * acting parent is the one who requested the redo in the first place.
  */
+import { PageHeading } from '@/components/PageHeading';
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TouchableOpacity, ActivityIndicator, Platform, StyleSheet,
@@ -78,32 +79,14 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <View style={{
-        paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : GEMINI.border,
-        backgroundColor: canvas, gap: 8,
-      }}>
-        <View style={{ gap: 4 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkBlue, lineHeight: 18 }}>← Review inbox</Text>
-          </TouchableOpacity>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-              Second opinion
-            </Text>
-            <Pressable
-              onPress={onClose}
-              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
-            >
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-          <View style={{ alignSelf: 'flex-start', backgroundColor: statusBg, borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: statusText }}>Disputed — second parent needed</Text>
-          </View>
-        </View>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · REVIEW"
+        title="Second opinion"
+        subtitle="Disputed — second parent needed"
+        accent="amber"
+        topInset={insets.top}
+        onTitlePress={onClose}
+      />
 
       <ScrollView
         style={{ flex: 1 }}

@@ -322,8 +322,13 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for
       // the PREVIOUS member is rarely where the person who just switched
-      // in wants to land.
-      router.replace('/(tabs)');
+      // in wants to land. Was `router.replace`, which tears down and
+      // remounts the entire (tabs) navigator — racing against the
+      // just-fired setActiveMember and intermittently landing on a blank
+      // Hub (no header) [live-reported: "still same white hub.. this is
+      // fucking killing the app"]. `navigate` re-uses the existing (tabs)
+      // instance and just focuses the Hub tab instead.
+      router.navigate('/(tabs)');
     }
   };
 
@@ -331,7 +336,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
     if (pinTarget) setActiveMember(pinTarget.id);
     setPinTarget(null);
     onClose();
-    router.replace('/(tabs)');
+    router.navigate('/(tabs)');
   };
 
   const handleClose = () => {

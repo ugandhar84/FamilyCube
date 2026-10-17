@@ -4,6 +4,8 @@
  * Figma node 90:10318 "Dispatch new pickup · Mobile", re-skinned in the
  * Kinfolk palette. Uses AppBottomSheet for consistent keyboard handling.
  */
+import { PageHeading } from '@/components/PageHeading';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -283,37 +285,21 @@ export function DispatchRideSheet({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={60} backgroundColor={colors.background}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
 
-        {/* ── Fixed page header ── */}
-        <View style={[styles.pageHeader, { borderBottomColor: isDark ? colors.border : GEMINI.border }]}>
-          <View style={styles.householdRow}>
-            <Text style={[styles.householdFamily, { color: colors.textTertiary }]}>
-              {familyName?.toUpperCase() ?? 'FAMILY'}
-            </Text>
-            {activeMember ? (
-              <Text style={[styles.householdMember, { color: colors.teal }]}>
-                {activeMember.name} · {activeMember.role}
-              </Text>
-            ) : null}
-          </View>
-          <View style={styles.titleRow}>
-            <View style={{ flex: 1 }}>
-              <TouchableOpacity onPress={onClose} style={{ alignSelf: 'flex-start' }}>
-                <Text style={[styles.backLink, { color: colors.teal }]}>← Rides</Text>
-              </TouchableOpacity>
-              <Text style={[styles.pageTitle, { color: (isDark ? colors.textPrimary : GEMINI.titleColor) }]}>Arrange a ride</Text>
-            </View>
-            <Pressable onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surface }]}>
-              <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
+        {/* ── Page header ── */}
+        <PageHeading
+          eyebrow="FAMILY CUBE · RIDES"
+          title="Arrange a ride"
+          accent="sky"
+          topInset={0}
+          onTitlePress={onClose}
+        />
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 16, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -634,7 +620,7 @@ export function DispatchRideSheet({
         onPin={(_storeName, lat, lng, _address) => setPickupCoords({ lat, lng })}
         onUnpin={() => {}}
       />
-    </Modal>
+    </FullPageOverlay>
   );
 }
 

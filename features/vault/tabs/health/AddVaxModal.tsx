@@ -1,3 +1,4 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
@@ -183,19 +184,17 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
       {(requestAnimatedClose) => (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: pageBg }}>
         <View style={{ flex: 1 }}>
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 4, gap: 10 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkC, alignSelf: 'flex-end' }}>
-              {activeMember?.name ?? 'Member'} · Record owner
-            </Text>
-            <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-                {editing ? 'Edit vaccine' : 'Log vaccine'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <PageHeading
+            eyebrow="FAMILY CUBE · HEALTH"
+            title={editing ? 'Edit vaccine' : 'Log vaccine'}
+            subtitle={`${activeMember?.name ?? 'Member'} · Record owner`}
+            accent="pink"
+            topInset={insets.top}
+            onTitlePress={requestAnimatedClose}
+          />
 
           <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ padding: 24, paddingTop: 12, paddingBottom: 8, gap: 14 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, gap: 12 }}>
 
             <View style={{ flexDirection: 'row' }}>
               <View style={{ backgroundColor: colors.primaryLight, borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10 }}>

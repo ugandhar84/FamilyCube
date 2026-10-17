@@ -578,7 +578,7 @@ export default function HealthFigmaList({
           a drawer. ── */}
       <FullPageOverlay visible={!!historyMed} onDismiss={() => setHistoryMed(null)} zIndex={58}>
         <View style={{ flex: 1, backgroundColor: pageBg }}>
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: 8 }}>
+          <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 12 }}>
             <TouchableOpacity onPress={() => setHistoryMed(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? BLUE : LINK_BLUE }}>‹ Health records</Text>
             </TouchableOpacity>
@@ -590,7 +590,7 @@ export default function HealthFigmaList({
             </Text>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
             {historyDays.length === 0 ? (
               <View style={contentGroupStyle(cardBg, isDark, border)}>
                 <Text style={{ fontSize: 13, color: bodyC, textAlign: 'center', paddingVertical: 24 }}>No history yet</Text>

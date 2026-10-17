@@ -15,8 +15,9 @@
  * "Needs a driver" instead of pretending it's on the same 4-stage track.
  */
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { Car } from 'lucide-react-native';
+import { View, Text } from 'react-native';
+import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { Car, ChevronRight } from 'lucide-react-native';
 import type { TripPhase } from '@/store/tripStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 
@@ -60,16 +61,15 @@ export function RidesStatusCard({
   const needsDriver = !activePhase;
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
-      style={({ pressed }) => ({
+      style={{
         marginHorizontal: 20, marginTop: 14,
         backgroundColor: isDark ? colors.card : GEMINI.cardBg,
         borderRadius: 16, padding: 16, gap: 10,
         borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
-        opacity: pressed ? 0.85 : 1,
         ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
-      })}
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{
@@ -99,6 +99,7 @@ export function RidesStatusCard({
             </Text>
           </View>
         )}
+        <ChevronRight size={18} color={colors.textTertiary} strokeWidth={2.2} />
       </View>
 
       {/* Breakdown row — without driver / ongoing, always shown (even
@@ -144,6 +145,6 @@ export function RidesStatusCard({
           ))}
         </View>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }

@@ -8,6 +8,7 @@ import { TYPO } from '@/constants/theme';
 import { showToast } from '@/components/AppToast';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
+import type { TripPhase } from '@/store/tripStore';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
@@ -28,7 +29,9 @@ import { KidTodaySection } from './kid/KidTodaySection';
 import { KidChoresNeedsYouCard } from './kid/KidChoresNeedsYouCard';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { KidActionGrid, KidCheckinRow } from './kid/KidMoreRow';
+import { KidSectionHeader } from './kid/KidSectionHeader';
 import { RideStatusCard } from './kid/RideStatusCard';
+import { RidesStatusCard } from './parent/RidesStatusCard';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { TonightMealCard } from './parent/TonightMealCard';
 import { KidRideBanner } from './kid/KidRideBanner';
@@ -63,7 +66,7 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   focusKey?: number;
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
-  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number; phase?: TripPhase }[];
   familyId?: string;
   // Not rendered directly here (same as KidView) — consumed by HubScreen's
   // own showAskParentHub composite, which already folds composerVisible in.
@@ -291,15 +294,21 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   // Same staggered-entrance pattern as KidView/ParentView — one Animated.Value
   // pair per top-level section below (Hero / Today / ChoresNeedsYou / NeedsYou
   // / Quick Actions), driven by focusKey (0 = subpage pop, show immediately).
-  const CARD_COUNT = 5;
-  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0))).current;
-  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(18))).current;
+  const CARD_COUNT = 7;
+  // Start barely-faded, not fully invisible — see KidView.tsx for full
+  // rationale: if the mount-triggered Animated.start() below ever gets
+  // dropped/raced, worst case is a slightly faded card, never a fully
+  // blank screen. The real fade+slide-up bounce still plays normally.
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0.4))).current;
+  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(8))).current;
   const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
 
+  const hasAnimatedIn = useRef(false);
   useEffect(() => {
-    if (focusKey === 0) return;
-    opacities.forEach(v => v.setValue(0));
-    translateYs.forEach(v => v.setValue(18));
+    if (focusKey === 0 && hasAnimatedIn.current) return;
+    hasAnimatedIn.current = true;
+    opacities.forEach(v => v.setValue(0.4));
+    translateYs.forEach(v => v.setValue(8));
     const anims = opacities.map((op, i) =>
       Animated.parallel([
         Animated.timing(op, { toValue: 1, duration: 280, delay: 60 + i * 55, easing: Easing.out(Easing.quad), useNativeDriver: true }),
@@ -307,6 +316,11 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
       ])
     );
     Animated.parallel(anims).start();
+    const failSafe = setTimeout(() => {
+      opacities.forEach(v => v.setValue(1));
+      translateYs.forEach(v => v.setValue(0));
+    }, 900);
+    return () => clearTimeout(failSafe);
   }, [focusKey]);
 
   return (
@@ -396,15 +410,46 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
           ].filter(s => s.value > 0) : undefined}
           colors={colors} isDark={isDark}
         />
-        <RideStatusCard
-          colors={colors} isDark={isDark}
-          pendingCount={myPendingAssignments.length}
-          confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
-          confirmedRideDate={confirmedRide?.date}
-          confirmedRideTime={confirmedRide?.time}
-          driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
-          onPress={confirmedRide || myPendingAssignments.length > 0 ? onRideStatusOpen : onAskForRide}
-        />
+      </Animated.View>
+
+      <Animated.View style={{ opacity: cardAnims[5].opacity, transform: [{ translateY: cardAnims[5].translateY }] }}>
+        {/* A car-having teen behaves like a parent for driving purposes —
+            same RidesStatusCard tracker UI Parent's own Hub uses (progress
+            bar, phase stages, opens RidesControlRoomScreen) — but scoped to
+            ONLY the rides THIS teen themselves asked for, never the whole
+            family's queue [live direction: "teens are parents / kids if
+            they have car they behve the parent like but they can only get
+            the requests they asked for and when no car then pure kids"].
+            A teen with no car keeps the existing simpler rider-only tile. */}
+        {hasCar ? (() => {
+          const myDispatchedTrip = confirmedRide
+            ? activeTrips?.find(t => t.driverMemberId === eventAssignee(confirmedRide).id)
+            : undefined;
+          const label = myDispatchedTrip
+            ? `${myDispatchedTrip.driverName} driving you`
+            : confirmedRide?.title;
+          return (
+            <RidesStatusCard
+              colors={colors} isDark={isDark}
+              pendingCount={Math.max(0, myPendingAssignments.length - (myDispatchedTrip ? 0 : confirmedRide ? 1 : 0))}
+              withoutDriverCount={myPendingAssignments.length}
+              ongoingCount={myDispatchedTrip ? 1 : 0}
+              activeTripLabel={label}
+              activePhase={myDispatchedTrip?.phase}
+              onPress={onRideStatusOpen}
+            />
+          );
+        })() : (
+          <RideStatusCard
+            colors={colors} isDark={isDark}
+            pendingCount={myPendingAssignments.length}
+            confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
+            confirmedRideDate={confirmedRide?.date}
+            confirmedRideTime={confirmedRide?.time}
+            driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
+            onPress={confirmedRide || myPendingAssignments.length > 0 ? onRideStatusOpen : onAskForRide}
+          />
+        )}
         <KidCheckinRow onCheckin={(type) => {
           const messages: Record<string, { detail: string; chatMsg: string; emoji: string }> = {
             home:  { detail: "I'm home! 🏠", chatMsg: `${active.name.split(' ')[0]} is home! 🏠`, emoji: "🏠 I'm home!" },
@@ -423,38 +468,43 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
             <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
           </View>
         )}
+      </Animated.View>
 
-        <View style={{ marginTop: 14, marginBottom: 14 }}>
+      <Animated.View style={{ opacity: cardAnims[6].opacity, transform: [{ translateY: cardAnims[6].translateY }] }}>
+        {/* TonightMealCard hardcodes marginHorizontal: 20 (Parent Hub's own
+            card inset) and marginBottom: 20 (Parent's trailing-scroll
+            padding, since it's Parent Hub's LAST section) — Kid/Teen Hub
+            uses 16 everywhere else and TonightMealCard isn't the last
+            section here, so this wrapper cancels both: -4 horizontal to
+            match the 16px rhythm, -6 bottom to bring the 20px baked-in
+            trailing margin down to the standard 14px gap used everywhere
+            else in this chain ["still lill off compared to other"]. */}
+        <View style={{ marginHorizontal: -4, marginBottom: -6 }}>
           <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
         </View>
       </Animated.View>
 
       {/* ── Teen Extras — car dispatch/tutor/cash-out/gas log, Teen-only
-          tiles with no Kid equivalent. Kept as its own grid + sheets below
-          KidView's own Quick Actions, matching the structure's final
-          section. Vertical rhythm (marginTop/marginBottom: 14) now matches
-          every other section wrapper above (KidChoresNeedsYouCard/
-          KidNeedsYouSection/KidMoreRow all use the same 14/14 pattern) —
-          this block previously used its own one-off 4/16 spacing ["make
-          sure hub verical paddiginh are uniform and nicer"]. ── */}
-      <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 10 }}>
-          TEEN EXTRAS
-        </Text>
-      </View>
-      <View style={{ paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-        <TeenTile
-          label="Tutor a Sibling" sublabel="Offer homework help"
-          Icon={BookOpen} accent={BRAND.purple} badge={myPendingOffers.length}
-          onPress={onOpenTutor} colors={colors} isDark={isDark}
-        />
-        {hasCar && (
+          tiles with no Kid equivalent. Uses the same KidSectionHeader
+          eyebrow (accent bar + uppercase caption) as every other Kid/Teen
+          Hub section instead of a plain Text label ["Teen Extras should be
+          same as other section Font dtyles and eybrow styles"]. ── */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+        <KidSectionHeader label="TEEN EXTRAS" accent={colors.amber} colors={colors} />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
           <TeenTile
-            label="Gas & Vehicle" sublabel="Log fill-ups, report issues"
-            Icon={Fuel} accent={colors.success}
-            onPress={onOpenGasVehicle} colors={colors} isDark={isDark}
+            label="Tutor a Sibling" sublabel="Offer homework help"
+            Icon={BookOpen} accent={BRAND.purple} badge={myPendingOffers.length}
+            onPress={onOpenTutor} colors={colors} isDark={isDark}
           />
-        )}
+          {hasCar && (
+            <TeenTile
+              label="Gas & Vehicle" sublabel="Log fill-ups, report issues"
+              Icon={Fuel} accent={colors.success}
+              onPress={onOpenGasVehicle} colors={colors} isDark={isDark}
+            />
+          )}
+        </View>
       </View>
 
       {/* Cash Out — full-width banner card (pending count + last status),

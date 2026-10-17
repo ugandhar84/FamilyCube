@@ -124,6 +124,7 @@ import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidCheckInTile, KioskKidMineTile, KidRequestsSheet } from '../components/KioskKidQuickActions';
+import { KioskSimpleChecklist } from '../components/KioskSimpleChecklist';
 import { KidChoresWidget, KioskMyStuffPanel, KioskMyRequestsPanel, KioskUpForGrabsPanel, KioskCheerSquadPanel, requestDisplayTitle } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
 import { KioskEventEditor } from '../components/KioskEventEditor';
@@ -1853,7 +1854,13 @@ export function KioskOverviewTab({
                 widget's placement in the same column. Kid AND teen both
                 get this (teen's own real "chore" vocabulary — Quest —
                 already flows through the identical store/component). */}
-            {(isKid || isTeen) && (
+            {isKid && (
+              <KioskSimpleChecklist
+                active={active} members={members} k={k} isDark={isDark}
+                onOpenTasks={() => onNavigate('tasks')}
+              />
+            )}
+            {isTeen && (
               <KidChoresWidget
                 active={active} members={members} k={k} isDark={isDark}
                 onOpenTasks={() => onNavigate('tasks')}

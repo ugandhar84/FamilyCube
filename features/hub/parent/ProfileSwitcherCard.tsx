@@ -36,7 +36,7 @@ export function ProfileSwitcherCard({
       <AnimatedPressable
         onPress={() => setSwitcherOpen(true)}
         style={{
-          marginHorizontal: 20, marginTop: 12,
+          marginHorizontal: 20, marginTop: 10,
           padding: 8,
           borderWidth: 1, borderColor: colors.border, borderRadius: 20,
           backgroundColor: colors.card,

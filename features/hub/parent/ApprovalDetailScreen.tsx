@@ -10,6 +10,7 @@
  * Server rules (co-sign, identity, atomic coin clawback) are enforced by the
  * flag_approval / request_reversal / cosign_reversal / stand_by_approval RPCs.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -210,18 +211,20 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16, gap: 6,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: canvas }}>
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>← Hub</Text>
-        </Pressable>
-        <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -0.4, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={2}>{chore.title}</Text>
-        <View style={{ alignSelf: 'flex-start', borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10, backgroundColor: tone.bg }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: tone.fg }}>{badge.label}</Text>
-        </View>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · APPROVAL"
+        title={chore.title}
+        accent="teal"
+        topInset={insets.top}
+        onTitlePress={onClose}
+        right={
+          <View style={{ borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10, backgroundColor: tone.bg }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: tone.fg }}>{badge.label}</Text>
+          </View>
+        }
+      />
 
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
         <View style={{ borderRadius: 16, padding: 16, gap: 6, backgroundColor: isDark ? colors.card : colors.surface }}>
           <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {approverName} approved this{approvedOn ? ` on ${approvedOn}` : ''}.

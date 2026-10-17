@@ -47,23 +47,14 @@ export function TeenTutorPage({
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        {!sent && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            paddingHorizontal: 20, paddingTop: insets.top + 8 }}>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>‹ Teen Hub</Text>
-            </Pressable>
-            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-        )}
         <PageHeading
+          eyebrow="FAMILY CUBE · TUTORING"
           title="Tutor a Sibling"
           subtitle={sent ? undefined : 'Offer your time to help with homework or studying.'}
           accent="pink"
           Icon={BookOpen}
-          topInset={0}
+          onTitlePress={onClose}
+          topInset={insets.top}
         />
       </View>
 

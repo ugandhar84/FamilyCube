@@ -1678,37 +1678,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         )}
 
 
-        {/* PIN-switched into a sub-profile (GP/kid/teen/etc, no authUserId
-            of their own) — never show a real Sign Out here, since tapping
-            it would end the REAL account's session while looking at
-            someone else's profile. Only a Lock/"Switch back" is safe:
-            purely a local activeMemberId swap gated by the real owner's
-            own PIN, no Supabase call at all. */}
-        {!viewingOwnProfile && authOwnerMember && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <Row
-              icon="lock-closed-outline"
-              label="Lock & Switch Back"
-              subtitle={`Return to ${authOwnerMember.name.split(' ')[0]}'s profile`}
-              onPress={() => {
-                // Always lands on the shared-device profile picker instead
-                // of going straight back into the owner's own Hub — any
-                // family member can tap their own avatar next, kiosk-style.
-                // Deliberately does NOT touch activeMemberId here: the
-                // picker screen owns the actual member swap (same
-                // tap-avatar-then-PIN flow PersonaSwitcherSheet already
-                // uses), so there's never a moment where activeMemberId is
-                // null/invalid for the rest of the app's code to trip over.
-                router.replace('/(auth)/profile-picker' as any);
-              }}
-              colors={colors} isDark={isDark}
-            />
-          </View>
-        )}
-
         </View>
         </View>
       </ScrollView>

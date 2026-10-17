@@ -23,6 +23,7 @@ import NotificationPanel from '@/components/NotificationPanel';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import StoreScreen from './StoreScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { PageHeading } from '@/components/PageHeading';
 
 // ─── "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — same
 // palette SchoolHomeScreen.tsx uses; see that file's own comment for the
@@ -475,33 +476,17 @@ export default function RewardsDashboardScreen({
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
         {!hideHeader && (
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: isDark ? colors.amber : '#D97706' }}>
-                {'FAMILY CUBE · REWARDS'}
-              </Text>
-              {!!parentLabel && (
-                <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{parentLabel}</Text>
-              )}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
-              <TouchableOpacity activeOpacity={0.7} onPress={onClose} disabled={!onClose} style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-                  {canRedeemSelf ? 'You earned a choice' : 'Family Rewards'}
-                </Text>
-                <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>
-                  {canRedeemSelf
-                    ? "Spend your coins on perks you've earned."
-                    : 'Review requests, track redemptions, and manage the perks store.'}
-                </Text>
-              </TouchableOpacity>
-              <View style={{ width: 52, height: 52, borderRadius: 18,
-                backgroundColor: isDark ? colors.amberLight : '#FDF3D8',
-                alignItems: 'center', justifyContent: 'center' }}>
-                <Coins size={28} color={isDark ? colors.amber : AMBER_TXT} strokeWidth={2} />
-              </View>
-            </View>
-          </View>
+          <PageHeading
+            eyebrow="FAMILY CUBE · REWARDS"
+            title={canRedeemSelf ? 'You earned a choice' : 'Family Rewards'}
+            subtitle={canRedeemSelf
+              ? "Spend your coins on perks you've earned."
+              : 'Review requests, track redemptions, and manage the perks store.'}
+            accent="amber"
+            Icon={Coins}
+            onTitlePress={onClose}
+            topInset={insets.top}
+          />
         )}
 
         <View style={{ paddingHorizontal: 20, paddingTop: 14, gap: 12 }}>

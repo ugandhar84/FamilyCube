@@ -222,6 +222,7 @@ export function KidNeedsYouSection({
   confirmedRide, rideCountdown, confirmedRideConflict, confirmedRideDispatched, awaitingDriverRide, activeTrips,
   active, members, colors, isDark, dismissedIds, onDismiss,
   onConfirmPickup, onSendDriverLate, lateNudgeSent, onOpenHistory,
+  hasChoresCard,
 }: {
   declinedRides: FamilyEvent[]; pendingRides: FamilyEvent[];
   declinedQuests: Quest[]; approvedQuests: Quest[];
@@ -248,6 +249,13 @@ export function KidNeedsYouSection({
   // [live-requested: "we can make the show history link in the empty
   // component"].
   onOpenHistory?: () => void;
+  // True when KidChoresNeedsYouCard (rendered just above this section) is
+  // already showing its own NEEDS YOU card — in that case this section's
+  // "Nothing needs you right now · Show history" empty-state link must
+  // stay hidden instead of appearing directly under an already-visible
+  // NEEDS YOU card, which read as contradictory
+  // ["ther is empty component for needs you when there is already acard"].
+  hasChoresCard?: boolean;
 }) {
   const filteredDeclinedRides = declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`));
   const filteredPendingRides  = pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`));
@@ -342,7 +350,7 @@ export function KidNeedsYouSection({
   // chores/cheers/replies above), just a quiet text link down to past
   // activity instead of an empty card shell.
   if (!hasAnything) {
-    if (!onOpenHistory) return null;
+    if (!onOpenHistory || hasChoresCard) return null;
     return (
       <Pressable onPress={onOpenHistory} style={{ paddingHorizontal: 16, marginTop: 10, marginBottom: 10 }}>
         <Text style={{ color: colors.textTertiary, fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
@@ -375,7 +383,13 @@ export function KidNeedsYouSection({
     // same stucture as the parent?"]. Row components themselves
     // (NeedsYouRow/NeedsYouRideRow/NeedsYouTripRow) keep their own
     // dismiss/press/state-machine logic untouched.
-    <View style={{ paddingHorizontal: 16, marginTop: 14, marginBottom: 14 }}>
+    // No marginBottom — KidActionGrid right below always supplies its own
+    // marginTop: 14, so adding a trailing margin here doubled the gap when
+    // this section is actually visible (and when it's hidden/empty,
+    // relying on ITS margin for the gap collapsed Quick Actions flush
+    // against whatever's above it instead) ["see this Quick actions
+    // stupid.. in teens view"].
+    <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
       <KidSectionHeader label="NEEDS YOU" accent={colors.pink} colors={colors} />
       <View style={{
         borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,

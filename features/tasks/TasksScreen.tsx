@@ -286,7 +286,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
   const [showJustDescribe, setShowJustDescribe] = useState(false);
   const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
-  const [justDescribeEventPrefill, setJustDescribeEventPrefill] = useState<{ date?: string; time?: string; text?: string }>({});
+  const [justDescribeEventPrefill, setJustDescribeEventPrefill] = useState<{ date?: string; time?: string; text?: string; auto?: boolean }>({});
   const [detailEvent, setDetailEvent] = useState<FamilyEvent | null>(null);
   const { deleteEvent } = useEventStore();
   useEffect(() => {
@@ -540,6 +540,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
         prefillDate={justDescribeEventPrefill.date}
         prefillTime={justDescribeEventPrefill.time}
         initialText={justDescribeEventPrefill.text}
+        autoOpenForm={justDescribeEventPrefill.auto}
         onClose={() => { setShowJustDescribeEvent(false); setJustDescribeEventPrefill({}); }}
       />
     );
@@ -561,7 +562,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
               // schedule" flow (same text, read again there) instead of a bottom-sheet form.
               const p = prefill as typeof manualEventPrefill;
               const [d, t] = (p?.startAt ?? '').split('T');
-              setJustDescribeEventPrefill({ text: p?.title, date: d || undefined, time: t ? t.slice(0, 5) : undefined });
+              setJustDescribeEventPrefill({ text: p?.title, date: d || undefined, time: t ? t.slice(0, 5) : undefined, auto: true });
               setShowJustDescribeEvent(true);
             }
           }, 350);

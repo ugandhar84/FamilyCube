@@ -155,6 +155,7 @@ export default function JustDescribeItEventScreen({
   prefillDate,
   prefillTime,
   initialText,
+  autoOpenForm,
   editEvent,
   backLabel,
 }: {
@@ -166,6 +167,8 @@ export default function JustDescribeItEventScreen({
   prefillTime?: string; // 'HH:MM'
   /** Text already typed elsewhere (e.g. detected as an event from Tasks' Just describe): starts in the box so it is read again here. */
   initialText?: string;
+  /** The caller already knows this is an event (e.g. detected in Tasks): open the event form as soon as the text is read. */
+  autoOpenForm?: boolean;
   // Nav-row back label — defaults to the original "Event"/"Schedule" pair
   // (Calendar/Tasks' own call sites) when omitted. HubScreen's "Schedule"
   // Quick Action passes its own label since closing here returns to Hub,
@@ -370,6 +373,15 @@ export default function JustDescribeItEventScreen({
     const d = detectLocalTask(input, members.map(m => ({ id: m.id, name: m.name, role: m.role })));
     setDetection(d);
   }, [input, members, isEdit]);
+
+  // Handed over from Tasks as a confirmed event: skip the describe step and show the filled-in event form straight away.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!autoOpenForm || autoOpened.current || isEdit || !detection) return;
+    autoOpened.current = true;
+    openInlineForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenForm, detection, isEdit]);
 
   // Keep pick-up locations mirrored as drop-off is filled (only when pick-up is enabled)
   useEffect(() => {

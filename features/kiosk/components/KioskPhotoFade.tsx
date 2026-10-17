@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, View, Text, type StyleProp, type ViewStyle } from 'react-native';
 import { useKioskPhotos } from '../useKioskPhotos';
 
-export function KioskPhotoFade({ intervalMs = 30_000, active = true, style, caption = false, fit = 'cover' }: {
+export function KioskPhotoFade({ intervalMs = 150_000, active = true, style, caption = false, fit = 'cover' }: {
   intervalMs?: number; active?: boolean; style?: StyleProp<ViewStyle>; caption?: boolean; fit?: 'cover' | 'contain';
 }) {
   const { photos } = useKioskPhotos();

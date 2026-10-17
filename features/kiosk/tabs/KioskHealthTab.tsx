@@ -751,18 +751,17 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         <>
           <Head title="Vaccines" right={<Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} />} />{whoRow}
           <View style={s.wrapRow}>{([['all', 'All'], ['pending', 'Pending'], ['done', 'Done'], ['due', 'Due soon']] as const).map(([key, t], i) => <Chip2 key={key} label={t} on={vaxStatus === key} onPress={() => setVaxStatus(key)} i={i} />)}</View>
-          <View style={s.grid}>
+          <View style={{ gap: 8 }}>
             {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No vaccines match.</Text> : l.map((v, i) => {
               const tone = pastels[i % 4];
               return (
-                <Pressable key={v.id} onPress={() => setOpenVax(v)} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vc, { backgroundColor: tone.col, borderColor: tone.card }]}>
-                  <View style={s.mcTop}>
-                    <KioskAvatar name={nameOf(v.member_id)} size={32} bgColor={tone.card} k={k} />
-                    <View style={{ flex: 1, minWidth: 0 }}><Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{v.title}</Text><Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{nameOf(v.member_id)}{v.date ? ` · ${fmtDateDisplay(new Date(v.date + 'T00:00:00'))}` : ''}</Text></View>
-                    <Pill2 t={v.done ? 'Done' : 'Pending'} tone={v.done ? 'g' : 'a'} />
-                  </View>
-                  <View style={[s.bar, { backgroundColor: k.card, height: 8 }]}><View style={{ width: `${(v.series_current / Math.max(1, v.series_total)) * 100}%`, height: '100%', borderRadius: 4, backgroundColor: k.sage }} /></View>
-                  <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>Dose {v.series_current}/{v.series_total}{v.next_due_date ? ` · due ${fmtDateDisplay(new Date(v.next_due_date + 'T00:00:00'))}` : ''}</Text>
+                <Pressable key={v.id} onPress={() => setOpenVax(v)} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vrow, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                  <KioskAvatar name={nameOf(v.member_id)} size={32} bgColor={tone.card} k={k} />
+                  <View style={{ flex: 1.4, minWidth: 0 }}><Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{v.title}</Text><Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{nameOf(v.member_id)}</Text></View>
+                  <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.date ? fmtDateDisplay(new Date(v.date + 'T00:00:00')) : 'Not given yet'}</Text>
+                  <Text style={[s.sm, { color: k.textMuted, width: 90 }]}>Dose {v.series_current}/{v.series_total}</Text>
+                  <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.next_due_date ? `Due ${fmtDateDisplay(new Date(v.next_due_date + 'T00:00:00'))}` : ''}</Text>
+                  <Pill2 t={v.done ? 'Done' : 'Pending'} tone={v.done ? 'g' : 'a'} />
                 </Pressable>
               );
             })}
@@ -945,6 +944,7 @@ const s = StyleSheet.create({
   recIc: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   hero: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, borderRadius: 26, borderWidth: 1.5, padding: 16 },
   heroIc: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  vrow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8, minHeight: 56 },
   vc: { flexGrow: 1, flexBasis: 230, maxWidth: '33%', borderRadius: 18, borderWidth: 1.5, padding: 10, gap: 6 },
   tg: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
   eb: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1 },

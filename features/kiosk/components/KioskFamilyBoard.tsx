@@ -43,7 +43,7 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent, onOpenCh
     ])).start();
     Animated.timing(grow, { toValue: 1, duration: 700, delay: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, [pulse, grow]);
-  useEffect(() => { const t = setTimeout(() => ref.current?.scrollTo({ y: Math.max(0, ((nowMin / 60) - H0 - 2) * HH), animated: true }), 450); return () => clearTimeout(t); }, [nowMin]);
+  useEffect(() => { const t = setTimeout(() => ref.current?.scrollTo({ y: Math.min(Math.max(0, ((nowMin / 60) - H0 - 2) * HH), HOURS * HH), animated: true }), 450); return () => clearTimeout(t); }, [nowMin]);
 
   const cols = useMemo(() => people.map((m, i) => {
     const ev = events.filter(e => !e.allDay && e.time && [e.memberId, ...(e.memberIds ?? [])].includes(m.id));
@@ -94,8 +94,8 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent, onOpenCh
               })}
             </View>
           ))}
-          {nowMin >= H0 * 60 && nowMin <= (H0 + HOURS) * 60 && (
-            <View pointerEvents="none" style={[s.nowWrap, { top: top(nowMin) }]}>
+          {(
+            <View pointerEvents="none" style={[s.nowWrap, { top: Math.min(Math.max(top(nowMin), 11), HOURS * HH - 11) }]}>
               <Animated.View style={[s.nowPill, { backgroundColor: k.primary, opacity: grow, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] }) }] }]}>
                 <Text style={[s.nowT, { color: k.onPrimary }]}>{fmt12(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)}</Text>
               </Animated.View>

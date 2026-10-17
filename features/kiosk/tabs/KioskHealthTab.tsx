@@ -377,10 +377,16 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         try {
           const ext = file.name.split('.').pop() ?? 'bin';
           const path = `${familyId}/${memberId}/${Date.now()}.${ext}`;
-          const blob = await fetch(file.uri).then(r => r.blob());
+          // Read the bytes with the file system, not fetch().blob(): on React Native a Blob can upload as 0 bytes
+          // (the phone's Records tab already works around this the same way).
+          const FS = await import('expo-file-system/legacy');
+          const b64 = await FS.readAsStringAsync(file.uri, { encoding: 'base64' as any });
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           const { data: up, error: upErr } = await supabase.storage
             .from('medical-records')
-            .upload(path, blob, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+            .upload(path, bytes, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
           if (upErr) console.warn('[KioskHealthTab] addRecord upload failed:', upErr);
           else if (up) { file_path = up.path; file_name = file.name; file_size = file.size ?? null; }
         } catch (uploadErr) {

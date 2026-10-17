@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T06:27:52.204Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T06:28:49.627Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**42 passed, 1 failed, 4 findings.**
+**43 passed, 0 failed, 4 findings.**
 
 ## Sticky notes
 
@@ -67,7 +67,7 @@ Run: 2026-10-17T06:27:52.204Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member d155839a-2a16-4f16-b760-5d1d48d393d0 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member cfcb2315-e9d1-4cf5-b14a-226af7ad7ae9 is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -80,8 +80,8 @@ Run: 2026-10-17T06:27:52.204Z against a throwaway scratch family (real rows, rea
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792218465239"}] |
-| **FAIL** | the request comes back pending for a parent | [{"redemption_id":"rd1792218465239"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792218522711"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792218522711"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |

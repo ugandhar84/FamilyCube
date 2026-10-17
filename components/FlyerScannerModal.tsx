@@ -279,6 +279,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         date:     event.date ?? dateToStr(new Date()),
         time:     event.time ?? undefined,
         endTime:  event.end_time ?? undefined,
+        allDay:   !event.time && !event.end_time ? true : undefined,
         category: event.category,
         location: event.location ?? undefined,
         notes:    [event.description, event.notes, event.recurrence_desc].filter(Boolean).join(' · ') || undefined,
@@ -357,6 +358,8 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         date:     ev.date ?? dateToStr(new Date()),
         time:     ev.time ?? undefined,
         endTime:  ev.end_time ?? undefined,
+        // No start or end time on the flyer means a whole-day entry.
+        allDay:   !ev.time && !ev.end_time ? true : undefined,
         category: ev.category,
         location: ev.location ?? undefined,
         notes:    ev.notes ?? undefined,

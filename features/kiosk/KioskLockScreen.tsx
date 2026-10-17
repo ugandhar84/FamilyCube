@@ -37,7 +37,6 @@ import { useKioskColors } from './kioskPalette';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { KioskPhotoFade } from './components/KioskPhotoFade';
-import { useIsNight } from './useIsNight';
 import { useKioskWeather } from './useKioskWeather';
 import { useKioskMeals, todayMealDay } from './useKioskMeals';
 
@@ -60,17 +59,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const weather = useKioskWeather();
-  const isNight = useIsNight();
-  // A touch brightens the screen to normal; it dims again after 30s without one.
-  const [awake, setAwake] = useState(false);
-  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wake = () => {
-    setAwake(true);
-    if (wakeTimer.current) clearTimeout(wakeTimer.current);
-    wakeTimer.current = setTimeout(() => setAwake(false), 30_000);
-  };
-  useEffect(() => () => { if (wakeTimer.current) clearTimeout(wakeTimer.current); }, []);
-  const night = isNight && !awake;
+
   const { meals } = useKioskMeals();
   const [now, setNow] = useState(new Date());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -102,7 +91,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 
   const leftCol = (
     <View style={[s.left, !wide && s.leftNarrow]}>
-      <KioskPhotoFade active={!night} caption style={{ flex: 1, minHeight: 320, borderRadius: 26 }} />
+      <KioskPhotoFade caption style={{ flex: 1, minHeight: 320, borderRadius: 26 }} />
       {nextMeal && (
         <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
           <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT SHARED MEAL</Text>
@@ -210,15 +199,13 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 
   return (
     <Modal supportedOrientations={['portrait', 'landscape']} visible transparent={false} animationType="fade">
-      <View style={[s.root, { backgroundColor: canvas }]} onTouchStart={wake}>
+      <View style={[s.root, { backgroundColor: canvas }]}>
         <SafeAreaView style={s.safe}>
           <ScrollView contentContainerStyle={[s.content, wide && s.contentWide]} showsVerticalScrollIndicator={false}>
             {leftCol}
             {rightCol}
           </ScrollView>
         </SafeAreaView>
-        {/* Quiet hours: dim the whole lock screen (touches still pass through). */}
-        {night && <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.62)' }]} />}
       </View>
 
       <PinEntryModal

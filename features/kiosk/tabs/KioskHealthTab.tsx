@@ -384,9 +384,11 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           const bin = atob(b64);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const { encryptFileBytes } = await import('@/lib/fileCrypto');
+          const sealed = await encryptFileBytes(familyId, bytes);
           const { data: up, error: upErr } = await supabase.storage
             .from('medical-records')
-            .upload(path, bytes, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+            .upload(path, sealed, { contentType: 'application/octet-stream', upsert: false });
           if (upErr) console.warn('[KioskHealthTab] addRecord upload failed:', upErr);
           else if (up) { file_path = up.path; file_name = file.name; file_size = file.size ?? null; }
         } catch (uploadErr) {
@@ -652,13 +654,8 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     if (!r.file_path) return;
     setDownloading(true);
     try {
-      const { data, error } = await supabase.storage.from('medical-audio').createSignedUrl(r.file_path, 120);
-      if (error || !data?.signedUrl) throw new Error(error?.message ?? 'no link');
-      const FileSystem = await import('expo-file-system/legacy');
-      const Sharing = await import('expo-sharing');
-      const dest = `${FileSystem.cacheDirectory}${(r.file_name ?? 'visit.m4a').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      await FileSystem.downloadAsync(data.signedUrl, dest);
-      await Sharing.shareAsync(dest);
+      const { downloadVisitAudio } = await import('@/features/vault/records/recordsDownload');
+      await downloadVisitAudio(r);
     } catch (e: any) { showToast('Download failed: ' + (e?.message ?? 'please try again')); }
     finally { setDownloading(false); }
   };
@@ -874,7 +871,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   <View style={[s.recIc, { backgroundColor: tone.card }]}><Text style={{ fontSize: 22 }}>{tg[2]}</Text></View>
                   <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
                     <Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{r.title}</Text>
-                    <View style={s.wrapRow}><Pill2 t={tg[1]} /><Pill2 t={nameOf(r.member_id)} /><Pill2 t={fmtDateDisplay(new Date(r.record_date + 'T00:00:00'))} /><Pill2 t="🔒 Encrypted" tone="g" />{urg && urg !== 'routine' && <Pill2 t={urg === 'urgent' ? 'Urgent' : 'Attention'} tone={urg === 'urgent' ? 'r' : 'a'} />}</View>
+                    <View style={s.wrapRow}><Pill2 t={tg[1]} /><Pill2 t={nameOf(r.member_id)} /><Pill2 t={fmtDateDisplay(new Date(r.record_date + 'T00:00:00'))} /><Pill2 t="🔒 File & summary encrypted" tone="g" />{urg && urg !== 'routine' && <Pill2 t={urg === 'urgent' ? 'Urgent' : 'Attention'} tone={urg === 'urgent' ? 'r' : 'a'} />}</View>
                     {!!r.ai_summary && <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={3}>AI SUMMARY · {r.ai_summary}</Text>}
                   </View>
                 </Pressable>
@@ -990,7 +987,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
                   <Text style={[s.sm, { color: k.textMuted }]}>{openRec.file_path ? '🎙️ The raw audio is kept until the summary is approved.' : '🎙️ The raw audio was removed once the summary was approved. Only the encrypted summary is kept.'}</Text>
                 </View>
               )}
-              <View style={s.wrapRow}><Pill2 t="🔒 Encrypted" tone="g" />{a?.urgency && <Pill2 t={a.urgency === 'urgent' ? 'Urgent' : a.urgency === 'attention' ? 'Attention' : 'Routine'} tone={a.urgency === 'urgent' ? 'r' : a.urgency === 'attention' ? 'a' : undefined} />}</View>
+              <View style={s.wrapRow}><Pill2 t="🔒 File & summary encrypted" tone="g" />{a?.urgency && <Pill2 t={a.urgency === 'urgent' ? 'Urgent' : a.urgency === 'attention' ? 'Attention' : 'Routine'} tone={a.urgency === 'urgent' ? 'r' : a.urgency === 'attention' ? 'a' : undefined} />}</View>
               {!!openRec.ai_summary && <><Text style={[s.eb, { color: k.purple }]}>AI SUMMARY</Text><View style={[s.tg, { backgroundColor: k.pastelLav }]}><Text style={[s.dName, { color: k.text }]}>{openRec.ai_summary}</Text></View></>}
               {find.length > 0 && <><Text style={[s.eb, { color: k.gold }]}>KEY FINDINGS</Text>{find.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelAmber }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
               {fu.length > 0 && <><Text style={[s.eb, { color: k.sage }]}>FOLLOW-UP ACTIONS</Text>{fu.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelSage }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}

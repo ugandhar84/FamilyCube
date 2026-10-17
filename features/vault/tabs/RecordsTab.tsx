@@ -188,9 +188,12 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         const bytes  = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         console.log('[RecordsTab] read file bytes — length:', bytes.byteLength, 'path:', path);
+        // Encrypt with the family key before it leaves the device.
+        const { encryptFileBytes } = await import('@/lib/fileCrypto');
+        const sealed = await encryptFileBytes(familyId, bytes);
         const { data: up, error: upErr } = await supabase.storage
           .from('medical-records')
-          .upload(path, bytes, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+          .upload(path, sealed, { contentType: 'application/octet-stream', upsert: false });
         if (upErr) {
           // Was silently swallowed — a failed storage upload still inserted
           // the record with file_path: null, no error surfaced anywhere
@@ -380,7 +383,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     try {
       const { data: fnData, error } = await supabase.functions.invoke(
         isVisitRecording ? 'analyze-appointment-recording' : 'analyze-medical-record',
-        { body: { record_id: rec.id, member_name: memberName(rec.member_id) } },
+        { body: { record_id: rec.id, member_name: memberName(rec.member_id), family_keys: await (await import('@/lib/fileCrypto')).familyKeysForAnalysis(familyId) } },
       );
       if (error) {
         // FunctionsHttpError wraps a non-2xx response. The Supabase JS client

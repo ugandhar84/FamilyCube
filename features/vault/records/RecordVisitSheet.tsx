@@ -202,7 +202,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     (isReanalyze ? setReanalyzing : setAnalyzing)(true);
     try {
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('analyze-appointment-recording', {
-        body: { record_id: rec.id, member_name: memberName },
+        body: { record_id: rec.id, member_name: memberName, family_keys: await (await import('@/lib/fileCrypto')).familyKeysForAnalysis(familyId) },
       });
       if (fnErr) throw new Error(fnErr.message);
       if (fnData?.error) throw new Error(fnData.error);
@@ -324,7 +324,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       }
       const { data: up, error: upErr } = await supabase.storage
         .from('medical-audio')
-        .upload(fileName, bytes.buffer, { contentType: 'audio/mp4', upsert: false });
+        .upload(fileName, (await (await import('@/lib/fileCrypto')).encryptFileBytes(familyId, bytes)), { contentType: 'application/octet-stream', upsert: false });
       if (upErr || !up) throw new Error(upErr?.message ?? 'Upload failed');
       // The recording is safely in storage now; drop the temporary copy on this phone.
       FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
@@ -580,7 +580,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
               </Text>
 
               <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 12, lineHeight: 17 }}>
-                The audio is stored privately until you approve the summary, then it is deleted. Only the encrypted summary is kept. Audio left unsubmitted is deleted after 7 days.
+                The audio is encrypted with your family code and stored privately until you approve the summary, then it is deleted. Only the encrypted summary is kept. Unsubmitted audio is deleted after 7 days. If you lose the family data recovery key, everything will be lost.
               </Text>
 
               {elapsed >= WARNING_AT_SECS && (
@@ -633,7 +633,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 </Text>
               </View>
               <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 12, lineHeight: 17 }}>
-                The audio is stored privately until you approve the summary, then it is deleted. Only the encrypted summary is kept. Audio left unsubmitted is deleted after 7 days.
+                The audio is encrypted with your family code and stored privately until you approve the summary, then it is deleted. Only the encrypted summary is kept. Unsubmitted audio is deleted after 7 days. If you lose the family data recovery key, everything will be lost.
               </Text>
               <TouchableOpacity onPress={startRecording}
                 style={{ width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>

@@ -151,7 +151,7 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
         }}>
           <Shield size={13} color={k.blue} />
           <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.blue, fontWeight: '700', flex: 1 }}>
-            Encrypted · protected by your family vault · never shared externally
+            Files are encrypted with your family code before upload. If you lose the family data recovery key, everything will be lost. AI scanning sends the document to our AI provider to read it.
           </Text>
         </View>
 
@@ -246,7 +246,7 @@ export function KioskAddRecordForm({ visible, onClose, onSave, colors, isDark, m
         )}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: KIOSK_SPACE.md }}>
           <Lock size={11} color={k.textFaint} />
-          <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textFaint }}>Encrypted at rest · accessible only within your vault</Text>
+          <Text style={{ fontSize: KIOSK_TYPO.micro, color: k.textFaint }}>Encrypted with your family code · lose the recovery key and it cannot be recovered</Text>
         </View>
 
         {/* Notes */}

@@ -14,20 +14,23 @@ import * as Sharing    from 'expo-sharing';
 import JSZip           from 'jszip';
 import { supabase }    from '@/lib/supabase';
 import type { MedRecord } from './types';
+import { decryptFileBytes } from '@/lib/fileCrypto';
 
-async function signedUrl(filePath: string): Promise<string> {
+async function signedUrl(filePath: string, bucket: 'medical-records' | 'medical-audio' = 'medical-records'): Promise<string> {
   const { data, error } = await supabase.storage
-    .from('medical-records')
+    .from(bucket)
     .createSignedUrl(filePath, 120);
   if (error || !data?.signedUrl) throw new Error(`Could not create download link: ${error?.message ?? 'unknown'}`);
   return data.signedUrl;
 }
 
-async function downloadBytesViaUrl(filePath: string): Promise<ArrayBuffer> {
-  const url = await signedUrl(filePath);
+async function downloadBytesViaUrl(filePath: string, familyId: string, bucket: 'medical-records' | 'medical-audio' = 'medical-records'): Promise<ArrayBuffer> {
+  const url = await signedUrl(filePath, bucket);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
-  return res.arrayBuffer();
+  // Files are stored encrypted with the family key; older uploads are plain and pass through.
+  const plain = await decryptFileBytes(familyId, new Uint8Array(await res.arrayBuffer()));
+  return plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer;
 }
 
 function ext(rec: MedRecord): string {
@@ -57,16 +60,13 @@ function safeName(rec: MedRecord, idx?: number): string {
 export async function downloadSingle(rec: MedRecord): Promise<void> {
   if (!rec.file_path) throw new Error('No file attached to this record');
 
-  const url  = await signedUrl(rec.file_path);
   const name = safeName(rec);
   const uri  = (FileSystem.cacheDirectory ?? '') + name;
 
-  // Use native fetch → arrayBuffer → base64 → write.
+  // Use native fetch → arrayBuffer → decrypt → base64 → write.
   // FileSystem.downloadAsync returns 200 + 0 bytes for Supabase signed URLs
   // because it doesn't follow the storage redirect properly.
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
-  const buf = await res.arrayBuffer();
+  const buf = await downloadBytesViaUrl(rec.file_path, rec.family_id);
   if (buf.byteLength === 0) throw new Error('Downloaded file is empty — storage may still be syncing, please retry');
   const bytes = new Uint8Array(buf);
   let binary = '';
@@ -78,6 +78,18 @@ export async function downloadSingle(rec: MedRecord): Promise<void> {
   await Sharing.shareAsync(uri, { mimeType: mimeFor(name), dialogTitle: rec.title });
 }
 
+/** A visit recording's raw audio (medical-audio bucket), decrypted, handed to the share sheet. */
+export async function downloadVisitAudio(rec: MedRecord): Promise<void> {
+  if (!rec.file_path) throw new Error('No audio attached to this visit');
+  const buf = await downloadBytesViaUrl(rec.file_path, rec.family_id, 'medical-audio');
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  const uri = (FileSystem.cacheDirectory ?? '') + (rec.file_name ?? 'visit.m4a').replace(/[^a-zA-Z0-9._-]/g, '_');
+  await FileSystem.writeAsStringAsync(uri, btoa(binary), { encoding: FileSystem.EncodingType.Base64 });
+  await Sharing.shareAsync(uri, { mimeType: 'audio/mp4', dialogTitle: rec.title });
+}
+
 export async function downloadZip(recs: MedRecord[], zipName = 'medical-records.zip'): Promise<void> {
   const zip       = new JSZip();
   const usedNames = new Set<string>();
@@ -87,7 +99,7 @@ export async function downloadZip(recs: MedRecord[], zipName = 'medical-records.
       let name = safeName(rec, idx);
       if (usedNames.has(name)) name = `${idx + 1}_${name}`;
       usedNames.add(name);
-      const buf = await downloadBytesViaUrl(rec.file_path!);
+      const buf = await downloadBytesViaUrl(rec.file_path!, rec.family_id);
       zip.file(name, buf);
     }),
   );

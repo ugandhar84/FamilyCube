@@ -294,9 +294,16 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
         <View style={s.infoCard}>
           <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
           <Text style={s.infoText}>
-            Chat messages and medical records are encrypted with one security code shared by your whole
-            family. The code lives only on your devices — not on our servers — so there's no "forgot code"
-            reset. If every copy is lost, that history can't be recovered on a device that never had it.
+            Chat messages, medical documents, visit recordings and AI summaries are encrypted with one security code
+            shared by your whole family. The code lives only on your devices, not on our servers, so there is no
+            "forgot code" reset.
+          </Text>
+        </View>
+        <View style={[s.infoCard, { borderColor: colors.danger }]}>
+          <Ionicons name="warning-outline" size={20} color={colors.danger} />
+          <Text style={[s.infoText, { color: colors.danger, fontWeight: '800' }]}>
+            If you lose the family data recovery key, everything will be lost. Chats, documents and summaries
+            cannot be recovered by us or by anyone else. Keep a copy of the code somewhere safe.
           </Text>
         </View>
 

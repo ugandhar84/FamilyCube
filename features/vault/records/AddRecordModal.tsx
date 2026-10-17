@@ -169,7 +169,7 @@ export default function AddRecordModal({
       <View style={[s.vaultBadge, { backgroundColor: colors.teal + '12' }]}>
         <Shield size={12} color={colors.teal} />
         <Text style={{ fontSize: 11, color: colors.teal, fontWeight: '700', flex: 1 }}>
-          Encrypted · protected by your family vault · never shared externally
+          Files are encrypted with your family code before upload. If you lose the family data recovery key, everything will be lost. AI scanning sends the document to our AI provider to read it.
         </Text>
       </View>
 
@@ -277,7 +277,7 @@ export default function AddRecordModal({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
           <Lock size={10} color={colors.textTertiary} />
           <Text style={{ fontSize: 10, color: colors.textTertiary }}>
-            Encrypted at rest · accessible only within your vault
+            Encrypted with your family code · lose the recovery key and it cannot be recovered
           </Text>
         </View>
       </View>

@@ -14,6 +14,7 @@
 // Deploy: supabase functions deploy analyze-appointment-recording
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { decryptStoredFile } from '../_shared/fileDecrypt.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CORS = {
@@ -175,9 +176,10 @@ serve(async (req) => {
   const svcClient = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
   try {
-    const { record_id, member_name = 'Patient' } = await req.json() as {
+    const { record_id, member_name = 'Patient', family_keys } = await req.json() as {
       record_id: string;
       member_name?: string;
+      family_keys?: string[];
     };
     if (!record_id) return json({ error: 'record_id is required' }, 400);
 
@@ -237,7 +239,9 @@ serve(async (req) => {
                      : 'audio/mp4'; // expo-audio's RecordingPresets.HIGH_QUALITY output on both platforms
 
       const buf  = await fileBytes.arrayBuffer();
-      const b64  = toBase64(new Uint8Array(buf));
+      // Files are stored encrypted with the family key; the caller sends the key for this request only.
+      const plain = await decryptStoredFile(new Uint8Array(buf), family_keys);
+      const b64  = toBase64(plain);
       const mediaParts: GeminiMediaPart[] = [{ inlineData: { mimeType, data: b64 } }];
       rawText = await callGemini(contextPrompt, mediaParts);
     } catch (audioErr: any) {

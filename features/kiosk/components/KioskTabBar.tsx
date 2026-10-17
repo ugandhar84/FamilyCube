@@ -5,7 +5,7 @@
  * behind a "More" button that opens a small grid above the bar. Role tab
  * order and availability still come from kioskTabs.railForRole.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { MoreHorizontal } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
@@ -14,11 +14,15 @@ import type { KioskRailItem, KioskTabKey } from '../kioskTabs';
 
 const BAR_SLOTS = 6;
 
-export function KioskTabBar({ items, active, onSelect, badges }: {
+export function KioskTabBar({ items, active, onSelect, badges, leading, trailing }: {
   items: KioskRailItem[];
   active: KioskTabKey;
   onSelect: (tab: KioskTabKey) => void;
   badges?: Partial<Record<KioskTabKey, number>>;
+  /** Rendered before the first tab (the avatar / system-menu button). */
+  leading?: ReactNode;
+  /** Rendered after the last tab (clock + weather). */
+  trailing?: ReactNode;
 }) {
   const { k } = useKioskColors();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -75,6 +79,7 @@ export function KioskTabBar({ items, active, onSelect, badges }: {
           })}
         </View>
       )}
+      {leading}
       {main.map(it => renderTab(it, active === it.key, () => select(it.key), badges?.[it.key]))}
       {needMore && renderTab(
         { key: 'profile' as KioskTabKey, label: 'More', Icon: MoreHorizontal as any },
@@ -82,6 +87,7 @@ export function KioskTabBar({ items, active, onSelect, badges }: {
         () => setMoreOpen(o => !o),
         moreBadge,
       )}
+      {trailing}
     </View>
   );
 }

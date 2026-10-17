@@ -51,7 +51,8 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import AskCubeChat from '@/components/AskCubeChat';
-import { KioskHeader } from './KioskHeader';
+import { KioskSystemMenu } from './components/KioskSystemMenu';
+import { KioskBarProfile, KioskBarClock } from './components/KioskBarExtras';
 import { KioskLockScreen } from './KioskLockScreen';
 import { KioskAmbientOverlay, type AmbientNextUp } from './KioskAmbientOverlay';
 import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
@@ -112,6 +113,7 @@ export default function KioskScreen() {
   // aalready have it in the static side bar we can add that fuctionality
   // long press"].
   const [showEditMyProfile, setShowEditMyProfile] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // The kitchen display is landscape-only; restore free rotation on unmount.
   useEffect(() => {
@@ -343,17 +345,6 @@ export default function KioskScreen() {
           />
         )}
 
-        <KioskHeader
-          members={members}
-          activeId={active.id}
-          onSwitch={setActiveMember}
-          onIntercom={() => setIntercomOpen(true)}
-          onLock={lockNow}
-          onNavigate={setTab}
-          onAskFam={isParent ? () => setAskCubeOpen(true) : undefined}
-          onEditProfile={() => setShowEditMyProfile(true)}
-        />
-
         <View style={s.row}>
           {/* Self-service name/DOB/email/avatar edit — same real sheet
               ProfileSettingsScreen.tsx's own (now kiosk-hidden) hero card
@@ -418,7 +409,24 @@ export default function KioskScreen() {
           </View>
         </View>
 
-        <KioskTabBar items={rail} active={effectiveTab} onSelect={setTab} badges={tabBadges} />
+        <KioskTabBar
+          items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setTab(t); }} badges={tabBadges}
+          leading={<KioskBarProfile member={active} open={menuOpen} onPress={() => setMenuOpen(o => !o)} />}
+          trailing={<KioskBarClock />}
+        />
+
+        <KioskSystemMenu
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          members={members}
+          activeId={active.id}
+          onSwitch={setActiveMember}
+          onIntercom={() => setIntercomOpen(true)}
+          onLock={lockNow}
+          onNavigate={setTab}
+          onAskFam={isParent ? () => setAskCubeOpen(true) : undefined}
+          onEditProfile={() => setShowEditMyProfile(true)}
+        />
 
         {/* ── Overlays ──────────────────────────────────────────────── */}
 

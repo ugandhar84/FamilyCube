@@ -106,8 +106,9 @@ export function useParentEventClassification(
   // name is a reliable signal "this slot was filled and is now open again"
   // — catch it here regardless of category/location.
   const pendingRideRequiredEvents = unassigned.filter(e =>
+    // Only events where someone chose a drop-off or pick-up (rideRequired) or already has a driver/helper. An
+    // appointment at an address that a parent just attends themselves is not a ride, so it is not listed here.
     e.rideRequired
-    || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
     || !!e.helperId || !!e.driverId
   );
   // pending_approval and pending_grandparent_approval both collapse to the

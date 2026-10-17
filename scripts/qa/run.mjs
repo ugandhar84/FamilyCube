@@ -177,6 +177,32 @@ try {
   check(G, 'a kid’s own task that pays coins is not personal', flagOf(coinTask.choreId) === false, String(flagOf(coinTask.choreId)));
   check(G, 'a parent-assigned task is not personal', flagOf(trusted.choreId) === false, String(flagOf(trusted.choreId)));
 
+  /* ───────── Tasks: adversarial checks ───────── */
+  const TK = 'Tasks';
+  const tq = await call({ action: 'add_quest', familyId: F, title: 'QA adversarial task', isPool: false, assignedToId: mia, status: 'todo', coins: 20, dueDate: new Date().toISOString().slice(0, 10), dueTime: '18:00' });
+  const tId = tq.choreId ?? tq.id;
+  check(TK, 'a task for a kid is created', !!tId, JSON.stringify(tq).slice(0, 120));
+  r = await rpc(zane, 'submit_chore', { p_chore_id: tId, p_member_id: zane, p_note: 'not mine' });
+  check(TK, 'another kid cannot submit a task assigned to someone else', !r.ok, r.error ?? 'submitted');
+  r = await rpc(zane, 'submit_chore', { p_chore_id: tId, p_member_id: mia, p_note: 'as mia' });
+  check(TK, 'a kid cannot submit a task pretending to be the assignee', !r.ok, r.error ?? 'submitted');
+  r = await as(mia, 'chore_tasks', 'update', { row: { coins: 999 }, match: { id: tId } });
+  check(TK, 'a kid cannot raise the coins on their own task', !r.ok || rows(r).length === 0 || rows(r)[0]?.coins !== 999, r.error ?? JSON.stringify(rows(r)[0]?.coins));
+  r = await as(mia, 'chore_tasks', 'update', { row: { status: 'approved' }, match: { id: tId } });
+  check(TK, 'a kid cannot mark their own task approved directly', !r.ok || rows(r).length === 0 || rows(r)[0]?.status !== 'approved', r.error ?? rows(r)[0]?.status);
+  r = await as(mia, 'chore_tasks', 'delete', { match: { id: tId } });
+  check(TK, 'a kid cannot delete a parent’s task', !r.ok || rows(r).length === 0, r.error ?? `deleted ${rows(r).length}`);
+  r = await as(zane, 'chore_tasks', 'select', { match: { id: tId } });
+  check(TK, 'a task is readable by family members', rows(r).length === 1, r.error ?? rows(r).length);
+  r = await rpc(mia, 'submit_chore', { p_chore_id: tId, p_member_id: mia, p_note: 'done' });
+  check(TK, 'the assignee submits it', r.ok, r.error);
+  r = await rpc(mia, 'approve_chore', { p_chore_id: tId, p_reviewer_id: mia });
+  check(TK, 'the assignee cannot approve their own submission', !r.ok, r.error ?? 'approved');
+  r = await rpc(alex, 'approve_chore', { p_chore_id: tId, p_reviewer_id: sarah });
+  check(TK, 'a parent cannot approve in another parent’s name', !r.ok, r.error ?? 'approved');
+  r = await rpc(sarah, 'approve_chore', { p_chore_id: tId, p_reviewer_id: sarah });
+  check(TK, 'the other parent approves it', r.ok, r.error);
+
   /* ───────── Rewards ───────── */
   const H = 'Rewards';
   await call({ action: 'set_coins', familyId: F, memberId: mia, mainCoins: 100 });

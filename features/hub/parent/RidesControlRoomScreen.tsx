@@ -14,6 +14,7 @@ import { useLiveTripEta } from '@/lib/hooks/useLiveTripEta';
 import { GEMINI } from '@/constants/geminiRhythm';
 import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
 import { fmtTime } from '@/features/hub/hubUtils';
+import { LocationLink } from '@/features/calendar/components/EventCard';
 
 type FilterKey = 'active' | 'upcoming' | 'history';
 
@@ -166,8 +167,15 @@ function EventCard({ event, members, onDispatch, onOpen }: {
   // Times are always 12-hour ("4:45 PM"), never the stored 24-hour "16:45".
   const when = event.time ? fmtTime(event.time) : '';
   const explanation = driverId
-    ? `${driver?.name?.split(' ')[0] ?? 'A driver'} is confirmed${when ? ` for ${when}` : ''}${event.location ? ` at ${event.location}` : ''}.`
-    : `No driver yet${when ? ` — ${when}` : ''}${event.location ? ` at ${event.location}` : ''}. Set one up before it's needed.`;
+    ? `${driver?.name?.split(' ')[0] ?? 'A driver'} is confirmed${when ? ` for ${when}` : ''}.`
+    : `No driver yet${when ? ` — ${when}` : ''}. Set one up before it's needed.`;
+  // "Sat, Oct 17" — weekday and date, so a list of rides reads as a schedule.
+  const dayLabel = (() => {
+    if (!event.date) return '';
+    const [y, m, d] = event.date.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  })();
+  const metaColor = isDark ? colors.textSecondary : GEMINI.bodyColor;
 
   return (
     <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${event.title}, open details`}
@@ -188,6 +196,12 @@ function EventCard({ event, members, onDispatch, onOpen }: {
         <View style={{ backgroundColor: statusBg, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text style={{ fontSize: 11, fontWeight: '600', color: statusColor }}>{statusLabel}</Text>
         </View>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 14, rowGap: 6 }}>
+        {!!dayLabel && (
+          <Text style={{ fontSize: 13, fontWeight: '700', color: metaColor }}>📅 {dayLabel}{when ? ` · ${when}` : ''}</Text>
+        )}
+        {!!event.location && <LocationLink addr={event.location} color={colors.sky} fontSize={13} />}
       </View>
       <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 18 }}>
         {explanation}

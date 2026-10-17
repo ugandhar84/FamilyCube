@@ -54,7 +54,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications', 'family_vaccines', 'medical_records', 'family_memories', 'member_locations', 'calendar_events', 'kid_requests', 'chat_channels', 'chat_messages']);
+const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications', 'family_vaccines', 'medical_records', 'family_memories', 'member_locations', 'calendar_events', 'kid_requests', 'chat_channels', 'chat_messages', 'chore_tasks']);
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',

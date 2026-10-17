@@ -948,7 +948,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, acti
     { id: viewerMember?.id ?? '', name: activeName ?? '', role: viewerMember?.role ?? 'parent', hasCar: viewerMember?.hasCar },
     { isPast },
   );
-  const helperMissing  = !assignee.name && !!ev.location && !isWork && !isHomeLocation(ev.location);
+  const helperMissing  = !assignee.name && !!ev.rideRequired && !!ev.location && !isWork && !isHomeLocation(ev.location);
   const helperPending  = assignee.status === 'pending';
   const helperRejected = assignee.status === 'rejected';
   const hadPriorHelper = !!assignee.name;

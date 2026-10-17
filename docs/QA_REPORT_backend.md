@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T17:15:39.254Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T17:28:04.882Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**131 passed, 0 failed, 1 findings.**
+**142 passed, 0 failed, 1 findings.**
 
 ## Sticky notes
 
@@ -74,7 +74,7 @@ Run: 2026-10-17T17:15:39.254Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 45f9701b-da1f-4be4-8b8e-dfddba040f07 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member a85956a7-473f-4621-92a6-1a2a6dac4edb is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -89,12 +89,28 @@ Run: 2026-10-17T17:15:39.254Z against a throwaway scratch family (real rows, rea
 | PASS | a kid’s own task that pays coins is not personal | false |
 | PASS | a parent-assigned task is not personal | false |
 
+## Tasks
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a task for a kid is created | {"ok":true,"choreId":"qa_scratch_ch_3167b917"} |
+| PASS | another kid cannot submit a task assigned to someone else | member a85956a7-473f-4621-92a6-1a2a6dac4edb is not the assignee of chore qa_scratch_ch_3167b917 |
+| PASS | a kid cannot submit a task pretending to be the assignee | caller is not member 1f9b6c9e-4396-49f0-847a-9a583b458f91 |
+| PASS | a kid cannot raise the coins on their own task | Could not find the 'coins' column of 'chore_tasks' in the schema cache |
+| PASS | a kid cannot mark their own task approved directly | A child/teenager cannot approve their own chore — requires a parent or an active temporary-approver grant. |
+| PASS | a kid cannot delete a parent’s task | deleted 0 |
+| PASS | a task is readable by family members | 1 |
+| PASS | the assignee submits it | null |
+| PASS | the assignee cannot approve their own submission | member 1f9b6c9e-4396-49f0-847a-9a583b458f91 is not authorized to approve chores |
+| PASS | a parent cannot approve in another parent’s name | caller is not member 5c7f801b-b5d4-4e03-8bc3-c5dd93620fcd |
+| PASS | the other parent approves it | null |
+
 ## Rewards
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792257256858"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792257256858"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792258007444"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792258007444"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
@@ -201,7 +217,7 @@ Run: 2026-10-17T17:15:39.254Z against a throwaway scratch family (real rows, rea
 | PASS | the sweeper runs | {"ok":true,"scanned":3,"clearedApproved":1,"deletedStale":1,"failed":0} |
 | PASS | the fixtures can be read back |  |
 | PASS | an unsubmitted recording older than 7 days is deleted | still there |
-| PASS | a fresh unsubmitted recording is kept | {"id":"b21da0e0-b5e2-49f7-9909-af951f9ca8c6","family_id":"b6442611-0efe-4f8b-87b7-e5f15c2297f3","member_id":"472f2215-8ad3-4e9a-a829-52662f25984b","uploaded_by":"c5ad6304-4854-446e-a031-6982d88f8f86","title":"QA fresh"," |
+| PASS | a fresh unsubmitted recording is kept | {"id":"4931d557-afd0-43a3-b41a-3c0e4e086bee","family_id":"b41775e5-d8d9-4d4f-a71c-4f013c02d86c","member_id":"1f9b6c9e-4396-49f0-847a-9a583b458f91","uploaded_by":"7e496387-9e85-4441-933b-490dac5e8cf6","title":"QA fresh"," |
 | PASS | an approved visit has its audio reference cleared | null |
 | PASS | the stale and approved audio files are really deleted from storage | false/false |
 | PASS | the fresh audio file is still in storage | null |

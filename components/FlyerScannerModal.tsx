@@ -45,6 +45,8 @@ import { useEventStore } from '@/store/eventStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useSchoolStore } from '@/store/schoolStore';
+import { useUIStore } from '@/store/uiStore';
+import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
@@ -116,7 +118,8 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   };
 
   const allNames = members.map(m => m.name);
-  const kids     = members.filter(m => m.role === 'kid');
+  // Kids and teens: a school calendar applies to everyone at the same school district.
+  const kids     = members.filter(m => m.role === 'kid' || m.role === 'teen');
 
   // ── State ──
   const [step, setStep]               = useState<Step>('capture');
@@ -225,7 +228,8 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       console.log('[flyer] result type:', data.type);
       const result = data as FlyerResult;
       setFlyerResult(result);
-      setSelKids(kids.length === 1 ? [kids[0].id] : []);
+      // Keep whoever was chosen on the first page; default to the only kid when there is just one.
+      setSelKids(prev => prev.length ? prev : (kids.length === 1 ? [kids[0].id] : []));
       if (result.type === 'timetable') {
         setTTKid(kids.length === 1 ? kids[0].id : '');
         setEditablePeriods(result.timetable.periods);
@@ -233,7 +237,8 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         setSelectedTerm(firstTerm);
         setStep('timetable');
       } else if (result.type === 'calendar') {
-        // Pre-select all events
+        // Same school district for the whole family by default: pre-select every kid and every event; both can be changed.
+        setSelKids(prev => prev.length ? prev : kids.map(k => k.id));
         setSelEvts(new Set(result.calendar.events.map((_, i) => i)));
         setStep('multi');
       } else {
@@ -328,7 +333,14 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
     if (failed === 0) {
       showToast(`✓ ${succeeded} event${succeeded !== 1 ? 's' : ''} imported for ${kidNames}`);
-      setTimeout(resetAndClose, 2600);
+      // Land on the Schedule, on the first imported day, so the new school days and holidays are right there.
+      const firstDate = toAdd.map(e => e.date).filter(Boolean).sort()[0];
+      setTimeout(() => {
+        resetAndClose();
+        if (firstDate) useEventStore.getState().selectDate(firstDate as string);
+        useUIStore.getState().setRequestedTasksSegment('schedule');
+        router.push('/(tabs)/schedule' as any);
+      }, 1200);
     } else if (succeeded === 0) {
       Alert.alert("Couldn't import events", 'None of the events could be saved — check your connection and try again.');
     } else {
@@ -413,6 +425,8 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           onAnalyse={processImages}
           onClose={resetAndClose}
           errorMsg={errorMsg}
+          kids={kids} allNames={allNames}
+          selectedKids={selectedKids} setSelKids={setSelKids}
         />
       )}
 

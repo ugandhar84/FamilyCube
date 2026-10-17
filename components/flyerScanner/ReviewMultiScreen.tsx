@@ -54,6 +54,29 @@ export default function ReviewMultiScreen({
           </Text>
         </View>
 
+        {/* Kid picker */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, marginTop: 4 }}>
+          <Text style={[f.sectionLabel, { marginBottom: 0, marginTop: 0 }]}>Add to whose schedule?</Text>
+          {kids.length > 1 && (
+            <Pressable onPress={() => setSelKids(selectedKids.length === kids.length ? [] : kids.map(k => k.id))}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>
+                {selectedKids.length === kids.length ? 'Clear' : 'All kids'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+          {kids.map(k => {
+            const sel = selectedKids.includes(k.id);
+            return (
+              <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
+                style={[f.kidChip, { backgroundColor: sel ? BRAND.teal + '20' : colors.surface, borderColor: sel ? BRAND.teal : colors.border }]}>
+                <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
         {/* Toggle all */}
         <Pressable onPress={() => setSelEvts(selectedEvents.size === multiCal.events.length ? new Set() : new Set(multiCal.events.map((_, i) => i)))}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -92,20 +115,6 @@ export default function ReviewMultiScreen({
           })}
         </View>
 
-        {/* Kid picker */}
-        <Text style={f.sectionLabel}>Add to whose schedule?</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          {kids.map(k => {
-            const sel = selectedKids.includes(k.id);
-            return (
-              <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
-                style={[f.kidChip, { backgroundColor: sel ? BRAND.teal + '20' : colors.surface, borderColor: sel ? BRAND.teal : colors.border }]}>
-                <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
       </ScrollView>
 
       {/* Sticky footer */}

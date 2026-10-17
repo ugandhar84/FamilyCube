@@ -180,7 +180,7 @@ export function StickyNotesCard({ active, members }: { active: FamilyMember; mem
   const [text, setText] = useState('');
   const [color, setColor] = useState('amber');
   const [to, setTo] = useState<string[]>([]);
-  const tones: Record<string, { bg: string; fg: string }> = { amber: { bg: k.pastelAmberCard, fg: k.gold }, sage: { bg: k.pastelSageCard, fg: k.sage }, lavender: { bg: k.pastelLavCard, fg: k.purple }, peach: { bg: k.pastelPrimaryCard, fg: k.terracotta } };
+  const tones: Record<string, { bg: string; fg: string }> = { amber: { bg: '#FFE98A', fg: '#8A5A00' }, sage: { bg: '#CDEBC8', fg: '#2F6B3E' }, lavender: { bg: '#E1D4F7', fg: '#5B3F99' }, peach: { bg: '#FFD3C2', fg: '#A24A2A' } };
   const save = async () => {
     if (!(await add(text, color as NoteColor, to))) { showToast('Could not post the note'); return; }
     setText(''); setTo([]); setAdding(false); showToast('Note posted');
@@ -192,10 +192,12 @@ export function StickyNotesCard({ active, members }: { active: FamilyMember; mem
         {notes.map((n, i) => {
           const t = tones[n.color] ?? tones.amber;
           return (
-            <View key={n.id} style={[s.sticky, { backgroundColor: t.bg, transform: [{ rotate: i % 2 ? '1deg' : '-1deg' }] }]}>
-              <Text style={[s.stickyT, { color: k.text }]}>{n.body}</Text>
+            <View key={n.id} style={[s.sticky, { backgroundColor: t.bg, transform: [{ rotate: `${[-1.8, 1.4, -0.8, 2][i % 4]}deg` }] }]}>
+              <View style={[s.tape, { backgroundColor: 'rgba(255,255,255,0.55)', borderColor: 'rgba(0,0,0,0.06)' }]} />
+              <View style={s.fold} />
+              <Text style={[s.stickyT, { color: '#2C2722' }]}>{n.body}</Text>
               <Text style={[s.stickyBy, { color: t.fg }]}>— {firstName(members.find(m => m.id === n.author_id))}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(id => firstName(members.find(m => m.id === id))).join(', ')}` : ''}</Text>
-              <Text style={[s.stickyWhen, { color: k.textMuted }]}>{noteStamp(n.created_at)}</Text>
+              <Text style={[s.stickyWhen, { color: '#2C2722' }]}>{noteStamp(n.created_at)}</Text>
               {canRemove(n) && <Pressable onPress={() => remove(n)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove note" style={s.stickyX}><X size={14} color={k.textMuted} /></Pressable>}
             </View>
           );
@@ -274,7 +276,9 @@ const s = StyleSheet.create({
   badge: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
   badgeT: { fontSize: 12, fontWeight: '800' },
   notes: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  sticky: { width: '47.5%', minHeight: 88, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomRightRadius: 18, borderBottomLeftRadius: 6, padding: 12, gap: 6, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  sticky: { width: '47.5%', minHeight: 110, borderRadius: 3, borderBottomRightRadius: 22, paddingHorizontal: 14, paddingTop: 20, paddingBottom: 12, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 3, height: 8 }, elevation: 8 },
+  tape: { position: 'absolute', top: -9, alignSelf: 'center', width: 64, height: 18, borderWidth: 1, transform: [{ rotate: '-3deg' }] },
+  fold: { position: 'absolute', right: 0, bottom: 0, width: 24, height: 24, borderTopLeftRadius: 20, borderBottomRightRadius: 22, backgroundColor: 'rgba(0,0,0,0.10)' },
   stickyT: { fontSize: 22, lineHeight: 26, fontFamily: KIOSK_FONT.hand.bold },
   stickyWhen: { fontSize: 15, fontFamily: KIOSK_FONT.hand.semibold, opacity: 0.8 },
   stickyBy: { fontSize: 18, fontFamily: KIOSK_FONT.hand.semibold },

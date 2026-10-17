@@ -16,8 +16,8 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
   const [color, setColor] = useState<NoteColor>('amber');
   const [to, setTo] = useState<string[]>([]);
   const tone: Record<string, { bg: string; fg: string }> = {
-    amber: { bg: colors.amberLight, fg: colors.amber }, sage: { bg: colors.tealLight, fg: colors.teal },
-    lavender: { bg: colors.pinkLight, fg: colors.pink }, peach: { bg: colors.primaryLight, fg: colors.primary },
+    amber: { bg: '#FFE98A', fg: '#8A5A00' }, sage: { bg: '#CDEBC8', fg: '#2F6B3E' },
+    lavender: { bg: '#E1D4F7', fg: '#5B3F99' }, peach: { bg: '#FFD3C2', fg: '#A24A2A' },
   };
   const first = (id: string) => members.find(m => m.id === id)?.name?.trim().split(' ')[0] ?? '';
   const others = members.filter(m => m.id !== active.id && !(m as any).deletedAt);
@@ -39,10 +39,12 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
         {notes.map((n, i) => {
           const t = tone[n.color] ?? tone.amber;
           return (
-            <View key={n.id} style={[s.note, { backgroundColor: t.bg, transform: [{ rotate: i % 2 ? '1deg' : '-1deg' }] }]}>
-              <Text style={[s.body, { color: colors.textPrimary }]}>{n.body}</Text>
+            <View key={n.id} style={[s.note, { backgroundColor: t.bg, transform: [{ rotate: `${[-1.8, 1.4, -0.8, 2][i % 4]}deg` }] }]}>
+              <View style={s.tape} />
+              <View style={s.fold} />
+              <Text style={[s.body, { color: '#2C2722' }]}>{n.body}</Text>
               <Text style={[s.by, { color: t.fg }]}>— {first(n.author_id)}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(first).join(', ')}` : ''}</Text>
-              <Text style={[s.when, { color: colors.textTertiary }]}>{noteStamp(n.created_at)}</Text>
+              <Text style={[s.when, { color: '#2C2722', opacity: 0.7 }]}>{noteStamp(n.created_at)}</Text>
               {canRemove(n) && <Pressable onPress={() => remove(n)} hitSlop={8} style={s.x} accessibilityRole="button" accessibilityLabel="Remove note"><X size={13} color={colors.textSecondary} /></Pressable>}
             </View>
           );
@@ -87,12 +89,14 @@ const s = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, gap: 8 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  note: { width: '47.5%', minHeight: 84, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomRightRadius: 18, borderBottomLeftRadius: 6, padding: 12, gap: 6, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  note: { width: '47.5%', minHeight: 100, borderRadius: 3, borderBottomRightRadius: 20, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 10, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 3, height: 7 }, elevation: 8 },
+  tape: { position: 'absolute', top: -8, alignSelf: 'center', width: 56, height: 16, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', transform: [{ rotate: '-3deg' }] },
+  fold: { position: 'absolute', right: 0, bottom: 0, width: 22, height: 22, borderTopLeftRadius: 18, borderBottomRightRadius: 20, backgroundColor: 'rgba(0,0,0,0.10)' },
   body: { fontSize: 15, fontWeight: '700', lineHeight: 20 },
   by: { fontSize: 12, fontWeight: '800' },
   when: { fontSize: 11, fontWeight: '700' },
   x: { position: 'absolute', top: 6, right: 6 },
-  add: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0 },
+  add: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0, transform: [] },
   empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginVertical: 6, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
   emptyT: { fontSize: 14, fontWeight: '700' },
   modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },

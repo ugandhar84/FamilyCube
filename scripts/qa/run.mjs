@@ -121,7 +121,11 @@ try {
   r = await call({ action: 'rpc', actingMemberId: alex, fnName: 'toggle_medication_dose', args: { p_med_id: medId, p_entry: `${today}|07:30`, p_mark_taken: true, p_today: today, p_modified_by: alex } });
   check(E, 'a parent can log a kid’s dose', r.ok, r.error);
   r = await as(nana, 'family_medications', 'select', { match: { family_id: F } });
-  finding(E, `a grandparent can read ${rows(r).length} family medication row(s)`, 'Read access is family-wide at the table level; the apps filter to own medications for kids/teens/seniors client-side.');
+  check(E, 'a grandparent cannot read other members’ medications', rows(r).length === 0, `${rows(r).length} rows`);
+  r = await as(mia, 'family_medications', 'select', { match: { family_id: F } });
+  check(E, 'a kid still reads their own medication', rows(r).length >= 1, r.error ?? rows(r).length);
+  r = await as(alex, 'family_medications', 'select', { match: { family_id: F } });
+  check(E, 'a parent still reads the whole family’s medications', rows(r).length >= 1, r.error ?? rows(r).length);
   /* ───────── Chores ───────── */
   const G = 'Chores';
   const rpc = (id, fnName, args) => call({ action: 'rpc', actingMemberId: id, fnName, args });
@@ -212,6 +216,10 @@ try {
   r = await as(zane, 'kid_requests', 'select', { match: { family_id: F } });
   if (rows(r).length > 0) finding(J, 'another kid/teen can read a different kid’s requests', 'kid_requests SELECT is family-wide at the table level.');
   else check(J, 'a different teen cannot read the kid’s requests', true, '');
+  r = await as(mia, 'kid_requests', 'select', { match: { family_id: F } });
+  check(J, 'the kid still reads their own request', rows(r).length >= 1, r.error ?? rows(r).length);
+  r = await as(sarah, 'kid_requests', 'select', { match: { family_id: F } });
+  check(J, 'a parent still reads the kid’s request', rows(r).length >= 1, r.error ?? rows(r).length);
   r = await as(mia, 'kid_requests', 'update', { row: { status: 'approved' }, match: { id: krId } });
   if (r.ok && rows(r)[0]?.status === 'approved') finding(J, 'a kid can approve their own request at the table level', 'The kiosk and phone only offer Approve to parents; the table policy accepts an update from the requesting kid.');
   else check(J, 'a kid cannot approve their own request', true, r.error);
@@ -227,6 +235,10 @@ try {
   r = await as(mia, 'medical_records', 'select', { match: { family_id: F } });
   if (rows(r).length > 0) finding(K, 'a kid can read a parent’s medical records at the table level', 'The app hides Records from kids, but the table returns them. The file contents are encrypted, titles and tags are not.');
   else check(K, 'a kid cannot read a parent’s medical records', true, '');
+  r = await as(sarah, 'medical_records', 'select', { match: { family_id: F } });
+  check(K, 'the other parent still reads the family’s records', rows(r).length >= 1, r.error ?? rows(r).length);
+  r = await as(alex, 'medical_records', 'select', { match: { family_id: F } });
+  check(K, 'the owner still reads their own record', rows(r).length >= 1, r.error ?? rows(r).length);
 
   /* ───────── Memories ───────── */
   const L = 'Memories';

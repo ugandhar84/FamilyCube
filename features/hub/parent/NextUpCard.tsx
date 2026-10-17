@@ -6,7 +6,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { fmtTime } from '../hubUtils';
-import { MapPin } from 'lucide-react-native';
+import { MapPin, AlertTriangle } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { GEMINI } from '@/constants/geminiRhythm';
 
@@ -56,7 +56,9 @@ export function NextUpTimeline({
   events: FamilyEvent[];
   conflictReasons?: Map<string, string>;
 }) {
-  const shown = events.slice(0, 3);
+  // The next 3, plus any later event that clashes with another (a conflict must never hide below the cut), capped at 6.
+  const shown = events.filter((e, i) => i < 3 || conflictReasons?.has(e.id)).slice(0, 6);
+  const hiddenCount = events.length - shown.length;
   const dotColors = [colors.pink, colors.teal, colors.amber];
   const { selectDate } = useEventStore();
   const members = useFamilyStore(s => s.members);
@@ -186,8 +188,8 @@ export function NextUpTimeline({
                 </Pressable>
               ) : conflictReasons?.get(ev.id) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <MapPin size={11} color={colors.textTertiary} />
-                  <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11, flex: 1 }} numberOfLines={1}>
+                  <AlertTriangle size={11} color={colors.danger} />
+                  <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '600', flex: 1 }} numberOfLines={1}>
                     {conflictReasons.get(ev.id)}
                   </Text>
                 </View>
@@ -216,6 +218,11 @@ export function NextUpTimeline({
           </AnimatedPressable>
           );
         })}
+        {hiddenCount > 0 && (
+          <Pressable onPress={() => goToSchedule()} style={{ paddingVertical: 12, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}>
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>{`+${hiddenCount} more today →`}</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );

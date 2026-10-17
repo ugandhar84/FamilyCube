@@ -12,7 +12,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { AlertBanner } from './hubComponents';
-import { localToday, hoursUntilEvent } from './hubUtils';
+import { localToday, hoursUntilEvent, fmtTime } from './hubUtils';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -700,7 +700,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         .slice(0, 2)
         .map(e => ({
           title: e.title,
-          detail: e.time ? `${e.time}${e.location ? ` · ${e.location}` : ''}` : (e.location ?? ''),
+          detail: e.time ? `${fmtTime(e.time)}${e.location ? ` · ${e.location.split(',')[0]}` : ''}` : (e.location?.split(',')[0] ?? ''),
           meta: conflictReasons?.get(e.id) ?? 'Also today',
         }))
     : [];

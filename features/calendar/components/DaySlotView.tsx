@@ -16,6 +16,7 @@ import { eventAssignee, eventDisplayLocation } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { timeToMinutes, toDateStr } from './calendarDateHelpers';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { detectAssigneeConflicts } from '@/features/hub/lib/detectAssigneeConflicts';
 
 // Street-only label for the subtitle row — full address is still what gets
 // sent to the maps app on tap, this just keeps the chip from overflowing
@@ -191,6 +192,8 @@ export default function DaySlotView({
 }) {
   const hours = Array.from({ length: SLOT_END - SLOT_START + 1 }, (_, i) => SLOT_START + i);
   const laid = useMemo(() => layoutEvents(dayEvents), [dayEvents]);
+  // Anyone with two overlapping events gets a warning mark on both cards.
+  const clashing = useMemo(() => detectAssigneeConflicts(dayEvents), [dayEvents]);
 
   // Was a one-shot useMemo computed at mount with no deps — the "now" line
   // never actually moved as real time passed; a day view left open for 20
@@ -365,7 +368,7 @@ export default function DaySlotView({
                     </Pressable>
                   )}
                   <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#FDFCF9' : '#2C2722', flexShrink: 1 }} numberOfLines={1}>
-                    {!isShort ? `${fmt12h(startMin)} · ` : ''}{ev.title}
+                    {clashing.has(ev.id) ? '⚠️ ' : ''}{!isShort ? `${fmt12h(startMin)} · ` : ''}{ev.title}
                   </Text>
                 </View>
 

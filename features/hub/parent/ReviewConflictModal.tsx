@@ -8,6 +8,8 @@ import { AnimatedPressable } from '@/components/AnimatedPressable';
 import type { FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { RHYTHM } from '@/constants/theme';
+import { fmtTime } from '../hubUtils';
 
 export function ReviewConflictModal({
   visible, onClose,
@@ -31,8 +33,8 @@ export function ReviewConflictModal({
     {
       title: conflictEvent.title,
       detail: conflictEvent.time
-        ? `${conflictEvent.time}${conflictEvent.location ? ` · ${conflictEvent.location}` : ''}`
-        : (conflictEvent.location ?? ''),
+        ? `${fmtTime(conflictEvent.time)}${conflictEvent.location ? ` · ${conflictEvent.location.split(',')[0]}` : ''}`
+        : (conflictEvent.location?.split(',')[0] ?? ''),
       meta: 'This event',
     },
     ...relatedContext,
@@ -47,7 +49,7 @@ export function ReviewConflictModal({
         <PageHeading
           eyebrow="FAMILY CUBE · SCHEDULE"
           title="One decision"
-        subtitle="Needs you before 4:00 PM"
+        subtitle={relatedContext[0]?.meta && relatedContext[0].meta !== 'Also today' ? relatedContext[0].meta : 'These events overlap'}
           accent="amber"
           topInset={0}
           onTitlePress={onClose}
@@ -55,7 +57,7 @@ export function ReviewConflictModal({
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
         >
           {/* Options list */}
@@ -64,7 +66,7 @@ export function ReviewConflictModal({
             {rows.map((r, i) => (
               <View key={`${r.title}-${i}`}>
                 {i > 0 && <View style={{ height: 1, backgroundColor: isDark ? colors.border : GEMINI.border }} />}
-                <View style={{ paddingVertical: 14, gap: 4 }}>
+                <View style={{ paddingVertical: 10, gap: 2 }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{r.title}</Text>
                   {r.detail ? <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{r.detail}</Text> : null}
                   <View style={{ alignSelf: 'flex-start', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.primaryLight, marginTop: 2 }}>
@@ -112,10 +114,10 @@ export function ReviewConflictModal({
 
 const s = StyleSheet.create({
   card: {
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 18,
+    padding: RHYTHM.card,
     borderWidth: 1,
-    gap: 12,
+    gap: 4,
   },
   overline: {
     fontSize: 10,

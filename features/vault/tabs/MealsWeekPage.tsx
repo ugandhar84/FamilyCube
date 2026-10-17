@@ -16,7 +16,6 @@ import { useFamilyStore } from '@/store/familyStore';
 import MealsTabComp, { type MealFormState, type MealRecipeState } from './MealsTab';
 import MealFormSheet from './meals/MealFormSheet';
 import RecipeModal from './meals/RecipeModal';
-import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import { localDateStr } from '@/lib/dates';
@@ -83,24 +82,6 @@ export default function MealsWeekPage({
   // explicit request — see Home Care/Grocery/MealsScreen's own identical
   // comment).
   const canvas = isDark ? colors.background : GEMINI.canvas;
-
-  // Early-return: show add/edit form as a full standalone page with swipe-back support
-  if (formState) {
-    return (
-      <SwipeBackWrapper onDismiss={formState.onClose} backgroundColor={canvas}>
-        <MealFormSheet
-          visible
-          day={formState.addDay}
-          editingMeal={formState.editMeal}
-          familyId={formState.familyId}
-          colors={colors} isDark={isDark}
-          onClose={formState.onClose}
-          onSave={formState.onSave}
-          saving={formState.saving}
-        />
-      </SwipeBackWrapper>
-    );
-  }
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
@@ -178,6 +159,22 @@ export default function MealsWeekPage({
         senderId={recipeState?.senderId ?? ''}
         hideAddToGrocery={recipeState?.hideAddToGrocery}
         colors={colors} isDark={isDark} />
+
+      {/* Add/edit form: a sibling overlay on top of the week plan (never an early return), so closing or swiping it
+          back reveals the real plan underneath instead of a blank canvas. MealFormSheet wraps itself in
+          FullPageOverlay (slide-in, edge-swipe back). */}
+      {formState && (
+        <MealFormSheet
+          visible
+          day={formState.addDay}
+          editingMeal={formState.editMeal}
+          familyId={formState.familyId}
+          colors={colors} isDark={isDark}
+          onClose={formState.onClose}
+          onSave={formState.onSave}
+          saving={formState.saving}
+        />
+      )}
 
     </View>
   );

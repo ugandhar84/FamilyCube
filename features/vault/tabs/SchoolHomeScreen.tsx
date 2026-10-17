@@ -19,12 +19,13 @@
  *
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, GraduationCap, PartyPopper, CalendarDays } from 'lucide-react-native';
 import { useEventStore } from '@/store/eventStore';
 import { fmtDate, fmtDateShort } from '@/lib/dates';
 import { RHYTHM } from '@/constants/theme';
+import { useUIStore } from '@/store/uiStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useSchoolStore, type ClassPeriod } from '@/store/schoolStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -212,6 +213,15 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
   const events = useEventStore(s => s.events);
   const [tab, setTab] = useState<MainTab>('schedule');
   const [view, setView] = useState<'day' | 'week'>('day');
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  // Full page: cover the tab bar while this page is open.
+  useEffect(() => {
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => { showTabBar(); useUIStore.getState().setFullBleedScreenActive(false); };
+  }, []);
   const canvas = isDark ? colors.background : CANVAS;
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
   const bodyC = isDark ? colors.textSecondary : BODY_CLR;
@@ -328,22 +338,59 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
             )
           ) : tab === 'holidays' ? (
             <>
+              {holidays.length > 0 && canEdit && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <TouchableOpacity onPress={() => { setSelecting(v => !v); setPicked(new Set()); }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: BLUE }}>{selecting ? 'Done' : 'Select'}</Text>
+                  </TouchableOpacity>
+                  {selecting && (
+                    <TouchableOpacity onPress={() => setPicked(picked.size === holidays.length ? new Set() : new Set(holidays.map(h => h.id)))}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: BLUE }}>{picked.size === holidays.length ? 'Clear all' : 'Select all'}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
               <View style={card as any}>
                 {holidays.length === 0 ? (
                   <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No holidays added yet. Scan a school calendar flyer or add one.</Text>
-                ) : holidays.map((h, i) => (
-                  <View key={h.id} style={{ flexDirection: 'row', gap: 10, paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-                    <PartyPopper size={16} color={colors.amber} style={{ marginTop: 2 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>{h.reason}</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, marginTop: 1 }}>
-                        {h.startDate === h.endDate ? fmtDate(h.startDate) : `${fmtDate(h.startDate)} – ${fmtDate(h.endDate)}`}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                ) : holidays.map((h, i) => {
+                  const on = picked.has(h.id);
+                  return (
+                    <TouchableOpacity key={h.id} activeOpacity={selecting ? 0.6 : 1}
+                      onPress={() => { if (selecting) setPicked(prev => { const n = new Set(prev); on ? n.delete(h.id) : n.add(h.id); return n; }); }}
+                      style={{ flexDirection: 'row', gap: 10, alignItems: 'center', paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
+                      {selecting ? (
+                        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+                          borderColor: on ? BLUE : border, backgroundColor: on ? BLUE : 'transparent' }}>
+                          {on && <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>✓</Text>}
+                        </View>
+                      ) : <PartyPopper size={16} color={colors.amber} />}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>{h.reason}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, marginTop: 1 }}>
+                          {h.startDate === h.endDate ? fmtDate(h.startDate) : `${fmtDate(h.startDate)} – ${fmtDate(h.endDate)}`}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-              {canEdit && (
+              {selecting && picked.size > 0 && (
+                <TouchableOpacity disabled={deleting}
+                  onPress={() => Alert.alert(`Delete ${picked.size} holiday${picked.size !== 1 ? 's' : ''}?`, `Classes on those days are put back on ${kid.name.split(' ')[0]}'s schedule.`, [
+                    { text: 'Keep', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: async () => {
+                      setDeleting(true);
+                      for (const id of picked) { try { await useSchoolStore.getState().removeHoliday(kid.id, id); } catch { /* keep going */ } }
+                      setDeleting(false); setPicked(new Set()); setSelecting(false);
+                    } },
+                  ])}
+                  style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: colors.danger }}>
+                  {deleting ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>{deleting ? 'Deleting…' : `Delete ${picked.size} selected`}</Text>
+                </TouchableOpacity>
+              )}
+              {canEdit && !selecting && (
                 <TouchableOpacity onPress={onOpenHolidays} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Add or edit holidays</Text>
                 </TouchableOpacity>

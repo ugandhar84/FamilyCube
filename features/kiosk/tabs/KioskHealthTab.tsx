@@ -636,6 +636,26 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     } catch (e: any) { showToast('Download failed: ' + (e?.message ?? 'please try again')); }
     finally { setDownloading(false); }
   };
+  // A visit recording's title is "<appointment title> — <date>"; look the appointment up for its time.
+  const apptTimeOf = (r: MedRecord): string | null => {
+    const ev = useEventStore.getState().events.find((e: any) => `${e.title} — ${e.date}` === r.title);
+    return ev?.time ? formatDoseTime(ev.time) : null;
+  };
+  const apptTitleOf = (r: MedRecord) => r.title.replace(/ — \d{4}-\d{2}-\d{2}$/, '');
+  const downloadAudio = async (r: MedRecord) => {
+    if (!r.file_path) return;
+    setDownloading(true);
+    try {
+      const { data, error } = await supabase.storage.from('medical-audio').createSignedUrl(r.file_path, 120);
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? 'no link');
+      const FileSystem = await import('expo-file-system/legacy');
+      const Sharing = await import('expo-sharing');
+      const dest = `${FileSystem.cacheDirectory}${(r.file_name ?? 'visit.m4a').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      await FileSystem.downloadAsync(data.signedUrl, dest);
+      await Sharing.shareAsync(dest);
+    } catch (e: any) { showToast('Download failed: ' + (e?.message ?? 'please try again')); }
+    finally { setDownloading(false); }
+  };
   const markVaxDone = async (v: Vaccine) => { await supabase.from('family_vaccines').update({ done: !v.done }).eq('id', v.id); loadSidebar(); setOpenVax(null); };
   const exportPdf = async () => {
     const ms = people.filter(m => exportIds.includes(m.id)).map(m => ({ memberId: m.id, memberName: m.name, vaccines: sideVaxes.filter(v => v.member_id === m.id) }));
@@ -860,7 +880,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     }
     if (area === 'visit' || area === 'bring') {
       const cfg = {
-        visit: { title: 'Record a visit', big: 'Capture the appointment', txt: 'Add the visit as a record with the doctor, date and notes. Recording audio for an AI summary is available from a phone.', btn: 'Add the visit record', Icon: Mic, run: () => setShowAddRecord(true) },
+        visit: { title: 'Record a visit', big: 'Capture the appointment', txt: 'Recorded visits and their AI summaries show here. Record the audio from a phone on the appointment’s page, or add the visit by hand.', btn: 'Add the visit record', Icon: Mic, run: () => setShowAddRecord(true) },
         bring: { title: 'Bring in a document', big: 'Choose how to bring it in', txt: 'Add a photo or PDF of a lab, discharge paper, imaging or insurance card. You check the details before it is saved.', btn: 'Bring in a document', Icon: FileText, run: () => setShowAddRecord(true) },
       }[area];
       return (
@@ -870,7 +890,29 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             <View style={[s.heroIc, { backgroundColor: k.pastelLavCard }]}><cfg.Icon size={30} color={k.purple} /></View>
             <View style={{ flex: 1 }}><Text style={[s.mcName, { color: k.text }]}>{cfg.big}</Text><Text style={[s.sm, { color: k.textMuted }]}>{cfg.txt}</Text></View>
           </View>
-          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{area === 'bring' && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
+          {area === 'visit' && (() => {
+            const visits = inScope(sideRecords).filter(r => r.tag === 'visit_recording').sort((a, b) => b.record_date.localeCompare(a.record_date)).slice(0, 20);
+            return (
+              <View style={{ gap: 10, marginTop: 6 }}>
+                <Text style={[s.eb, { color: k.textFaint }]}>RECORDED VISITS · {visits.length}</Text>
+                {visits.length === 0 && <Text style={[s.empty, { color: k.textMuted }]}>No recorded visits yet. Record one from a phone on the appointment’s page.</Text>}
+                {visits.map((r, i) => {
+                  const tone = pastels[i % 4]; const tm = apptTimeOf(r);
+                  return (
+                    <Pressable key={r.id} onPress={() => setOpenRec(r)} accessibilityRole="button" accessibilityLabel={apptTitleOf(r)} style={[s.rec, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                      <View style={[s.recIc, { backgroundColor: tone.card }]}><Text style={{ fontSize: 22 }}>🎙️</Text></View>
+                      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                        <Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{apptTitleOf(r)}</Text>
+                        <View style={s.wrapRow}><Pill2 t={nameOf(r.member_id)} /><Pill2 t={`${fmtDateDisplay(new Date(r.record_date + 'T00:00:00'))}${tm ? ` · ${tm}` : ''}`} />{r.ai_analyzed ? <Pill2 t="AI summary ready" tone="g" /> : <Pill2 t="Summary not approved yet" tone="a" />}</View>
+                        {!!r.ai_summary && <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={2}>{r.ai_summary}</Text>}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            );
+          })()}
+          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{area === 'visit' && <Btn kind="sec" label="Scan a document" Icon={ScanLine} onPress={() => setArea('bring')} />}{area === 'bring' && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
         </>
       );
     }
@@ -935,12 +977,19 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
           const fu: string[] = a?.follow_up_items ?? a?.next_steps?.map((n: any) => n.text) ?? [];
           return (
             <View style={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
+              {openRec.tag === 'visit_recording' && (
+                <View style={[s.tg, { backgroundColor: k.pastelLav }]}>
+                  <Text style={[s.dName, { color: k.text }]}>{apptTitleOf(openRec)}</Text>
+                  <Text style={[s.sm, { color: k.textMuted }]}>{nameOf(openRec.member_id)} · {fmtDateDisplay(new Date(openRec.record_date + 'T00:00:00'))}{apptTimeOf(openRec) ? ` · ${apptTimeOf(openRec)}` : ''}</Text>
+                  <Text style={[s.sm, { color: k.textMuted }]}>{openRec.file_path ? '🎙️ The raw audio is kept until the summary is approved.' : '🎙️ The raw audio was removed once the summary was approved. Only the encrypted summary is kept.'}</Text>
+                </View>
+              )}
               <View style={s.wrapRow}><Pill2 t="🔒 Encrypted" tone="g" />{a?.urgency && <Pill2 t={a.urgency === 'urgent' ? 'Urgent' : a.urgency === 'attention' ? 'Attention' : 'Routine'} tone={a.urgency === 'urgent' ? 'r' : a.urgency === 'attention' ? 'a' : undefined} />}</View>
               {!!openRec.ai_summary && <><Text style={[s.eb, { color: k.purple }]}>AI SUMMARY</Text><View style={[s.tg, { backgroundColor: k.pastelLav }]}><Text style={[s.dName, { color: k.text }]}>{openRec.ai_summary}</Text></View></>}
               {find.length > 0 && <><Text style={[s.eb, { color: k.gold }]}>KEY FINDINGS</Text>{find.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelAmber }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
               {fu.length > 0 && <><Text style={[s.eb, { color: k.sage }]}>FOLLOW-UP ACTIONS</Text>{fu.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelSage }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
               {!!openRec.notes && <><Text style={[s.eb, { color: k.textFaint }]}>NOTES</Text><Text style={[s.sm, { color: k.textMuted }]}>{openRec.notes}</Text></>}
-              {!!openRec.file_path && <Btn kind="sec" label={downloading ? 'Preparing…' : 'Download file'} Icon={Download} onPress={() => downloadRecs([openRec])} />}
+              {!!openRec.file_path && <Btn kind="sec" label={downloading ? 'Preparing…' : openRec.tag === 'visit_recording' ? 'Download audio' : 'Download file'} Icon={Download} onPress={() => (openRec.tag === 'visit_recording' ? downloadAudio(openRec) : downloadRecs([openRec]))} />}
               {!own && <Btn kind="dg" label="Delete record" Icon={Trash2} onPress={() => deleteRec(openRec)} />}
             </View>
           );

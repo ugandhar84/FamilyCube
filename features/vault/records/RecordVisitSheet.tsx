@@ -70,6 +70,16 @@ function LiveWaveform({ metering, color }: { metering: number; color: string }) 
   );
 }
 
+// Removes an audio object, retrying a couple of times. Resolves true only when the file is really gone.
+async function removeAudio(path: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await supabase.storage.from('medical-audio').remove([path]);
+    if (!error) return true;
+    await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+  }
+  return false;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -316,6 +326,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         .from('medical-audio')
         .upload(fileName, bytes.buffer, { contentType: 'audio/mp4', upsert: false });
       if (upErr || !up) throw new Error(upErr?.message ?? 'Upload failed');
+      // The recording is safely in storage now; drop the temporary copy on this phone.
+      FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
 
       const { data: rec, error: insErr } = await supabase.from('medical_records').insert({
         family_id: familyId, member_id: memberId, uploaded_by: actorId,
@@ -356,7 +368,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   // of a persisted row, not just discarding a local in-memory buffer.
   const deleteUnsubmitted = async () => {
     if (pendingRecord) {
-      if (pendingRecord.file_path) supabase.storage.from('medical-audio').remove([pendingRecord.file_path]).catch(() => {});
+      if (pendingRecord.file_path) await removeAudio(pendingRecord.file_path);
       await supabase.from('medical_records').delete().eq('id', pendingRecord.id);
     }
     setReviewingStop(false);
@@ -369,6 +381,9 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     setApproving(true);
     try {
       const encryptedBlob = await encryptAnalysis(familyId, pendingAnalysis);
+      // Delete the raw audio first. If it cannot be removed, keep the reference so the nightly sweeper retries it
+      // instead of leaving a file nothing points to.
+      const audioGone = pendingRecord.file_path ? await removeAudio(pendingRecord.file_path) : true;
       const { error } = await supabase.from('medical_records').update({
         ai_summary: pendingAnalysis.summary,
         ai_tags: pendingAnalysis.tags ?? [],
@@ -381,16 +396,13 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         // Clearing file_path also means the "Recording" playback UI in
         // Records (if any) correctly stops offering to play something
         // that no longer exists, rather than a dangling reference.
-        file_path: null, file_name: null, file_size: null,
+        ...(audioGone ? { file_path: null, file_name: null, file_size: null } : {}),
       }).eq('id', pendingRecord.id);
       if (error) throw new Error(error.message);
       // Best-effort — the DB update above (clearing file_path) is the
       // source of truth for "this record no longer has audio"; a failed
       // storage delete just leaves an orphaned blob in medical-audio, not
       // a broken/inconsistent record.
-      if (pendingRecord.file_path) {
-        supabase.storage.from('medical-audio').remove([pendingRecord.file_path]).catch(() => {});
-      }
       showToast('Visit summary saved to Records');
       reset();
       onClose();
@@ -512,6 +524,9 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
                 Recording saved — review before submitting for analysis.
               </Text>
+              <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 12, lineHeight: 17 }}>
+                The raw audio is deleted once you approve the summary (or after 7 days if you leave it).
+              </Text>
               <View style={{ gap: 10, width: '100%', marginTop: 6 }}>
                 <TouchableOpacity onPress={submitForAnalysis}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: colors.primary, paddingVertical: 14 }}>
@@ -564,6 +579,10 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                 {formatElapsed(elapsed)}
               </Text>
 
+              <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 12, lineHeight: 17 }}>
+                The audio is stored privately until you approve the summary, then it is deleted. Only the encrypted summary is kept. Audio left unsubmitted is deleted after 7 days.
+              </Text>
+
               {elapsed >= WARNING_AT_SECS && (
                 <Text style={{ fontSize: 12, color: BRAND.amber, textAlign: 'center', paddingHorizontal: 12 }}>
                   Long recording — uploading may take a moment once you stop.
@@ -613,6 +632,9 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
                   Please let your doctor or nurse know you're recording this visit before you start.
                 </Text>
               </View>
+              <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 12, lineHeight: 17 }}>
+                The audio is stored privately until you approve the summary, then it is deleted. Only the encrypted summary is kept. Audio left unsubmitted is deleted after 7 days.
+              </Text>
               <TouchableOpacity onPress={startRecording}
                 style={{ width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
                 <Mic size={34} color={colors.textInverse} />

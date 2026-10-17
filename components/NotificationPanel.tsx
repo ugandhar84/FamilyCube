@@ -186,11 +186,17 @@ export default function NotificationPanel({ visible, onClose }: Props) {
     if (dest) navigateFromNotification(dest, deviceClass === 'kitchenHub');
   };
 
+  // Fetch the next batch when clearing leaves the cached page short but older notifications still exist.
+  const refillIfMore = () => {
+    const st = useNotifStore.getState();
+    if (userId && st.hasMore && (st.notifications?.length ?? 0) < 40) fetchAll(userId);
+  };
+
   const handleDeleteOne = (n: NotificationLog) => {
     removeCachedNotifs([n.id]);
     if (!n.read) decrement(1);
     import('@/lib/db/notifications').then(({ deleteNotifications }) => {
-      deleteNotifications([n.id]).catch(() => {});
+      deleteNotifications([n.id]).then(refillIfMore).catch(() => {});
     }).catch(() => {});
   };
 
@@ -206,7 +212,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
     // diagnosable; optimistic-clear stays (a failed batch delete isn't
     // worth re-inserting the rows back into the visible list either).
     import('@/lib/db/notifications').then(({ deleteNotifications }) => {
-      deleteNotifications(ids).catch((e: any) => {
+      deleteNotifications(ids).then(refillIfMore).catch((e: any) => {
         console.error('[NotificationPanel] Clear all failed:', e?.message, e);
       });
     }).catch(() => {});

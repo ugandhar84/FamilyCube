@@ -22,3 +22,6 @@ export function OverlayHeading(props: React.ComponentProps<typeof PageHeading>) 
   const close = useContext(CloseContext);
   return <PageHeading {...props} onTitlePress={close ?? props.onTitlePress} />;
 }
+
+/** The enclosing OverlayPage's animated close (null outside one). */
+export function useOverlayClose() { return useContext(CloseContext); }

@@ -53,6 +53,7 @@ import { s } from './components/styles';
 import { showToast } from '@/components/AppToast';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { OverlayPage } from '@/components/OverlayPage';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { PageHeading } from '@/components/PageHeading';
@@ -718,27 +719,11 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 10 }}>
             {/* Family chrome */}
-            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-            </Text>
-            {/* Title — tapping it goes back to the Groceries landing page
-                directly, no separate "‹ Groceries" breadcrumb link above it
-                [live-requested: "lets add the click on the name go to
-                back - we didn't need the back mention on module
-                landing"]. */}
-            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                Shared groceries
-              </Text>
-            </Pressable>
-            {/* Figma subtitle */}
-            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
-              Shared with all {members.length} {familyName ? familyName.split(' ')[0] + 's' : 'members'} · updated {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-            </Text>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shared groceries" subtitle={`Shared with all ${members.length} ${familyName ? familyName.split(' ')[0] + 's' : 'members'} · updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`} accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
             {/* Figma: Add item + AI suggestions pill buttons */}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Pressable onPress={() => setShowAddItem(true)}
@@ -912,17 +897,10 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'runs'} onDismiss={() => setTab(null)} zIndex={41}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-            </Text>
-            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                Shopping Trips
-              </Text>
-            </Pressable>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shopping Trips" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
           </View>
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
@@ -941,17 +919,10 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-            </Text>
-            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                Purchase History
-              </Text>
-            </Pressable>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Purchase History" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
             {/* Scan Receipt — moved here from the CubeAI banner's own
                 button, since a scanned receipt IS a purchase-history
                 entry; scanning from inside the screen that shows that
@@ -977,17 +948,10 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'insights'} onDismiss={() => setTab(null)} zIndex={43}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
             backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-              {(familyName ?? 'FAMILY SPACE').toUpperCase()}
-            </Text>
-            <Pressable onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 41, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                Insights
-              </Text>
-            </Pressable>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Insights" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
           </View>
           <InsightsTab familyId={familyId} colors={colors} isDark={isDark}
             onViewAllPurchases={() => { setTab(null); setTimeout(() => setTab('history'), 50); }} />
@@ -996,7 +960,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       </FullPageOverlay>
 
       {/* Full-page overlays (no Modals) */}
-      <FullPageOverlay visible={showReceiptScan} onDismiss={() => setShowReceiptScan(false)} zIndex={50}>
+      <OverlayPage visible={showReceiptScan} onDismiss={() => setShowReceiptScan(false)} zIndex={50}>
         <ReceiptScanSheet
           visible={showReceiptScan}
           onClose={() => setShowReceiptScan(false)}
@@ -1007,8 +971,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           isDark={isDark}
           onSuccess={() => load(familyId)}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={showAddItem} onDismiss={() => { setShowAddItem(false); setEditingItem(undefined); }} zIndex={51}>
+      </OverlayPage>
+      <OverlayPage visible={showAddItem} onDismiss={() => { setShowAddItem(false); setEditingItem(undefined); }} zIndex={51}>
         <AddItemSheet
           visible={showAddItem}
           onClose={() => { setShowAddItem(false); setEditingItem(undefined); }}
@@ -1018,8 +982,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           isDark={isDark}
           editItem={editingItem}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={showNewRun} onDismiss={() => setShowNewRun(false)} zIndex={52}>
+      </OverlayPage>
+      <OverlayPage visible={showNewRun} onDismiss={() => setShowNewRun(false)} zIndex={52}>
         <CreateRunSheet
           visible={showNewRun}
           onClose={() => setShowNewRun(false)}
@@ -1032,8 +996,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           members={members}
           onPinStore={(storeName) => setPinningStore(storeName)}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!selectedRun} onDismiss={() => setSelectedRun(null)} zIndex={53}>
+      </OverlayPage>
+      <OverlayPage visible={!!selectedRun} onDismiss={() => setSelectedRun(null)} zIndex={53}>
         <RunDetailSheet
           run={selectedRun}
           visible={!!selectedRun}
@@ -1043,8 +1007,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           colors={colors}
           isDark={isDark}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={pinningStore !== null} onDismiss={() => setPinningStore(null)} zIndex={55}>
+      </OverlayPage>
+      <OverlayPage visible={pinningStore !== null} onDismiss={() => setPinningStore(null)} zIndex={55}>
         <PinStoreLocationSheet
           visible={pinningStore !== null}
           store={pinningStore ?? ''}
@@ -1057,9 +1021,9 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           }}
           onUnpin={(storeName) => handleUnpinStore(storeName)}
         />
-      </FullPageOverlay>
+      </OverlayPage>
       {/* AI Suggestions full-page overlay */}
-      <FullPageOverlay visible={showAiSuggestions} onDismiss={() => setShowAiSuggestions(false)} zIndex={56}>
+      <OverlayPage visible={showAiSuggestions} onDismiss={() => setShowAiSuggestions(false)} zIndex={56}>
         <AiSuggestionsScreen
           visible={showAiSuggestions}
           onClose={() => setShowAiSuggestions(false)}
@@ -1073,9 +1037,9 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             load(familyId);
           }}
         />
-      </FullPageOverlay>
+      </OverlayPage>
 
-      <FullPageOverlay visible={!!detailItem} onDismiss={() => setDetailItem(null)} zIndex={54}>
+      <OverlayPage visible={!!detailItem} onDismiss={() => setDetailItem(null)} zIndex={54}>
         <ItemDetailSheet
           item={detailItem}
           members={members}
@@ -1090,7 +1054,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
           colors={colors}
           isDark={isDark}
         />
-      </FullPageOverlay>
+      </OverlayPage>
     </View>
   );
 }

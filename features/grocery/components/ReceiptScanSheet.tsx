@@ -9,6 +9,7 @@
  * page body, not its own Modal.
  */
 import { ScanLine } from 'lucide-react-native';
+import { useOverlayClose } from '@/components/OverlayPage';
 import { PageHeading } from '@/components/PageHeading';
 import React, { useState, useRef, useCallback } from 'react';
 import {
@@ -101,7 +102,8 @@ export function ReceiptScanSheet({
     setStore(''); setTotal(0); setScanSource('receipt');
   }, []);
 
-  const handleClose = () => { reset(); (requestAnimatedClose ?? onClose)(); };
+  const overlayClose = useOverlayClose();
+  const handleClose = () => { reset(); (requestAnimatedClose ?? overlayClose ?? onClose)(); };
 
   const runScan = async (base64: string, localUri?: string) => {
     setScanning(true); setScanError(null);

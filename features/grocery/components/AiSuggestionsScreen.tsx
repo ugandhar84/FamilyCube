@@ -16,7 +16,7 @@
  *  - "Add X selected items" primary button
  */
 import { Sparkles } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, Pressable, ScrollView, TextInput,
@@ -271,7 +271,7 @@ export function AiSuggestionsScreen({
     <View style={{ flex: 1, backgroundColor: cardBg }}>
 
       {/* Header */}
-      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="AI add suggestions" accent="pink" Icon={Sparkles} onTitlePress={onClose} topInset={insets.top} />
+      <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title="AI add suggestions" accent="pink" Icon={Sparkles} onTitlePress={onClose} topInset={insets.top} />
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>

@@ -1,5 +1,5 @@
 import { ShoppingCart } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
@@ -155,7 +155,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
   return (
     <Pressable style={{ flex: 1, backgroundColor: sheetBg }} onPress={Keyboard.dismiss}>
       {/* Header */}
-      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title={isEdit ? 'Edit Item' : 'Add to List'} subtitle={isEdit ? 'Update item details' : 'Type a name or tap a suggestion'} accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
+      <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title={isEdit ? 'Edit Item' : 'Add to List'} subtitle={isEdit ? 'Update item details' : 'Type a name or tap a suggestion'} accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
 
       <ScrollView
         keyboardShouldPersistTaps="always"

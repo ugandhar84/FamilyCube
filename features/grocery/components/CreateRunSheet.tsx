@@ -1,5 +1,5 @@
 import { ShoppingCart } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useRef, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
@@ -87,7 +87,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
     <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
       {/* Header — ReviewInbox pattern */}
-      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Start shopping run" subtitle="Choose a store and a time. Pending Kid requests stay out of the run." accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
+      <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title="Start shopping run" subtitle="Choose a store and a time. Pending Kid requests stay out of the run." accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
 
       <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>

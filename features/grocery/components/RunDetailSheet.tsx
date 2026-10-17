@@ -1,5 +1,5 @@
 import { ShoppingCart } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, ActivityIndicator, TextInput,
@@ -410,7 +410,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     />
     <View style={{ flex: 1, backgroundColor: colors.card }}>
       {/* Full-page header */}
-      <PageHeading eyebrow="FAMILY CUBE · SHOPPING TRIP" title={run.name} accent="teal" Icon={ShoppingCart} onTitlePress={onClose} topInset={insets.top}
+      <OverlayHeading eyebrow="FAMILY CUBE · SHOPPING TRIP" title={run.name} accent="teal" Icon={ShoppingCart} onTitlePress={onClose} topInset={insets.top}
         right={<View style={{ backgroundColor: isActive ? colors.tealLight : isDone ? colors.surface : colors.primaryLight,
           borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
           <Text style={{ fontSize: 12, fontWeight: '600', color: isActive ? colors.teal : isDone ? colors.textSecondary : colors.primary }}>

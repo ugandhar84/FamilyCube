@@ -10,7 +10,7 @@
  * also they can edit while clicking the perticular card"].
  */
 import { MapPin } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, StyleSheet, Keyboard, ScrollView } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -139,7 +139,7 @@ export function PinStoreLocationSheet({ visible, store, pinnedStores, onClose, o
     <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
       {/* Header — ReviewInbox pattern */}
-      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Pin store location" subtitle="Get a reminder when you are near this store." accent="teal" Icon={MapPin} onTitlePress={onClose} topInset={insets.top} />
+      <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title="Pin store location" subtitle="Get a reminder when you are near this store." accent="teal" Icon={MapPin} onTitlePress={onClose} topInset={insets.top} />
 
       <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>

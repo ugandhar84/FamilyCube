@@ -1,5 +1,5 @@
 import { ShoppingCart } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { ScrollView, View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +22,7 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
       {/* Header */}
-      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title={item.name} accent="teal" Icon={ShoppingCart} onTitlePress={onClose} topInset={insets.top}
+      <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title={item.name} accent="teal" Icon={ShoppingCart} onTitlePress={onClose} topInset={insets.top}
         right={priceInfo?.price != null && (
           <View style={{ backgroundColor: trusted ? colors.tealLight : colors.amberLight, borderRadius: 12,
             paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' }}>

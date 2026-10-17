@@ -4,6 +4,9 @@ import { supabase } from '@/lib/supabase';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { Home as HomeIcon, GraduationCap, Briefcase, MapPin, WifiOff, Navigation } from 'lucide-react-native';
+import { usePlacesStore, type FamilyPlace } from '@/store/placesStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 /**
  * FamilyPulseCard — pixel-faithful rebuild of the Figma Make prototype's
@@ -24,6 +27,32 @@ import { GEMINI } from '@/constants/geminiRhythm';
  * so there is no real coordinate to test "home" against. Showing "4/5 home"
  * against data that doesn't mean that would be worse than this honest label.
  */
+type LocRow = { member_id: string; share_location_enabled: boolean; lat: number | null; lng: number | null; last_updated: string | null };
+type Where = { key: 'home' | 'school' | 'work' | 'other' | 'out' | 'off'; label: string };
+
+function metersBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371000, rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** Where a member is right now, judged against the family's saved places (Home, School, Work, others). */
+function whereIs(row: LocRow | undefined, places: FamilyPlace[]): Where {
+  if (!row || !row.share_location_enabled) return { key: 'off', label: 'Not sharing' };
+  if (row.lat == null || row.lng == null) return { key: 'off', label: 'No location yet' };
+  const ageMin = row.last_updated ? (Date.now() - new Date(row.last_updated).getTime()) / 60000 : Infinity;
+  if (ageMin > 180) return { key: 'off', label: 'Offline' };
+  let best: { place: FamilyPlace; d: number } | null = null;
+  for (const pl of places) {
+    const d = metersBetween(row.lat, row.lng, pl.latitude, pl.longitude);
+    if (d <= Math.max(pl.radiusM, 75) && (!best || d < best.d)) best = { place: pl, d };
+  }
+  if (!best) return { key: 'out', label: 'Out' };
+  const k = best.place.kind;
+  return { key: k, label: k === 'home' ? 'Home' : k === 'school' ? 'School' : k === 'work' ? 'Work' : best.place.name };
+}
+
 export function FamilyPulseCard({
   colors, isDark, members, hasUrgentItem, familyName,
 }: {
@@ -32,40 +61,56 @@ export function FamilyPulseCard({
   hasUrgentItem?: boolean;
   familyName?: string;
 }) {
-  const [sharingIds, setSharingIds] = useState<Set<string> | null>(null);
+  const [rows, setRows] = useState<Record<string, LocRow> | null>(null);
+  const places = usePlacesStore(st => st.places);
+  const activeMemberId = useFamilyStore(st => st.activeMemberId);
+  const familyId = (members[0] as any)?.familyId as string | undefined;
+
+  useEffect(() => { if (familyId && activeMemberId && places.length === 0) usePlacesStore.getState().load(familyId, activeMemberId); }, [familyId, activeMemberId]);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('member_locations')
-        .select('member_id, share_location_enabled');
+    const fetchRows = async () => {
+      const { data, error } = await supabase.from('member_locations').select('member_id, share_location_enabled, lat, lng, last_updated');
       if (cancelled) return;
-      if (error) { console.warn('[FamilyPulseCard] fetch failed', error.message); setSharingIds(new Set()); return; }
-      setSharingIds(new Set((data ?? []).filter((r: any) => r.share_location_enabled).map((r: any) => r.member_id)));
-    })();
-    return () => { cancelled = true; };
+      if (error) { console.warn('[FamilyPulseCard] fetch failed', error.message); setRows({}); return; }
+      setRows(Object.fromEntries((data ?? []).map((r: any) => [r.member_id, r as LocRow])));
+    };
+    fetchRows();
+    const t = setInterval(fetchRows, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  // Show a low-height placeholder while loading so cards below it still render
-  if (sharingIds === null) return <View style={{ marginHorizontal: 20, marginTop: 14, height: 120, borderRadius: 24, backgroundColor: colors.tealLight, opacity: 0.5 }} />;
+  if (rows === null) return <View style={{ marginHorizontal: 20, marginTop: 12, height: 120, borderRadius: 24, backgroundColor: colors.tealLight, opacity: 0.5 }} />;
 
-  const sharingCount = members.filter(m => sharingIds.has(m.id)).length;
-  const mostRecent = members.find(m => sharingIds.has(m.id));
+  const people = members.filter(m => !(m as any).deletedAt && m.inviteStatus !== 'pending');
+  const where = Object.fromEntries(people.map(m => [m.id, whereIs(rows[m.id], places)])) as Record<string, Where>;
+  const count = (k: Where['key']) => people.filter(m => where[m.id].key === k).length;
+  const atHome = count('home'), atSchool = count('school'), atWork = count('work');
+  const atOther = count('other'), out = count('out'), off = count('off');
+  const hasHomePlace = places.some(pl => pl.kind === 'home');
+  const summary = [
+    atHome ? `${atHome} home` : '', atSchool ? `${atSchool} at school` : '', atWork ? `${atWork} at work` : '',
+    atOther ? `${atOther} at a saved place` : '', out ? `${out} out` : '', off ? `${off} not sharing` : '',
+  ].filter(Boolean).join(' · ');
+  const sharingCount = people.filter(m => where[m.id].key !== 'off').length;
+
+  // A small badge on each face says where that person is, so there is no list to read.
+  const badge: Record<Where['key'], { fg: string; Icon: any } | null> = {
+    home: { fg: colors.teal, Icon: HomeIcon },
+    school: { fg: colors.sky, Icon: GraduationCap },
+    work: { fg: colors.amber, Icon: Briefcase },
+    other: { fg: colors.pink, Icon: MapPin },
+    out: { fg: colors.primary, Icon: Navigation },
+    off: { fg: colors.textTertiary, Icon: WifiOff },
+  };
 
   return (
     <View style={{
-      // CSS margin-collapse note: Figma's siblings use ONE margin-top each
-      // (block-level DOM, margins collapse to the larger value) — RN never
-      // collapses margins, so only marginTop is set here (no marginBottom)
-      // to avoid doubling every inter-card gap versus the Figma source.
       marginHorizontal: 20, marginTop: 12,
       flexDirection: 'row', flexWrap: 'wrap',
       gap: 16, padding: 20,
       borderWidth: 1, borderColor: colors.border, borderRadius: 24,
-      // Pastel intensity bumped per explicit direction ("increase the
-      // pastel color intensity lil bit 20%") — was the exact Figma source
-      // value #E8F4EF, now a more saturated step toward the same hue.
       backgroundColor: colors.tealLight,
       shadowColor: colors.teal, shadowOffset: { width: 0, height: 12 }, shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 30,
     }}>
@@ -78,9 +123,8 @@ export function FamilyPulseCard({
           {familyName ? `Welcome to ${familyName}` : "You’re on top of today"}
         </Text>
         <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 13, lineHeight: 19 }}>
-          {hasUrgentItem
-            ? 'Everyone is accounted for. One thing needs your decision.'
-            : 'Everyone is accounted for.'}
+          {summary || 'Turn on location sharing to see where everyone is.'}
+          {hasUrgentItem ? '. One thing needs your decision.' : ''}
         </Text>
       </View>
 
@@ -90,39 +134,32 @@ export function FamilyPulseCard({
         alignItems: 'center', justifyContent: 'center',
       }}>
         <Text style={{ fontSize: 17, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor), textAlign: 'center' }}>
-          {sharingCount}/{members.length}
+          {hasHomePlace ? atHome : sharingCount}/{people.length}
         </Text>
         <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center' }}>
-          sharing
+          {hasHomePlace ? 'home' : 'sharing'}
         </Text>
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
-        {/* FamilyAvatar placed directly — the old wrapper's circular
-            borderRadius:999 ring was removed (it double-bordered against
-            FamilyAvatar's own square border). A thin opaque square
-            separator is still needed behind the overlap though — without
-            it, each avatar's own translucent background tint shows the
-            one behind it through at the intersection instead of a clean
-            stacked edge [live-reported: "the overlap is transparent
-            intersection not good"]. */}
-        {members.slice(0, 5).map((m, i) => (
-          <View key={m.id} style={{
-            marginLeft: i === 0 ? 0 : -7,
-            backgroundColor: colors.card, borderRadius: 32 * 0.34 + 2, padding: 2,
-          }}>
-            <FamilyAvatar
-              name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32}
-              ringColor={m.role === 'parent' ? colors.teal : m.role === 'kid' ? colors.amber : colors.primary}
-              ringWidth={2}
-            />
-          </View>
-        ))}
-        {mostRecent && (
-          <Text style={{ marginLeft: 8, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11 }}>
-            {mostRecent.name.split(' ')[0]} checked in
-          </Text>
-        )}
+        {people.slice(0, 6).map((m, i) => {
+          const b = badge[where[m.id].key]; const Ic = b?.Icon;
+          return (
+            <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -7, backgroundColor: colors.card, borderRadius: 32 * 0.34 + 2, padding: 2 }}>
+              <FamilyAvatar
+                name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={32}
+                ringColor={m.role === 'parent' ? colors.teal : m.role === 'kid' ? colors.amber : colors.primary}
+                ringWidth={2}
+              />
+              {b && Ic && (
+                <View style={{ position: 'absolute', right: -3, bottom: -3, width: 17, height: 17, borderRadius: 9,
+                  alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, borderWidth: 1.5, borderColor: b.fg }}>
+                  <Ic size={9} color={b.fg} />
+                </View>
+              )}
+            </View>
+          );
+        })}
       </View>
     </View>
   );

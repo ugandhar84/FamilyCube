@@ -215,7 +215,7 @@ export default function JustDescribeItEventScreen({
   const [formOpen, setFormOpen]         = useState(isEdit);
   const [evTitle, setEvTitle]           = useState(ed?.title ?? '');
   const [evCategory, setEvCategory]     = useState(ed?.category ?? 'Event');
-  const [evDate, setEvDate]             = useState(ed?.date ?? prefillDate ?? shiftDate(todayLocal(), 1));
+  const [evDate, setEvDate]             = useState(ed?.date ?? prefillDate ?? (autoOpenForm ? todayLocal() : shiftDate(todayLocal(), 1)));
   const [evTime, setEvTime]             = useState(ed?.time?.slice(0, 5) ?? prefillTime ?? '09:00');
   const [evEndTime, setEvEndTime]       = useState(() => {
     if (ed?.endTime) return ed.endTime.slice(0, 5);

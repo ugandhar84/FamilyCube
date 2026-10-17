@@ -20,7 +20,7 @@ import { View, Text, TextInput, Pressable, Alert, StyleSheet, Animated, Easing }
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Mic, Square, Sparkles, Clock, User, Users, Repeat, Coins, Camera, Calendar, CalendarClock, MapPin, Car,
-  ClipboardList, Check, ArrowRight, Lightbulb, Gift, Zap, type LucideIcon,
+  ClipboardList, Check, ArrowRight, Lightbulb, Gift, Zap, X, type LucideIcon,
 } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -361,20 +361,29 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
   );
 
   const detCat = detection ? ((detection.category.kind === 'event' ? detection.category.eventCategory : detection.category.questCategory) ?? detection.category.label) : '';
-  // Example sentences use THIS family's own people, never made-up names.
+  // Example sentences are built from THIS family's own people and rotate
+  // each time the drawer opens, so they always feel current.
+  const seed = useRef(0);
+  useEffect(() => { if (visible) seed.current = Math.floor(Math.random() * 997); }, [visible]);
   const examples = useMemo(() => {
     const kids = people.filter(m => m.role === 'kid' || m.role === 'teen').map(firstName);
     const adults = people.filter(m => m.role === 'parent').map(firstName);
-    const kid1 = kids[0], kid2 = kids[1] ?? kids[0], adult = adults[0] ?? kids[0];
-    const w = (n: string | undefined, rest: string, fallback: string) => (n ? `${n} ${rest}` : fallback);
-    return mode === 'chore'
-      ? [w(kid1, 'take out the trash tomorrow at 5 PM', 'Take out the trash tomorrow at 5 PM'),
-         w(kid2, 'water the plants every Sunday', 'Water the plants every Sunday'),
-         'Anyone wipe the kitchen counters tonight']
-      : [w(kid1, 'piano lesson Thursday 3:30 PM', 'Piano lesson Thursday 3:30 PM'),
-         'Family dinner Sunday 5:30 PM',
-         w(adult, 'dentist Friday 4 PM', 'Dentist Friday 4 PM')];
-  }, [mode, people]);
+    const pick = (list: string[], i: number) => (list.length ? list[(seed.current + i) % list.length] : undefined);
+    const k1 = pick(kids, 0), k2 = pick(kids, 1) ?? k1, ad = pick(adults, 0) ?? k1;
+    const w = (n: string | undefined, rest: string) => (n ? `${n} ${rest}` : rest.charAt(0).toUpperCase() + rest.slice(1));
+    const choreSet = [
+      w(k1, 'take out the trash tomorrow at 5 PM'), w(k2, 'water the plants every Sunday'), w(k1, 'clean up their room before dinner'),
+      w(k2, 'feed the dog every morning at 7 AM'), w(k1, 'do the dishes tonight'), w(k2, 'pack the school bag tonight'),
+    ];
+    const eventSet = [
+      w(k1, 'piano lesson Thursday 3:30 PM'), 'Family dinner Sunday 5:30 PM', w(ad, 'dentist Friday 4 PM'),
+      w(k2, 'soccer practice Saturday 10 AM at the field'), w(ad, 'parent-teacher meeting next Tuesday 6 PM'), 'Movie night Friday 7 PM',
+    ];
+    const set = mode === 'chore' ? choreSet : eventSet;
+    const start = seed.current % set.length;
+    return [0, 1, 2].map(i => set[(start + i) % set.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, people, visible]);
   const whoNames = who.map(id => firstName(people.find(m => m.id === id))).filter(Boolean).join(', ');
 
   return (
@@ -406,8 +415,14 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
             value={listening ? (dictation.liveTranscript || input) : input} onChangeText={setInput} multiline
             onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
             placeholder={examples[0]}
-            placeholderTextColor={k.textFaint} style={[s.composerInput, { color: k.text }]}
+            placeholderTextColor={k.textFaint} style={[s.composerInput, { color: k.text, paddingRight: input ? 44 : 0 }]}
           />
+          {!!input && (
+            <Pressable onPress={() => { if (listening) dictation.reset(); setInput(''); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear"
+              style={[s.clearBtn, { backgroundColor: k.well }]}>
+              <X size={18} color={k.textMuted} strokeWidth={2.5} />
+            </Pressable>
+          )}
           <View style={s.composerBar}>
             <Pressable onPress={listening ? stopVoice : () => dictation.start()} accessibilityRole="button" accessibilityLabel={listening ? 'Stop listening' : 'Speak'}
               style={({ pressed }) => [s.micBtn, { backgroundColor: listening ? k.danger : k.primary }, pressed && { opacity: 0.85 }]}>
@@ -609,6 +624,7 @@ const s = StyleSheet.create({
   heroText: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', lineHeight: 20, marginTop: 4 },
   composer: { borderRadius: 28, borderWidth: 2, padding: KIOSK_SPACE.lg, gap: KIOSK_SPACE.md },
   composerInput: { minHeight: 96, fontSize: KIOSK_TYPO.heading, fontWeight: '600', letterSpacing: -0.2, textAlignVertical: 'top' },
+  clearBtn: { position: 'absolute', top: KIOSK_SPACE.md, right: KIOSK_SPACE.md, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   composerBar: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
   micBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54, borderRadius: 27, paddingHorizontal: 22 },
   micText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },

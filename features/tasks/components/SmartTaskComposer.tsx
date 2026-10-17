@@ -108,7 +108,7 @@ export default function SmartTaskComposer({
   // from the app's ordinary push notifications. Off by default, 10 min
   // lead once turned on — only meaningful when a "When" time is set.
   const [touchedAlertCall, setTouchedAlertCall] = useState(false);
-  const [alertCall, setAlertCall] = useState(false);
+  const [alertCall, setAlertCall] = useState(true);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
   // Multi-select — "all kids"/"Leo and Maya" resolve to multiple ids via
   // the local detector's memberNames. "Family"/"All Kids" quick-pills below
@@ -217,7 +217,7 @@ export default function SmartTaskComposer({
     setInput(''); setDetection(null); setVoiceError(null);
     setTouchedTitle(false); setTouchedMember(false); setTouchedCategory(false);
     setTouchedUrgent(false); setUrgent(false);
-    setTouchedAlertCall(false); setAlertCall(false); setAlertCallLeadMinutes(10);
+    setTouchedAlertCall(false); setAlertCall(true); setAlertCallLeadMinutes(10);
     setTitle(''); setForMemberIds([]); setCategory(undefined);
     setCoinsStr('20'); setPhotoRequired(false);
     setPickupLocation(''); setTouchedPickup(false); setDropLocation(''); setTouchedDrop(false); setReturnTime(''); setShowReturnTime(false); setTouchedReturnTime(false);

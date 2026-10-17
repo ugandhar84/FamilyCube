@@ -197,7 +197,7 @@ export function KioskAddEventForm({ visible, onClose, activeMemberId, prefill, i
   const [showDatePick,   setShowDatePick]   = useState(false);
   const [showTimePick,   setShowTimePick]   = useState(false);
   const [allDay,         setAllDay]         = useState(false);
-  const [alertCall,            setAlertCall]            = useState(prefill?.alertCall ?? false);
+  const [alertCall,            setAlertCall]            = useState(prefill?.alertCall ?? true);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(prefill?.alertCallLeadMinutes ?? 10);
 
   // Repeats — weekly-on-specific-weekdays is the primary case (a school

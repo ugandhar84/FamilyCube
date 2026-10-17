@@ -165,7 +165,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   const [showDatePick,   setShowDatePick]   = useState(false);
   const [showTimePick,   setShowTimePick]   = useState(false);
   const [allDay,         setAllDay]         = useState(false);
-  const [alertCall,            setAlertCall]            = useState(prefill?.alertCall ?? false);
+  // New events ring by default (the alert only fires for a timed event, to the people on it); switch off per event.
+  const [alertCall,            setAlertCall]            = useState(prefill?.alertCall ?? true);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(prefill?.alertCallLeadMinutes ?? 10);
 
   // Repeats — weekly-on-specific-weekdays is the primary case (a school

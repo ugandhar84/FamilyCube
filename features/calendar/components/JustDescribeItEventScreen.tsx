@@ -687,6 +687,9 @@ export default function JustDescribeItEventScreen({
         memberId: evMemberIds[0],
         notes: evNotes.trim() || undefined,
         location: evLocation.trim() || undefined,
+        // Rings by default for a timed event (the 10-minute call reminder); all-day entries never ring.
+        alertCall: !evAllDay ? true : undefined,
+        alertCallLeadMinutes: !evAllDay ? 10 : undefined,
         rideRequired: (firstIsPickup ? evPickupNeeded : evDropNeeded) || undefined,
         pickupLocation: firstIsPickup ? (evPickupFrom.trim() || undefined) : (evDropNeeded && evDropFrom.trim() ? evDropFrom.trim() : undefined),
         dropLocation: firstIsPickup ? (evPickupTo.trim() || undefined) : (evDropNeeded && evDropTo.trim() ? evDropTo.trim() : undefined),
@@ -745,6 +748,8 @@ export default function JustDescribeItEventScreen({
           memberIds: evMemberIds.length > 0 ? evMemberIds : undefined,
           memberId: evMemberIds[0],
           rideRequired: true,
+          alertCall: !evAllDay ? true : undefined,
+          alertCallLeadMinutes: !evAllDay ? 10 : undefined,
           pickupLocation: firstIsPickup ? (evDropFrom.trim() || undefined) : (evPickupFrom.trim() || evDropTo.trim() || undefined),
           dropLocation: firstIsPickup ? (evDropTo.trim() || undefined) : (evPickupTo.trim() || evDropFrom.trim() || undefined),
           driverId: firstIsPickup ? evDropDriverId : evPickupDriverId,

@@ -551,6 +551,7 @@ export default function HubScreen() {
       kidName: pickup?.name.split(' ')[0] ?? 'Family', kidEmoji: pickup?.emoji,
       driverName: driver?.name.split(' ')[0] ?? 'Someone', driverEmoji: driver?.emoji,
       driverMemberId: t.driverMemberId,
+      eventId: t.eventId,
       etaMinutes: t.etaMinutes,
       startedAtMs: new Date(t.startedAt).getTime(),
       overdueAlertSent: t.overdueAlertSent,

@@ -12,7 +12,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { AlertBanner } from './hubComponents';
-import { localToday, hoursUntilEvent, fmtTime } from './hubUtils';
+import { localToday, hoursUntilEvent, fmtTime, fmtHumanDateShort } from './hubUtils';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -90,13 +90,13 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   onDispatchDirect: (memberId: string | undefined, etaMinutes: number, eventId?: string) => void;
   onPickupDone: (tripId: string) => void;
   onCancelTrip: (tripId: string) => void;
-  activeTrip?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase } | null;
+  activeTrip?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; eventId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase } | null;
   // Every OTHER concurrently-active trip besides `activeTrip` (e.g. a
   // different parent's own trip, running at the same time as this parent's)
   // — rendered read-only below `activeTrip`'s own card so a trip started by
   // someone else is never invisible just because this parent's Hub is
   // showing their own dispatch UI in the primary slot.
-  otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase }[];
+  otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; eventId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase }[];
   onUpdateEta?: (tripId: string, etaMinutes: number) => void;
 }) {
   // Unread CHAT messages only (same source as the Chat tab badge). This tile used to show the bell's total of every
@@ -924,6 +924,16 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           const label = headlineTrip
             ? `${headlineTrip.driverName.split(' ')[0]} driving ${headlineTrip.kidName.split(' ')[0]}`
             : headlineRideEvent?.title;
+          // When and where, so the card is understandable without opening it.
+          const detailEvent = headlineRideEvent ?? (headlineTrip?.eventId ? events.find(e => e.id === headlineTrip.eventId) : undefined);
+          const short = (a?: string) => a?.split(',')[0].trim();
+          const from = short(detailEvent?.pickupLocation), to = short(detailEvent?.dropLocation) ?? short(detailEvent?.location);
+          const detail = detailEvent
+            ? [
+                `${fmtHumanDateShort(detailEvent.date)}${detailEvent.time ? ` · ${fmtTime(detailEvent.time)}` : ''}`,
+                from && to ? `${from} → ${to}` : (from ?? to),
+              ].filter(Boolean).join(' · ')
+            : undefined;
           const otherCount = (allActiveTrips.length + pendingRideRequiredEvents.length)
             - (headlineTrip ? 1 : 0) - (headlineRideEvent ? 1 : 0);
           return (
@@ -933,6 +943,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
               withoutDriverCount={pendingRideRequiredEvents.length}
               ongoingCount={allActiveTrips.length}
               activeTripLabel={label}
+              activeTripDetail={detail}
               activePhase={headlineTrip?.phase}
               onPress={onRidesOpen}
             />

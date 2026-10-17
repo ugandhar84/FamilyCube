@@ -29,7 +29,7 @@ const PHASE_STAGES: { phase: TripPhase; label: string }[] = [
 ];
 
 export function RidesStatusCard({
-  colors, isDark, pendingCount, withoutDriverCount, ongoingCount, activeTripLabel, activePhase, onPress,
+  colors, isDark, pendingCount, withoutDriverCount, ongoingCount, activeTripLabel, activeTripDetail, activePhase, onPress,
 }: {
   colors: any; isDark: boolean;
   // Count of everything else needing a decision (other pending ride
@@ -44,6 +44,8 @@ export function RidesStatusCard({
   withoutDriverCount?: number;
   ongoingCount?: number;
   activeTripLabel?: string;
+  // When and where the headline ride is, e.g. "Today · 5:00 PM · Dance class → Home".
+  activeTripDetail?: string;
   // undefined = headline item is a ride REQUEST with no trip dispatched
   // yet (not on the 4-stage track at all), not stage 0 of it.
   activePhase?: TripPhase;
@@ -66,7 +68,7 @@ export function RidesStatusCard({
       style={{
         marginHorizontal: 20, marginTop: 12,
         backgroundColor: isDark ? colors.card : GEMINI.cardBg,
-        borderRadius: 16, padding: 16, gap: 10,
+        borderRadius: 16, padding: 14, gap: 8,
         borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
         ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
       }}
@@ -106,14 +108,17 @@ export function RidesStatusCard({
           while idle, where both read 0) so this card actually answers
           "what's the state of rides right now" at a glance instead of
           only ever naming the single headline item. */}
-      {((withoutDriverCount ?? 0) > 0 || (ongoingCount ?? 0) > 0) && (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+      {(!idle && activeTripDetail) || (withoutDriverCount ?? 0) > 0 || (ongoingCount ?? 0) > 0 ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {!idle && activeTripDetail ? (
+            <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColor }} numberOfLines={2}>
+              {activeTripDetail}
+            </Text>
+          ) : <View style={{ flex: 1 }} />}
           {(withoutDriverCount ?? 0) > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20,
-              backgroundColor: isDark ? colors.danger + '18' : '#FFE8E3' }}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.danger }}>{withoutDriverCount}</Text>
-              <Text style={{ fontSize: 11, color: colors.danger }}>need a driver</Text>
+            <View accessibilityLabel={`${withoutDriverCount} need a driver`}
+              style={{ minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>{withoutDriverCount}</Text>
             </View>
           )}
           {(ongoingCount ?? 0) > 0 && (
@@ -125,7 +130,7 @@ export function RidesStatusCard({
             </View>
           )}
         </View>
-      )}
+      ) : null}
 
       {/* Trip progress — same 4-segment bar + labels as
           RidesControlRoomScreen's own ProgressTrack, only rendered once

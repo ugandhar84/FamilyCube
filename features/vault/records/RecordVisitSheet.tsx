@@ -13,14 +13,19 @@
  * — fetch(uri).blob() silently returns a 0-byte blob for local file:// paths
  * on Android) — but with NO short hard cap (chat's MAX_RECORD_SECS=10 is
  * voice-note-specific), since a real appointment can run 20-60+ minutes.
- * Past 45 minutes, shows a persistent but dismissible inline warning
+ * Recordings stop by themselves at 30 minutes (a warning shows from 25) and keep running in the background.
  * instead of auto-stopping.
  */
 import { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, Modal, TouchableOpacity, ActivityIndicator, Animated, Alert,
+  View, Text, TouchableOpacity, ActivityIndicator, Animated, Alert, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { PageHeading } from '@/components/PageHeading';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useUIStore } from '@/store/uiStore';
 import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Mic, Square, X, Pause, Info } from 'lucide-react-native';
@@ -34,7 +39,8 @@ import { encryptAnalysis } from './recordsCrypto';
 import AiReviewSheet from './AiReviewSheet';
 import AiConsentSheet, { useAiConsent } from '@/components/AiConsentGate';
 
-const WARNING_AT_SECS = 45 * 60;
+const MAX_SECS = 30 * 60;          // a recording stops by itself at 30 minutes
+const WARNING_AT_SECS = 25 * 60;   // and warns five minutes before
 
 function formatElapsed(totalSecs: number): string {
   const m = Math.floor(totalSecs / 60);
@@ -166,7 +172,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     if (aiConsentChecked && !aiConsented) { setShowAiConsent(true); return; }
     const perm = await AudioModule.requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microphone permission required', 'Enable microphone access in Settings to record this visit.'); return; }
-    await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+    await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, allowsBackgroundRecording: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordStartRef.current = Date.now();
@@ -349,7 +355,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
       setReviewingStop(true);
     } catch (e: any) {
       setUploading(false);
-      showToast(e?.message ?? "Couldn't process the recording", 'error');
+      const noKey = /No family key|security code/i.test(e?.message ?? '');
+      showToast(noKey ? 'This device needs the family security code before it can save a visit recording. Ask the family admin for it.' : (e?.message ?? "Couldn't process the recording"), noKey ? 'warning' : 'error');
     }
   };
 
@@ -444,6 +451,20 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     onClose();
   };
 
+  // Hard stop at 30 minutes: finish and upload exactly as if the Stop button had been tapped.
+  const autoStopped = useRef(false);
+  useEffect(() => {
+    if (!recording) { autoStopped.current = false; return; }
+    if (elapsed >= MAX_SECS && !autoStopped.current) {
+      autoStopped.current = true;
+      showToast('30 minute limit reached. Saving your recording.');
+      stopAndUpload();
+    }
+  }, [recording, elapsed]);
+
+  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const cardStyle = { backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 24, padding: 20, ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) } as const;
+
   if (pendingAnalysis && pendingRecord) {
     return (
       <AiReviewSheet
@@ -458,8 +479,11 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
     );
   }
 
+  if (!visible) return null;
+
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <FullPageOverlay visible onDismiss={handleClose} zIndex={70} backgroundColor={canvas}>
+    <View style={{ flex: 1, backgroundColor: canvas }}>
       <AiConsentSheet
         visible={showAiConsent}
         memberId={actorId}
@@ -468,23 +492,34 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
         onAgree={() => { setShowAiConsent(false); markAiConsented(); startRecording(); }}
         onDecline={() => setShowAiConsent(false)}
       />
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.62)' }}>
-        <View style={{
-          backgroundColor: colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-          paddingBottom: insets.bottom + 20, paddingTop: 12, paddingHorizontal: 20,
-        }}>
-          <View style={{ alignItems: 'center', paddingBottom: 12 }}>
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
-          </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · HEALTH"
+        title="Record Visit"
+        accent="teal"
+        topInset={insets.top}
+        onTitlePress={uploading || analyzing ? undefined : handleClose}
+        right={
+          <TouchableOpacity onPress={handleClose} disabled={uploading || analyzing} accessibilityRole="button" accessibilityLabel="Close"
+            style={{ padding: 10, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#FFFFFF', ...(isDark ? null : GEMINI.cardShadow) }}>
+            <X size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        }
+      />
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40, gap: 16 }} showsVerticalScrollIndicator={false}>
+        {/* The appointment this recording belongs to, shown in every state. */}
+        <View style={[cardStyle, { gap: 4 }]}>
+          <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>APPOINTMENT</Text>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{eventTitle}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>{eventDateLabel}</Text>
+          {!!(doctorName || location) && (
+            <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
+              {[doctorName, location].filter(Boolean).join(' · ')}
+            </Text>
+          )}
+          <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginTop: 2 }}>For {memberName}</Text>
+        </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Record Visit</Text>
-            <TouchableOpacity onPress={handleClose} disabled={uploading || analyzing}
-              style={{ padding: 8, borderRadius: 20, backgroundColor: colors.surface }}>
-              <X size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
+        <View style={cardStyle}>
           {notMedical ? (
             <View style={{ gap: 16, alignItems: 'center', paddingVertical: 20 }}>
               <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>{notMedical}</Text>
@@ -515,12 +550,6 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             // RecordsTab.tsx/RecordCard's tag-aware branch for
             // tag:'visit_recording'.
             <View style={{ gap: 18, alignItems: 'center', paddingVertical: 12 }}>
-              <View style={{ alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
-                  {eventTitle}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
-              </View>
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
                 Recording saved — review before submitting for analysis.
               </Text>
@@ -549,17 +578,6 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             // (not a decorative pulse), then controls — mirrored here with
             // this app's own visual language rather than copied verbatim.
             <View style={{ gap: 18, alignItems: 'center', paddingVertical: 12 }}>
-              <View style={{ alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
-                  {eventTitle}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
-                {!!(doctorName || location) && (
-                  <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
-                    {[doctorName, location].filter(Boolean).join(' · ')}
-                  </Text>
-                )}
-              </View>
 
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
                 {paused ? 'Paused — tap resume to continue' : "You're all set. Focus on your visit."}
@@ -585,7 +603,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
 
               {elapsed >= WARNING_AT_SECS && (
                 <Text style={{ fontSize: 12, color: BRAND.amber, textAlign: 'center', paddingHorizontal: 12 }}>
-                  Long recording — uploading may take a moment once you stop.
+                  Recording stops automatically at 30:00. Uploading may take a moment once it ends.
                 </Text>
               )}
 
@@ -606,15 +624,6 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             </View>
           ) : (
             <View style={{ gap: 20, alignItems: 'center', paddingVertical: 20 }}>
-              <View style={{ alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>{eventTitle}</Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>{eventDateLabel}</Text>
-                {!!(doctorName || location) && (
-                  <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
-                    {[doctorName, location].filter(Boolean).join(' · ')}
-                  </Text>
-                )}
-              </View>
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 }}>
                 Record this appointment to get an AI summary with discussion topics and next steps, saved
                 to {memberName}'s Records.
@@ -643,7 +652,8 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
             </View>
           )}
         </View>
-      </View>
-    </Modal>
+      </ScrollView>
+    </View>
+    </FullPageOverlay>
   );
 }

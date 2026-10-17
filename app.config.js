@@ -258,7 +258,9 @@ const config = {
         },
       },
     ],
-    "expo-audio",
+    // enableBackgroundRecording: a visit recording keeps running if the phone locks or the app goes to the background
+    // (adds the iOS "audio" background mode and the Android foreground-service permissions).
+    ["expo-audio", { enableBackgroundRecording: true }],
     [
       "@react-native-voice/voice",
       {

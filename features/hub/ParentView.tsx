@@ -931,7 +931,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           const detail = detailEvent
             ? [
                 `${fmtHumanDateShort(detailEvent.date)}${detailEvent.time ? ` · ${fmtTime(detailEvent.time)}` : ''}`,
-                from && to ? `${from} → ${to}` : (from ?? to),
+                from && to ? `${from} → ${to}` : (from ?? to ?? 'No location'),
               ].filter(Boolean).join(' · ')
             : undefined;
           const otherCount = (allActiveTrips.length + pendingRideRequiredEvents.length)

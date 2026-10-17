@@ -427,7 +427,9 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       isBought: false, notes: params.notes, aiGenerated: params.aiGenerated ?? false,
       createdAt: now,
     };
-    set(s => ({ items: [created, ...s.items] }));
+    // The realtime INSERT for this row can land before this await resolves, so
+    // drop any copy of the same id first or the list ends up with duplicate keys.
+    set(s => ({ items: [created, ...s.items.filter(i => i.id !== created.id)] }));
 
     // A new item tagged to a store that already has an open (draft or
     // active) trip should show up in that trip immediately — a partner

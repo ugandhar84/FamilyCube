@@ -1,48 +1,24 @@
 /**
- * KioskMealFormDrawer — kiosk-only fork of MealFormSheet.tsx (mobile's
- * shared Add/Edit Meal stepper), same minimal-diff fork pattern as
- * KioskAddChoreForm.tsx/AddQuestModal.tsx and KioskAddEventForm.tsx/
- * EventFormModal.tsx: real field logic (the 3-step Basics/Details/Recipe
- * flow, the add-vs-edit dual mode keyed off `day`/`editingMeal`, the
- * save-patch shape) is byte-identical — only the shell is swapped
- * [live-requested: "there should be manual addition/view/edit/delete
- * right similar to the mobile but side forms here in kiosk"].
- *
- * Two real chrome differences from the mobile bottom sheet:
- *   1. TaskFormShell -> KioskTaskFormShell (right-side drawer instead of a
- *      bottom sheet), same as every other kiosk form this session.
- *   2. PickerOverlay's floating time-spinner card -> KioskDateTimePicker /
- *      openAndroidPicker (iOS inline-calendar-shaped time spinner /
- *      Android native dialog), matching the "separate date/time pickers,
- *      similar to Add Med" convention established for Smart Tasker.
- *      Meal time is time-only (no date component — it always applies to
- *      the day already being added/edited), so this only needs the
- *      mode="time" half of that pattern, not the full date+time pair.
- *
- * MealFormSheet.tsx/PickerOverlay.tsx are completely untouched.
+ * KioskMealFormDrawer — add / edit a meal in a right-side drawer, with every
+ * field the phone's MealFormSheet asks for, as pastel field cards:
+ * date (read-only), meal type, title with emoji, time (for a reminder), chef,
+ * servings, prep time, dietary tags, ingredients, steps, the recipe you can
+ * type or dictate, and a note. The save patch is the same shape the phone
+ * writes to family_meals (servings, the note and the dictated recipe are not
+ * columns, exactly like the phone; the dictated recipe fills the steps when
+ * they were left empty so nothing typed is lost).
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from '@/features/vault/tabs/meals/types';
-import { em } from '@/features/vault/tabs/meals/styles';
+import { View, Text, TextInput, Pressable, Platform, StyleSheet } from 'react-native';
+import { UtensilsCrossed, Mic } from 'lucide-react-native';
+import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS } from '@/features/vault/tabs/meals/types';
 import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
-import { KioskTaskFormShell } from './KioskTaskFormShell';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
+import { useKioskColors, kioskPastels } from '../kioskPalette';
+import { KioskFormDrawer } from './KioskFormDrawer';
 import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
-import { useKioskColors } from '../kioskPalette';
-
-// Kiosk-only reduction from mobile's own 3-step Basics/Details/Recipe flow
-// down to 2: 'basics' now also carries the real 'details' content (who's
-// cooking, prep time, dietary tags) on the same screen — same merge
-// pattern KioskAddChoreForm.tsx/KioskAddEventForm.tsx already use for
-// their own what+when steps, kiosk's wide drawer has the room to show
-// both without scrolling past a single field group (live-requested: "we
-// can reduce the add meal steppers since this is bigger screen").
-// MealFormSheet.tsx's own 3-step flow is untouched.
-const STEPS = ['basics', 'recipe'] as const;
-type Step = typeof STEPS[number];
-const STEP_TITLES: Record<Step, string> = {
-  basics: 'Meal & Who', recipe: 'Ingredients & Steps',
-};
+import { KioskAvatar } from './KioskAvatar';
 
 function parseTimeLabel(label: string | null | undefined): Date | null {
   if (!label) return null;
@@ -63,277 +39,248 @@ export interface MealFormPatch {
   start_time: string | null; timezone: string | null;
 }
 
+const TYPE_EMOJI: Record<string, string> = { Breakfast: '🌅', Lunch: '☀️', Dinner: '🌙', Snack: '🍎' };
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/* Module-level so a re-render never remounts a text field and drops the keyboard. */
+function Card({ label, children, tone }: { label: string; children: React.ReactNode; tone?: string }) {
+  const { k } = useKioskColors();
+  return (
+    <View style={[s.card, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+      <Text style={[s.label, { color: tone ?? k.textFaint }]}>{label.toUpperCase()}</Text>
+      {children}
+    </View>
+  );
+}
+function Chip({ label, on, onPress, tone, disabled }: { label: string; on: boolean; onPress: () => void; tone: { card: string; fg: string }; disabled?: boolean }) {
+  const { k } = useKioskColors();
+  return (
+    <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: on, disabled }} accessibilityLabel={label}
+      style={[s.chip, { backgroundColor: on ? k.primary : tone.card }, disabled && { opacity: 0.35 }]}>
+      <Text style={[s.chipT, { color: on ? k.onPrimary : tone.fg }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export function KioskMealFormDrawer({
-  visible, day, editingMeal, members, colors, isDark, onClose, onSave, saving,
+  visible, day, weekOf, editingMeal, existingMeals = [], members, onClose, onSave, saving,
 }: {
+  /** Meals already planned (this and next week), so a day never gets the same type twice. */
+  existingMeals?: Meal[];
   visible: boolean;
   day: string | null;
+  /** Monday (YYYY-MM-DD) of the week being added to; used for the date line. */
+  weekOf?: string;
   editingMeal: Meal | null;
-  members: any[]; colors: any; isDark: boolean;
+  members: any[];
+  colors?: any; isDark?: boolean;
   onClose: () => void;
   onSave: (patch: MealFormPatch) => void | Promise<void>;
   saving?: boolean;
 }) {
-  const { k } = useKioskColors();
+  const { k, isDark } = useKioskColors();
+  const pastels = kioskPastels(k);
+  const dictation = useVoiceDictation();
   const isEdit = !!editingMeal;
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [step, setStep] = useState(0);
   const [touched, setTouched] = useState(false);
-
-  const [title, setTitle]           = useState('');
-  const [type, setType]             = useState('dinner');
-  const [emoji, setEmoji]           = useState('🍽️');
-  const [showEmoji, setShowEmoji]   = useState(false);
-  const [chefId, setChefId]         = useState('');
-  const [prepMins, setPrepMins]     = useState('');
-  const [dietTags, setDietTags]     = useState<string[]>([]);
+  const [title, setTitle] = useState('');
+  const [type, setType] = useState('dinner');
+  const [emoji, setEmoji] = useState('🍽️');
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [chefId, setChefId] = useState('');
+  const [servings, setServings] = useState('');
+  const [prepMins, setPrepMins] = useState('');
+  const [dietTags, setDietTags] = useState<string[]>([]);
   const [ingredients, setIngredients] = useState('');
-  const [prepSteps, setPrepSteps]     = useState('');
-  const [startTime, setStartTime]     = useState<Date | null>(null);
+  const [prepSteps, setPrepSteps] = useState('');
+  const [recipeText, setRecipeText] = useState('');
+  const [note, setNote] = useState('');
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const listening = dictation.state === 'listening';
+  const mealDay = day ?? editingMeal?.day;
+  const mealWeek = editingMeal?.week_of ?? weekOf;
+  const taken = new Set(existingMeals.filter(m => m.day === mealDay && m.week_of === mealWeek && m.id !== editingMeal?.id).map(m => (m.type ?? '').toLowerCase()));
 
   useEffect(() => {
     if (!visible) return;
-    setStep(0);
-    setTouched(false);
+    setTouched(false); setShowEmoji(false); setShowTimePicker(false); dictation.reset();
     if (editingMeal) {
-      setTitle(editingMeal.title ?? '');
-      setType(editingMeal.type ?? 'dinner');
-      setEmoji(editingMeal.emoji ?? '🍽️');
-      setChefId(editingMeal.chef_id ?? '');
+      setTitle(editingMeal.title ?? ''); setType(editingMeal.type ?? 'dinner'); setEmoji(editingMeal.emoji ?? '🍽️');
+      setChefId(editingMeal.chef_id ?? ''); setServings('');
       setPrepMins(editingMeal.prep_minutes ? String(editingMeal.prep_minutes) : '');
       setDietTags(editingMeal.dietary_tags ?? []);
       setIngredients((editingMeal.ingredients ?? []).join('\n'));
       setPrepSteps((editingMeal.prep_steps ?? []).join('\n'));
+      setRecipeText(''); setNote('');
       setStartTime(parseTimeLabel(editingMeal.start_time));
     } else {
-      setTitle(''); setType('dinner'); setEmoji('🍽️'); setChefId('');
-      setPrepMins(''); setDietTags([]); setIngredients(''); setPrepSteps('');
-      setStartTime(null);
+      setTitle(''); setType(['dinner', 'lunch', 'breakfast', 'snack'].find(t => !taken.has(t)) ?? 'dinner'); setEmoji('🍽️'); setChefId(''); setServings(''); setPrepMins('');
+      setDietTags([]); setIngredients(''); setPrepSteps(''); setRecipeText(''); setNote(''); setStartTime(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, editingMeal]);
 
-  const typeColor = MEAL_TYPE_COLOR[type] ?? colors.amber;
-
-  const stepIds = STEPS;
-  const currentStepId = stepIds[step];
-
-  const handleSave = () => {
-    if (!title.trim()) { setStep(0); setTouched(true); return; }
+  const lines = (t: string) => t.split('\n').map(x => x.trim()).filter(Boolean);
+  const save = () => {
+    if (!title.trim()) { setTouched(true); return; }
+    if (taken.has(type)) return;
+    const steps = lines(prepSteps);
     onSave({
       title: title.trim(), type, emoji,
       chef_id: chefId || null,
-      prep_minutes: prepMins ? parseInt(prepMins) : null,
+      prep_minutes: prepMins ? parseInt(prepMins, 10) : null,
       dietary_tags: dietTags,
-      ingredients: ingredients.split('\n').map(s => s.trim()).filter(Boolean),
-      prep_steps: prepSteps.split('\n').map(s => s.trim()).filter(Boolean),
+      ingredients: lines(ingredients),
+      prep_steps: steps.length ? steps : lines(recipeText),
       start_time: startTime ? fmtTimeLabel(startTime) : null,
       timezone: startTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
     });
   };
+  const stopVoice = async () => { const t = await dictation.stop(); if (t) setRecipeText(p => (p ? p + ' ' : '') + t); };
+
+  const dateLine = (() => {
+    const name = day ?? editingMeal?.day;
+    const idx = DAYS.indexOf(name ?? '');
+    if (idx < 0) return '—';
+    const base = new Date((editingMeal?.week_of ?? weekOf ?? '') + 'T00:00:00');
+    const d = isNaN(base.getTime()) ? new Date() : base;
+    if (isNaN(base.getTime())) d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setDate(d.getDate() + idx);
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  })();
 
   return (
-    <KioskTaskFormShell
-      visible={visible}
-      onClose={onClose}
-      stepIds={stepIds}
-      stepTitles={STEP_TITLES}
-      step={step}
-      setStep={(next) => {
-        // Basics blocks advancing without a title — same real gate
-        // MealFormSheet.tsx's own goNext enforces.
-        const resolved = typeof next === 'function' ? (next as (p: number) => number)(step) : next;
-        if (resolved > step && currentStepId === 'basics' && !title.trim()) {
-          setTouched(true);
-          return;
-        }
-        setStep(resolved);
-      }}
-      accentColor={typeColor}
-      headerTitle={isEdit ? 'Edit Meal' : `Add Meal — ${day}`}
-      headerSubtitle={STEP_TITLES[currentStepId]}
-      reviewStepId="recipe"
-    >
-      {currentStepId === 'basics' && <>
-        {showEmoji && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 12, borderRadius: 16,
-            backgroundColor: isDark ? colors.surface : '#F0EEFF',
-            borderWidth: 1, borderColor: colors.accent + '30', marginBottom: 12 }}>
-            {MEAL_EMOJIS.map(e => (
-              <TouchableOpacity key={e} onPress={() => { setEmoji(e); setShowEmoji(false); }}
-                style={{ width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: emoji === e ? colors.accent + '25' : 'transparent' }}>
-                <Text style={{ fontSize: 24 }}>{e}</Text>
-              </TouchableOpacity>
+    <KioskFormDrawer visible={visible} variant="drawer" title={isEdit ? 'Edit meal' : 'Add a meal'} subtitle={isEdit ? editingMeal?.title : dateLine}
+      accent={k.gold} Icon={UtensilsCrossed} k={k} onClose={onClose}
+      submitLabel={isEdit ? 'Save meal' : 'Add meal'} onSubmit={save} canSubmit={!!title.trim()} submitting={saving}>
+      <View style={s.body}>
+        <Card label="Date"><Text style={[s.value, { color: k.text }]}>{dateLine}</Text></Card>
+
+        <Card label="Meal type">
+          <View style={s.wrap}>
+            {MEAL_TYPES.map((t, i) => <Chip key={t} label={`${TYPE_EMOJI[t] ?? ''} ${t}${taken.has(t.toLowerCase()) ? ' · planned' : ''}`} on={type === t.toLowerCase()} disabled={taken.has(t.toLowerCase())} onPress={() => setType(t.toLowerCase())} tone={pastels[(i + 1) % 4]} />)}
+          </View>
+        </Card>
+
+        <Card label="Title" tone={k.purple}>
+          <View style={s.titleRow}>
+            <Pressable onPress={() => setShowEmoji(v => !v)} accessibilityRole="button" accessibilityLabel="Change emoji" style={[s.emoji, { backgroundColor: k.pastelAmberCard }]}>
+              <Text style={{ fontSize: 26 }}>{emoji}</Text>
+            </Pressable>
+            <Text style={[s.hint, { color: k.textFaint }]}>Tap to change emoji</Text>
+          </View>
+          {showEmoji && (
+            <View style={[s.wrap, s.emojiGrid, { backgroundColor: k.well }]}>
+              {MEAL_EMOJIS.map(e => (
+                <Pressable key={e} onPress={() => { setEmoji(e); setShowEmoji(false); }} style={[s.emojiBtn, emoji === e && { backgroundColor: k.pastelLavCard }]}><Text style={{ fontSize: 24 }}>{e}</Text></Pressable>
+              ))}
+            </View>
+          )}
+          <TextInput value={title} onChangeText={setTitle} placeholder="e.g. Lemon chicken bowls" placeholderTextColor={k.textFaint}
+            style={[s.input, { color: k.text, backgroundColor: k.well, borderColor: touched && !title.trim() ? k.danger : k.cardBorder }]} accessibilityLabel="Meal name" />
+          {touched && !title.trim() && <Text style={{ color: k.danger, fontSize: KIOSK_TYPO.label, fontWeight: '700' }}>Meal name is required</Text>}
+        </Card>
+
+        <Card label="Time · reminder">
+          <Pressable
+            onPress={() => { if (Platform.OS === 'android') openAndroidPicker({ mode: 'time', value: startTime ?? new Date(), onChange: setStartTime }); else setShowTimePicker(v => !v); }}
+            accessibilityRole="button" style={[s.input, s.timeRow, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+            <Text style={[s.value, { color: startTime ? k.text : k.textFaint, flex: 1 }]}>🕐 {startTime ? fmtTimeLabel(startTime) : 'No reminder set'}</Text>
+            {!!startTime && <Pressable onPress={() => { setStartTime(null); setShowTimePicker(false); }} hitSlop={8}><Text style={{ color: k.danger, fontWeight: '800' }}>Clear</Text></Pressable>}
+          </Pressable>
+          {Platform.OS === 'ios' && (
+            <KioskDateTimePicker mode="time" visible={showTimePicker} k={k} isDark={isDark} value={startTime ?? new Date()} onChange={setStartTime} onDone={() => setShowTimePicker(false)} />
+          )}
+        </Card>
+
+        <Card label="Chef">
+          <View style={s.wrap}>
+            <Chip label="Anyone" on={!chefId} onPress={() => setChefId('')} tone={pastels[0]} />
+            {members.map((m, i) => (
+              <Pressable key={m.id} onPress={() => setChefId(m.id)} accessibilityRole="button" accessibilityState={{ selected: chefId === m.id }}
+                style={[s.chip, s.chefChip, { backgroundColor: chefId === m.id ? k.primary : pastels[(i + 1) % 4].card }]}>
+                <KioskAvatar name={m.name} size={28} bgColor={k.card} k={k} />
+                <Text style={[s.chipT, { color: chefId === m.id ? k.onPrimary : pastels[(i + 1) % 4].fg }]}>{(m.name as string).split(' ')[0]}</Text>
+              </Pressable>
             ))}
           </View>
-        )}
+        </Card>
 
-        <TouchableOpacity onPress={() => setShowEmoji(v => !v)}
-          style={{ alignSelf: 'flex-start', width: 46, height: 46, borderRadius: 14, marginBottom: 10,
-            backgroundColor: typeColor + '20',
-            alignItems: 'center', justifyContent: 'center',
-            borderWidth: 1.5, borderColor: typeColor + '40' }}>
-          <Text style={{ fontSize: 26 }}>{emoji}</Text>
-        </TouchableOpacity>
-
-        <Text style={em.label}>Meal Name</Text>
-        <TextInput value={title} onChangeText={setTitle}
-          placeholder="e.g. Grilled Chicken & Veggies"
-          placeholderTextColor={colors.textTertiary}
-          style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, fontWeight: '600',
-            marginBottom: touched && !title.trim() ? 4 : 10,
-            backgroundColor: isDark ? colors.surface : colors.background,
-            borderColor: touched && !title.trim() ? colors.danger : colors.border,
-            color: colors.textPrimary }} />
-        {touched && !title.trim() && (
-          <Text style={{ fontSize: 11, color: colors.danger, marginBottom: 10 }}>Meal name is required</Text>
-        )}
-
-        <Text style={em.label}>Meal Type</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          {MEAL_TYPES.map(t => {
-            const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? colors.amber;
-            const sel = type === t.toLowerCase();
-            return (
-              <TouchableOpacity key={t} onPress={() => setType(t.toLowerCase())}
-                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, paddingVertical: 9,
-                  alignItems: 'center', gap: 2,
-                  backgroundColor: sel ? tc + '18' : 'transparent',
-                  borderColor: sel ? tc : colors.border }}>
-                <Text style={{ fontSize: 14 }}>
-                  {t === 'Breakfast' ? '🌅' : t === 'Lunch' ? '☀️' : t === 'Dinner' ? '🌙' : '🍎'}
-                </Text>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: sel ? tc : colors.textSecondary }}>{t}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <Text style={em.label}>Meal Time (optional — for a reminder)</Text>
-        <TouchableOpacity
-          onPress={() => {
-            if (Platform.OS === 'android') {
-              openAndroidPicker({ mode: 'time', value: startTime ?? new Date(), onChange: setStartTime });
-            } else {
-              setShowTimePicker(v => !v);
-            }
-          }}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
-            marginBottom: 10, backgroundColor: isDark ? colors.surface : colors.background,
-            borderColor: showTimePicker ? typeColor : colors.border }}>
-          <Text style={{ fontSize: 13, fontWeight: '600',
-            color: startTime ? colors.textPrimary : colors.textTertiary }}>
-            🕐 {startTime ? fmtTimeLabel(startTime) : 'No reminder set'}
-          </Text>
-          {startTime && (
-            <TouchableOpacity onPress={() => { setStartTime(null); setShowTimePicker(false); }} hitSlop={8}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>Clear</Text>
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-        {Platform.OS === 'ios' && (
-          <KioskDateTimePicker
-            mode="time" visible={showTimePicker} k={k} isDark={isDark}
-            value={startTime ?? new Date()}
-            onChange={setStartTime}
-            onDone={() => setShowTimePicker(false)}
-          />
-        )}
-
-        {/* ── Who & Diet — merged onto this same step (kiosk-only
-             reduction, see STEPS comment above); mobile's own
-             MealFormSheet.tsx keeps this as its separate 'details' step. ── */}
-        <Text style={em.label}>Who's Cooking</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => setChefId('')}
-              style={{ borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                backgroundColor: !chefId ? colors.teal + '20' : 'transparent',
-                borderColor: !chefId ? colors.teal : colors.border }}>
-              <Text style={{ fontSize: 12, fontWeight: '800',
-                color: !chefId ? colors.teal : colors.textSecondary }}>Anyone</Text>
-            </TouchableOpacity>
-            {members.map(m => {
-              const sel = chefId === m.id;
-              const initials = (m.name as string).split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-              const hue = (m.name as string).charCodeAt(0) % 360;
-              const avatarBg = `hsl(${hue},60%,55%)`;
-              return (
-                <TouchableOpacity key={m.id} onPress={() => setChefId(m.id)}
-                  style={{ alignItems: 'center', gap: 3 }}>
-                  <View style={{ width: 36, height: 36, borderRadius: 18,
-                    backgroundColor: avatarBg,
-                    borderWidth: 2.5, borderColor: sel ? colors.teal : 'transparent',
-                    alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{initials}</Text>
-                  </View>
-                  <Text style={{ fontSize: 9, fontWeight: '700',
-                    color: sel ? colors.teal : colors.textTertiary }}>
-                    {(m.name as string).split(' ')[0]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        <View style={s.two}>
+          <View style={{ flex: 1 }}>
+            <Card label="Servings">
+              <TextInput value={servings} onChangeText={t => setServings(t.replace(/\D/g, ''))} placeholder={String(members.length || 4)} placeholderTextColor={k.textFaint} keyboardType="number-pad"
+                style={[s.input, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityLabel="Servings" />
+            </Card>
           </View>
-        </ScrollView>
-
-        <Text style={em.label}>Prep Time</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-          borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 11, paddingVertical: 9,
-          backgroundColor: isDark ? colors.surface : colors.background,
-          borderColor: colors.border, marginBottom: 10, alignSelf: 'flex-start', width: 140 }}>
-          <TextInput value={prepMins} onChangeText={setPrepMins} placeholder="30"
-            placeholderTextColor={colors.textTertiary} keyboardType="numeric"
-            style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }} />
-          <Text style={{ fontSize: 11, color: colors.textTertiary, fontWeight: '700' }}>min</Text>
+          <View style={{ flex: 1 }}>
+            <Card label="Prep time">
+              <View style={s.timeRow}>
+                <TextInput value={prepMins} onChangeText={t => setPrepMins(t.replace(/\D/g, ''))} placeholder="35" placeholderTextColor={k.textFaint} keyboardType="number-pad"
+                  style={[s.input, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder, flex: 1 }]} accessibilityLabel="Prep minutes" />
+                <Text style={[s.hint, { color: k.textFaint }]}>minutes</Text>
+              </View>
+            </Card>
+          </View>
         </View>
 
-        <Text style={em.label}>Dietary Tags</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
-          {DIETARY_OPTIONS.map(tag => {
-            const sel = dietTags.includes(tag);
-            return (
-              <TouchableOpacity key={tag}
-                onPress={() => setDietTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
-                style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1.5,
-                  backgroundColor: sel ? colors.teal + '22' : 'transparent',
-                  borderColor: sel ? colors.teal : colors.border }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: sel ? colors.teal : colors.textSecondary }}>{tag}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </>}
+        <Card label="Dietary tags · optional" tone={k.sage}>
+          <View style={s.wrap}>
+            {DIETARY_OPTIONS.map((t, i) => <Chip key={t} label={t} on={dietTags.includes(t)} onPress={() => setDietTags(p => (p.includes(t) ? p.filter(x => x !== t) : [...p, t]))} tone={pastels[(i + 1) % 4]} />)}
+          </View>
+        </Card>
 
-      {currentStepId === 'recipe' && <>
-        <Text style={em.label}>Ingredients (one per line)</Text>
-        <TextInput value={ingredients} onChangeText={setIngredients}
-          placeholder={'chicken breast\nquinoa\nlemon\nolive oil'}
-          placeholderTextColor={colors.textTertiary} multiline numberOfLines={4}
-          style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13,
-            marginBottom: 10, height: 100, textAlignVertical: 'top',
-            backgroundColor: isDark ? colors.surface : colors.background,
-            borderColor: colors.border, color: colors.textPrimary }} />
+        <Card label="Ingredients" tone={k.sage}>
+          <TextInput value={ingredients} onChangeText={setIngredients} placeholder={'chicken breast\nquinoa\nlemon\nolive oil'} placeholderTextColor={k.textFaint} multiline
+            style={[s.input, s.area, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityLabel="Ingredients" />
+        </Card>
 
-        <Text style={em.label}>Steps (one per line)</Text>
-        <TextInput value={prepSteps} onChangeText={setPrepSteps}
-          placeholder={'Season chicken\nBoil quinoa 15 min\nGrill 6 min each side'}
-          placeholderTextColor={colors.textTertiary} multiline numberOfLines={5}
-          style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13,
-            marginBottom: 10, height: 120, textAlignVertical: 'top',
-            backgroundColor: isDark ? colors.surface : colors.background,
-            borderColor: colors.border, color: colors.textPrimary }} />
+        <Card label="Steps · one per line" tone={k.sage}>
+          <TextInput value={prepSteps} onChangeText={setPrepSteps} placeholder={'Season chicken\nBoil quinoa 15 min\nGrill 6 min each side'} placeholderTextColor={k.textFaint} multiline
+            style={[s.input, s.area, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityLabel="Steps" />
+        </Card>
 
-        <TouchableOpacity onPress={handleSave} disabled={!title.trim() || saving}
-          style={{ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-            backgroundColor: typeColor, opacity: title.trim() ? 1 : 0.4,
-            flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>
-            {saving ? 'Saving…' : isEdit ? '✅ Save Changes' : '+ Add Meal'}
-          </Text>
-        </TouchableOpacity>
-      </>}
-    </KioskTaskFormShell>
+        <Card label="Recipe · type or speak" tone={k.purple}>
+          <Text style={[s.hint, { color: k.textMuted }]}>Add a full recipe description, or tap the mic to speak it and it is typed here.</Text>
+          <TextInput value={recipeText} onChangeText={setRecipeText} placeholder="Describe the full recipe, cooking tips, serving suggestions…" placeholderTextColor={k.textFaint} multiline
+            style={[s.input, s.area, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder, minHeight: 130 }]} accessibilityLabel="Recipe" />
+          <View style={s.wrap}>
+            <Pressable onPress={listening ? stopVoice : () => dictation.start()} accessibilityRole="button" accessibilityLabel={listening ? 'Stop recording' : 'Speak the recipe'}
+              style={[s.micBtn, { backgroundColor: listening ? k.danger : k.pastelLavCard }]}>
+              <Mic size={18} color={listening ? k.onAccent : k.purple} />
+              <Text style={[s.chipT, { color: listening ? k.onAccent : k.purple }]}>{listening ? 'Tap to stop recording' : 'Speak recipe aloud'}</Text>
+            </Pressable>
+            {recipeText.length > 0 && <Pressable onPress={() => setRecipeText('')} accessibilityRole="button" style={[s.micBtn, { backgroundColor: k.well }]}><Text style={[s.chipT, { color: k.textMuted }]}>Clear</Text></Pressable>}
+          </View>
+        </Card>
+
+        <Card label="Note · optional">
+          <TextInput value={note} onChangeText={setNote} placeholder="e.g. Ava can help assemble bowls after study group." placeholderTextColor={k.textFaint} multiline
+            style={[s.input, s.area, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder, minHeight: 80 }]} accessibilityLabel="Note" />
+        </Card>
+      </View>
+    </KioskFormDrawer>
   );
 }
+
+const s = StyleSheet.create({
+  body: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl },
+  card: { borderRadius: KIOSK_RADIUS.lg, borderWidth: 1.5, padding: 14, gap: 10 },
+  label: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1 },
+  value: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  hint: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  chip: { minHeight: 44, borderRadius: 100, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center' },
+  chefChip: { flexDirection: 'row', gap: 8, paddingLeft: 8 },
+  chipT: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  emoji: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  emojiGrid: { padding: 10, borderRadius: 14 },
+  emojiBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  input: { minHeight: 52, borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, fontSize: KIOSK_TYPO.body, fontWeight: '600' },
+  area: { minHeight: 110, textAlignVertical: 'top', paddingTop: 12 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  two: { flexDirection: 'row', gap: KIOSK_SPACE.md },
+  micBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 16 },
+});

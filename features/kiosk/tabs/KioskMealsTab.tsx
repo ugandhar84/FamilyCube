@@ -55,7 +55,7 @@ import {
   View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator,
   findNodeHandle, UIManager, Alert, useWindowDimensions,
 } from 'react-native';
-import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon, Lock } from 'lucide-react-native';
+import { Plus, Check, ListPlus, Store, ChevronDown, ChevronUp, Sparkles, MapPin, RotateCcw, ScanLine, Pencil, Search, X as XIcon, Lock, Repeat, ListChecks, Truck } from 'lucide-react-native';
 import { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
@@ -70,7 +70,12 @@ import { categorizeItem, DAYS as MEAL_DAYS } from '@/features/vault/tabs/meals/t
 import { KioskMealFormDrawer, type MealFormPatch } from '../components/KioskMealFormDrawer';
 import { CAT_ICON, itemEmoji, mapBoughtRow } from '@/features/grocery/components/types';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
-import { useKioskColors, type KioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels, type KioskColors } from '../kioskPalette';
+import { KioskAvatar } from '../components/KioskAvatar';
+import { KioskFormDrawer } from '../components/KioskFormDrawer';
+import { KioskGroceryKidRequests } from '../components/KioskGroceryKidRequests';
+import { KioskAiSuggestionsDrawer } from '../components/KioskAiSuggestionsDrawer';
+import { KioskNewRunDrawer } from '../components/KioskNewRunDrawer';
 import { WidgetCard, PanelHead, Well, TabTitle, EmptyNote } from '../components/KioskOS';
 import { showToast } from '@/components/AppToast';
 import { KioskWeekPlan } from '../components/KioskWeekPlan';
@@ -84,7 +89,6 @@ import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import { KioskGroceryItemSheet } from '../components/KioskGroceryItemSheet';
 import { KioskStoreMoveSheet } from '../components/KioskStoreMoveSheet';
 import { KioskDraggableItemRow } from '../components/KioskDraggableItemRow';
-import { KioskPinStoreLocationSheet } from '../components/KioskPinStoreLocationSheet';
 import { KioskReceiptScanSheet } from '../components/KioskReceiptScanSheet';
 import { KioskGroceryPresenceStrip } from '../components/KioskGroceryPresenceStrip';
 import { KioskRunDetailSheet } from '../components/KioskRunDetailSheet';
@@ -104,8 +108,17 @@ const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
+  const pastels = kioskPastels(k);
   const { meals, nextMeals, loading, week, nextWeek, reload: reloadMeals } = useKioskMeals();
   const [area, setArea] = useState<MealsArea>('plan');
+  const [storeFilter, setStoreFilter] = useState('All');
+  const [selectMode, setSelectMode] = useState(false);
+  const [aiDrawer, setAiDrawer] = useState<'ai' | 'restock' | null>(null);
+  const [newRunOpen, setNewRunOpen] = useState(false);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [restockNames, setRestockNames] = useState<string[]>([]);
+  const kidReqs = useKidRequestStore(s => s.requests);
+  const [recipeCount, setRecipeCount] = useState({ approved: 0, pending: 0 });
   const [addWeekOf, setAddWeekOf] = useState<string | null>(null);
   const { registerActivity } = useKioskActivity();
   // The full household grocery list is hidden from kids on kiosk
@@ -199,10 +212,8 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // phone together the moment that flag ships, rather than kiosk shipping
   // ahead of the phone's own rollout.
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
-  const [pinningStore, setPinningStore] = useState<string | null>(null);
   const [viewingRun, setViewingRun] = useState<GroceryRun | null>(null);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
-  const pinStoreLocation = useGroceryStore(s => s.pinStoreLocation);
   const pinnedStores = useGroceryStore(s => s.pinnedStores);
   const loadPinnedStores = useGroceryStore(s => s.loadPinnedStores);
 
@@ -401,7 +412,9 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
   // Drag only makes sense with more than one store section to drop into,
   // and never for a kid (matches the phone's own dragEnabled formula).
-  const dragEnabled = !isKid && !isSelecting && groupedGroceries.length > 1;
+  // Store cards sit side by side in two columns now, so a vertical-only drag target
+  // would pick the wrong card. Moving is the Move button on each row, or select mode.
+  const dragEnabled = false;
 
   // Same read-only mirror of the real phone's "Shopping now at {store}"
   // banner as Overview's Grocery card (features/grocery/GroceryScreen.tsx:
@@ -525,6 +538,12 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
   const saveMeal = async (patch: MealFormPatch) => {
     if (!familyId) return;
+    // A day never gets the same meal type twice.
+    const targetDay = editingMeal?.day ?? addDay; const targetWeek = editingMeal?.week_of ?? addWeekOf ?? week;
+    if ([...meals, ...nextMeals].some(m => m.id !== editingMeal?.id && m.day === targetDay && m.week_of === targetWeek && (m.type ?? '').toLowerCase() === patch.type.toLowerCase())) {
+      showToast(`${targetDay} already has a ${patch.type}`);
+      return;
+    }
     setSavingMeal(true);
     try {
       if (editingMeal) {
@@ -654,6 +673,19 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // getLocationAPI() safe wrapper already ported into kiosk for weather.
   // Persists estimated_price to grocery_items on success so a later kiosk
   // session (or the phone) sees the same number without re-fetching.
+  useEffect(() => {
+    if (!familyId) return;
+    supabase.from('family_recipes').select('status').eq('family_id', familyId)
+      .then(({ data }) => setRecipeCount({ approved: (data ?? []).filter((r: any) => r.status !== 'pending').length, pending: (data ?? []).filter((r: any) => r.status === 'pending').length }));
+  }, [familyId, area]);
+  useEffect(() => {
+    if (!familyId || isKidOrTeen) return;
+    supabase.from('grocery_staples').select('name,avg_days_between,last_bought_at').eq('family_id', familyId).eq('auto_suggest', true)
+      .order('times_bought', { ascending: false }).limit(10)
+      .then(({ data }) => setRestockNames((data ?? []).filter((x: any) => x.last_bought_at && x.avg_days_between
+        && Math.floor((Date.now() - new Date(x.last_bought_at).getTime()) / 86_400_000) >= x.avg_days_between).slice(0, 6).map((x: any) => x.name)));
+  }, [familyId, isKidOrTeen]);
+
   const [priceMap, setPriceMap] = useState<Record<string, { price: number | null; source: string }>>({});
   const [priceLoading, setPriceLoading] = useState(false);
   useEffect(() => {
@@ -759,8 +791,21 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   return (
     <>
     <View style={s.shell}>
-      <KioskMealsAreaMenu area={area} setArea={setArea} isKidOrTeen={isKidOrTeen} isKid={isKid} k={k}
-        counts={{ list: visibleItems.length, recipes: 0, runs: runs.filter(r => r.status === 'active').length }} />
+      <KioskMealsAreaMenu area={area} setArea={setArea} isKidOrTeen={isKidOrTeen} k={k}
+        sub={{
+          plan: `${meals.length + nextMeals.length} meals planned`,
+          recipes: `${recipeCount.approved} family recipes`,
+          ai: 'Plan the week with CubeAI',
+          list: `${items.length} to buy`,
+          runs: `${runs.filter(r => r.status === 'active').length} active · ${runs.filter(r => r.status === 'draft').length} planned`,
+          history: 'Purchases by date',
+          insights: 'Spending and prices',
+        }}
+        badges={{ recipes: isKidOrTeen ? 0 : recipeCount.pending, list: isKidOrTeen ? 0 : kidReqs.filter(r => r.type === 'delegation' && (r.items ?? []).some(it => it.status === 'pending')).length }}
+        tonight={meals.find(m => m.day === todayMealDay() && m.type === 'dinner') ?? null}
+        onTonight={m => setOpenMeal(m)}
+        shopping={activeRun ? `${activeRunShopper ?? 'Someone'} is shopping at ${activeRun.store}` : null}
+        onShopping={() => setArea('runs')} />
       <View style={s.content}>
         {area === 'plan' && (
           <KioskWeekPlan
@@ -775,30 +820,11 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
           />
         )}
         {area === 'recipes' && <KioskRecipeBook active={active} members={members} />}
-        {area === 'ai' && !isKidOrTeen && (
-          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" onScrollBeginDrag={registerActivity}>
-            <TabTitle title="CubeAI meal planner" subtitle="Plan the week, then add it to the list" k={k} />
-          {!!familyId && (
-            <WidgetCard k={k} isDark={isDark} style={s.aiStripCard}>
-              <View pointerEvents={isKidOrTeen ? 'none' : 'auto'} style={isKidOrTeen ? s.aiStripLocked : undefined}>
-                <KioskAiMealsEngine
-                  familyId={familyId}
-                  members={members}
-                  onPlanSaved={() => reloadMeals()}
-                />
-              </View>
-              {isKidOrTeen && (
-                <View style={s.aiStripOverlay} pointerEvents="none">
-                  <Lock size={18} color={k.card} />
-                  <Text style={[s.aiStripOverlayText, { color: k.card }]}>Parents only</Text>
-                </View>
-              )}
-            </WidgetCard>
-          )}
-          </ScrollView>
+        {area === 'ai' && !isKidOrTeen && !!familyId && (
+          <KioskAiMealsEngine familyId={familyId} members={members} existingMeals={[...meals, ...nextMeals]} onPlanSaved={() => reloadMeals()} />
         )}
         {(area === 'runs' || area === 'history' || area === 'insights') && !isKidOrTeen && (
-          <KioskGroceryInsights area={area} runs={runs} items={items} boughtItems={boughtItems} members={members} k={k} onOpenRun={setViewingRun} />
+          <KioskGroceryInsights area={area} familyId={familyId ?? ''} runs={runs} items={items} boughtItems={boughtItems} members={members} k={k} onOpenRun={setViewingRun} onNewRun={() => setNewRunOpen(true)} />
         )}
         {area === 'list' && (
         <ScrollView
@@ -810,390 +836,182 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={registerActivity}
         >
-          <TabTitle title="Grocery list" subtitle="The household list" k={k} />
+          <View style={s.lHead}>
+            <Text style={[s.lTitle, { color: k.text }]}>Shopping list</Text>
+            <View style={[s.lPill, { backgroundColor: k.well }]}><Text style={[s.lPillT, { color: k.textMuted }]}>{items.length} to buy</Text></View>
+            <View style={{ flex: 1 }} />
+            {!isKidOrTeen && (
+              <>
+                <Pressable onPress={() => setShowReceiptScan(true)} accessibilityRole="button" accessibilityLabel="Scan a receipt" style={[s.lTool, { backgroundColor: k.well }]}><ScanLine size={20} color={k.textMuted} /></Pressable>
+                <Pressable onPress={() => setPinsOpen(true)} accessibilityRole="button" accessibilityLabel="Pinned store locations" style={[s.lTool, { backgroundColor: k.well }]}><MapPin size={20} color={k.textMuted} /></Pressable>
+                <Pressable onPress={() => { setSelectMode(m => !m); setSelectedIds(new Set()); }} accessibilityRole="button" accessibilityState={{ selected: selectMode }} accessibilityLabel="Select items"
+                  style={[s.lTool, { backgroundColor: selectMode ? k.primary : k.well }]}><ListChecks size={20} color={selectMode ? k.onPrimary : k.textMuted} /></Pressable>
+                <Pressable onPress={() => { setEditingItem(undefined); setItemSheetOpen(true); }} accessibilityRole="button" accessibilityLabel="Add item" style={[s.lAdd, { backgroundColor: k.primary }]}>
+                  <Plus size={18} color={k.onPrimary} strokeWidth={2.5} /><Text style={[s.lAddT, { color: k.onPrimary }]}>Add item</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+
           {isKidOrTeen ? (
             <KidGroceryRequestsPanel active={active} k={k} isDark={isDark} groceryItems={items} boughtItems={boughtItems} members={members} />
           ) : (
-          <WidgetCard k={k} isDark={isDark}>
-            <PanelHead
-              title="Grocery list"
-              k={k}
-              right={
-                <View style={s.panelHeadRight}>
-                  {!isKid && (
-                    <Pressable
-                      onPress={() => setShowReceiptScan(true)}
-                      hitSlop={8}
-                      style={s.scanBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel="Scan a receipt"
-                      accessibilityHint="Scans a paper receipt and adds the items to the list"
-                    >
-                      <ScanLine size={14} color={k.gold} />
-                    </Pressable>
-                  )}
-                  {visibleItems.length > 0 && (
-                    <Text style={[s.panelCount, { color: k.textFaint }]}>{visibleItems.length}</Text>
-                  )}
-                </View>
-              }
-            />
-
-            {/* Search — matches item name, store, AND notes (which now
-                carries "From {meal title}" for anything added via a
-                recipe's Add to Grocery, or "CubeAI weekly plan" for the
-                AI planner's own bulk add) — a real, new capability mobile
-                doesn't have (live-requested: "in the groceries we should
-                be able to search with meal name" / "or any search we
-                should hae that"). Shown to everyone, including a kid
-                searching their own already-approved items. */}
-            {items.length > 0 && (
-              <View style={[s.searchRow, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-                <Search size={14} color={k.textFaint} />
-                <TextInput
-                  value={groceryQuery}
-                  onChangeText={setGroceryQuery}
-                  onFocus={registerActivity}
-                  placeholder="Search groceries or meals…"
-                  placeholderTextColor={k.textFaint}
-                  style={[s.searchInput, { color: k.text }]}
-                  returnKeyType="search"
-                  accessibilityLabel="Search grocery list"
-                />
-                {!!groceryQuery && (
-                  <Pressable onPress={() => setGroceryQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
-                    <XIcon size={14} color={k.textFaint} />
-                  </Pressable>
-                )}
-              </View>
-            )}
-
-            {/* Live-asked: "does the kiosk person see other person is
-                live in shopping?" — separate, ephemeral signal from the
-                run-status banner right below (that one reflects a
-                CREATED run; this one is pure "someone has the grocery
-                screen open right now," watch-only per the confirmed
-                choice — see KioskGroceryPresenceStrip's own header). */}
-            <KioskGroceryPresenceStrip familyId={familyId} excludeMemberId={active.id} />
-
-            {/* Tappable — opens KioskRunDetailSheet's live item list.
-                Live-requested: "if other person added to that shop it
-                should live reflect in to the list of that run direcly"
-                — the banner alone only ever showed the store name, never
-                the run's actual items. */}
-            {activeRun && (
-              <Pressable
-                onPress={() => setViewingRun(activeRun)}
-                style={({ pressed }) => [
-                  s.runBanner,
-                  { backgroundColor: k.sage + (isDark ? '26' : '1A'), borderColor: k.sage + '40' },
-                  pressed && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`Shopping now at ${activeRun.store}`}
-                accessibilityHint="Opens the live item list for this trip"
-              >
-                <View style={[s.runDot, { backgroundColor: k.sage }]} />
-                <Text style={[s.runBannerText, { color: k.sage }]} numberOfLines={1}>
-                  Shopping now at {activeRun.store}{activeRunShopper ? ` · ${activeRunShopper}` : ''}
-                </Text>
-                <Text style={[s.runBannerLink, { color: k.sage }]}>View list →</Text>
-              </Pressable>
-            )}
-
-            {/* Same GroceryScreen.tsx price-estimate strip: an on-demand
-                "Check Prices" action (never automatic — a live Kroger
-                lookup per unpriced item), and the running estimated total
-                once at least one price is known. Hidden for a kid — this
-                is money/budget information, same spirit as the phone's
-                own isKid-gated affordances elsewhere on this screen. */}
-            {!isKid && visibleItems.length > 0 && (
-              <Pressable
-                onPress={checkPrices}
-                disabled={priceLoading}
-                style={({ pressed }) => [
-                  s.priceStrip,
-                  { backgroundColor: k.well, borderColor: k.cardBorder },
-                  pressed && !priceLoading && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={cartTotal > 0 ? `Estimated total ${cartTotal.toFixed(2)} dollars` : 'Check prices'}
-                accessibilityHint="Looks up an estimated price for each item on the list"
-              >
-                <Sparkles size={14} color={k.textMuted} />
-                <Text style={[s.priceStripText, { color: k.textMuted }]} numberOfLines={1}>
-                  {priceLoading ? 'Checking prices…' : cartTotal > 0 ? `Estimated total (${visibleItems.length} items)` : 'Check Prices'}
-                </Text>
-                {priceLoading ? (
-                  <ActivityIndicator size="small" color={k.textMuted} />
-                ) : cartTotal > 0 ? (
-                  <Text style={[s.priceStripTotal, { color: k.primary }]}>${cartTotal.toFixed(2)}</Text>
-                ) : null}
-              </Pressable>
-            )}
-
-            {/* Add. Deliberately the first thing under the header: the
-                overwhelmingly common kitchen interaction is "we just ran
-                out of X", and it should be one tap plus typing, never a
-                navigation. Hidden for kids — this box writes straight to
-                groceryStore, bypassing the real kid→parent approval flow
-                (kidRequestStore + KioskGroceryRequestSheet) a kid's
-                request normally goes through; a kid asks via that flow
-                instead, from the header's Ask Fam/Ask Parent affordance. */}
-            {!isKid && (
-              <View style={s.addRow}>
-                <TextInput
-                  value={draft}
-                  onChangeText={setDraft}
-                  onSubmitEditing={submitItem}
-                  onFocus={registerActivity}
-                  placeholder="Add an item…"
-                  placeholderTextColor={k.textFaint}
-                  style={[s.addInput, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
-                  returnKeyType="done"
-                  editable={!!familyId}
-                  accessibilityLabel="New grocery item"
-                />
-                <Pressable
-                  onPress={submitItem}
-                  disabled={!draft.trim() || adding || !familyId}
-                  style={({ pressed }) => [
-                    s.addBtn,
-                    { backgroundColor: k.sage },
-                    (pressed || !draft.trim() || adding) && { opacity: draft.trim() && !adding ? 0.75 : 0.4 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add to grocery list"
-                  accessibilityState={{ disabled: !draft.trim() || adding }}
-                >
-                  {adding
-                    ? <ActivityIndicator size="small" color={k.onAccent} />
-                    : <Plus size={22} color={k.onAccent} />}
-                </Pressable>
-                {/* Full-field parity entry point: the phone's AddItemSheet
-                    also takes quantity/category/store/notes, which this
-                    one-line quick-add intentionally doesn't ask for on
-                    every add. Opens the same sheet an edit uses, in
-                    create mode.
-                    Live-reported: SlidersHorizontal (a real "filter"
-                    glyph) read as a list filter here and confused a tap
-                    that actually opens the add form — there's no filter
-                    anywhere on this list to confuse it with. Swapped for
-                    ListPlus, the same icon ParentQuickActions.tsx already
-                    uses for "add a grocery item" elsewhere in this app. */}
-                <Pressable
-                  onPress={() => { setEditingItem(undefined); setItemSheetOpen(true); }}
-                  style={({ pressed }) => [
-                    s.moreBtn,
-                    { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add item with more details"
-                  accessibilityHint="Opens a form with quantity, category, store, and notes"
-                >
-                  <ListPlus size={18} color={k.textMuted} />
-                </Pressable>
-              </View>
-            )}
-
-            {visibleItems.length === 0 ? (
-              <EmptyNote
-                text={groceryQuery.trim()
-                  ? `No items match "${groceryQuery.trim()}".`
-                  : isKid
-                  ? "None of your grocery requests have been approved yet."
-                  : "Nothing on the list. Add something above."}
-                k={k}
-              />
-            ) : (
-              <View style={{ marginTop: KIOSK_SPACE.sm, gap: KIOSK_SPACE.md }}>
-                {categorisedItems.supplies.length > 0 && (
-                  <GroceryCategorySection
-                    label="Supplies" emoji="📚" items={categorisedItems.supplies}
-                    k={k} isDark={isDark} isKid={isKid} active={active}
-                    priceMap={priceMap}
-                    buyItem={buyItem}
-                    onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
-                    onMoveItem={it => setMovingItem(it)}
-                    isSelecting={isSelecting}
-                    selectedIds={selectedIds}
-                    onToggleSelect={toggleSelectItem}
-                  />
-                )}
-                {categorisedItems.clothing.length > 0 && (
-                  <GroceryCategorySection
-                    label="Clothing" emoji="👕" items={categorisedItems.clothing}
-                    k={k} isDark={isDark} isKid={isKid} active={active}
-                    priceMap={priceMap}
-                    buyItem={buyItem}
-                    onEditItem={it => { setEditingItem(it); setItemSheetOpen(true); }}
-                    onMoveItem={it => setMovingItem(it)}
-                    isSelecting={isSelecting}
-                    selectedIds={selectedIds}
-                    onToggleSelect={toggleSelectItem}
-                  />
-                )}
-                {groupedGroceries.map(([store, storeItems]) => (
-                  <View
-                    key={store}
-                    ref={el => registerSectionLayout(store, el)}
-                    style={[s.storeSection, hoveredStore === store && { backgroundColor: k.primary + '14' }]}
-                  >
-                    {/* Same store-header shape as GroceryItemsSection.tsx's
-                        real sub-header, minus the live per-store "N left"
-                        count (redundant here — every item shown is
-                        already unbought, so the section's own row count
-                        already reads at a glance). The pin affordance
-                        below WAS scoped out here as "irrelevant to a
-                        stationary kiosk" — corrected on request: pinning
-                        just writes a {lat,lng} for the store name, and
-                        which device did the pinning has no bearing on
-                        which family member's own phone later geofences
-                        against it, so a kiosk pinning "where Costco is"
-                        once from the kitchen wall is exactly as valid as
-                        a phone doing it. Same real gate as the phone's
-                        own onPinStore condition: only for a real store
-                        (not "Any store"), only once it has 2+ unbought
-                        items, only if not already pinned. */}
-                    <View style={s.storeHeadRow}>
-                      <Text style={[s.storeLabel, { color: k.primary, flex: 1 }]} numberOfLines={1}>
-                        {store === 'Any store' ? 'ANY STORE' : store.toUpperCase()}
-                      </Text>
-                      {geofencingEnabled && !isKid && store !== 'Any store'
-                        && storeItems.filter(i => !i.isBought).length >= 2
-                        && !pinnedStores?.[store] && (
-                        <Pressable
-                          onPress={() => setPinningStore(store)}
-                          hitSlop={8}
-                          style={s.pinBtn}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Pin ${store}'s location`}
-                          accessibilityHint="Sets this store's map location for nearby reminders"
-                        >
-                          <MapPin size={13} color={k.textFaint} />
-                          <Text style={[s.pinBtnText, { color: k.textFaint }]}>Pin</Text>
-                        </Pressable>
-                      )}
+            <>
+              <View style={s.banRow}>
+                {activeRun && (
+                  <View style={[s.ban, { backgroundColor: k.pastelSageCard }]}>
+                    <View style={[s.banIc, { backgroundColor: k.card }]}><Truck size={20} color={k.sage} /></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.banT, { color: k.sage }]} numberOfLines={1}>{activeRunShopper ?? 'Someone'} is shopping at {activeRun.store}</Text>
+                      <Text style={[s.banS, { color: k.textMuted }]} numberOfLines={1}>{activeRun.runItems?.filter(x => x.checkedInRun).length ?? 0} of {activeRun.runItems?.length ?? 0} picked up</Text>
                     </View>
-                    {/* Cap to 6 rows visible, rest scroll [live-requested:
-                        "in meals groceries make the scroll after 6 items
-                        per store"]. Drag-to-move-store measures absolute
-                        page Y across every section (registerSectionLayout/
-                        dragAbsoluteY), which a per-section scroll would
-                        throw off the moment that section scrolls — so drag
-                        is disabled for a store's rows once it grows past
-                        the visible cap (still fully reachable via each
-                        row's own Move sheet, onMove above), matching a
-                        deliberate scroll-vs-drag tradeoff rather than
-                        leaving drag silently broken for a long list. */}
-                    {(() => {
-                      const overflowing = storeItems.length > STORE_SECTION_VISIBLE_ROWS;
-                      const rows = storeItems.map((it, i) => (
-                        <KioskDraggableItemRow
-                          key={it.id}
-                          itemId={it.id}
-                          k={k}
-                          dragEnabled={dragEnabled && !overflowing}
-                          draggingId={draggingId}
-                          dragAbsoluteY={dragAbsoluteY}
-                          onDrop={handleDrop}
-                        >
-                          <GroceryRow
-                            item={it}
-                            priceInfo={priceMap[it.name]}
-                            k={k}
-                            isDark={isDark}
-                            divider={i > 0}
-                            onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
-                            onEdit={isKid ? undefined : () => { setEditingItem(it); setItemSheetOpen(true); }}
-                            onMove={isKid ? undefined : () => setMovingItem(it)}
-                            selecting={isSelecting}
-                            selected={selectedIds.has(it.id)}
-                            onToggleSelect={isKid ? undefined : () => toggleSelectItem(it.id)}
-                            onLongPress={isKid ? undefined : () => toggleSelectItem(it.id)}
-                          />
-                        </KioskDraggableItemRow>
-                      ));
-                      return overflowing ? (
-                        <ScrollView style={s.storeSectionScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-                          {rows}
-                        </ScrollView>
-                      ) : rows;
-                    })()}
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* "where is the purchase history?" — RecentlyBoughtSection.tsx's
-                real shape: collapsed by default (last-7-days is a glance
-                feature, not something that should push the active list
-                down every time it's non-empty), who bought it and when.
-                The phone's own Return-to-store flow (multi-select bought
-                items → assign a return chore) is NOT reproduced — that is
-                a genuinely separate feature (creates a quest, opens an
-                assignee picker) beyond "show me what we bought," and this
-                screen has no assignee-picker primitive to build it on yet. */}
-            {boughtItems.length > 0 && (
-              <View style={[s.boughtSection, { borderTopColor: k.cardBorder }]}>
-                <Pressable
-                  onPress={() => setBoughtExpanded(e => !e)}
-                  style={s.boughtHeader}
-                  accessibilityRole="button"
-                  accessibilityLabel="Recently bought"
-                  accessibilityState={{ expanded: boughtExpanded }}
-                  accessibilityHint={boughtExpanded ? 'Collapses the recently bought list' : 'Shows the last 7 days of bought items'}
-                >
-                  <View style={[s.boughtIcon, { backgroundColor: k.sage + (isDark ? '26' : '1A') }]}>
-                    <Check size={14} color={k.sage} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[s.boughtTitle, { color: k.textMuted }]} numberOfLines={1}>RECENTLY BOUGHT</Text>
-                    <Text style={[s.boughtMeta, { color: k.textFaint }]} numberOfLines={1}>Last 7 days · {boughtItems.length} items</Text>
-                  </View>
-                  {boughtExpanded ? <ChevronUp size={16} color={k.textFaint} /> : <ChevronDown size={16} color={k.textFaint} />}
-                </Pressable>
-                {boughtExpanded && (
-                  <View style={{ marginTop: KIOSK_SPACE.xs }}>
-                    {boughtItems.map((it, i) => {
-                      const buyer = members.find(m => m.id === it.boughtBy)?.name?.trim().split(' ')[0];
-                      const when = it.boughtAt ? new Date(it.boughtAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-                      return (
-                        <View
-                          key={it.id}
-                          style={[s.boughtRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                        >
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={[s.boughtName, { color: k.textMuted }]} numberOfLines={1}>
-                              {it.name}{it.quantity ? ` × ${it.quantity}` : ''}
-                            </Text>
-                            <Text style={[s.boughtWhen, { color: k.textFaint }]} numberOfLines={1}>
-                              {[buyer, when].filter(Boolean).join(' · ')}
-                            </Text>
-                          </View>
-                          {!isKid && (
-                            <Pressable
-                              onPress={async () => {
-                                await restoreItem(it.id);
-                                setBoughtItems(prev => prev.filter(b => b.id !== it.id));
-                              }}
-                              style={({ pressed }) => [s.undoBtn, { backgroundColor: pressed ? k.cardHover : k.well, borderColor: k.cardBorder }]}
-                              accessibilityRole="button"
-                              accessibilityLabel={`Undo — put ${it.name} back on the list`}
-                              accessibilityHint="Marks this item as not bought, returning it to its original store section"
-                            >
-                              <RotateCcw size={12} color={k.textMuted} />
-                              <Text style={[s.undoBtnText, { color: k.textMuted }]}>Undo</Text>
-                            </Pressable>
-                          )}
-                        </View>
-                      );
-                    })}
+                    <Pressable onPress={() => setViewingRun(activeRun)} accessibilityRole="button" style={[s.banBtn, { backgroundColor: k.card }]}><Text style={[s.banBtnT, { color: k.text }]}>Open</Text></Pressable>
                   </View>
                 )}
+                {restockNames.length > 0 && (
+                  <View style={[s.ban, { backgroundColor: k.pastelAmberCard }]}>
+                    <View style={[s.banIc, { backgroundColor: k.card }]}><Repeat size={20} color={k.gold} /></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.banT, { color: k.gold }]}>Smart restock</Text>
+                      <Text style={[s.banS, { color: k.textMuted }]} numberOfLines={1}>{restockNames.slice(0, 3).join(', ')} running low</Text>
+                    </View>
+                    <Pressable onPress={() => setAiDrawer('restock')} accessibilityRole="button" style={[s.banBtn, { backgroundColor: k.card }]}><Text style={[s.banBtnT, { color: k.text }]}>Review</Text></Pressable>
+                  </View>
+                )}
+                <View style={[s.ban, { backgroundColor: k.pastelLavCard }]}>
+                  <View style={[s.banIc, { backgroundColor: k.card }]}><Sparkles size={20} color={k.purple} /></View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[s.banT, { color: k.purple }]}>AI suggestions</Text>
+                    <Text style={[s.banS, { color: k.textMuted }]} numberOfLines={1}>{cartTotal > 0 ? `Est. total $${cartTotal.toFixed(2)}` : 'From your staples and receipts'}</Text>
+                  </View>
+                  <Pressable onPress={() => setAiDrawer('ai')} accessibilityRole="button" style={[s.banBtn, { backgroundColor: k.primary }]}><Text style={[s.banBtnT, { color: k.onPrimary }]}>Suggest</Text></Pressable>
+                </View>
               </View>
-            )}
-          </WidgetCard>
+
+              <KioskGroceryPresenceStrip familyId={familyId} excludeMemberId={active.id} />
+              <KioskGroceryKidRequests active={active} members={members} familyId={familyId ?? ''} />
+
+              <View style={s.filterRow}>
+                <View style={s.storeChips}>
+                  {['All', ...Array.from(new Set(categorisedItems.groceries.map(i => i.storePreference || 'Any store')))].map((st, i) => (
+                    <Pressable key={st} onPress={() => setStoreFilter(st)} accessibilityRole="button" accessibilityState={{ selected: storeFilter === st }}
+                      style={[s.storeChip, { backgroundColor: storeFilter === st ? k.text : k.well }]}>
+                      <Text style={[s.storeChipT, { color: storeFilter === st ? k.bg : k.textMuted }]}>{st}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={s.addRow}>
+                  <TextInput
+                    value={draft}
+                    onChangeText={t => { setDraft(t); setGroceryQuery(t); }}
+                    onSubmitEditing={async () => { await submitItem(); setGroceryQuery(''); }}
+                    onFocus={registerActivity}
+                    placeholder="Add or search, like “2 lb apples”"
+                    placeholderTextColor={k.textFaint}
+                    style={[s.addInput, { backgroundColor: k.well, borderColor: k.cardBorder, color: k.text }]}
+                    returnKeyType="done"
+                    editable={!!familyId}
+                    accessibilityLabel="Add or search"
+                  />
+                  <Pressable
+                    onPress={async () => { await submitItem(); setGroceryQuery(''); }}
+                    disabled={!draft.trim() || adding || !familyId}
+                    style={({ pressed }) => [s.addBtn, { backgroundColor: k.primary }, (pressed || !draft.trim() || adding) && { opacity: draft.trim() && !adding ? 0.75 : 0.4 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add to grocery list"
+                  >
+                    {adding ? <ActivityIndicator size="small" color={k.onPrimary} /> : <Plus size={22} color={k.onPrimary} />}
+                  </Pressable>
+                </View>
+              </View>
+
+              {!isKid && visibleItems.length > 0 && (
+                <Pressable onPress={checkPrices} disabled={priceLoading} accessibilityRole="button"
+                  style={({ pressed }) => [s.priceStrip, { backgroundColor: k.well, borderColor: k.cardBorder }, pressed && !priceLoading && { opacity: 0.7 }]}>
+                  <Sparkles size={14} color={k.textMuted} />
+                  <Text style={[s.priceStripText, { color: k.textMuted }]} numberOfLines={1}>
+                    {priceLoading ? 'Checking prices…' : cartTotal > 0 ? `Estimated total (${visibleItems.length} items)` : 'Check prices'}
+                  </Text>
+                  {priceLoading ? <ActivityIndicator size="small" color={k.textMuted} /> : cartTotal > 0 ? <Text style={[s.priceStripTotal, { color: k.primary }]}>${cartTotal.toFixed(2)}</Text> : null}
+                </Pressable>
+              )}
+
+              {visibleItems.length === 0 ? (
+                <EmptyNote text={groceryQuery.trim() ? `No items match "${groceryQuery.trim()}".` : 'Nothing on the list. Add something above.'} k={k} />
+              ) : (
+                <View style={s.sGrid}>
+                  {([
+                    ['Supplies', '📚', categorisedItems.supplies],
+                    ['Clothing', '👕', categorisedItems.clothing],
+                  ] as [string, string, GroceryItem[]][]).filter(([, , l]) => l.length > 0 && storeFilter === 'All').map(([label, emoji, list], ci) => {
+                    const tone = pastels[(ci + 2) % 4];
+                    return (
+                      <View key={label} style={[s.sCard, { backgroundColor: tone.col }]}>
+                        <View style={s.sHead}>
+                          <View style={[s.sIc, { backgroundColor: tone.card }]}><Text style={{ fontSize: 16 }}>{emoji}</Text></View>
+                          <Text style={[s.sName, { color: k.text }]}>{label}</Text>
+                          <View style={[s.sCount, { backgroundColor: tone.fg }]}><Text style={[s.sCountT, { color: k.onAccent }]}>{list.length}</Text></View>
+                        </View>
+                        {list.map(it => (
+                          <GroceryRow key={it.id} item={it} priceInfo={priceMap[it.name]} k={k} tone={tone} member={members.find(m => m.id === it.addedBy)}
+                            onBuy={() => buyItem(it.id, active.id)} onEdit={() => { setEditingItem(it); setItemSheetOpen(true); }} onMove={() => setMovingItem(it)}
+                            selecting={selectMode || isSelecting} selected={selectedIds.has(it.id)} onToggleSelect={() => toggleSelectItem(it.id)} onLongPress={() => toggleSelectItem(it.id)} />
+                        ))}
+                      </View>
+                    );
+                  })}
+                  {groupedGroceries.filter(([st]) => storeFilter === 'All' || st === storeFilter).map(([store, storeItems], si) => {
+                    const tone = pastels[si % 4];
+                    const isPinned = !!pinnedStores?.[store];
+                    return (
+                      <View key={store} ref={el => registerSectionLayout(store, el)} style={[s.sCard, { backgroundColor: tone.col }, hoveredStore === store && { borderColor: k.primary, borderWidth: 2 }]}>
+                        <View style={s.sHead}>
+                          <View style={[s.sIc, { backgroundColor: tone.card }]}><Store size={18} color={tone.fg} /></View>
+                          <Text style={[s.sName, { color: k.text }]} numberOfLines={1}>{store}</Text>
+                          <View style={[s.sCount, { backgroundColor: tone.fg }]}><Text style={[s.sCountT, { color: k.onAccent }]}>{storeItems.length}</Text></View>
+                          {isPinned && <MapPin size={16} color={k.sage} />}
+                        </View>
+                        {storeItems.map(it => (
+                          <KioskDraggableItemRow key={it.id} itemId={it.id} k={k} dragEnabled={dragEnabled} draggingId={draggingId} dragAbsoluteY={dragAbsoluteY} onDrop={handleDrop}>
+                            <GroceryRow item={it} priceInfo={priceMap[it.name]} k={k} tone={tone} member={members.find(m => m.id === it.addedBy)}
+                              onBuy={() => buyItem(it.id, active.id)} onEdit={() => { setEditingItem(it); setItemSheetOpen(true); }} onMove={() => setMovingItem(it)}
+                              selecting={selectMode || isSelecting} selected={selectedIds.has(it.id)} onToggleSelect={() => toggleSelectItem(it.id)} onLongPress={() => toggleSelectItem(it.id)} />
+                          </KioskDraggableItemRow>
+                        ))}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {boughtItems.length > 0 && (
+                <View style={[s.rb, { backgroundColor: k.well }]}>
+                  <Pressable onPress={() => setBoughtExpanded(e => !e)} accessibilityRole="button" accessibilityState={{ expanded: boughtExpanded }} style={s.rbHead}>
+                    <Text style={[s.sName, { color: k.text }]}>Recently bought</Text>
+                    <View style={[s.sCount, { backgroundColor: k.textFaint }]}><Text style={[s.sCountT, { color: k.onAccent }]}>{boughtItems.length}</Text></View>
+                    <View style={{ flex: 1 }} />
+                    {boughtExpanded ? <ChevronUp size={18} color={k.textFaint} /> : <ChevronDown size={18} color={k.textFaint} />}
+                  </Pressable>
+                  {boughtExpanded && boughtItems.map(it => {
+                    const buyer = members.find(m => m.id === it.boughtBy)?.name?.trim().split(' ')[0];
+                    const when = it.boughtAt ? new Date(it.boughtAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+                    return (
+                      <View key={it.id} style={[s.mRow, { backgroundColor: k.card }]}>
+                        <View style={[s.mCheck, { borderColor: k.sage, backgroundColor: k.sage }]}><Check size={18} color={k.onAccent} strokeWidth={3} /></View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[s.mName, { color: k.text }]} numberOfLines={1}>{it.name}</Text>
+                          <Text style={[s.mSub, { color: k.textMuted }]} numberOfLines={1}>{[it.quantity, buyer ? `bought by ${buyer}` : '', when].filter(Boolean).join(' · ')}</Text>
+                        </View>
+                        <Pressable onPress={async () => { await restoreItem(it.id); setBoughtItems(prev => prev.filter(b => b.id !== it.id)); }} accessibilityRole="button" accessibilityLabel={`Undo, put ${it.name} back on the list`}
+                          style={[s.undoBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
+                          <RotateCcw size={14} color={k.textMuted} /><Text style={[s.undoBtnText, { color: k.textMuted }]}>Undo</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </>
           )}
         </ScrollView>
         )}
@@ -1277,14 +1095,10 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
     <KioskMealFormDrawer
       visible={!!addDay || !!editingMeal}
       day={addDay}
+      weekOf={addWeekOf ?? week}
+      existingMeals={[...meals, ...nextMeals]}
       editingMeal={editingMeal}
       members={members}
-      colors={{
-        accent: k.purple, background: k.bg, border: k.cardBorder,
-        danger: k.danger, surface: k.well, teal: k.sage, amber: k.gold,
-        textPrimary: k.text, textSecondary: k.textMuted, textTertiary: k.textFaint,
-      }}
-      isDark={isDark}
       onClose={() => { setAddDay(null); setAddWeekOf(null); setEditingMeal(null); }}
       onSave={saveMeal}
       saving={savingMeal}
@@ -1319,17 +1133,34 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       />
     )}
 
-    {geofencingEnabled && (
-      <KioskPinStoreLocationSheet
-        visible={!!pinningStore}
-        store={pinningStore ?? ''}
-        onClose={() => setPinningStore(null)}
-        onPin={async (lat, lng) => {
-          if (!pinningStore || !familyId) return;
-          await pinStoreLocation({ familyId, store: pinningStore, latitude: lat, longitude: lng, pinnedBy: active.id });
-          registerStoreGeofences(familyId, active.id).catch(() => {});
-        }}
-      />
+    {/* Pinned stores are read-only on the kiosk: pinning a location is done from a phone. */}
+    <KioskFormDrawer visible={pinsOpen} variant="drawer" title="Pinned stores" subtitle="Shown for reminders near a store. Pin from a phone."
+      accent={k.sage} Icon={MapPin} k={k} onClose={() => setPinsOpen(false)}>
+      <View style={{ gap: KIOSK_SPACE.sm, paddingBottom: KIOSK_SPACE.xl }}>
+        {Object.keys(pinnedStores ?? {}).length === 0
+          ? <Text style={[s.mSub, { color: k.textMuted, textAlign: 'center', paddingVertical: KIOSK_SPACE.xl }]}>No stores pinned yet.</Text>
+          : Object.entries(pinnedStores ?? {}).map(([name, p], i) => {
+            const tone = pastels[i % 4];
+            return (
+              <View key={name} style={[s.mRow, { backgroundColor: tone.col, borderWidth: 1.5, borderColor: tone.card }]}>
+                <View style={[s.sIc, { backgroundColor: tone.card }]}><MapPin size={18} color={tone.fg} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[s.mName, { color: k.text }]} numberOfLines={1}>{name}</Text>
+                  <Text style={[s.mSub, { color: k.textMuted }]} numberOfLines={2}>{p.address ?? 'Location pinned'}</Text>
+                </View>
+              </View>
+            );
+          })}
+      </View>
+    </KioskFormDrawer>
+
+    {!!familyId && (
+      <>
+        <KioskAiSuggestionsDrawer visible={!!aiDrawer} mode={aiDrawer ?? 'ai'} onClose={() => setAiDrawer(null)} familyId={familyId} memberId={active.id} existingItems={items} />
+        <KioskNewRunDrawer visible={newRunOpen} onClose={() => setNewRunOpen(false)} familyId={familyId} active={active} members={members}
+          pendingCount={items.filter(i => !i.isBought && members.find(m => m.id === i.addedBy)?.role === 'kid').length}
+          onCreated={r => { setNewRunOpen(false); setViewingRun(r); }} />
+      </>
     )}
 
     {!!familyId && (
@@ -1479,91 +1310,69 @@ function KidGroceryRequestsPanel({ active, k, isDark, groceryItems, boughtItems,
   );
 }
 
-function GroceryRow({ item, priceInfo, k, isDark, divider, onBuy, onEdit, onMove, selecting, selected, onToggleSelect, onLongPress }: {
+function GroceryRow({ item, priceInfo, k, member, tone, onBuy, onEdit, onMove, selecting, selected, onToggleSelect, onLongPress }: {
   item: GroceryItem;
   priceInfo?: { price: number | null; source: string };
-  k: KioskColors; isDark: boolean; divider?: boolean;
+  k: KioskColors; member?: FamilyMember; tone?: { col: string; card: string; fg: string };
   onBuy?: () => void; onEdit?: () => void; onMove?: () => void;
   selecting?: boolean; selected?: boolean;
   onToggleSelect?: () => void; onLongPress?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const readOnly = !onBuy;
-  const emoji = itemEmoji(item.name);
-  const CatIcon = CAT_ICON[item.category ?? 'Other'] ?? CAT_ICON.Other;
-  const iconTint = kioskCatColor(k, item.category);
+  const emoji = itemEmoji(item.name) ?? '🛒';
   const canPress = selecting ? !!onToggleSelect : !!onEdit;
+  const fg = tone?.fg ?? k.sage;
+  const srcLabel = priceInfo?.source === 'receipt' ? 'receipt' : priceInfo?.source === 'kroger' ? 'store price' : 'estimate';
   return (
     <Pressable
       onPress={selecting ? onToggleSelect : onEdit}
       onLongPress={onLongPress}
       delayLongPress={350}
       disabled={!canPress}
-      style={({ pressed }) => [
-        s.groceryRow,
-        divider && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder },
-        selected && { backgroundColor: k.primary + '10' },
-        pressed && canPress && { opacity: 0.7 },
-      ]}
+      style={({ pressed }) => [s.mRow, { backgroundColor: k.card }, selected && { borderColor: k.primary, borderWidth: 2 }, pressed && canPress && { opacity: 0.75 }]}
       accessibilityRole={selecting ? 'checkbox' : onEdit ? 'button' : undefined}
       accessibilityState={selecting ? { checked: !!selected } : undefined}
       accessibilityLabel={item.quantity ? `${item.name}, ${item.quantity}` : item.name}
-      accessibilityHint={selecting ? 'Toggles selection for bulk delete' : onEdit ? 'Opens this item to edit or delete it' : undefined}
+      accessibilityHint={selecting ? 'Toggles selection' : onEdit ? 'Opens this item to edit or delete it' : undefined}
     >
       {selecting ? (
-        <View style={[s.selectCircle, { borderColor: selected ? k.primary : k.cardBorder, backgroundColor: selected ? k.primary : 'transparent' }]}>
-          {selected && <Check size={12} color={k.onAccent} />}
+        <View style={[s.mCheck, { borderColor: selected ? k.primary : k.cardBorder, backgroundColor: selected ? k.primary : 'transparent' }]}>
+          {selected && <Check size={18} color={k.onAccent} strokeWidth={3} />}
         </View>
-      ) : (
-        <View style={[s.itemIcon, { backgroundColor: iconTint + (isDark ? '26' : '1A') }]}>
-          {emoji ? <Text style={s.itemEmojiText}>{emoji}</Text> : <CatIcon size={16} color={iconTint} strokeWidth={1.8} />}
-        </View>
-      )}
-      <Text style={[s.groceryName, { color: k.text }]} numberOfLines={1}>{item.name}</Text>
-      {!!item.quantity && (
-        <Text style={[s.groceryQty, { color: k.textFaint }]} numberOfLines={1}>{item.quantity}</Text>
-      )}
-      {priceInfo?.price != null && (
-        <Text style={[s.priceTag, { color: priceInfo.source === 'kroger' || priceInfo.source === 'receipt' ? k.sage : k.gold }]}>
-          ${priceInfo.price.toFixed(2)}
-        </Text>
-      )}
-      {!selecting && !!onMove && (
+      ) : !readOnly ? (
         <Pressable
-          onPress={onMove}
-          hitSlop={10}
-          style={s.moveIconBtn}
-          accessibilityRole="button"
-          accessibilityLabel={`Move ${item.name} to a different store`}
-        >
-          <Store size={15} color={k.textFaint} />
-        </Pressable>
-      )}
-      {!selecting && !readOnly && (
-        <Pressable
-          onPress={async () => { if (busy) return; setBusy(true); await onBuy(); setBusy(false); }}
-          hitSlop={10}
-          style={[s.checkbox, { borderColor: k.cardBorder }, busy && { opacity: 0.5 }]}
+          onPress={async () => { if (busy) return; setBusy(true); await onBuy!(); setBusy(false); }}
+          hitSlop={8}
+          style={[s.mCheck, { borderColor: fg }, busy && { opacity: 0.5 }]}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: false, disabled: busy }}
           accessibilityLabel={`Mark ${item.name} as bought`}
-          accessibilityHint="Marks as bought and removes it from the list"
         >
-          {busy && <Check size={13} color={k.sage} />}
+          {busy && <Check size={18} color={fg} strokeWidth={3} />}
+        </Pressable>
+      ) : null}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={s.mNameRow}>
+          <Text style={[s.mName, { color: k.text }]} numberOfLines={1}>{emoji} {item.name}</Text>
+          {item.aiGenerated && (
+            <View style={[s.aiBadge, { backgroundColor: k.pastelLavCard }]}><Sparkles size={11} color={k.purple} /><Text style={[s.aiBadgeT, { color: k.purple }]}>AI</Text></View>
+          )}
+        </View>
+        <Text style={[s.mSub, { color: k.textMuted }]} numberOfLines={1}>
+          {[item.quantity, priceInfo?.price != null ? `$${priceInfo.price.toFixed(2)} ${srcLabel}` : ''].filter(Boolean).join(' · ') || 'No quantity'}
+        </Text>
+      </View>
+      {!!member && <KioskAvatar name={member.name} size={26} bgColor={tone?.card ?? k.well} k={k} />}
+      {!selecting && !!onMove && (
+        <Pressable onPress={onMove} hitSlop={10} style={s.moveIconBtn} accessibilityRole="button" accessibilityLabel={`Move ${item.name} to another store`}>
+          <Store size={17} color={k.textMuted} />
         </Pressable>
       )}
     </Pressable>
   );
 }
 
-/**
- * A category section (Supplies/Clothing) — matches
- * features/grocery/components/CategorySection.tsx's real shape: a labeled
- * header, then store-grouped rows within it, with the store sub-header
- * shown only when the category actually spans more than one store (the
- * phone's own `storeGroups.length > 1` gate — a single-store category
- * doesn't need to repeat its one store name under every item).
- */
 function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active, priceMap, buyItem, onEditItem, onMoveItem, isSelecting, selectedIds, onToggleSelect }: {
   label: string; emoji: string; items: GroceryItem[];
   k: KioskColors; isDark: boolean; isKid: boolean; active: FamilyMember;
@@ -1597,8 +1406,6 @@ function GroceryCategorySection({ label, emoji, items, k, isDark, isKid, active,
               item={it}
               priceInfo={priceMap[it.name]}
               k={k}
-              isDark={isDark}
-              divider={i > 0}
               onBuy={isKid ? undefined : () => buyItem(it.id, active.id)}
               onEdit={isKid ? undefined : () => onEditItem(it)}
               onMove={isKid ? undefined : () => onMoveItem(it)}
@@ -1643,6 +1450,33 @@ const chefName = (id: string | null | undefined, members: FamilyMember[]) => {
 };
 
 const s = StyleSheet.create({
+  lHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  lTitle: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
+  lPill: { borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5 },
+  lPillT: { fontSize: 12, fontWeight: '800' },
+  lTool: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  lAdd: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 46, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 18 },
+  lAddT: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  banRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  ban: { flexGrow: 1, flexBasis: 280, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
+  banIc: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  banT: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  banS: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
+  banBtn: { minHeight: 40, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  banBtnT: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  filterRow: { gap: 10 },
+  storeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  storeChip: { minHeight: 42, borderRadius: 100, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center' },
+  storeChipT: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  sGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' },
+  sCard: { flexGrow: 1, flexBasis: 340, borderRadius: 24, padding: 12, gap: 8 },
+  sHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, paddingBottom: 2 },
+  sIc: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  sName: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', flexShrink: 1 },
+  sCount: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
+  sCountT: { fontSize: 12, fontWeight: '800' },
+  rb: { borderRadius: 22, padding: 12, gap: 8 },
+  rbHead: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
   shell: { flex: 1, flexDirection: 'row', minHeight: 0 },
   content: { flex: 1, minWidth: 0 },
   scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
@@ -1736,6 +1570,13 @@ const s = StyleSheet.create({
   // Mock-exact .grocery-row convention: a plain unfilled checkbox square,
   // no card-shaped well around each row (Overview's own Grocery list rows
   // are the same flat hairline-divided rows, not individually boxed).
+  mRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, minHeight: 62, borderWidth: 0 },
+  mCheck: { width: 36, height: 36, borderRadius: 18, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  mNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mName: { fontSize: KIOSK_TYPO.body, fontWeight: '800', flexShrink: 1 },
+  mSub: { fontSize: KIOSK_TYPO.label, fontWeight: '700', marginTop: 1 },
+  aiBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 100, paddingHorizontal: 7, paddingVertical: 2 },
+  aiBadgeT: { fontSize: 10.5, fontWeight: '800' },
   groceryRow: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
     minHeight: KIOSK_HIT.control, paddingVertical: KIOSK_SPACE.sm,

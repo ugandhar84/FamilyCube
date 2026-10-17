@@ -181,7 +181,7 @@ export function NextUpTimeline({
               {needsDriver ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                   <AlertTriangle size={11} color={colors.danger} />
-                  <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>Needs a driver</Text>
+                  <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>Who is driving? Nobody yet</Text>
                 </View>
               ) : (ev.rideRequired || ev.category === 'Ride') && assignee.name ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>

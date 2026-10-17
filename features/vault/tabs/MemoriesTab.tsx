@@ -204,6 +204,7 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
   const [caption, setCaption] = useState('');
   const [captionOverlay, setCaptionOverlay] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
   // Defaults to just the poster themselves — "who was there" starts
   // pre-filled with an obvious true fact, not empty.
   const [taggedIds, setTaggedIds] = useState<string[]>(myId ? [myId] : []);
@@ -231,6 +232,7 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
   const MAX_VIDEO_SECONDS = 120;
 
   const reset = () => {
+    setPostError(null);
     setMedia([]); setCaption(''); setCaptionOverlay(false);
     setTaggedIds(myId ? [myId] : []); setOccasion(null); setPreviewIdx(null);
     setCustomOccasionActive(false); setCustomOccasionText('');
@@ -313,8 +315,16 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
     else pickFromLibrary();
   };
 
+  const friendlyPostError = (msg?: string) => {
+    const m = (msg ?? '').toLowerCase();
+    if (m.includes('row-level security') || m.includes('permission')) return 'You do not have permission to post this memory.';
+    if (m.includes('network') || m.includes('fetch') || m.includes('timed out')) return 'No connection. Check the internet and try again. Your photos are still here.';
+    if (m.includes('payload') || m.includes('too large') || m.includes('size')) return 'One of the files is too large to upload. Remove it or pick a smaller one.';
+    return `Could not post this memory. ${msg ?? 'Please try again.'}`;
+  };
   const handlePost = async () => {
-    if (media.length === 0) return;
+    setPostError(null);
+    if (media.length === 0) { setPostError('Add at least one photo or video to keep this memory.'); return; }
     console.log('[ComposeMemoryModal] handlePost tapped, media:', media, 'caption:', caption);
     setPosting(true);
     try {
@@ -324,7 +334,7 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
       onClose();
     } catch (e: any) {
       console.error('[ComposeMemoryModal] ❌ post failed:', e?.message, e);
-      Alert.alert('Couldn\'t post', e?.message ?? 'Please try again.');
+      setPostError(friendlyPostError(e?.message));
     } finally {
       setPosting(false);
     }
@@ -619,6 +629,13 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
 
             {/* Sticky footer — was inside the ScrollView, could scroll out
                 of view once who-was-there/occasion pushed content taller. */}
+            {!!postError && (
+              <View accessibilityRole="alert" style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginHorizontal: 20, marginBottom: 4, borderRadius: 14, padding: 14,
+                backgroundColor: isDark ? colors.danger + '22' : '#FFE8E3', borderWidth: 1.5, borderColor: colors.danger }}>
+                <Text style={{ fontSize: 16 }}>⚠️</Text>
+                <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 20, color: colors.danger }}>{postError}</Text>
+              </View>
+            )}
             <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
               borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.border : GEMINI.border,
               backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
@@ -629,8 +646,8 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
               </TouchableOpacity>
               <TouchableOpacity onPress={handlePost}
                 style={{ flex: 2, borderRadius: 16, alignItems: 'center', justifyContent: 'center', paddingVertical: 15,
-                  backgroundColor: GEMINI.blue, opacity: (posting || media.length === 0) ? 0.5 : 1 }}
-                disabled={posting || media.length === 0}>
+                  backgroundColor: GEMINI.blue, opacity: posting ? 0.5 : 1 }}
+                disabled={posting}>
                 {posting
                   ? <CubeSpinner size={18} />
                   : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Keep this memory</Text>}

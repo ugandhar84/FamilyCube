@@ -325,6 +325,7 @@ export function KioskMemoryFeed({
   const [viewer, setViewer] = useState<{ urls: string[]; types: ('photo' | 'video')[]; index: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<Memory | null>(null);
+  const [slide, setSlide] = useState(0);
   const pastels = kioskPastels(k);
   const shown = list ?? memories;
   const live = detail ? memories.find(m => m.id === detail.id) ?? null : null;
@@ -415,7 +416,7 @@ export function KioskMemoryFeed({
               readOnly={readOnly}
               highlighted={mem.id === focusMemoryId}
               tone={pastels[idx % pastels.length]}
-              onOpenDetail={() => { registerActivity(); setDetail(mem); }}
+              onOpenDetail={() => { registerActivity(); setDetail(mem); setSlide(0); }}
               onHeart={() => { registerActivity(); heartMemory(mem); }}
               onDelete={() => { registerActivity(); deleteMemory(mem.id); }}
               onOpenViewer={openViewer}
@@ -460,12 +461,24 @@ export function KioskMemoryFeed({
           const canDel = !readOnly && canDeleteMemory(live, myId, members);
           return (
             <View style={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
-              {urls[0] ? (
-                <Pressable onPress={() => openViewer(urls, 0, urls.map((_, i) => typeAt(live, i)))} accessibilityRole="imagebutton" accessibilityLabel="Open full screen"
-                  style={{ height: 300, borderRadius: KIOSK_RADIUS.xl, overflow: 'hidden', backgroundColor: k.well }}>
-                  <Image source={{ uri: urls[0] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                  {typeAt(live, 0) === 'video' && <View style={s.badge} pointerEvents="none"><Play size={13} color="#F7F2EE" fill="#F7F2EE" /></View>}
-                </Pressable>
+              {urls.length > 0 ? (
+                <View style={{ gap: 8 }}>
+                  <Pressable onPress={() => openViewer(urls, Math.min(slide, urls.length - 1), urls.map((_, i) => typeAt(live, i)))} accessibilityRole="imagebutton" accessibilityLabel="Open full screen"
+                    style={{ height: 300, borderRadius: KIOSK_RADIUS.xl, overflow: 'hidden', backgroundColor: k.well }}>
+                    <Image source={{ uri: urls[Math.min(slide, urls.length - 1)] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                    {typeAt(live, Math.min(slide, urls.length - 1)) === 'video' && <View style={s.badge} pointerEvents="none"><Play size={13} color="#F7F2EE" fill="#F7F2EE" /></View>}
+                    {urls.length > 1 && <View style={[s.badge, s.badgeRight]} pointerEvents="none"><Text style={s.badgeText}>{Math.min(slide, urls.length - 1) + 1} / {urls.length}</Text></View>}
+                  </Pressable>
+                  {urls.length > 1 && (
+                    <View style={s.dChips}>
+                      {urls.map((u, i) => (
+                        <Pressable key={i} onPress={() => setSlide(i)} accessibilityRole="button" accessibilityLabel={`Photo ${i + 1}`} style={{ width: 64, height: 64, borderRadius: 14, overflow: 'hidden', borderWidth: 3, borderColor: i === slide ? k.primary : 'transparent' }}>
+                          <Image source={{ uri: u }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
               ) : null}
               {!!live.description && <Text style={{ fontSize: KIOSK_TYPO.subheading, fontWeight: '800', lineHeight: 26, color: k.text }}>{live.description}</Text>}
               {inIt.length > 0 && (
@@ -485,7 +498,7 @@ export function KioskMemoryFeed({
                   <Text style={[s.dBtnText, { color: hearted ? k.text : k.onPrimary }]}>{hearted ? 'Unlove' : 'Love it'}</Text>
                 </Pressable>
                 {!!urls[0] && (
-                  <Pressable onPress={async () => { try { const r = await saveMediaToDevice(urls[0], typeAt(live, 0)); if (r === 'saved') Alert.alert('Saved', 'Saved to your library.'); } catch (e: any) { Alert.alert('Couldn\'t save', e?.message ?? 'Please try again.'); } }}
+                  <Pressable onPress={async () => { try { const r = await saveMediaToDevice(urls[Math.min(slide, urls.length - 1)], typeAt(live, Math.min(slide, urls.length - 1))); if (r === 'saved') Alert.alert('Saved', 'Saved to your library.'); } catch (e: any) { Alert.alert('Couldn\'t save', e?.message ?? 'Please try again.'); } }}
                     accessibilityRole="button" style={[s.dBtn, { backgroundColor: k.well }]}>
                     <Download size={18} color={k.text} /><Text style={[s.dBtnText, { color: k.text }]}>Save</Text>
                   </Pressable>

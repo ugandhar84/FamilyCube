@@ -7,8 +7,8 @@
  * but not post or delete (`readOnly`).
  */
 import { useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, Text, Pressable } from 'react-native';
-import { Plus, Images, Heart, Pencil, Play, Camera } from 'lucide-react-native';
+import { ScrollView, StyleSheet, View, Text, Pressable, TextInput } from 'react-native';
+import { Plus, Images, Heart, Pencil, Play, Camera, CalendarDays, Search } from 'lucide-react-native';
 import { KIOSK_SPACE, KIOSK_TYPO, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, kioskPastels } from '../kioskPalette';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
@@ -20,7 +20,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useFamilyMemories } from '@/features/vault/tabs/useFamilyMemories';
 import { ComposeMemoryModal } from '@/features/vault/tabs/MemoriesTab';
 
-type Area = 'feed' | 'loved' | 'mine' | 'ambient';
+type Area = 'feed' | 'loved' | 'mine' | 'month' | 'ambient';
 const TYPES: { key: string; label: string; emoji: string }[] = [
   { key: 'milestone', label: 'Milestone', emoji: '🎂' }, { key: 'everyday', label: 'Everyday', emoji: '☀️' },
   { key: 'celebration', label: 'Celebration', emoji: '🎉' }, { key: 'just_because', label: 'Just because', emoji: '🌙' },
@@ -48,21 +48,26 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
   const [type, setType] = useState('all');
   const [person, setPerson] = useState('all');
   const [composing, setComposing] = useState(false);
+  const [query, setQuery] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const feedTopRef = useRef(0);
   const api = useFamilyMemories({ focusMemoryId: null });
   useKioskLockSuspended(composing);
 
   const list = useMemo(() => {
-    let l = api.memories.filter(m => (type === 'all' || m.tag === type) && (person === 'all' || m.created_by === person || (m.tagged_member_ids ?? []).includes(person)));
+    const q = query.trim().toLowerCase();
+    const now = new Date();
+    let l = api.memories.filter(m => (type === 'all' || m.tag === type) && (!q || (m.description ?? '').toLowerCase().includes(q)) && (person === 'all' || m.created_by === person || (m.tagged_member_ids ?? []).includes(person)));
     if (area === 'loved') l = [...l].sort((a, b) => (b.hearts ?? 0) - (a.hearts ?? 0));
     if (area === 'mine') l = l.filter(m => m.created_by === api.myId);
+    if (area === 'month') l = l.filter(m => { const d = new Date(m.date + 'T00:00:00'); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
     return l;
-  }, [api.memories, type, person, area, api.myId]);
+  }, [api.memories, type, person, area, api.myId, query]);
 
   const items: AreaItem<Area>[] = [
     { id: 'feed', label: 'All memories', Icon: Images, badge: api.memories.length },
     { id: 'loved', label: 'Most loved', Icon: Heart },
+    { id: 'month', label: 'On this month', Icon: CalendarDays },
     ...(readOnly ? [] : [{ id: 'mine' as Area, label: 'My posts', Icon: Pencil }]),
     { id: 'ambient', label: 'Ambient slideshow', Icon: Play },
   ];
@@ -101,6 +106,10 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
                 </Pressable>
               )}
             </View>
+            <View style={[s.search, { backgroundColor: k.well }]}>
+              <Search size={16} color={k.textFaint} />
+              <TextInput value={query} onChangeText={setQuery} placeholder="Search captions" placeholderTextColor={k.textFaint} style={[s.searchIn, { color: k.text }]} accessibilityLabel="Search captions" />
+            </View>
             <View style={s.chips}>
               <Chip label="All" on={type === 'all'} onPress={() => setType('all')} tone={pastels[0]} />
               {TYPES.map((t, i) => <Chip key={t.key} label={`${t.emoji} ${t.label}`} on={type === t.key} onPress={() => setType(t.key)} tone={pastels[(i + 1) % 4]} />)}
@@ -112,6 +121,11 @@ export function KioskMemoriesTab({ colors, isDark, readOnly = false }: {
             <View onLayout={e => { feedTopRef.current = e.nativeEvent.layout.y; }}>
               <KioskMemoryFeed api={api} list={list} readOnly={readOnly} focusMemoryId={null} />
             </View>
+            {api.hasMore && !api.loadingMore && (
+              <Pressable onPress={() => { registerActivity(); api.loadMore(); }} accessibilityRole="button" style={[s.more, { backgroundColor: k.well }]}>
+                <Text style={[s.chipText, { color: k.text }]}>Load more</Text>
+              </Pressable>
+            )}
           </ScrollView>
         )}
       </View>
@@ -146,6 +160,9 @@ const s = StyleSheet.create({
   sub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
   newBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 18 },
   newText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 100, paddingHorizontal: 16, minHeight: 46 },
+  searchIn: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '600', paddingVertical: 8 },
+  more: { alignSelf: 'center', minHeight: 50, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { minHeight: 44, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   chipText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },

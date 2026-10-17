@@ -22,6 +22,7 @@ import { GEMINI } from '@/constants/geminiRhythm';
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { TodayActionGrid } from './parent/TodayActionGrid';
 import { RidesStatusCard } from './parent/RidesStatusCard';
+import { HubMyList } from './HubMyList';
 import { NextUpTimeline } from './parent/NextUpCard';
 import { FamilyPulseCard } from './parent/FamilyPulseCard';
 import { ProfileSwitcherCard } from './parent/ProfileSwitcherCard';
@@ -874,6 +875,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           events={upcomingTodayEvents}
           conflictReasons={conflictReasons}
         />
+        <HubMyList active={active} colors={colors} isDark={isDark} />
       </Animated.View>
 
       <Animated.View style={{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }}>

@@ -4,6 +4,7 @@ import { localDateStr } from '@/lib/dates';
 import { isEventSensitive, eventAssignee, useEventStore } from '@/store/eventStore';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import { NextUpTimeline } from './parent/NextUpCard';
+import { HubMyList } from './HubMyList';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -80,10 +81,13 @@ export function HubTimelineSection({ active, members, events, colors, isDark }: 
   }
 
   return (
-    <NextUpTimeline
-      colors={colors} isDark={isDark}
-      events={upcoming}
-      conflictReasons={conflictReasons}
-    />
+    <>
+      <NextUpTimeline
+        colors={colors} isDark={isDark}
+        events={upcoming}
+        conflictReasons={conflictReasons}
+      />
+      <HubMyList active={active} colors={colors} isDark={isDark} />
+    </>
   );
 }

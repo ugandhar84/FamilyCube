@@ -3,7 +3,7 @@
  * (useStickyNotes): notes shared with you or everyone, with an "add" note that lets you pick who sees it.
  */
 import { useState } from 'react';
-import { View, Text, Pressable, TextInput, Modal, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Pressable, TextInput, Modal, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { Plus, X } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { showToast } from '@/components/AppToast';
@@ -35,7 +35,7 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
   return (
     <View style={s.wrap}>
       <Text style={[s.eyebrow, { color: colors.textTertiary }]}>STICKY NOTES</Text>
-      <View style={s.grid}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.scroller} contentContainerStyle={s.grid}>
         {notes.map((n, i) => {
           const t = tone[n.color] ?? tone.amber;
           return (
@@ -52,7 +52,7 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
         <Pressable onPress={() => setAdding(true)} style={[s.note, s.add, { backgroundColor: colors.surface }]} accessibilityRole="button" accessibilityLabel="Add a sticky note">
           <Plus size={18} color={colors.textSecondary} /><Text style={[s.by, { color: colors.textSecondary }]}>Add a note</Text>
         </Pressable>
-      </View>
+      </ScrollView>
 
       <Modal visible={adding} transparent animationType="slide" onRequestClose={() => setAdding(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.modalWrap}>
@@ -88,8 +88,9 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
 const s = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, gap: 8 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  note: { width: '47.5%', minHeight: 100, borderRadius: 3, borderBottomRightRadius: 20, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 10, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 3, height: 7 }, elevation: 8 },
+  scroller: { marginHorizontal: -16, overflow: 'visible' },
+  grid: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14 },
+  note: { width: 190, minHeight: 120, borderRadius: 3, borderBottomRightRadius: 20, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 10, gap: 4, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 3, height: 7 }, elevation: 8 },
   tape: { position: 'absolute', top: -8, alignSelf: 'center', width: 56, height: 16, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', transform: [{ rotate: '-3deg' }] },
   fold: { position: 'absolute', right: 0, bottom: 0, width: 22, height: 22, borderTopLeftRadius: 18, borderBottomRightRadius: 20, backgroundColor: 'rgba(0,0,0,0.10)' },
   body: { fontSize: 15, fontWeight: '700', lineHeight: 20 },

@@ -31,14 +31,14 @@ export function HubMyList({ active, colors, isDark }: { active: FamilyMember; co
   };
   if (mine.length === 0 && !adding) {
     return (
-      <Pressable onPress={() => setAdding(true)} style={[s.empty, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Add to my list">
-        <Plus size={16} color={colors.textSecondary} /><Text style={[s.emptyT, { color: colors.textSecondary }]}>Add to my private list</Text>
+      <Pressable onPress={() => setAdding(true)} style={[s.empty, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Add to my private task list">
+        <Plus size={16} color={colors.textSecondary} /><Text style={[s.emptyT, { color: colors.textSecondary }]}>Add to my private task list</Text>
       </Pressable>
     );
   }
   return (
     <View style={s.wrap}>
-      <Text style={[s.eyebrow, { color: colors.textTertiary }]}>MY LIST · ONLY YOU SEE THIS</Text>
+      <Text style={[s.eyebrow, { color: colors.textTertiary }]}>MY PRIVATE TASK LIST · ONLY YOU SEE THIS</Text>
       {mine.map((q: any) => {
         const late = q.dueDate && new Date(`${q.dueDate}T${q.dueTime ?? '23:59'}:00`).getTime() < Date.now();
         return (
@@ -87,7 +87,7 @@ export function HubMyList({ active, colors, isDark }: { active: FamilyMember; co
           </View>
         </View>
       ) : (
-        <Pressable onPress={() => setAdding(true)} style={[s.empty, { borderColor: colors.border }]} accessibilityRole="button"><Plus size={16} color={colors.textSecondary} /><Text style={[s.emptyT, { color: colors.textSecondary }]}>Add to my private list</Text></Pressable>
+        <Pressable onPress={() => setAdding(true)} style={[s.empty, { borderColor: colors.border }]} accessibilityRole="button"><Plus size={16} color={colors.textSecondary} /><Text style={[s.emptyT, { color: colors.textSecondary }]}>Add to my private task list</Text></Pressable>
       )}
     </View>
   );

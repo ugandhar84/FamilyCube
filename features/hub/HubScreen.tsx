@@ -695,7 +695,7 @@ export default function HubScreen() {
         scrollEventThrottle={isParent ? 100 : undefined}
       >
         {(isParent || active.role === 'kid' || isTeen) && headerEl}
-        <HubMyList active={active} colors={colors} isDark={isDark} />
+        {!isParent && !isKid && !isTeen && <HubMyList active={active} colors={colors} isDark={isDark} />}
         <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (
           <ParentView

@@ -153,7 +153,7 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
           <FamilyNowCard members={members} onOpenMap={goMap} />
           <HomeChatsCard active={active} members={members} />
           <HomeMedsCard active={active} members={members} ownOnly={false} />
-          <Section label="MY LIST" accent={k.sage} k={k}>
+          <Section label="MY PRIVATE TASK LIST" accent={k.sage} k={k}>
             <RaisedCard k={k} isDark={isDark} style={{ padding: KIOSK_SPACE.sm }}>
               <KioskSimpleChecklist bare active={active} members={members} k={k} isDark={isDark} onOpenTasks={() => onNavigate('tasks')} />
             </RaisedCard>

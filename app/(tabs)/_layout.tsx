@@ -201,6 +201,12 @@ function CustomTabBar({ state, navigation }: any) {
     forceShowTabBar();
   }, []);
 
+  // School schedules/holidays: nothing loaded them from the phone or the server at startup, so every launch began from the
+  // demo data and anything saved before was invisible. Load once when the tab shell mounts.
+  useEffect(() => {
+    import('@/store/schoolStore').then(({ useSchoolStore }) => useSchoolStore.getState().loadFromStorage()).catch(() => {});
+  }, []);
+
   const floatBottom = (insets.bottom || 16) + 10;
   const [barHeight, setBarHeight] = useState(0);
   const totalHeight = barHeight + floatBottom + 10;

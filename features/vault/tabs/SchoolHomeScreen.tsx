@@ -484,6 +484,9 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
     return () => showTabBar();
   }, []);
 
+  // Refresh from the phone and the server each time School opens, so what was saved always shows.
+  useEffect(() => { useSchoolStore.getState().loadFromStorage(); }, []);
+
   const kids: FamilyMember[] = useMemo(() => {
     if (isOwnScheduleOnly) {
       const me = members.find(m => m.id === activeMemberId);

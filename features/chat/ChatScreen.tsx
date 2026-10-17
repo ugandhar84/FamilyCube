@@ -887,6 +887,10 @@ export default function ChatScreen() {
     return () => {
       if (openCoupleChannel) {
         useCoupleChannelStore.getState().lock(channelId);
+        // Leave the private channel too, so coming back to the Chat tab lands on the normal list instead of
+        // re-opening Just Us and asking for its PIN straight away.
+        setThreadOpen(false);
+        setChannelId('all');
       }
     };
   }, [openCoupleChannel, channelId]));

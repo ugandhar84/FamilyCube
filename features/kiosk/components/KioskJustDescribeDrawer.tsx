@@ -304,24 +304,6 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
   const canSubmit = !formOpen ? canSetup : !!title.trim();
 
   // ── premium UI helpers ──
-  const Chip = ({ label, on, onPress, tone = k.primary, Icon }: { label: string; on: boolean; onPress: () => void; tone?: string; Icon?: LucideIcon }) => (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label}
-      style={({ pressed }) => [s.chip, { backgroundColor: on ? tone : k.well, borderColor: on ? tone : k.cardBorder }, pressed && { opacity: 0.8 }]}>
-      {Icon && <Icon size={16} color={on ? k.onAccent : k.textMuted} strokeWidth={2.2} />}
-      <Text style={[s.chipText, { color: on ? k.onAccent : k.text }]}>{label}</Text>
-    </Pressable>
-  );
-  const PersonChip = ({ m, i, on, onPress }: { m: FamilyMember; i: number; on: boolean; onPress: () => void }) => {
-    const tone = pastels[i % pastels.length];
-    return (
-      <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={firstName(m)}
-        style={({ pressed }) => [s.person, { backgroundColor: on ? tone.fg : tone.card, borderColor: on ? tone.fg : 'transparent' }, pressed && { opacity: 0.8 }]}>
-        <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={28} bgColor={k.card} k={k} />
-        <Text style={[s.chipText, { color: on ? k.onAccent : tone.fg }]}>{firstName(m)}</Text>
-        {on && <Check size={15} color={k.onAccent} strokeWidth={3} />}
-      </Pressable>
-    );
-  };
   const people_ = (multi: boolean, ids: string[], onPick: (id: string) => void, list: FamilyMember[]) =>
     list.map(m => <PersonChip key={m.id} m={m} i={Math.max(0, people.findIndex(x => x.id === m.id))} on={ids.includes(m.id)} onPress={() => onPick(m.id)} />);
   const Card = ({ title: t, hint, Icon, tone, children }: { title: string; hint?: string; Icon: LucideIcon; tone: { card: string; fg: string }; children: React.ReactNode }) => (
@@ -570,6 +552,61 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
         )}
       </View>
     </KioskFormDrawer>
+  );
+}
+
+/* Form building blocks live at module level on purpose: defined inside the
+ * drawer they would be a NEW component type every render, so every keystroke
+ * remounted the text field and dropped the keyboard. */
+function Chip({ label, on, onPress, tone, Icon }: { label: string; on: boolean; onPress: () => void; tone?: string; Icon?: LucideIcon }) {
+  const { k } = useKioskColors();
+  const t = tone ?? k.primary;
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label}
+      style={({ pressed }) => [s.chip, { backgroundColor: on ? t : k.well, borderColor: on ? t : k.cardBorder }, pressed && { opacity: 0.8 }]}>
+      {Icon && <Icon size={16} color={on ? k.onAccent : k.textMuted} strokeWidth={2.2} />}
+      <Text style={[s.chipText, { color: on ? k.onAccent : k.text }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function PersonChip({ m, i, on, onPress }: { m: FamilyMember; i: number; on: boolean; onPress: () => void }) {
+  const { k } = useKioskColors();
+  const tone = kioskPastels(k)[i % 4];
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={firstName(m)}
+      style={({ pressed }) => [s.person, { backgroundColor: on ? tone.fg : tone.card, borderColor: on ? tone.fg : 'transparent' }, pressed && { opacity: 0.8 }]}>
+      <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={28} bgColor={k.card} k={k} />
+      <Text style={[s.chipText, { color: on ? k.onAccent : tone.fg }]}>{firstName(m)}</Text>
+      {on && <Check size={15} color={k.onAccent} strokeWidth={3} />}
+    </Pressable>
+  );
+}
+
+function Card({ title, hint, Icon, tone, children }: { title: string; hint?: string; Icon: LucideIcon; tone: { card: string; fg: string }; children: React.ReactNode }) {
+  const { k, isDark } = useKioskColors();
+  return (
+    <View style={[s.card, { backgroundColor: k.card, borderColor: k.cardBorder }, kioskElevation(tone.fg, isDark)]}>
+      <View style={s.cardHead}>
+        <View style={[s.iconTile, { backgroundColor: tone.card }]}><Icon size={20} color={tone.fg} strokeWidth={2.2} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.cardTitle, { color: k.text }]}>{title}</Text>
+          {!!hint && <Text style={[s.cardHint, { color: k.textMuted }]}>{hint}</Text>}
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Field({ label, value, set, placeholder, multiline }: { label?: string; value: string; set: (t: string) => void; placeholder: string; multiline?: boolean }) {
+  const { k } = useKioskColors();
+  return (
+    <View style={{ gap: 6 }}>
+      {!!label && <Text style={[s.fieldLabel, { color: k.textFaint }]}>{label}</Text>}
+      <TextInput value={value} onChangeText={set} placeholder={placeholder} placeholderTextColor={k.textFaint} multiline={multiline}
+        style={[s.field, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }, multiline && { minHeight: 80, textAlignVertical: 'top', paddingTop: 12 }]} />
+    </View>
   );
 }
 

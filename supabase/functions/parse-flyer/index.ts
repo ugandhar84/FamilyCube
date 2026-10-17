@@ -127,7 +127,10 @@ schedule.
 Return ONLY valid JSON — no markdown fences, no explanation. If a field is unknown after this careful search, use null.
 For timetable periods: always specify the exact days each period occurs. If a subject appears on different days in different weeks or terms, create a separate period entry per term and set the "term" field accordingly.
 For rotating/block schedules: each day-block (A/B/C etc.) gets separate period entries with the days array set to only the days that block runs.
-For calendar events: extract ALL visible events, even if there are 20+.`;
+For calendar events: extract ALL visible events, even if there are 20+ or 100+. Work through EVERY page and EVERY month/column, in order, and do not stop early or summarise.
+- A break or range of days ("Spring Break Mar 18-22", "Winter Break Dec 21 - Jan 3") must be returned as ONE event per school day, each with its own date, the same title, and the category Study. Never return only the first day or the range as a single row.
+- Every single marked day counts (holidays, staff days, early release, grading-period starts/ends, make-up days, testing days). If a day has two things, return two events.
+- Do not drop events because they repeat; each date is its own event.`;
 
 // ── Gemini vision call ────────────────────────────────────────────────────────
 async function callGemini(key: string, images: { data: string; mimeType: string }[]): Promise<string> {

@@ -15,7 +15,7 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
-import { Flame, Coins } from 'lucide-react-native';
+import { Flame, Coins, Gift } from 'lucide-react-native';
 import { PageHeading } from '@/components/PageHeading';
 import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
@@ -436,15 +436,10 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
           {/* Header */}
-          <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 12 }}>
-            <TouchableOpacity activeOpacity={0.7} onPress={requestAnimatedClose}>
-              <Text style={{ fontSize: 29, fontWeight: '700', color: titleC, lineHeight: 36 }}>
-                {editing ? 'Edit Perk' : 'New Perk'}
-              </Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 14, color: bodyC, marginTop: 4, lineHeight: 20 }}>
-              {editing ? 'Update perk details below.' : 'Build a new reward for your family.'}
-            </Text>
+          <View style={{ backgroundColor: canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · REWARDS" title={editing ? 'Edit Perk' : 'New Perk'}
+              subtitle={editing ? 'Update perk details below.' : 'Build a new reward for your family.'}
+              accent="amber" Icon={Gift} onTitlePress={requestAnimatedClose} topInset={insets.top} />
           </View>
 
           <ScrollView

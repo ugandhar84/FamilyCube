@@ -17,8 +17,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useRewardStore, Reward, Redemption } from '@/store/rewardStore';
 import { showToast } from '@/components/AppToast';
 import {
-  CheckCircle, XCircle, ChevronRight, ShoppingBag, Flame, Coins,
-} from 'lucide-react-native';
+  CheckCircle, XCircle, ChevronRight, ShoppingBag, Flame, Coins, Gift } from 'lucide-react-native';
 import NotificationPanel from '@/components/NotificationPanel';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import StoreScreen from './StoreScreen';
@@ -156,21 +155,13 @@ function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose, o
     <FullPageOverlay visible={!!redemption} onDismiss={onClose} zIndex={65}>
       {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: canvas }}>
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+          <View style={{ paddingBottom: 6 }}>
             {redemption && (
-              <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
-                  alignItems: 'center', justifyContent: 'center', ...(!isDark ? CARD_SHADOW : {}) }}>
-                  <Text style={{ fontSize: 20 }}>{reward?.emoji ?? '🎁'}</Text>
-                </View>
-                <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>
-                  {reward?.title ?? redemption.rewardTitle ?? 'Perk'}
-                </Text>
-              </TouchableOpacity>
+              <PageHeading eyebrow="FAMILY CUBE · REWARDS" title={reward?.title ?? redemption.rewardTitle ?? 'Perk'}
+                accent="amber" Icon={Gift} onTitlePress={requestAnimatedClose} topInset={insets.top} />
             )}
             {redemption && (
-              <View style={{ marginTop: 10 }}>
+              <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
                 <StatusPill status={redemption.status} colors={colors} isDark={isDark} />
               </View>
             )}
@@ -270,19 +261,13 @@ function RewardDetailScreen({ reward, colors, isDark, myCoins, isGoal, onClose, 
     <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
       {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: canvas }}>
-          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+          <View style={{ paddingBottom: 6 }}>
             {reward && (
-              <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
-                  alignItems: 'center', justifyContent: 'center', ...(!isDark ? CARD_SHADOW : {}) }}>
-                  <Text style={{ fontSize: 20 }}>{reward.emoji ?? '🎁'}</Text>
-                </View>
-                <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{reward.title}</Text>
-              </TouchableOpacity>
+              <PageHeading eyebrow="FAMILY CUBE · REWARDS" title={reward.title}
+                accent="amber" Icon={Gift} onTitlePress={requestAnimatedClose} topInset={insets.top} />
             )}
             {reward && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, paddingHorizontal: 20 }}>
                 {isGoal && (
                   <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.amberLight : '#FDF3D8' }}>
                     <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.amber : AMBER_TXT }}>⭐ Your goal</Text>

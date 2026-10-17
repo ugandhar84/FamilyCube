@@ -31,10 +31,11 @@
  *   rgba(115,80,192) reward/coins → colors.pink
  *   rgba(175,69,58)  urgent       → colors.danger
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { CircleDashed, Lock, ClipboardCheck, Send, ChevronRight } from 'lucide-react-native';
+import { CircleDashed, Lock, ClipboardCheck, Send, ChevronRight, Users } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -244,22 +245,11 @@ export function HouseholdWorkQueue({ activeMemberId }: { activeMemberId: string 
         gap: 20,
       }}
     >
-      {/* Page introduction */}
-      <View style={{ gap: 8 }}>
-        {/* Figma: back link fs=13 fw=500 color=teal */}
-        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal, lineHeight: 18.2 }}>
-          TASKS / HOUSEHOLD WORK QUEUE
-        </Text>
-        {/* Page title fs=29 fw=700 */}
-        <Text style={{ fontSize: 29, fontWeight: '700', color: colors.textPrimary, lineHeight: 40.6 }}>
-          Share the load
-        </Text>
+      <View style={{ marginHorizontal: -24 }}>
+        <PageHeading eyebrow="FAMILY CUBE · TASKS" title="Share the load"
+          subtitle="All household work, with the next person clearly named."
+          accent="pink" Icon={Users} topInset={0} />
       </View>
-
-      {/* Supporting info fs=13 fw=500 textSecondary */}
-      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18.2, marginTop: -12 }}>
-        All household work, with the next person clearly named.
-      </Text>
 
       {/* Status summary — 4 full-width metric rows, r=14, pad 12, gap 12 */}
       <View style={{ gap: 8 }}>

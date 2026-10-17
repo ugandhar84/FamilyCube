@@ -33,7 +33,7 @@ const toMin = (t?: string | null): number | null => {
   const m = t ? /^(\d{1,2}):(\d{2})/.exec(t) : null;
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 };
-const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h >= 12 ? 'PM' : 'AM'}`;
+const hourLabel = (h: number) => { const x = h % 24; return `${x % 12 === 0 ? 12 : x % 12} ${x >= 12 ? 'PM' : 'AM'}`; };
 
 type Placed = { ev: FamilyEvent; start: number; end: number; lane: number; lanes: number; busy: boolean };
 
@@ -73,7 +73,7 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
   /** Force the visible hour range (e.g. 6 and 23 for a full day). */
   startHour?: number;
   endHour?: number;
-  /** Scroll so the current time sits near the top third when today is shown. */
+  /** Scroll so the current time sits mid-screen when today is shown. */
   autoScrollToNow?: boolean;
   /** Wider blocks: add who / where under the time. */
   detailed?: boolean;
@@ -113,7 +113,7 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
   const dayKey = columns.map(c => c.key).join('|');
   useEffect(() => {
     if (!autoScrollToNow || !todayShown || bodyH <= 0) return;
-    const y = ((nowMin - h0 * 60) / 60) * hourH - bodyH * 0.3;
+    const y = ((nowMin - h0 * 60) / 60) * hourH - bodyH / 2;
     const t = setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: true }), 60);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

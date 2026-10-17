@@ -375,7 +375,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     });
   }, [cursor, eventsByDate, todayStr]);
 
-  // Day = one wide column for the cursor day, full day (6 AM–11 PM) at a
+  // Day = one wide column for the cursor day, the full 24 hours at a
   // readable hour height, scrolled to the current time when it's today.
   const dayColumns = useMemo(() => {
     const ds = toDateStr(cursor);
@@ -627,13 +627,14 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         <KioskTimeGrid
           columns={weekColumns} members={members} active={active}
           involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
+          hourHeight={64} startHour={0} endHour={24} autoScrollToNow
         />
       )}
       {viewMode === 'day' && (
         <KioskTimeGrid
           columns={dayColumns} members={members} active={active}
           involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
-          hourHeight={76} startHour={6} endHour={23} autoScrollToNow detailed
+          hourHeight={76} startHour={0} endHour={24} autoScrollToNow detailed
         />
       )}
 

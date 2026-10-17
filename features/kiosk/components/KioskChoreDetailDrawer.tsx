@@ -55,11 +55,9 @@ const TRAIL_LABEL: Record<string, string> = {
   archived: 'Archived', assigned: 'Assigned',
 };
 
-export function KioskChoreDetailDrawer({ questId, active, members, onClose, onFullView }: {
+export function KioskChoreDetailDrawer({ questId, active, members, onClose }: {
   questId: string | null; active: FamilyMember; members: FamilyMember[];
   onClose: () => void;
-  /** Hands off to the full board for flows the drawer doesn't carry (photo proof). */
-  onFullView: () => void;
 }) {
   const { k } = useKioskColors();
   const { colors, isDark } = useTheme();
@@ -112,7 +110,7 @@ export function KioskChoreDetailDrawer({ questId, active, members, onClose, onFu
   const actions: React.ReactNode[] = [];
   if (a.canSubmit || a.canResubmit) {
     actions.push(btn(a.canResubmit ? 'Resubmit' : 'Mark done', () => {
-      if (quest.photoRequired) { showToast('This one needs a photo. Opening the full board.'); close(); onFullView(); return; }
+      if (quest.photoRequired) { showToast('This one needs a photo. Add it from a phone.'); return; }
       submitQuest(quest.id, undefined, active.id); showToast('Great job! ✓'); close();
     }, k.sage, k.onAccent));
   }

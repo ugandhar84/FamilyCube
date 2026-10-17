@@ -29,6 +29,7 @@ import { KioskRedoReasonDialog } from './KioskRedoReasonDialog';
 import { firstName } from './KioskHomeParts';
 import { KioskAvatar } from './KioskAvatar';
 import { KioskChoreDetailDrawer } from './KioskChoreDetailDrawer';
+import { useKioskCreateFlow } from './KioskCreateFlow';
 import { KioskKidRequestsPanel, pendingKidRequests } from './KioskKidRequestsPanel';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 
@@ -51,10 +52,8 @@ const TODO_STATUSES = ['todo', 'claimed', 'in_progress', 'declined'];
 const DONE_STATUSES = ['approved', 'done'];
 const sameDay = (iso?: string) => !!iso && localDateStr(new Date(iso)) === localDateStr();
 
-export function KioskChoresBoard({ active, members, onFullView }: {
+export function KioskChoresBoard({ active, members }: {
   active: FamilyMember; members: FamilyMember[];
-  /** Opens the original full board (optionally straight into the composer). */
-  onFullView: (opts?: { composer?: boolean }) => void;
 }) {
   const { k, isDark } = useKioskColors();
   const { quests, submitQuest, approveQuest, declineQuest, claimQuest } = useQuestStore();
@@ -64,6 +63,7 @@ export function KioskChoresBoard({ active, members, onFullView }: {
   const [boardId, setBoardId] = useState(active.id);
   const [redoId, setRedoId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const create = useKioskCreateFlow({ active, members });
   const kidRequests = useKidRequestStore(s => s.requests);
   const requestCount = useMemo(() => (active.role === 'parent' ? pendingKidRequests(kidRequests).length : 0), [kidRequests, active.role]);
   // Parent: Board (per-person columns) or Requests (what the kids are asking
@@ -81,12 +81,18 @@ export function KioskChoresBoard({ active, members, onFullView }: {
   type Pastel = typeof PP;
 
   const visible = useMemo(() => visibleQuestsFor(quests, members, active), [quests, members, active]);
-  const mine = useMemo(() => visible.filter(q => !q.isPool && isAssignedTo(q, person.id)), [visible, person.id]);
+  // Anything assigned to them, including a bounty they already claimed (it
+  // stays flagged isPool but now has an assignee). Unclaimed bounties are the
+  // Bounties column.
+  const mine = useMemo(() => visible.filter(q => isAssignedTo(q, person.id)), [visible, person.id]);
   const today = localDateStr();
+  // Every open chore, earliest due first (overdue and today before later
+  // dates, undated last) — not just today's, so nothing in flight is hidden.
   const todo = useMemo(
-    () => mine.filter(q => TODO_STATUSES.includes(q.status) && (!q.dueDate || q.dueDate <= today))
-      .sort((a, b) => (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') || a.title.localeCompare(b.title)),
-    [mine, today],
+    () => mine.filter(q => TODO_STATUSES.includes(q.status))
+      .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999')
+        || (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') || a.title.localeCompare(b.title)),
+    [mine],
   );
   const submitted = useMemo(() => mine.filter(q => q.status === 'pending_approval'), [mine]);
   const approved = useMemo(
@@ -105,9 +111,9 @@ export function KioskChoresBoard({ active, members, onFullView }: {
   const tick = (q: Quest) => {
     if (person.id !== active.id) return;
     const a = deriveQuestActions(q, viewer);
-    if (q.photoRequired) { showToast('This one needs a photo. Opening the full board.'); onFullView(); return; }
+    if (q.photoRequired) { showToast('This one needs a photo. Add it from a phone.'); return; }
     if (a.canSubmit || a.canResubmit) { submitQuest(q.id, undefined, active.id); showToast('Great job! ✓'); }
-    else onFullView();
+    else setDetailId(q.id);
   };
 
   const card = (q: Quest, kind: 'todo' | 'sub' | 'ok' | 'bounty', tone: Pastel) => {
@@ -128,7 +134,7 @@ export function KioskChoresBoard({ active, members, onFullView }: {
             {kind === 'sub' ? (a.canApprove ? 'Tapped done' : 'Waiting for a parent')
               : kind === 'ok' ? `+${q.coins ?? 0} 🪙 earned`
               : kind === 'bounty' ? `First to claim · 🪙 ${q.coins ?? 0}`
-              : [q.dueTime ? fmt12(q.dueTime) : '', `🪙 ${q.coins ?? 0}`].filter(Boolean).join(' · ')}
+              : [dueLabel(q, today), `🪙 ${q.coins ?? 0}`].filter(Boolean).join(' · ')}
           </Text>
         </View>
         {kind === 'todo' && (
@@ -211,9 +217,6 @@ export function KioskChoresBoard({ active, members, onFullView }: {
             })}
           </View>
         )}
-        <Pressable onPress={() => onFullView()} accessibilityRole="button" style={[s.fullBtn, { backgroundColor: k.well }]}>
-          <Text style={[s.fullText, { color: k.textMuted }]}>Full view</Text>
-        </Pressable>
       </View>
 
       {shownView === 'requests' ? (
@@ -238,8 +241,9 @@ export function KioskChoresBoard({ active, members, onFullView }: {
 
       </>)}
 
-      {isParent && (
-        <Pressable onPress={() => onFullView({ composer: true })} accessibilityRole="button" accessibilityLabel="Add a chore"
+      {create.node}
+      {(isParent || active.role === 'kid') && (
+        <Pressable onPress={create.open} accessibilityRole="button" accessibilityLabel={isParent ? 'Add a chore' : 'Ask a parent'}
           style={[s.fab, { backgroundColor: k.primary }]}>
           <Plus size={28} color={k.onPrimary} strokeWidth={2.5} />
         </Pressable>
@@ -247,7 +251,7 @@ export function KioskChoresBoard({ active, members, onFullView }: {
 
       <KioskChoreDetailDrawer
         questId={detailId} active={active} members={members}
-        onClose={() => setDetailId(null)} onFullView={() => onFullView()}
+        onClose={() => setDetailId(null)}
       />
 
       <KioskRedoReasonDialog
@@ -264,6 +268,19 @@ export function KioskChoresBoard({ active, members, onFullView }: {
       />
     </View>
   );
+}
+
+/** "Overdue", "Today", or a short date, plus a 12h time when there is one. */
+function dueLabel(q: Quest, today: string): string {
+  const time = q.dueTime ? fmt12(q.dueTime) : '';
+  if (!q.dueDate) return time;
+  let day = 'Today';
+  if (q.dueDate < today) day = 'Overdue';
+  else if (q.dueDate > today) {
+    const [y, m, d] = q.dueDate.split('-').map(Number);
+    day = new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  return [day, time].filter(Boolean).join(' ');
 }
 
 function fmt12(t: string): string {
@@ -285,8 +302,6 @@ const s = StyleSheet.create({
   seg: { flexDirection: 'row', borderRadius: 100, padding: 3 },
   segBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, borderRadius: 100, paddingHorizontal: 16 },
   segText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
-  fullBtn: { marginLeft: 'auto', minHeight: 44, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
-  fullText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   person: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl, paddingVertical: 10, paddingHorizontal: KIOSK_SPACE.md },
   pName: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
   you: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },

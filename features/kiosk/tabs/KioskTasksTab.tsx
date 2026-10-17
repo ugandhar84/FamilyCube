@@ -127,25 +127,10 @@ export function KioskTasksTab({ active, members, colors, isDark, onNavigate }: {
     return () => clearInterval(id);
   }, []);
 
-  const { k } = useKioskColors();
-  const [fullView, setFullView] = useState<{ composer: boolean } | null>(null);
   if (active.role === 'senior') {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }
-  if (fullView) {
-    return (
-      <View style={{ flex: 1 }}>
-        <Pressable
-          onPress={() => setFullView(null)} accessibilityRole="button" accessibilityLabel="Back to the chores board"
-          style={{ alignSelf: 'flex-start', margin: 12, minHeight: 44, borderRadius: 100, paddingHorizontal: 18, justifyContent: 'center', backgroundColor: k.well }}
-        >
-          <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: k.text }}>← Chores board</Text>
-        </Pressable>
-        <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} onNavigate={onNavigate} initialComposer={fullView.composer} />
-      </View>
-    );
-  }
-  return <KioskChoresBoard active={active} members={members} onFullView={(opts) => setFullView({ composer: !!opts?.composer })} />;
+  return <KioskChoresBoard active={active} members={members} />;
 }
 
 /**

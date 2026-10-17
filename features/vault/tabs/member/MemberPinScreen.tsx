@@ -10,6 +10,8 @@
  * MemberProfileSheet.tsx's kiosk renderShell path can reuse the exact same
  * implementation.
  */
+import { Lock } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, InteractionManager } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,13 +31,8 @@ export function MemberPinScreen({
   return (
     <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={zIndex}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primary }}>‹ {member.name}</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 26, fontWeight: '800', color: colors.textPrimary, marginTop: 8 }}>
-            {member.pin ? 'Change PIN' : 'Set PIN'}
-          </Text>
+        <View style={{ backgroundColor: colors.background }}>
+          <PageHeading eyebrow="FAMILY CUBE · FAMILY" title={member.pin ? 'Change PIN' : 'Set PIN'} subtitle={member.name} accent="teal" Icon={Lock} onTitlePress={onClose} topInset={insets.top} />
         </View>
 
         <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 10 }}>

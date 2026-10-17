@@ -25,6 +25,7 @@
  * screen's own inline confirm step (same type-to-confirm pattern
  * ProfileSettingsScreen.tsx's danger zone uses) rather than a second Modal.
  */
+import { PageHeading } from '@/components/PageHeading';
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ActivityIndicator, Share, ScrollView, Switch,
@@ -33,7 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { Coins, Flame, Star, Lock, ChevronRight } from 'lucide-react-native';
+import { Coins, Flame, Star, Lock, ChevronRight, User } from 'lucide-react-native';
 import { fmtTime } from '@/lib/dates';
 import { roleColor } from '../MemberCard';
 import type { FamilyMember } from '@/store/familyStore';
@@ -171,13 +172,8 @@ export function MemberDetailScreen({
   return (
     <FullPageOverlay visible={visible} onDismiss={close} zIndex={zIndex}>
       <View style={{ flex: 1, backgroundColor: canvas }}>
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
-          <TouchableOpacity onPress={backAction} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: linkC }}>{backLabel}</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 26, fontWeight: '800', color: titleC, marginTop: 8 }}>
-            {screenTitle}
-          </Text>
+        <View style={{ backgroundColor: canvas }}>
+          <PageHeading eyebrow="FAMILY CUBE · FAMILY" title={screenTitle} subtitle={confirmingRemove ? 'This removes them from the family.' : 'Tap the name to go back to People.'} accent="teal" Icon={User} onTitlePress={backAction} topInset={insets.top} />
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}

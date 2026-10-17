@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { Home as HomeIcon, GraduationCap, Briefcase } from 'lucide-react-native';
+import { Home as HomeIcon, GraduationCap, Briefcase, MapPin, WifiOff, Navigation } from 'lucide-react-native';
 import { usePlacesStore, type FamilyPlace } from '@/store/placesStore';
 import { useFamilyStore } from '@/store/familyStore';
 
@@ -95,6 +95,16 @@ export function FamilyPulseCard({
   ].filter(Boolean).join(' · ');
   const sharingCount = people.filter(m => where[m.id].key !== 'off').length;
 
+  // A small badge on each face says where that person is, so there is no list to read.
+  const badge: Record<Where['key'], { fg: string; Icon: any } | null> = {
+    home: { fg: colors.teal, Icon: HomeIcon },
+    school: { fg: colors.sky, Icon: GraduationCap },
+    work: { fg: colors.amber, Icon: Briefcase },
+    other: { fg: colors.pink, Icon: MapPin },
+    out: { fg: colors.primary, Icon: Navigation },
+    off: { fg: colors.textTertiary, Icon: WifiOff },
+  };
+
   return (
     <View style={{
       marginHorizontal: 20, marginTop: 12,
@@ -131,36 +141,20 @@ export function FamilyPulseCard({
         </Text>
       </View>
 
-      {/* Home / School / Work, with the people who are there right now underneath each. */}
-      <View style={{ flexDirection: 'row', gap: 8, width: '100%' }}>
-        {([
-          { key: 'home' as const, label: 'Home', Icon: HomeIcon, fg: colors.teal },
-          { key: 'school' as const, label: 'School', Icon: GraduationCap, fg: colors.sky },
-          { key: 'work' as const, label: 'Work', Icon: Briefcase, fg: colors.amber },
-        ]).map(col => {
-          const here = people.filter(m => where[m.id].key === col.key);
-          const Ic = col.Icon;
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 14, width: '100%' }}>
+        {people.slice(0, 8).map((m, i) => {
+          const b = badge[where[m.id].key]; const Ic = b?.Icon;
           return (
-            <View key={col.key} style={{ flex: 1, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 10, gap: 8,
-              backgroundColor: isDark ? colors.card : '#FFFFFF', minHeight: 84 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ic size={14} color={col.fg} />
-                <Text style={{ fontSize: 12, fontWeight: '800', color: col.fg }}>{col.label}</Text>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary }}>{here.length}</Text>
-              </View>
-              {here.length === 0 ? (
-                <Text style={{ fontSize: 12, color: colors.textTertiary }}>No one</Text>
-              ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  {here.slice(0, 4).map((m, i) => (
-                    <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF', padding: 1.5 }}>
-                      <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={28}
-                        ringColor={col.fg} ringWidth={2} />
-                    </View>
-                  ))}
-                  {here.length > 4 && (
-                    <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '800', color: col.fg }}>+{here.length - 4}</Text>
-                  )}
+            <View key={m.id} style={{ backgroundColor: colors.card, borderRadius: 36 * 0.34 + 2, padding: 2 }}>
+              <FamilyAvatar
+                name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={36}
+                ringColor={m.role === 'parent' ? colors.teal : m.role === 'kid' ? colors.amber : colors.primary}
+                ringWidth={2}
+              />
+              {b && Ic && (
+                <View style={{ position: 'absolute', right: -4, bottom: -4, width: 19, height: 19, borderRadius: 10,
+                  alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, borderWidth: 1.5, borderColor: b.fg }}>
+                  <Ic size={10} color={b.fg} />
                 </View>
               )}
             </View>

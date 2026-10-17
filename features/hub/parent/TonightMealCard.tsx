@@ -110,7 +110,7 @@ export function TonightMealCard({
 
   const open = () => useUIStore.getState().setOpenMealsScreenRequested(true);
   const cardShell = {
-    marginHorizontal: 20, marginTop: 14, marginBottom: 20,
+    marginHorizontal: 20, marginTop: 12, marginBottom: 20,
     borderRadius: 22, overflow: 'hidden' as const,
     backgroundColor: isDark ? colors.card : GEMINI.cardBg,
     borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,

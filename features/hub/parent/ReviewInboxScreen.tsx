@@ -28,7 +28,7 @@ import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 
 export type ReviewCategory = 'chores' | 'redemptions' | 'requests' | 'disputes';
 
@@ -133,8 +133,8 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
           title + subtitle + pastel icon badge), tap title to go back, per
           the Gemini-rhythm header convention used app-wide. ── */}
       <View style={{ backgroundColor: canvas }}>
-        <PageHeading
-          eyebrow={activeMember ? `${familyName?.toUpperCase() ?? 'FAMILY SPACE'} · ${activeMember.name}` : (familyName?.toUpperCase() ?? 'FAMILY SPACE')}
+        <OverlayHeading
+          eyebrow="FAMILY CUBE · REVIEW"
           title="Review inbox"
           subtitle={totalPending > 0 ? `${totalPending} waiting on you` : 'All caught up'}
           accent="pink"

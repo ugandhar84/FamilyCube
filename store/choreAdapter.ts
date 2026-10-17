@@ -314,7 +314,7 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
 // ─── Personal tasks ──────────────────────────────────────────────────────────
 // A task someone created for themselves, worth nothing and finished with one tap (the kiosk "Add my own task"), is
 // a private reminder list. Only its owner sees it: it never shows in parents' or siblings' task lists, boards or counts.
-function isPersonalTask(c: any): boolean {
+export function isPersonalTask(c: any): boolean {
   const worth = (c.basePoints || c.coinsReward || 0) + (c.bonusCoins || 0);
   return !!c.createdById && c.createdById === c.assignedToId && !!c.trustedAutoApprove && worth === 0;
 }

@@ -4,7 +4,7 @@
  * Figma-faithful: mint member-identity card → standalone textarea field →
  * white preview card → primary + secondary CTAs → mint info module.
  */
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, TouchableOpacity,
@@ -92,7 +92,7 @@ export function SendAppreciationScreen({ memberId, onClose }: Props) {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · REVIEW"
         title="Send appreciation"
         accent="pink"

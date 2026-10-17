@@ -10,7 +10,7 @@
  * Server rules (co-sign, identity, atomic coin clawback) are enforced by the
  * flag_approval / request_reversal / cosign_reversal / stand_by_approval RPCs.
  */
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -211,7 +211,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · APPROVAL"
         title={chore.title}
         accent="teal"

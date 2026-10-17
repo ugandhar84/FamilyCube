@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, Pressable, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -30,6 +30,7 @@ import { HubMyList } from './HubMyList';
 import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { OverlayPage } from '@/components/OverlayPage';
 import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
 import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
 import { RewardsReviewQueueScreen } from './parent/RewardsReviewQueueScreen';
@@ -852,7 +853,7 @@ export default function HubScreen() {
           a detail screen (via its own X, Approve/Decline action, or an
           edge-swipe) reveals the still-open, now-updated inbox underneath
           — a real push/pop, not a close-then-reopen. */}
-      <FullPageOverlay visible={showReviewInbox} onDismiss={() => setShowReviewInbox(false)} zIndex={50} backgroundColor={hubCanvas}>
+      <OverlayPage visible={showReviewInbox} onDismiss={() => setShowReviewInbox(false)} zIndex={50} backgroundColor={hubCanvas}>
         <ReviewInboxScreen
           onClose={() => setShowReviewInbox(false)}
           onSelectCategory={(category: ReviewCategory) => {
@@ -862,7 +863,7 @@ export default function HubScreen() {
             else setShowHelpQueue(true);
           }}
         />
-      </FullPageOverlay>
+      </OverlayPage>
 
       {/* ── Category queue screens (zIndex 51 — stack above the inbox, below
           the per-item detail screens at 52) ── */}
@@ -871,20 +872,20 @@ export default function HubScreen() {
           per-category icon) instead of the generic title+detail row every
           other category uses — live direction: "more sensible, more
           intelligent, more descriptive ... especially chores." */}
-      <FullPageOverlay visible={showChoresQueue} onDismiss={() => setShowChoresQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+      <OverlayPage visible={showChoresQueue} onDismiss={() => setShowChoresQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <ChoresReviewQueueScreen
           onClose={() => setShowChoresQueue(false)}
           onSelectRow={(id) => setReviewQuestDetailId(id)}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <RewardsReviewQueueScreen
           onClose={() => setShowRedemptionsQueue(false)}
           onSelectRow={(id) => setReviewRedemptionId(id)}
         />
-      </FullPageOverlay>
+      </OverlayPage>
 
-      <FullPageOverlay visible={!!reviewQuestDetailId} onDismiss={() => setReviewQuestDetailId(null)} zIndex={52} backgroundColor={hubCanvas}>
+      <OverlayPage visible={!!reviewQuestDetailId} onDismiss={() => setReviewQuestDetailId(null)} zIndex={52} backgroundColor={hubCanvas}>
         {reviewQuestDetailId ? (() => {
           const q = quests.find(qq => qq.id === reviewQuestDetailId);
           return q ? (
@@ -894,22 +895,33 @@ export default function HubScreen() {
               canEdit
               isParent
             />
-          ) : null;
+          ) : (
+            // Never leave a blank page: say why there is nothing to show and offer the way back.
+            <View style={{ flex: 1, backgroundColor: hubCanvas, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>This task is not available</Text>
+              <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
+                It may have been removed, or it is a private to-do on someone's own list.
+              </Text>
+              <TouchableOpacity onPress={() => setReviewQuestDetailId(null)} style={{ borderRadius: 14, backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 13 }}>
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Back</Text>
+              </TouchableOpacity>
+            </View>
+          );
         })() : null}
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!reviewRedemptionId} onDismiss={() => setReviewRedemptionId(null)} zIndex={52} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={!!reviewRedemptionId} onDismiss={() => setReviewRedemptionId(null)} zIndex={52} backgroundColor={hubCanvas}>
         {reviewRedemptionId ? <RewardReviewScreen redemptionId={reviewRedemptionId} onClose={() => setReviewRedemptionId(null)} /> : null}
-      </FullPageOverlay>
-      <FullPageOverlay visible={showHelpQueue} onDismiss={() => setShowHelpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={showHelpQueue} onDismiss={() => setShowHelpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <HelpDispatchQueue
           onRequestHelpOpen={() => setShowRequestHelp(true)}
           onClose={() => setShowHelpQueue(false)}
           onOpenDetail={(id) => setActiveKidRequestId(id)}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!activeKidRequestId} onDismiss={() => setActiveKidRequestId(null)} zIndex={52} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={!!activeKidRequestId} onDismiss={() => setActiveKidRequestId(null)} zIndex={52} backgroundColor={hubCanvas}>
         <KidRequestDetailScreen requestId={activeKidRequestId ?? ''} onClose={() => setActiveKidRequestId(null)} />
-      </FullPageOverlay>
+      </OverlayPage>
       <RequestHelpModal
         visible={showRequestHelp}
         onClose={() => setShowRequestHelp(false)}
@@ -918,7 +930,7 @@ export default function HubScreen() {
 
       {/* ── Disputes category — DisputesInboxScreen (zIndex 51) lists both
           dispute types; each opens its own resolution screen at 52. ── */}
-      <FullPageOverlay visible={showDisputesInbox} onDismiss={() => setShowDisputesInbox(false)} zIndex={51} backgroundColor={hubCanvas}>
+      <OverlayPage visible={showDisputesInbox} onDismiss={() => setShowDisputesInbox(false)} zIndex={51} backgroundColor={hubCanvas}>
         <DisputesInboxScreen
           onClose={() => setShowDisputesInbox(false)}
           onSelectDispute={(choreId, kind: DisputeKind) => {
@@ -926,13 +938,13 @@ export default function HubScreen() {
             else setReversalChoreId(choreId);
           }}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!redoDisputeChoreId} onDismiss={() => setRedoDisputeChoreId(null)} zIndex={52} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={!!redoDisputeChoreId} onDismiss={() => setRedoDisputeChoreId(null)} zIndex={52} backgroundColor={hubCanvas}>
         {redoDisputeChoreId ? <RedoDisputeReviewScreen choreId={redoDisputeChoreId} onClose={() => setRedoDisputeChoreId(null)} /> : null}
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!reversalChoreId} onDismiss={() => setReversalChoreId(null)} zIndex={52} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={!!reversalChoreId} onDismiss={() => setReversalChoreId(null)} zIndex={52} backgroundColor={hubCanvas}>
         {reversalChoreId ? <ApprovalDetailScreen choreId={reversalChoreId} onClose={() => setReversalChoreId(null)} /> : null}
-      </FullPageOverlay>
+      </OverlayPage>
 
       {/* ── Rides — same full-page overlay treatment as Review inbox.
           RidesControlRoomScreen (zIndex 50) stays mounted while
@@ -940,23 +952,23 @@ export default function HubScreen() {
           push/pop, not close-then-reopen (the old Modal version closed
           the control room first, then opened the trip detail after a
           300ms timeout). ── */}
-      <FullPageOverlay visible={showRidesRoom} onDismiss={() => setShowRidesRoom(false)} zIndex={50} backgroundColor={hubCanvas}>
+      <OverlayPage visible={showRidesRoom} onDismiss={() => setShowRidesRoom(false)} zIndex={50} backgroundColor={hubCanvas}>
         <RidesControlRoomScreen
           onClose={() => setShowRidesRoom(false)}
           onSelectTrip={(tripId) => setActiveTripDetailId(tripId)}
         />
-      </FullPageOverlay>
-      <FullPageOverlay visible={!!activeTripDetailId} onDismiss={() => setActiveTripDetailId(null)} zIndex={51} backgroundColor={hubCanvas}>
+      </OverlayPage>
+      <OverlayPage visible={!!activeTripDetailId} onDismiss={() => setActiveTripDetailId(null)} zIndex={51} backgroundColor={hubCanvas}>
         {activeTripDetailId ? <ActiveTripDetailScreen tripId={activeTripDetailId} onClose={() => setActiveTripDetailId(null)} /> : null}
-      </FullPageOverlay>
+      </OverlayPage>
 
       <FullPageOverlay visible={showGrocery} onDismiss={() => setShowGrocery(false)} zIndex={50} backgroundColor={hubCanvas}>
         {(requestAnimatedClose) => <GroceryScreen onClose={requestAnimatedClose} />}
       </FullPageOverlay>
 
-      <FullPageOverlay visible={showMeals} onDismiss={() => setShowMeals(false)} zIndex={50} backgroundColor={hubCanvas}>
+      <OverlayPage visible={showMeals} onDismiss={() => setShowMeals(false)} zIndex={50} backgroundColor={hubCanvas}>
         <MealsScreen onClose={() => setShowMeals(false)} />
-      </FullPageOverlay>
+      </OverlayPage>
 
       <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50} backgroundColor={hubCanvas}>
         {(requestAnimatedClose) => (

@@ -20,7 +20,7 @@
  * state with an explanation instead of a generic failed-save toast if the
  * acting parent is the one who requested the redo in the first place.
  */
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TouchableOpacity, ActivityIndicator, Platform, StyleSheet,
@@ -79,7 +79,7 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · REVIEW"
         title="Second opinion"
         subtitle="Disputed — second parent needed"

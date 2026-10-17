@@ -19,7 +19,7 @@ import type { KidRequest } from '@/store/kidRequestStore';
 import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { fmtDateShort, fmtTime, fmtDateTime } from '@/lib/dates';
 import { relativeTime } from '@/lib/notifications/display';
 
@@ -268,7 +268,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        <PageHeading
+        <OverlayHeading
           title="Kid requests"
           subtitle={subtitle}
           onTitlePress={onClose}

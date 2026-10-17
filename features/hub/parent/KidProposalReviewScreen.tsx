@@ -1,4 +1,4 @@
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import React, { useMemo, useState } from 'react';
 import {
   View,
@@ -179,7 +179,7 @@ export function KidProposalReviewScreen({ onClose }: { onClose: () => void }) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · REVIEW"
         title="Kid proposals"
         accent="teal"

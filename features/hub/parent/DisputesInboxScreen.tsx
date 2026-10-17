@@ -24,7 +24,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { parseDbTime } from '@/lib/dates';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 
 export type DisputeKind = 'redo' | 'reversal';
 
@@ -83,7 +83,7 @@ export function DisputesInboxScreen({ onSelectDispute, onClose }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
-        <PageHeading
+        <OverlayHeading
           title="Disputes"
           subtitle={openCount > 0 ? `${openCount} dispute${openCount !== 1 ? 's' : ''} need a second look` : 'No open disputes'}
           onTitlePress={onClose}

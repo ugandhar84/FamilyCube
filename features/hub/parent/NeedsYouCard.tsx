@@ -112,7 +112,7 @@ export function NeedsYouCard({
         flexDirection: 'row', alignItems: 'center', gap: 12,
         paddingVertical: 14, paddingHorizontal: 16,
       } : {
-        marginHorizontal: 20, marginTop: 14,
+        marginHorizontal: 20, marginTop: 12,
         flexDirection: 'row', alignItems: 'center', gap: 12,
         padding: 16,
         borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,

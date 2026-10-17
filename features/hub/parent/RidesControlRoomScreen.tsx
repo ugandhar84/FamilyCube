@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Car } from 'lucide-react-native';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTripStore, type Trip, type TripPhase } from '@/store/tripStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -269,7 +269,7 @@ export function RidesControlRoomScreen({
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top', 'bottom']}>
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · RIDES"
         title="Family rides"
         subtitle="Track pickups, upcoming rides and past trips."

@@ -811,12 +811,12 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           // ["in parents view see the next up top padding too hight"].
           <View>
 
-            <View style={{ marginHorizontal: 20, marginTop: 14, alignSelf: 'flex-start' }}>
+            <View style={{ marginHorizontal: 20, marginTop: 24, alignSelf: 'flex-start' }}>
               <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.amber, marginBottom: 6, opacity: 0.6 }} />
               <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>NEEDS YOU</Text>
             </View>
             <View style={{
-              marginHorizontal: 20, marginTop: 10,
+              marginHorizontal: 20, marginTop: 12,
               borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
               borderRadius: 22,
               backgroundColor: colors.amberLight,
@@ -843,7 +843,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           <Pressable
             onPress={onReviewOpen}
             style={({ pressed }) => ({
-              marginHorizontal: 20, marginTop: 14, padding: 16, borderRadius: 22,
+              marginHorizontal: 20, marginTop: 12, padding: 16, borderRadius: 22,
               backgroundColor: colors.pinkLight, opacity: pressed ? 0.8 : 1,
             })}
           >

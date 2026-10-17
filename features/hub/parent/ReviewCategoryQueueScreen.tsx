@@ -21,7 +21,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 
 export interface QueueRow {
   id: string;
@@ -53,7 +53,7 @@ export function ReviewCategoryQueueScreen({
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas }}>
-        <PageHeading
+        <OverlayHeading
           title={title}
           subtitle={subtitle}
           onTitlePress={onClose}

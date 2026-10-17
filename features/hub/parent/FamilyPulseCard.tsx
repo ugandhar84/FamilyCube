@@ -59,7 +59,7 @@ export function FamilyPulseCard({
       // (block-level DOM, margins collapse to the larger value) — RN never
       // collapses margins, so only marginTop is set here (no marginBottom)
       // to avoid doubling every inter-card gap versus the Figma source.
-      marginHorizontal: 20, marginTop: 14,
+      marginHorizontal: 20, marginTop: 12,
       flexDirection: 'row', flexWrap: 'wrap',
       gap: 16, padding: 20,
       borderWidth: 1, borderColor: colors.border, borderRadius: 24,

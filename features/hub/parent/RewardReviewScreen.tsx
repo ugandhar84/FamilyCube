@@ -1,4 +1,4 @@
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 import React from 'react';
 import {
   View,
@@ -85,7 +85,7 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
       {/* ── Fixed page header ── */}
-      <PageHeading
+      <OverlayHeading
         eyebrow="FAMILY CUBE · REVIEW"
         title="Reward request"
         accent="amber"

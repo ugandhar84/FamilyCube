@@ -64,7 +64,7 @@ export function RidesStatusCard({
     <AnimatedPressable
       onPress={onPress}
       style={{
-        marginHorizontal: 20, marginTop: 14,
+        marginHorizontal: 20, marginTop: 12,
         backgroundColor: isDark ? colors.card : GEMINI.cardBg,
         borderRadius: 16, padding: 16, gap: 10,
         borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,

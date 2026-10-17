@@ -18,6 +18,7 @@
  * Rows sorted oldest-submitted-first, so the thing that's been waiting
  * longest surfaces at the top — not insertion order.
  */
+import { isPersonalTask } from '@/store/choreAdapter';
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, Image, StyleSheet,
@@ -28,7 +29,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 
 function relativeTime(iso?: string): string {
   if (!iso) return '';
@@ -58,12 +59,14 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const getParentReviewDeck = useChoreStore(s => s.getParentReviewDeck);
-  const chores = useChoreStore(s => s.chores); // subscribe so the deck recomputes on change
+  // A kid's own private to-do list items are not for parents to review or open, so they are left out of every list here.
+  const allChores = useChoreStore(s => s.chores); // subscribe so the deck recomputes on change
+  const chores = React.useMemo(() => allChores.filter(c => !isPersonalTask(c)), [allChores]);
   const { members } = useFamilyStore();
   const [filter, setFilter] = useState<'pending' | 'completed' | 'rejected' | 'all'>('pending');
 
   const pendingRows: ChoreTask[] = React.useMemo(() => {
-    return [...getParentReviewDeck()].sort((a, b) =>
+    return [...getParentReviewDeck()].filter(c => !isPersonalTask(c)).sort((a, b) =>
       (a.submittedAt ?? '').localeCompare(b.submittedAt ?? '')
     );
   }, [chores]);
@@ -105,7 +108,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
-        <PageHeading
+        <OverlayHeading
           title="Chores & Quests"
           subtitle={pendingRows.length > 0 ? `${pendingRows.length} chore${pendingRows.length !== 1 ? 's' : ''} need${pendingRows.length === 1 ? 's' : ''} your review` : 'All chores reviewed'}
           onTitlePress={onClose}

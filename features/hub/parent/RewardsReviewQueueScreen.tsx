@@ -16,7 +16,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useRewardStore, type Redemption } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { PageHeading } from '@/components/PageHeading';
+import { OverlayHeading } from '@/components/OverlayPage';
 
 // Switches from a relative "Xh ago" to the actual date once a request
 // crosses a day old — live-requested: "on this Xago if it crosses a day
@@ -75,7 +75,7 @@ export function RewardsReviewQueueScreen({ onSelectRow, onClose }: {
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
       <View style={{ backgroundColor: canvas, paddingBottom: 8 }}>
-        <PageHeading
+        <OverlayHeading
           title="Rewards"
           subtitle={pendingRows.length > 0 ? `${pendingRows.length} redemption${pendingRows.length !== 1 ? 's' : ''} waiting on you` : 'No reward requests waiting'}
           onTitlePress={onClose}

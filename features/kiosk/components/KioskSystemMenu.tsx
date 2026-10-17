@@ -127,7 +127,7 @@ export function KioskSystemMenu({
             <View style={[s.rule, { backgroundColor: k.cardBorder }]} />
 
             <View style={s.tiles}>
-              {tile('Notifications', Bell, k.pastelPrimaryCard, k.primary, () => setNotifOpen(true), unread)}
+              {tile('Notifications', Bell, k.pastelPrimaryCard, k.terracotta, () => setNotifOpen(true), unread)}
               {tile('Announce', Megaphone, k.pastelAmberCard, k.gold, () => { onClose(); onIntercom(); })}
               {onAskFam && tile('Ask Fam', Sparkles, k.pastelLavCard, k.purple, () => { onClose(); onAskFam(); })}
               {tile(themeLabel, ThemeIcon, k.pastelSageCard, k.sage, cycleTheme)}

@@ -60,7 +60,7 @@ export default function FamilyAvatar({
   avatarUrl,
   siblings = [],
   size = 44,
-  ringColor = '#DF613C',
+  ringColor = '#5872C4',
   // Was 2 — reads noticeably thicker on the new square shape than it did
   // on a circle, especially on small task-card avatars [live-reported:
   // "i see on these card border is too thick"].

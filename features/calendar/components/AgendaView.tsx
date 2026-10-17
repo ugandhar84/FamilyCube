@@ -144,7 +144,7 @@ export default function AgendaView({
   if (grouped.length === 0) {
     return (
       <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', backgroundColor: colors.card, padding: 28, alignItems: 'center' }}>
+        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(88,114,196,0.08)', backgroundColor: colors.card, padding: 28, alignItems: 'center' }}>
           <Text style={{ fontSize: 26, marginBottom: 6 }}>📋</Text>
           <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No upcoming events in this window</Text>
         </View>

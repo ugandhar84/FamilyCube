@@ -36,7 +36,7 @@ const { colors, isDark } = useTheme();
 
 ### Brand palette (defined in `constants/colors.ts`) — "Kinfolk" palette
 
-Warm editorial terracotta/sage/lavender/amber on cashmere neutrals. Token
+Muted blue with sage/lavender/amber on cashmere neutrals. **Terracotta is retired**: buttons and tab selectors use only the muted blue; terracotta may appear ONLY as a soft peach pastel tint (kiosk `pastelPrimary`, Medical event chips), never as a button, tab, border or text color. Amber, lavender and sage pastels are also fine for tiles and tints. Token
 *names* still map to the original brand roles (primary/teal/amber/pink/
 parent/kid/accent) — only the hex values changed when the palette moved
 from the original cool purple/teal/pink cube colors to this warmer set.
@@ -46,7 +46,7 @@ functions, no hooks) — keep both in sync if this table changes.
 
 | Token | Light | Dark | Meaning |
 |-------|-------|------|---------|
-| `colors.primary` | `#DF613C` | `#EE8058` | Terracotta — main brand, primary actions |
+| `colors.primary` | `#5872C4` | `#8EA3DD` | Muted blue (the health-records CTA blue) — main brand, buttons, active tab selectors |
 | `colors.teal` | `#3D7A5A` | `#5FA37D` | Sage — CONNECT (parent role accent) |
 | `colors.amber` | `#D97706` | `#F5A85A` | Amber — ORGANIZE (kid role accent) |
 | `colors.pink` | `#7B5EA7` | `#A78BC9` | Lavender — CARE (third accent) |
@@ -60,10 +60,10 @@ functions, no hooks) — keep both in sync if this table changes.
 | `colors.card` | `#FFFFFF` | `#1D1A24` | Card backgrounds |
 | `colors.surface` | `#F2ECE1` | `#17151D` | Surface / input backgrounds |
 | `colors.background` | `#FFFFFF` | `#0E0C13` | Screen background (pure white canvas app-wide) |
-| `colors.border` | terracotta/15% | terracotta/15% | Dividers, card borders |
-| `colors.danger` | `#C54A27` | `#EE8058` | Errors, destructive |
+| `colors.border` | blue/15% | blue/15% | Dividers, card borders |
+| `colors.danger` | `#C23B3B` | `#EF7B7B` | Errors, destructive (a clear red, never terracotta) |
 | `colors.success` | `#3D7A5A` | `#5FA37D` | Success states |
-| `colors.primaryLight` | `#FADFD2` | rgba terracotta | Light tint of primary |
+| `colors.primaryLight` | `#D5DCF1` | rgba blue | Light tint of primary |
 | `colors.tealLight` | `#D1E3D9` | rgba sage | Light tint of teal |
 | `colors.amberLight` | `#F9E5C1` | rgba amber | Light tint of amber |
 | `colors.pinkLight` | `#E3DAF0` | rgba lavender | Light tint of pink/accent |
@@ -71,7 +71,7 @@ functions, no hooks) — keep both in sync if this table changes.
 ### Role color mapping:
 - **Parent** → `colors.parent` (sage) / `colors.parentLight`
 - **Kid** → `colors.kid` (amber) / `colors.kidLight`
-- **Active member highlight** → `colors.primary` (terracotta)
+- **Active member highlight** → `colors.primary` (muted blue)
 
 ---
 

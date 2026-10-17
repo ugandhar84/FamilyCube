@@ -87,7 +87,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
       {/* Header — ReviewInbox pattern */}
       <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
         backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
         <View style={{ gap: 4 }}>
           <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

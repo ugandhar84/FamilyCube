@@ -111,7 +111,7 @@ export default function MealsWeekPage({
         paddingTop: insets.top + 12,
         paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
         backgroundColor: canvas,
         gap: 8,
       }}>
@@ -141,7 +141,7 @@ export default function MealsWeekPage({
         paddingHorizontal: 20, paddingVertical: 12,
         flexDirection: 'row', alignItems: 'center', gap: 10,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.06)',
+        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.06)',
       }}>
         <Pressable allowRapidPress onPress={() => setWeekOffset(w => w - 1)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>

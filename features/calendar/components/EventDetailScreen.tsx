@@ -74,15 +74,15 @@ const ACTION_META: Record<string, { icon: string; dotColor: string; label: strin
   created:           { icon: '✨', dotColor: '#3D7A5A', label: 'Created' },
   driver_assigned:   { icon: '🚗', dotColor: '#D97706', label: 'Driver assigned' },
   driver_reassigned: { icon: '🔀', dotColor: '#7B5EA7', label: 'Driver reassigned' },
-  driver_removed:    { icon: '✕',  dotColor: '#C54A27', label: 'Driver removed' },
+  driver_removed:    { icon: '✕',  dotColor: '#C23B3B', label: 'Driver removed' },
   reassigned:        { icon: '↔',  dotColor: '#7B5EA7', label: 'Reassigned' },
   date_changed:      { icon: '📅', dotColor: '#3D7A5A', label: 'Date changed' },
   time_changed:      { icon: '🕐', dotColor: '#3D7A5A', label: 'Time changed' },
   notes_changed:     { icon: '📝', dotColor: '#A69A8A', label: 'Notes updated' },
   status_changed:    { icon: '🔄', dotColor: '#7B5EA7', label: 'Status changed' },
-  declined:          { icon: '✕',  dotColor: '#C54A27', label: 'Declined' },
-  cancelled:         { icon: '✕',  dotColor: '#C54A27', label: 'Cancelled' },
-  deleted:           { icon: '🗑️', dotColor: '#C54A27', label: 'Deleted' },
+  declined:          { icon: '✕',  dotColor: '#C23B3B', label: 'Declined' },
+  cancelled:         { icon: '✕',  dotColor: '#C23B3B', label: 'Cancelled' },
+  deleted:           { icon: '🗑️', dotColor: '#C23B3B', label: 'Deleted' },
 };
 const DEFAULT_META = { icon: '·', dotColor: '#A69A8A', label: 'Updated' };
 

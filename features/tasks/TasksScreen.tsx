@@ -475,11 +475,11 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
               activeOpacity={0.88}
               style={{
                 flex: 1, height: 52, borderRadius: 16,
-                backgroundColor: segment === 'schedule' ? colors.tealLight : colors.primaryLight,
+                backgroundColor: colors.primary,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: segment === 'schedule' ? colors.teal : colors.primary, letterSpacing: 0.2 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textInverse, letterSpacing: 0.2 }}>
                 {segment === 'schedule' ? '+ Add event' : '+ Add task'}
               </Text>
             </TouchableOpacity>
@@ -488,11 +488,11 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
               activeOpacity={0.88}
               style={{
                 width: 52, height: 52, borderRadius: 16,
-                backgroundColor: segment === 'schedule' ? colors.tealLight : colors.primaryLight,
+                backgroundColor: colors.primary,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Search size={20} color={segment === 'schedule' ? colors.teal : colors.primary} strokeWidth={2} />
+              <Search size={20} color={colors.textInverse} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
         )}
@@ -512,7 +512,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
             {[
               { val: doneToday, label: 'done today',     bg: isDark ? 'rgba(61,122,90,0.18)'   : colors.tealLight,    color: colors.teal },
-              { val: stillOpen, label: 'still open',     bg: isDark ? 'rgba(223,97,60,0.18)'   : colors.primaryLight, color: colors.primary },
+              { val: stillOpen, label: 'still open',     bg: isDark ? 'rgba(245,168,90,0.18)'   : colors.amberLight,   color: colors.amber },
               { val: helpers,   label: 'in progress',    bg: isDark ? 'rgba(123,94,167,0.18)'  : colors.pinkLight,    color: colors.pink },
             ].map(({ val, label, bg, color }) => (
               <View key={label} style={{

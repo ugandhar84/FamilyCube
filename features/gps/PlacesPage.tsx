@@ -60,7 +60,7 @@ export function PlacesPage({ onClose, onAdd, onEdit, onShow }: {
         {isParent && !home && (
           <Pressable onPress={() => onAdd('home')}
             style={{ marginHorizontal: 20, marginTop: 18, borderRadius: 20, padding: 18, backgroundColor: colors.tealLight, flexDirection: 'row', alignItems: 'center', gap: 14,
-              borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.09)' }}>
+              borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(88,114,196,0.09)' }}>
             {(() => { const m = placeKindMeta('home', colors); return <m.Icon size={30} color={m.fg} strokeWidth={2} />; })()}
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary }}>Pin your Home</Text>
@@ -84,7 +84,7 @@ export function PlacesPage({ onClose, onAdd, onEdit, onShow }: {
                   return (
                     <Pressable key={p.id} onPress={() => (isParent ? onEdit(p) : onShow(p))}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 20, backgroundColor: meta.bg,
-                        borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.09)' }}>
+                        borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(88,114,196,0.09)' }}>
                       <meta.Icon size={28} color={meta.fg} strokeWidth={2} />
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={{ fontSize: 16, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>{p.name}</Text>

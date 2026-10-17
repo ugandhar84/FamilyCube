@@ -156,7 +156,7 @@ export function CreateResponsibilitySheet({
   }, [title, assignedMemberId, dueDate, onConvertToRide, resetForm, onClose]);
 
   // ── Styles (theme-dependent, so inlined with colors.*) ──────────────────────
-  const fieldBorder = isDark ? colors.border : 'rgba(223,97,60,0.10)';
+  const fieldBorder = isDark ? colors.border : 'rgba(88,114,196,0.10)';
 
   // ── Date display ────────────────────────────────────────────────────────────
   const today = todayLocal();

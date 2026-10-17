@@ -48,7 +48,7 @@ const STATUS_META: Record<HelpStatus, { label: string; color: string }> = {
   awaiting_acceptance: { label: 'Offered',   color: BRAND.purple },
   assigned:            { label: 'Assigned',  color: BRAND.teal },
   completed:           { label: 'Done ✓',    color: '#3D7A5A' },
-  rejected:            { label: 'Rejected',  color: '#C54A27' },
+  rejected:            { label: 'Rejected',  color: '#C23B3B' },
   withdrawn:           { label: 'Withdrawn', color: '#A69A8A' },
 };
 

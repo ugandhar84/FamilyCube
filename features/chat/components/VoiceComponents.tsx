@@ -252,7 +252,7 @@ export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
   uri: string; duration: number; isDark: boolean; onSend: () => void; onDiscard: () => void;
 }) {
   const bg     = isDark ? '#1D1A24' : GEMINI.cardBg;
-  const border = isDark ? 'rgba(238,128,88,0.15)' : GEMINI.border;
+  const border = isDark ? 'rgba(142,163,221,0.15)' : GEMINI.border;
   return (
     <View style={{ paddingHorizontal: 14, paddingVertical: 12,
       backgroundColor: bg, borderTopWidth: 1, borderTopColor: border }}>
@@ -327,7 +327,7 @@ export function RecordingBar({ elapsed, isDark, onStop }: {
   elapsed: number; isDark: boolean; onStop: () => void;
 }) {
   const bg     = isDark ? '#1D1A24' : GEMINI.cardBg;
-  const border = isDark ? 'rgba(238,128,88,0.15)' : GEMINI.border;
+  const border = isDark ? 'rgba(142,163,221,0.15)' : GEMINI.border;
   return (
     <View style={{ paddingHorizontal: 14, paddingVertical: 12,
       backgroundColor: bg, borderTopWidth: 1, borderTopColor: border }}>

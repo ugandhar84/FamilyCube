@@ -86,7 +86,7 @@ export function DayEventsSummaryCard({
             <View key={i} style={{ height: h, borderRadius: 18, backgroundColor: colors.surface, opacity: 0.5 + i * 0.15 }} />
           ))
         ) : shown.length === 0 ? (
-          <View style={{ borderRadius: 18, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', padding: 20, alignItems: 'center' }}>
+          <View style={{ borderRadius: 18, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(88,114,196,0.08)', padding: 20, alignItems: 'center' }}>
             <Text style={{ fontSize: 13, color: colors.textTertiary }}>No scheduled events. Tap + to add one.</Text>
           </View>
         ) : (
@@ -211,7 +211,7 @@ export default function MonthGridView({
       </View>
 
       {/* Figma: white card containing the grid */}
-      <View style={{ borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', padding: 12 }}>
+      <View style={{ borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(88,114,196,0.08)', padding: 12 }}>
         {/*
           Explicit rows of 7, not a flat flexWrap list. Seven cells at
           width: `${100/7}%` (14.2857...%, a repeating decimal) can round

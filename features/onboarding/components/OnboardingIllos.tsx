@@ -20,7 +20,7 @@ export type IlloProps = { isDark: boolean };
 // gradient backdrop (isDark is always passed false), not on colors.background
 // — so accent fills below are the brand primary's light-mode hex directly
 // (constants/colors.ts's colors.primary), not a useTheme() token.
-const BRAND_PRIMARY = '#DF613C';
+const BRAND_PRIMARY = '#5872C4';
 
 // ── Slide 1: Welcome — a family of silhouettes under one roof ───────────────
 export const IlloWelcome = React.memo(function IlloWelcome({ isDark }: IlloProps) {

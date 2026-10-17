@@ -87,7 +87,7 @@ export default function WeekView({
           <View key={dateKey} style={{
             borderRadius: 19, padding: 12, gap: 8,
             backgroundColor: isToday ? (isDark ? '#253862' : '#e9efff') : colors.card,
-            borderWidth: 1, borderColor: isToday ? (isDark ? '#344a7a' : '#c5d0f5') : (isDark ? colors.border : 'rgba(223,97,60,0.08)'),
+            borderWidth: 1, borderColor: isToday ? (isDark ? '#344a7a' : '#c5d0f5') : (isDark ? colors.border : 'rgba(88,114,196,0.08)'),
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               {/* Figma week-day: "MON" + circle date */}

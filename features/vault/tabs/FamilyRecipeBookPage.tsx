@@ -274,7 +274,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       <View style={{
         paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
         backgroundColor: canvas, gap: 8,
       }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -505,7 +505,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           <View style={{
             paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+            borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
             backgroundColor: canvas, gap: 8,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -814,7 +814,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           <View style={{
             paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
             borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+            borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
             backgroundColor: canvas, gap: 8,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

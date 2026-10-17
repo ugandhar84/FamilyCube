@@ -169,7 +169,7 @@ export function ActiveTripDetailScreen({ tripId, onClose }: {
                   ? colors.teal
                   : i === activeIdx
                     ? colors.primary
-                    : 'rgba(223,97,60,0.18)',
+                    : 'rgba(88,114,196,0.18)',
               }} />
             ))}
           </View>

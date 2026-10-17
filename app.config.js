@@ -283,7 +283,7 @@ const config = {
       "expo-notifications",
       {
         icon: "./assets/notification-icon.png",
-        color: "#CD7B57",
+        color: "#5872C4",
         androidMode: "default",
         androidCollapsedTitle: "Family Cube",
         // Required for the background-notification TaskManager task

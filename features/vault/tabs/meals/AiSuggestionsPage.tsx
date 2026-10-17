@@ -447,7 +447,7 @@ export default function AiSuggestionsPage({
             <View style={{
               paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
               borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+              borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
               backgroundColor: canvas, gap: 6,
             }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

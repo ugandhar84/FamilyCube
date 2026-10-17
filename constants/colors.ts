@@ -1,24 +1,24 @@
 // ── Family Cube — Design Tokens ───────────────────────────────────────────────
 //
-// "Kinfolk" palette — warm terracotta / sage / amber / lavender on cashmere.
+// "Kinfolk" palette — muted blue / sage / amber / lavender on cashmere.
 // Token names map to brand roles; hex values are the Kinfolk set.
 // FamilyCubeLogo.tsx's BRAND constant mirrors these same light-mode values
 // for call sites that can't use hooks — keep both in sync if this table changes.
 //
 // Role mapping:
-//   primary  — terracotta (#DF613C) — main brand, primary actions
+//   primary  — muted blue (#5872C4) — main brand, primary actions
 //   teal     — sage (#3D7A5A)       — CONNECT, parent role accent
 //   amber    — amber (#D97706)      — ORGANIZE, kid role accent
 //   pink     — lavender (#7B5EA7)   — CARE, third accent
 //   navy     — warm near-black (#2C2722) — wordmark / text primary
 
 export const lightColors = {
-  // ── Brand primary — terracotta ─────────────────────────────────────────
-  primary:      '#DF613C',
-  primaryLight: '#FADFD2',
-  primaryDark:  '#B84D2C',
-  primaryMid:   '#E07356',
-  primaryText:  '#DF613C',
+  // ── Brand primary — muted blue (the health-records CTA blue) ─────────────────────────────────────────
+  primary:      '#5872C4',
+  primaryLight: '#D5DCF1',
+  primaryDark:  '#4259A0',
+  primaryMid:   '#6B83CD',
+  primaryText:  '#5872C4',
 
   // ── Teal slot — sage (parent role accent) ──────────────────────────────
   teal:         '#3D7A5A',
@@ -49,9 +49,9 @@ export const lightColors = {
   kidDark:      '#A85A04',
 
   // ── Semantics ───────────────────────────────────────────────────────────
-  danger:       '#C54A27',
-  dangerLight:  '#F6DACD',
-  dangerDark:   '#9C3A1F',
+  danger:       '#C23B3B',
+  dangerLight:  '#F6D5D5',
+  dangerDark:   '#9B2C2C',
   warning:      '#D97706',
   warningLight: '#F9E5C1',
   warningDark:  '#A85A04',
@@ -74,9 +74,9 @@ export const lightColors = {
   overlay:      'rgba(44,39,34,0.45)',
 
   // ── Borders ─────────────────────────────────────────────────────────────
-  border:       'rgba(223,97,60,0.15)',
-  borderMed:    'rgba(223,97,60,0.25)',
-  borderStrong: 'rgba(223,97,60,0.45)',
+  border:       'rgba(88,114,196,0.15)',
+  borderMed:    'rgba(88,114,196,0.25)',
+  borderStrong: 'rgba(88,114,196,0.45)',
 
   // ── Text ────────────────────────────────────────────────────────────────
   textPrimary:   '#2C2722',
@@ -87,8 +87,8 @@ export const lightColors = {
 
   // ── Tab bar ─────────────────────────────────────────────────────────────
   tabBar:       '#FFFFFF',
-  tabBarBorder: 'rgba(223,97,60,0.12)',
-  tabActive:    '#DF613C',
+  tabBarBorder: 'rgba(88,114,196,0.12)',
+  tabActive:    '#5872C4',
   tabInactive:  '#A69A8A',
 
   // ── Status bar ──────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ export const lightColors = {
 
   // ── Inputs ──────────────────────────────────────────────────────────────
   inputBg:      '#F2ECE1',
-  inputBorder:  'rgba(223,97,60,0.20)',
+  inputBorder:  'rgba(88,114,196,0.20)',
   placeholder:  '#A69A8A',
 
   // ── Skeleton ────────────────────────────────────────────────────────────
@@ -115,11 +115,11 @@ export const lightColors = {
 };
 
 export const darkColors: typeof lightColors = {
-  primary:      '#EE8058',
-  primaryLight: 'rgba(238,128,88,0.20)',
-  primaryDark:  '#C85D38',
-  primaryMid:   '#E8704A',
-  primaryText:  '#EE8058',
+  primary:      '#8EA3DD',
+  primaryLight: 'rgba(142,163,221,0.20)',
+  primaryDark:  '#6C84C8',
+  primaryMid:   '#7F96D6',
+  primaryText:  '#8EA3DD',
 
   teal:         '#5FA37D',
   tealLight:    'rgba(95,163,125,0.20)',
@@ -144,9 +144,9 @@ export const darkColors: typeof lightColors = {
   kidLight:     'rgba(245,168,90,0.20)',
   kidDark:      '#F9C488',
 
-  danger:       '#EE8058',
-  dangerLight:  'rgba(238,128,88,0.20)',
-  dangerDark:   '#F2A07A',
+  danger:       '#EF7B7B',
+  dangerLight:  'rgba(239,123,123,0.20)',
+  dangerDark:   '#F4A3A3',
   warning:      '#F5A85A',
   warningLight: 'rgba(245,168,90,0.20)',
   warningDark:  '#F9C488',
@@ -166,9 +166,9 @@ export const darkColors: typeof lightColors = {
   card:         '#1D1A24',
   overlay:      'rgba(0,0,0,0.65)',
 
-  border:       'rgba(238,128,88,0.15)',
-  borderMed:    'rgba(238,128,88,0.28)',
-  borderStrong: 'rgba(238,128,88,0.50)',
+  border:       'rgba(142,163,221,0.15)',
+  borderMed:    'rgba(142,163,221,0.28)',
+  borderStrong: 'rgba(142,163,221,0.50)',
 
   textPrimary:   '#FDFCF9',
   textSecondary: '#B8AC9C',
@@ -177,14 +177,14 @@ export const darkColors: typeof lightColors = {
   textDisabled:  '#3A3530',
 
   tabBar:       '#0E0C13',
-  tabBarBorder: 'rgba(238,128,88,0.12)',
-  tabActive:    '#EE8058',
+  tabBarBorder: 'rgba(142,163,221,0.12)',
+  tabActive:    '#8EA3DD',
   tabInactive:  '#7A6E60',
 
   statusBar:    'light' as const,
 
   inputBg:      '#17151D',
-  inputBorder:  'rgba(238,128,88,0.22)',
+  inputBorder:  'rgba(142,163,221,0.22)',
   placeholder:  '#7A6E60',
 
   skeleton:          '#1D1A24',

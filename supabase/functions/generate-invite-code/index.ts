@@ -280,11 +280,11 @@ function inviteCodeEmailTemplate({ memberName, familyName, code }: { memberName:
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #FAF8F4; margin: 0; padding: 20px; }
   .card { background: white; border-radius: 20px; padding: 40px; max-width: 500px; margin: 0 auto; }
   .logo { font-size: 48px; text-align: center; margin-bottom: 4px; }
-  .app { font-size: 28px; font-weight: 700; color: #DF613C; text-align: center; margin-bottom: 24px; }
+  .app { font-size: 28px; font-weight: 700; color: #5872C4; text-align: center; margin-bottom: 24px; }
   .title { font-size: 24px; font-weight: 700; color: #2C2722; text-align: center; margin-bottom: 8px; }
   .desc { font-size: 15px; color: #6B5F52; text-align: center; margin-bottom: 24px; line-height: 1.6; }
   .code { background: #FBEADF; border-radius: 12px; padding: 20px; margin-bottom: 24px; text-align: center;
-          font-size: 32px; font-weight: 900; letter-spacing: 4px; color: #DF613C; }
+          font-size: 32px; font-weight: 900; letter-spacing: 4px; color: #5872C4; }
   .footer { font-size: 12px; color: #A69A8A; text-align: center; margin-top: 24px; }
 </style></head>
 <body>

@@ -139,7 +139,7 @@ function StatusGroup({ heading, subtitle, children, colors, isDark }: {
     <View style={{
       backgroundColor: colors.card,
       borderRadius: 22,
-      borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+      borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
       paddingTop: 18, paddingBottom: 18, paddingLeft: 18, paddingRight: 18,
       gap: 12,
       shadowColor: '#2C3244',
@@ -151,7 +151,7 @@ function StatusGroup({ heading, subtitle, children, colors, isDark }: {
       <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18.2 }}>
         {subtitle}
       </Text>
-      <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : 'rgba(223,97,60,0.08)', marginTop: -4 }}>
+      <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : 'rgba(88,114,196,0.08)', marginTop: -4 }}>
         {children}
       </View>
     </View>

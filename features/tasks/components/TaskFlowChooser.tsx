@@ -89,7 +89,7 @@ export function TaskFlowChooser({
                     borderRadius: RADIUS.xl,
                     padding: 18,
                     borderWidth: 1,
-                    borderColor: isDark ? colors.border : 'rgba(223,97,60,0.10)',
+                    borderColor: isDark ? colors.border : 'rgba(88,114,196,0.10)',
                   }}
                 >
                   <View style={{

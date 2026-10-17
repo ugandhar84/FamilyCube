@@ -38,7 +38,7 @@ function openInMaps(addr: string) {
 // of WeekView's light/dark tint, picked to match each pastel's hue family.
 const DAY_EVENT_STYLE: Record<string, { light: string; dark: string; accent: string }> = {
   Sports:  { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)',  accent: '#3D7A5A' }, // mint
-  Medical: { light: '#f9ebe7', dark: 'rgba(223,97,60,0.25)',  accent: '#DF613C' }, // peach
+  Medical: { light: '#f9ebe7', dark: 'rgba(223,97,60,0.25)',  accent: '#B4532F' }, // peach
   Ride:    { light: '#e5f3ed', dark: 'rgba(61,122,90,0.28)',  accent: '#3D7A5A' }, // mint
   Work:    { light: '#eeebf9', dark: 'rgba(123,94,167,0.28)', accent: '#7B5EA7' }, // lavender
   Study:   { light: '#e8f1f8', dark: 'rgba(59,130,246,0.25)', accent: '#3B82F6' }, // sky

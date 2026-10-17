@@ -138,7 +138,7 @@ export function PinStoreLocationSheet({ visible, store, pinnedStores, onClose, o
 
       {/* Header — ReviewInbox pattern */}
       <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(223,97,60,0.08)',
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
         backgroundColor: isDark ? '#0E0C13' : '#FFFFFF', gap: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: colors.textSecondary }}>GROCERIES</Text>

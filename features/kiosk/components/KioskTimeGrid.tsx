@@ -29,6 +29,8 @@ export interface GridColumn {
 }
 
 const AXIS_W = 56;
+/** Breathing room under the last hour so the bottom tab bar never hides it. */
+const BOTTOM_PAD = 56;
 const toMin = (t?: string | null): number | null => {
   const m = t ? /^(\d{1,2}):(\d{2})/.exec(t) : null;
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -155,7 +157,7 @@ export function KioskTimeGrid({ columns, members, active, involvedFor, onEventPr
         style={{ flex: 1 }} showsVerticalScrollIndicator={false}
         onLayout={(e: LayoutChangeEvent) => setBodyH(e.nativeEvent.layout.height)}
       >
-        <View style={{ height: contentH }}>
+        <View style={{ height: contentH + BOTTOM_PAD }}>
           {Array.from({ length: hours + 1 }, (_, i) => (
             <View key={i} style={[s.hourLine, { top: i * hourH, borderTopColor: k.cardBorder }]}>
               <Text style={[s.hourText, { color: k.textFaint }]}>{hourLabel(h0 + i)}</Text>

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { weekOf, DAYS } from '@/features/vault/tabs/meals/types';
 import type { FamilyMember } from '@/store/familyStore';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 type TodayMeal = {
@@ -57,9 +58,8 @@ export function TonightMealCard({
         .from('family_meals')
         .select('id, title, emoji, type, chef_id, start_time, prep_minutes')
         .eq('family_id', familyId)
-        .gte('week_of', weekOf())
+        .eq('week_of', weekOf())
         .eq('day', today)
-        .order('week_of', { ascending: true })
         .order('type');
       if (cancelled) return;
       if (error) { setMeals([]); return; }
@@ -122,7 +122,11 @@ export function TonightMealCard({
             backgroundColor: colors.teal, marginBottom: 5, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10,
             fontWeight: '700', letterSpacing: 0.9 }}>
-            {new Date().getHours() < 10 ? 'THIS MORNING' : new Date().getHours() < 15 ? "TODAY'S LUNCH" : "TONIGHT'S DINNER"}
+            {(() => {
+              // Named after the meal's real type, never the time of day (a dinner viewed at noon is still "Dinner").
+              const t = (primary?.type ?? '').toLowerCase();
+              return t === 'breakfast' ? "TODAY'S BREAKFAST" : t === 'lunch' ? "TODAY'S LUNCH" : t === 'dinner' ? "TONIGHT'S DINNER" : t === 'snack' ? "TODAY'S SNACK" : "TODAY'S MEAL";
+            })()}
           </Text>
         </View>
 
@@ -148,25 +152,29 @@ export function TonightMealCard({
               </View>
             )}
 
-            {/* Chef name with pulse flash */}
-            {chef && (
-              <View style={{ marginTop: 4, marginBottom: 2 }}>
-                <Animated.Text style={{ fontSize: 12, fontWeight: '700',
+            {/* Chef: avatar and name when assigned, an explicit "No chef yet" when not, plus the prep time. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              {chef ? (
+                <FamilyAvatar name={chef.name} emoji={(chef as any).emoji} avatarUrl={(chef as any).avatarUrl}
+                  siblings={members.map(m => m.name)} size={24} ringWidth={0} />
+              ) : (
+                <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? colors.surface : colors.tealLight }}>
+                  <Text style={{ fontSize: 13 }}>👩‍🍳</Text>
+                </View>
+              )}
+              {chef ? (
+                <Animated.Text style={{ fontSize: 13, fontWeight: '700',
                   color: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [colors.teal, colors.primary] }) }}>
                   {chef.name.split(' ')[0]} is cooking
                 </Animated.Text>
-                {primary?.prep_minutes ? (
-                  <Text style={{ fontSize: 10, color: colors.textTertiary }}>
-                    ~{primary.prep_minutes} min
-                  </Text>
-                ) : null}
-              </View>
-            )}
-            {!chef && primary?.prep_minutes ? (
-              <Text style={{ fontSize: 11, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
-                ~{primary.prep_minutes} min
-              </Text>
-            ) : null}
+              ) : (
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textTertiary }}>No chef yet</Text>
+              )}
+              {primary?.prep_minutes ? (
+                <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>· ~{primary.prep_minutes} min</Text>
+              ) : null}
+            </View>
           </>
         ) : (
           <Text style={{ fontSize: 17, fontWeight: '400', color: (isDark ? colors.textPrimary : GEMINI.titleColor),

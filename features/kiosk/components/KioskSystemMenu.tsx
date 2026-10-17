@@ -9,6 +9,7 @@
  * Not a native Modal (so touches count as activity for the idle lock); the PIN
  * and notification sheets it opens ARE Modals and hold the lock off themselves.
  */
+import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Lock, Megaphone, Bell, Sun, MoonStar, MonitorSmartphone, Sparkles, UserCircle2, PanelLeft } from 'lucide-react-native';
@@ -67,8 +68,9 @@ export function KioskSystemMenu({
   const handleSwitch = (id: string) => {
     if (id === activeId) { onClose(); return; }
     const m = members.find(x => x.id === id);
-    if (m?.pinEnabled && m.pin) setPinTarget(m);
-    else { onSwitch(id); onClose(); }
+    const me = members.find(x => x.id === activeId);
+    if (m && m.pinEnabled && m.pin && needsPinToSwitch(me, m)) setPinTarget(m);
+    else { if (m?.pinEnabled && m.pin) markEnteredByParent(m.id); onSwitch(id); onClose(); }
   };
 
   const tile = (label: string, Icon: typeof Lock, bg: string, fg: string, onPress: () => void, badge?: number) => (

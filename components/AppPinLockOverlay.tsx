@@ -14,6 +14,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useTheme } from '@/lib/ThemeContext';
 import { wasReminderCallJustAnswered } from '@/lib/callAlert';
 import PinEntryModal from './PinEntryModal';
+import { wasEnteredByParent } from '@/lib/pinPolicy';
 
 // Same 5-minute threshold as the Face ID re-lock in app/_layout.tsx — only
 // re-challenge after genuine backgrounding, not a brief bounce (a share
@@ -51,7 +52,7 @@ export default function AppPinLockOverlay() {
       if (wasReminderCallJustAnswered()) return;
       // Challenge only if the CURRENT active member actually has a PIN set —
       // re-read via the ref at fire time, not a stale closure value.
-      if (activeMemberRef.current?.pinEnabled && activeMemberRef.current?.pin) {
+      if (activeMemberRef.current?.pinEnabled && activeMemberRef.current?.pin && !wasEnteredByParent(activeMemberRef.current.id)) {
         setPinChallengeVisible(true);
       }
     });
@@ -80,7 +81,7 @@ export default function AppPinLockOverlay() {
       const { hasPendingOwnerReset } = await import('@/lib/biometrics');
       if (await hasPendingOwnerReset()) return; // re-runs via the activeMember effect once the reset lands
       challengedOnMount.current = true;
-      if (activeMember.pinEnabled && activeMember.pin) {
+      if (activeMember.pinEnabled && activeMember.pin && !wasEnteredByParent(activeMember.id)) {
         setPinChallengeVisible(true);
       }
     })();

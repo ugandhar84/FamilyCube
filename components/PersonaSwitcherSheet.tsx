@@ -3,6 +3,7 @@
  * Tapping a PIN-protected profile slides to an in-sheet PIN pad.
  * Correct PIN → switch. Wrong → shake + clear.
  */
+import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import {
@@ -511,9 +512,11 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
       showAlert('Not joined yet', `${m.name} hasn't accepted their invite yet — ask them to enter their invite code first.`);
       return;
     }
-    if (m.pinEnabled && m.id !== activeMemberId) {
+    const me = members.find(x => x.id === activeMemberId);
+    if (needsPinToSwitch(me, m)) {
       setPinTarget(m);
     } else {
+      if (m.pinEnabled && m.id !== activeMemberId) markEnteredByParent(m.id);
       setActiveMember(m.id);
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for

@@ -31,6 +31,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore, FamilyMember } from '@/store/familyStore';
+import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import { showAlert } from './AppAlert';
 import FamilyAvatar from './FamilyAvatar';
 import { supabase } from '@/lib/supabase';
@@ -336,9 +337,11 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
       showAlert('Not joined yet', `${m.name} hasn't accepted their invite yet — ask them to enter their invite code first.`);
       return;
     }
-    if (m.pinEnabled && m.id !== activeMemberId) {
+    const me = members.find(x => x.id === activeMemberId);
+    if (needsPinToSwitch(me, m)) {
       setPinTarget(m);
     } else {
+      if (m.pinEnabled && m.id !== activeMemberId) markEnteredByParent(m.id);
       setActiveMember(m.id);
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for
@@ -354,7 +357,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   };
 
   const handlePinSuccess = () => {
-    if (pinTarget) setActiveMember(pinTarget.id);
+    if (pinTarget) { clearEnteredByParent(pinTarget.id); setActiveMember(pinTarget.id); }
     setPinTarget(null);
     onClose();
     router.navigate('/(tabs)');

@@ -39,6 +39,7 @@
  * Swipe-to-delete is handled in CalendarScreen (this file exports the modals only).
  */
 
+import { KioskSlideModal } from './KioskSlideModal';
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
@@ -2304,7 +2305,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   };
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="slide" onRequestClose={onClose}>
+    <KioskSlideModal visible onRequestClose={onClose}>
       {/* Live-reported: KeyboardAvoidingView previously wrapped the whole
           sheet — 'padding' behavior slid the entire card up 1:1 with the
           keyboard instead of the sheet staying anchored near the screen's
@@ -2947,6 +2948,6 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: editKeyboardHeight, backgroundColor: colors.card }} />
           )}
         </View>
-    </Modal>
+    </KioskSlideModal>
   );
 }

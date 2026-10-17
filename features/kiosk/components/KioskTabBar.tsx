@@ -5,8 +5,8 @@
  * behind a "More" button that opens a small grid above the bar. Role tab
  * order and availability still come from kioskTabs.railForRole.
  */
-import { useState, type ReactNode } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
 import { MoreHorizontal } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
@@ -14,7 +14,7 @@ import type { KioskRailItem, KioskTabKey } from '../kioskTabs';
 
 const BAR_SLOTS = 6;
 
-export function KioskTabBar({ items, active, onSelect, badges, leading, trailing }: {
+export function KioskTabBar({ items, active, onSelect, badges, leading, trailing, hidden }: {
   items: KioskRailItem[];
   active: KioskTabKey;
   onSelect: (tab: KioskTabKey) => void;
@@ -23,9 +23,17 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
   leading?: ReactNode;
   /** Rendered after the last tab (clock + weather). */
   trailing?: ReactNode;
+  /** Slide the bar out of the way (a page is being scrolled) and give its space to the page. */
+  hidden?: boolean;
 }) {
   const { k } = useKioskColors();
   const [moreOpen, setMoreOpen] = useState(false);
+  const slide = useRef(new Animated.Value(0)).current;
+  const [barH, setBarH] = useState(70);
+  useEffect(() => {
+    Animated.timing(slide, { toValue: hidden ? 1 : 0, duration: 220, useNativeDriver: false }).start();
+    if (hidden) setMoreOpen(false);
+  }, [hidden, slide]);
   const needMore = items.length > BAR_SLOTS + 1;
   const main = needMore ? items.slice(0, BAR_SLOTS) : items;
   const rest = needMore ? items.slice(BAR_SLOTS) : [];
@@ -59,7 +67,17 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
   );
 
   return (
-    <View style={[s.bar, { backgroundColor: k.card, borderTopColor: k.cardBorder }]}>
+    <Animated.View
+      onLayout={e => { if (!hidden) setBarH(e.nativeEvent.layout.height); }}
+      pointerEvents={hidden ? 'none' : 'auto'}
+      style={[
+        s.bar, { backgroundColor: k.card, borderTopColor: k.cardBorder },
+        // Margin gives the page the bar's height back; translate carries the
+        // bar (and the bottom safe-area strip) fully off screen.
+        { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -barH] }),
+          transform: [{ translateY: slide.interpolate({ inputRange: [0, 1], outputRange: [0, barH + 80] }) }] },
+      ]}
+    >
       {moreOpen && (
         <View style={[s.more, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
           {rest.map(({ key, label, Icon }) => {
@@ -88,7 +106,7 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
         moreBadge,
       )}
       {trailing}
-    </View>
+    </Animated.View>
   );
 }
 

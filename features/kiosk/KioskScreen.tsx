@@ -36,7 +36,7 @@
  * would fire mid-sentence. Any NEW modal added to kiosk must do one of the
  * two — there is no third correct option.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Sparkles, UserCircle2 } from 'lucide-react-native';
@@ -114,6 +114,9 @@ export default function KioskScreen() {
   // long press"].
   const [showEditMyProfile, setShowEditMyProfile] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Bottom bar slides away while a page is scrolled down, back on scroll up.
+  const [barHidden, setBarHidden] = useState(false);
+  const touchRef = useRef({ x: 0, y: 0, decided: false });
 
   // The kitchen display is landscape-only; restore free rotation on unmount.
   useEffect(() => {
@@ -377,7 +380,20 @@ export default function KioskScreen() {
           )}
 
           {/* ══ ACTIVE TAB ═══════════════════════════════════════════ */}
-          <View style={s.content}>
+          <View
+            style={s.content}
+            onTouchStart={e => { touchRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, decided: false }; }}
+            onTouchMove={e => {
+              const t = touchRef.current;
+              if (t.decided || effectiveTab === 'overview') return; // Home never scrolls
+              const dy = e.nativeEvent.pageY - t.y, dx = e.nativeEvent.pageX - t.x;
+              if (Math.abs(dy) > 28 && Math.abs(dy) > Math.abs(dx) * 1.5) {
+                t.decided = true;
+                setBarHidden(dy < 0); // finger up = page scrolls down = hide
+                if (dy < 0) setMenuOpen(false);
+              }
+            }}
+          >
             {effectiveTab === 'overview' && (
               <KioskOverviewTab
                 onLock={lockNow}
@@ -410,10 +426,17 @@ export default function KioskScreen() {
         </View>
 
         <KioskTabBar
-          items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setTab(t); }} badges={tabBadges}
+          items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setBarHidden(false); setTab(t); }} badges={tabBadges}
           leading={<KioskBarProfile member={active} open={menuOpen} onPress={() => setMenuOpen(o => !o)} />}
           trailing={<KioskBarClock />}
+          hidden={barHidden}
         />
+
+        {barHidden && (
+          <Pressable onPress={() => setBarHidden(false)} accessibilityRole="button" accessibilityLabel="Show the menu bar" style={[s.barHandle, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+            <View style={[s.barHandleGrip, { backgroundColor: k.textFaint }]} />
+          </Pressable>
+        )}
 
         <KioskSystemMenu
           visible={menuOpen}
@@ -497,4 +520,6 @@ const s = StyleSheet.create({
   },
   askFamText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   content: { flex: 1, minWidth: 0 },
+  barHandle: { position: 'absolute', alignSelf: 'center', bottom: 6, width: 96, height: 26, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 40 },
+  barHandleGrip: { width: 44, height: 4, borderRadius: 2 },
 });

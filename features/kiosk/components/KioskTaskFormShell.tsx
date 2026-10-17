@@ -19,6 +19,7 @@
  * KioskScanReviewForm.tsx already copies for the same reason — not a
  * bottom sheet.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { useEffect, useState } from 'react';
 import {
   View, Text, Pressable, ScrollView, Modal, KeyboardAvoidingView, Platform, StyleSheet,
@@ -57,7 +58,7 @@ export function KioskTaskFormShell({
   const isReview = currentStepId === reviewStepId;
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <KioskSlideModal visible={visible} onRequestClose={onClose}>
       <KioskModalHost style={s.host}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -129,7 +130,7 @@ export function KioskTaskFormShell({
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+    </KioskSlideModal>
   );
 }
 

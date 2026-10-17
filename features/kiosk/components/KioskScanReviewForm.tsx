@@ -42,6 +42,7 @@
  * image exists), same as the phone's own 2-page flow collapses redact into
  * an implicit sub-state of page 1.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Camera, Image as ImageIcon, FileText, ScanLine, Syringe, X } from 'lucide-react-native';
@@ -170,7 +171,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
   const canSubmit = !!reviewMemberId;
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <KioskSlideModal visible={visible} onRequestClose={handleClose}>
       <AiConsentSheet {...aiConsent} colors={{ card: k.card, textPrimary: k.text, textSecondary: k.textFaint, border: k.cardBorder, accent: k.gold }} />
       <KioskModalHost style={s.host}>
         <Pressable
@@ -456,7 +457,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+    </KioskSlideModal>
   );
 }
 

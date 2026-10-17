@@ -8,6 +8,7 @@
  * AddIntakeChooser already uses, transcribed on-device, sent as a normal
  * chat turn once the user stops speaking.
  */
+import { KioskSlideModal } from '@/features/kiosk/components/KioskSlideModal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
@@ -847,7 +848,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const isKiosk = variant === 'kiosk';
 
   const chatContent = (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={isKiosk && !inline ? { height: '100%' } : { flex: 1 }}>
       <View
         style={
           inline
@@ -1304,13 +1305,24 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     );
   }
 
+  if (isKiosk) {
+    // Kiosk: the 480px panel is right-anchored; the rest of the screen is a
+    // scrim that closes it on tap (the panel itself shrink-wraps, so it no
+    // longer covers the scrim), and it slides in from the right edge.
+    return (
+      <KioskSlideModal visible={visible} onRequestClose={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }}>
+          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close Ask Fam" />
+          {chatContent}
+        </View>
+        {overlays}
+      </KioskSlideModal>
+    );
+  }
+
   return (
     <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={
-        isKiosk
-          ? { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }
-          : { flex: 1 }
-      }>
+      <View style={{ flex: 1 }}>
         {isKiosk ? chatContent : (
           <SwipeBackWrapper onDismiss={onClose} backgroundColor={colors.background}>
             {chatContent}

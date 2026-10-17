@@ -241,6 +241,8 @@ export default function JustDescribeItEventScreen({
   const [evPickupNeeded, setEvPickupNeeded]   = useState(!!linkedPickupLeg);
   // "Pick up Cherry at 6" means ONE pick-up at 6, not a drop-off at 6 and a pick-up an hour later. Read from the words, editable.
   const [pickupOnly, setPickupOnly]       = useState(false);
+  // With a both-ways ride the order is not always drop-off first ("pick her up from work at 9, then take her to soccer").
+  const [pickupFirst, setPickupFirst]     = useState(false);
   const rideMode: 'none' | 'dropoff' | 'pickup' | 'both' =
     pickupOnly && evPickupNeeded ? 'pickup'
     : evDropNeeded && evPickupNeeded ? 'both'
@@ -331,6 +333,7 @@ export default function JustDescribeItEventScreen({
     setCheckingConflicts({});
     setListenSecs(0);
     setPickupOnly(false);
+    setPickupFirst(false);
     timeTouched.current = false;
     dictation.reset();
   };
@@ -504,6 +507,7 @@ export default function JustDescribeItEventScreen({
       } else if (dir === 'both') {
         // Drop-off at the spoken time, pick-up at the second time (or an hour later when none was said).
         setPickupOnly(false); setEvDropNeeded(true); setEvPickupNeeded(true);
+        setPickupFirst(detection?.firstLeg === 'pickup');
         if (detection?.when.returnTime) setEvEndTime(detection.when.returnTime.slice(0, 5));
         if (loc?.dropoff ?? place) setEvDropTo(loc?.dropoff ?? place);
         if (loc?.pickup ?? place) setEvPickupFrom(loc?.pickup ?? place);
@@ -668,6 +672,8 @@ export default function JustDescribeItEventScreen({
       return;
     }
 
+    // Pick-up first: the main event carries the pick-up and the second leg is the drop-off.
+    const firstIsPickup = pickupFirst && evDropNeeded && evPickupNeeded && !pickupOnly;
     try {
       const baseEvent: Omit<FamilyEvent, 'id'> = {
         title: evTitle.trim(),
@@ -681,12 +687,14 @@ export default function JustDescribeItEventScreen({
         memberId: evMemberIds[0],
         notes: evNotes.trim() || undefined,
         location: evLocation.trim() || undefined,
-        rideRequired: evDropNeeded || undefined,
-        pickupLocation: evDropNeeded && evDropFrom.trim() ? evDropFrom.trim() : undefined,
-        dropLocation: evDropNeeded && evDropTo.trim() ? evDropTo.trim() : undefined,
-        driverId: evDropNeeded ? evDropDriverId : undefined,
-        driverName: evDropNeeded && dropDriver ? dropDriver.name : undefined,
-        driverStatus: evDropNeeded && evDropDriverId ? (isSelfDrop ? 'confirmed' : 'pending') : undefined,
+        rideRequired: (firstIsPickup ? evPickupNeeded : evDropNeeded) || undefined,
+        pickupLocation: firstIsPickup ? (evPickupFrom.trim() || undefined) : (evDropNeeded && evDropFrom.trim() ? evDropFrom.trim() : undefined),
+        dropLocation: firstIsPickup ? (evPickupTo.trim() || undefined) : (evDropNeeded && evDropTo.trim() ? evDropTo.trim() : undefined),
+        driverId: firstIsPickup ? evPickupDriverId : (evDropNeeded ? evDropDriverId : undefined),
+        driverName: firstIsPickup ? pickupDriver?.name : (evDropNeeded && dropDriver ? dropDriver.name : undefined),
+        driverStatus: firstIsPickup
+          ? (evPickupDriverId ? (isSelfPickup ? 'confirmed' : 'pending') : undefined)
+          : (evDropNeeded && evDropDriverId ? (isSelfDrop ? 'confirmed' : 'pending') : undefined),
         familyId, createdBy,
       } as Omit<FamilyEvent, 'id'>;
 
@@ -729,7 +737,7 @@ export default function JustDescribeItEventScreen({
       // to find its pick-up leg at all; only the reverse direction worked.
       if (evPickupNeeded && mainEventId) {
         const basePickup = {
-          title: `Pick-up · ${stripLegWords(evTitle.trim())}`,
+          title: `${firstIsPickup ? 'Drop-off' : 'Pick-up'} · ${stripLegWords(evTitle.trim())}`,
           time: evAllDay ? undefined : evEndTime,  // starts when the event ends
           endTime: evAllDay ? undefined : addMinutesToHHMM(evEndTime, PICKUP_LEG_DURATION_MIN),
           category: evCategory,
@@ -737,11 +745,13 @@ export default function JustDescribeItEventScreen({
           memberIds: evMemberIds.length > 0 ? evMemberIds : undefined,
           memberId: evMemberIds[0],
           rideRequired: true,
-          pickupLocation: evPickupFrom.trim() || evDropTo.trim() || undefined,
-          dropLocation: evPickupTo.trim() || evDropFrom.trim() || undefined,
-          driverId: evPickupDriverId,
-          driverName: pickupDriver ? pickupDriver.name : undefined,
-          driverStatus: evPickupDriverId ? (isSelfPickup ? 'confirmed' : 'pending') : undefined,
+          pickupLocation: firstIsPickup ? (evDropFrom.trim() || undefined) : (evPickupFrom.trim() || evDropTo.trim() || undefined),
+          dropLocation: firstIsPickup ? (evDropTo.trim() || undefined) : (evPickupTo.trim() || evDropFrom.trim() || undefined),
+          driverId: firstIsPickup ? evDropDriverId : evPickupDriverId,
+          driverName: firstIsPickup ? dropDriver?.name : (pickupDriver ? pickupDriver.name : undefined),
+          driverStatus: firstIsPickup
+            ? (evDropDriverId ? (isSelfDrop ? 'confirmed' : 'pending') : undefined)
+            : (evPickupDriverId ? (isSelfPickup ? 'confirmed' : 'pending') : undefined),
           familyId, createdBy,
         };
 
@@ -1334,17 +1344,33 @@ export default function JustDescribeItEventScreen({
                               {rideMode === 'none' ? 'No driver needed.'
                                 : rideMode === 'dropoff' ? `Someone drives them there at ${fmt12h(evTime)}.`
                                 : rideMode === 'pickup' ? `Someone picks them up at ${fmt12h(evTime)}.`
+                                : pickupFirst ? `Pick-up at ${fmt12h(evTime)}, drop-off at ${fmt12h(evEndTime)}.`
                                 : `Drop-off at ${fmt12h(evTime)}, pick-up at ${fmt12h(evEndTime)}.`}
                             </Text>
                           </View>
 
+                          {rideMode === 'both' && (
+                            <View style={{ gap: 6 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase' }}>Which comes first?</Text>
+                              <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#F0EDE6', borderRadius: 14, padding: 3 }}>
+                                {([[false, 'Drop-off first'], [true, 'Pick-up first']] as const).map(([val, label]) => (
+                                  <TouchableOpacity key={label} onPress={() => setPickupFirst(val)} accessibilityRole="button" accessibilityState={{ selected: pickupFirst === val }}
+                                    style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 11, backgroundColor: pickupFirst === val ? (isDark ? colors.card : '#FFFFFF') : 'transparent' }}>
+                                    <Text style={{ fontSize: 13, fontWeight: pickupFirst === val ? '800' : '600', color: pickupFirst === val ? titleC : tertiaryC }}>{label}</Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          <View style={{ gap: 12, flexDirection: rideMode === 'both' && pickupFirst ? 'column-reverse' : 'column' }}>
                           {/* Drop-off leg (hidden while this is just a pick-up) */}
                           {rideMode === 'dropoff' || rideMode === 'both' ? (
                           <View style={{ gap: 10 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                               <View>
                                 <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Drop-off</Text>
-                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`At ${fmt12h(evTime)}`}</Text>
+                                <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`At ${fmt12h(rideMode === 'both' && pickupFirst ? evEndTime : evTime)}`}</Text>
                               </View>
                             </View>
                             {evDropNeeded && (
@@ -1401,7 +1427,7 @@ export default function JustDescribeItEventScreen({
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                   <View>
                                     <Text style={{ fontSize: 13, fontWeight: '600', color: titleC }}>Pick-up</Text>
-                                    <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`At ${fmt12h(pickupOnly ? evTime : evEndTime)}`}</Text>
+                                    <Text style={{ fontSize: 11, color: tertiaryC, marginTop: 1 }}>{`At ${fmt12h(pickupOnly || (rideMode === 'both' && pickupFirst) ? evTime : evEndTime)}`}</Text>
                                   </View>
                                 </View>
                                 {evPickupNeeded && (
@@ -1450,6 +1476,7 @@ export default function JustDescribeItEventScreen({
                               </View>
                             </>
                           )}
+                          </View>
 
                         </View>
                       </View>

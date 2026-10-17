@@ -603,6 +603,8 @@ export interface LocalDetectionResult {
   // neither a pickup nor a drop-off verb appears, so the ride form can
   // leave its own chip default untouched instead of guessing wrong.
   rideDirection: 'dropoff' | 'pickup' | 'both' | null;
+  // For a both-ways ride: which leg was spoken first.
+  firstLeg?: 'pickup' | 'dropoff' | null;
   urgent: boolean;
   // Category-vote kind can be wrong for phrasing the keyword list alone
   // can't disambiguate — "remind me to call the dentist" is a to-do
@@ -892,6 +894,11 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   const rideDirection: LocalDetectionResult['rideDirection'] =
     hasPickupVerb && hasDropoffVerb ? 'both' : hasDropoffVerb ? 'dropoff' : hasPickupVerb ? 'pickup' : null;
 
+  const pickIdx = input.search(/\bpick(?:ing)?\s?(?:me|him|her|them|[a-z]+)?\s?up|\bcollect/);
+  const dropIdx = input.search(/\bdrop(?:ping)?(?:\s|-)?off\b|\bdrop\s|\b(?:take|bring|drive)\s/);
+  const firstLeg: LocalDetectionResult['firstLeg'] = rideDirection === 'both' && pickIdx >= 0 && dropIdx >= 0
+    ? (pickIdx < dropIdx ? 'pickup' : 'dropoff') : null;
+
   // Places only mean something for a ride-shaped sentence; a stray "to call mom" is not a drop-off address.
   const rideShaped = hasPickupVerb || hasDropoffVerb;
   const locationsOut = rideShaped ? locations : { pickup: null, dropoff: null };
@@ -903,6 +910,7 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
     locations: locationsOut,
     memberNames,
     rideDirection,
+    firstLeg,
     amount,
     recurrence,
     recurrenceDays,

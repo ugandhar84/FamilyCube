@@ -272,8 +272,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // that's the one confirmed-working pattern in this codebase.
   const [threadOpen, setThreadOpen] = useState(false);
   const listRef = useRef<FlatList>(null);
+  // A thread is hidden until it has been placed at its newest message, so opening or
+  // switching never shows the list sliding from the top down to the bottom.
+  const [settledChannel, setSettledChannel] = useState<string | null>(null);
+  const nearBottom = useRef(true);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState('');
+  useEffect(() => {
+    nearBottom.current = true;
+    const t = setTimeout(() => setSettledChannel(activeChannel), 450);
+    return () => clearTimeout(t);
+  }, [activeChannel]);
 
   // Keyboard opening can leave the latest message behind it until the list
   // re-settles at its own end — same "scroll after layout, not during
@@ -654,19 +663,10 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             const last = list[list.length - 1];
             const unread = unreadCounts[e.id] ?? 0;
             const on = e.id === activeChannel;
-            const faces = e.isDM && e.otherMember ? [e.otherMember] : members.filter(m => !(m as any).deletedAt && m.role !== 'senior').slice(0, 3);
             return (
               <Pressable key={e.id} onPress={() => switchChannel(e.id)} accessibilityRole="button" accessibilityState={{ selected: on }}
                 accessibilityLabel={`${e.label}${unread ? `, ${unread} unread` : ''}`}
                 style={({ pressed }) => [s.conv, { backgroundColor: on ? tone.card : tone.col, borderColor: on ? tone.fg : 'transparent' }, pressed && { opacity: 0.8 }]}>
-                <View style={{ flexDirection: 'row' }}>
-                  {faces.map((m, fi) => (
-                    <View key={m.id} style={{ marginLeft: fi === 0 ? 0 : -10, borderRadius: 24, borderWidth: 2, borderColor: on ? tone.card : tone.col }}>
-                      <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
-                        size={faces.length > 1 ? 38 : 46} bgColor={k.card} k={k} />
-                    </View>
-                  ))}
-                </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={s.convName}>
                     <Text style={[s.convLabel, { color: k.text }]} numberOfLines={1}>{e.label}</Text>
@@ -783,13 +783,22 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
 
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, opacity: settledChannel === activeChannel ? 1 : 0 }}>
             <FlatList
               ref={listRef}
               data={dayItems}
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
               contentContainerStyle={s.list}
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+              onScroll={e => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                nearBottom.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 160;
+              }}
+              scrollEventThrottle={100}
+              onContentSizeChange={() => {
+                // Stay put if the reader scrolled up; always land at the newest message on open.
+                if (settledChannel !== activeChannel || nearBottom.current) listRef.current?.scrollToEnd({ animated: false });
+                if (settledChannel !== activeChannel) requestAnimationFrame(() => requestAnimationFrame(() => setSettledChannel(activeChannel)));
+              }}
               onScrollToIndexFailed={({ index, averageItemLength }) => {
                 listRef.current?.scrollToOffset({ offset: index * (averageItemLength || 80), animated: false });
                 setTimeout(() => listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 200);

@@ -343,6 +343,7 @@ export default function KioskScreen() {
       >
         {locked && (
           <KioskLockScreen
+            nextUp={nextUp}
             familyName={familyName || 'Our Family'}
             members={members}
             onUnlock={(memberId) => { setActiveMember(memberId); unlock(); }}

@@ -36,12 +36,15 @@ import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
-import { KioskPhotoFade } from './components/KioskPhotoFade';
 import { useKioskWeather } from './useKioskWeather';
+import { KioskPhotoFrame } from './components/KioskPhotoFrame';
+import { useKioskPhotos } from './useKioskPhotos';
 import { useKioskMeals, todayMealDay } from './useKioskMeals';
 
-export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
+export function KioskLockScreen({ familyName, members, onUnlock, colors, nextUp }: {
   familyName: string;
+  /** The day's next event, shown under the clock. */
+  nextUp?: { time?: string; title: string; who?: string };
   members: FamilyMember[];
   /** Called once a profile has been selected (and PIN-verified, if it has
    * one) — the caller is responsible for setActiveMember + actually
@@ -59,7 +62,17 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
   const { width } = useWindowDimensions();
   const wide = width >= 820;
   const weather = useKioskWeather();
-
+  // The lock screen opens as the gold photo frame; a touch reveals the real lock (unchanged below), and it
+  // returns to the frame after a minute without a touch. With no memory photos it is just the lock.
+  const { photos } = useKioskPhotos();
+  const [showFrame, setShowFrame] = useState(true);
+  const frameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armFrame = () => {
+    if (frameTimer.current) clearTimeout(frameTimer.current);
+    frameTimer.current = setTimeout(() => setShowFrame(true), 60_000);
+  };
+  useEffect(() => () => { if (frameTimer.current) clearTimeout(frameTimer.current); }, []);
+  const framed = showFrame && photos.length > 0;
   const { meals } = useKioskMeals();
   const [now, setNow] = useState(new Date());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -91,23 +104,6 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 
   const leftCol = (
     <View style={[s.left, !wide && s.leftNarrow]}>
-      <KioskPhotoFade caption style={{ flex: 1, minHeight: 320, borderRadius: 26 }} />
-      {nextMeal && (
-        <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
-          <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT SHARED MEAL</Text>
-          <Text style={[s.mealTitle, { color: ink }]} numberOfLines={2}>
-            {nextMeal.title}{nextMeal.start_time ? ` · ${nextMeal.start_time}` : ''}
-          </Text>
-        </View>
-      )}
-      <Text style={[s.fine, { color: colors.textTertiary }]}>
-        Agenda, household presence and messages are hidden while the display is locked.
-      </Text>
-    </View>
-  );
-
-  const clockBlock = (
-    <View style={{ gap: 2 }}>
       <Text style={[s.brand, { color: ink }]} numberOfLines={1}>
         Welcome to {familyName}
       </Text>
@@ -127,12 +123,27 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
           {Math.round(weather.temperature)}{weather.unit} · {weather.condition}
         </Text>
       )}
+      {nextUp && (
+        <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT EVENT{nextUp.time ? ` · ${nextUp.time.toUpperCase()}` : ''}</Text>
+          <Text style={[s.mealTitle, { color: ink }]} numberOfLines={2}>{nextUp.title}{nextUp.who ? ` · ${nextUp.who}` : ''}</Text>
+        </View>
+      )}
+      {nextMeal && (
+        <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT SHARED MEAL</Text>
+          <Text style={[s.mealTitle, { color: ink }]} numberOfLines={2}>
+            {nextMeal.title}{nextMeal.start_time ? ` · ${nextMeal.start_time}` : ''}
+          </Text>
+        </View>
+      )}
+      <Text style={[s.fine, { color: colors.textTertiary }]}>
+        Agenda, household presence and messages are hidden while the display is locked.
+      </Text>
     </View>
   );
 
   const rightCol = (
-    <View style={s.rightWrap}>
-    {clockBlock}
     <View style={[s.card, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
       <Lock size={22} color={k.primary} />
       <Text style={[s.cardTitle, { color: ink }]}>Hello again. Who's here?</Text>
@@ -194,12 +205,11 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
         Auto-locked after 2 minutes. Health, private records and precise location stay on trusted personal devices.
       </Text>
     </View>
-    </View>
   );
 
   return (
     <Modal supportedOrientations={['portrait', 'landscape']} visible transparent={false} animationType="fade">
-      <View style={[s.root, { backgroundColor: canvas }]}>
+      <View style={[s.root, { backgroundColor: canvas }]} onTouchStart={armFrame}>
         <SafeAreaView style={s.safe}>
           <ScrollView contentContainerStyle={[s.content, wide && s.contentWide]} showsVerticalScrollIndicator={false}>
             {leftCol}
@@ -207,6 +217,8 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
           </ScrollView>
         </SafeAreaView>
       </View>
+
+      {framed && <KioskPhotoFrame familyName={familyName} nextLine={nextUp ? `Next · ${nextUp.time ? `${nextUp.time} ` : ''}${nextUp.title}` : undefined} onPress={() => { setShowFrame(false); armFrame(); }} />}
 
       <PinEntryModal
         inline
@@ -224,7 +236,7 @@ const s = StyleSheet.create({
   safe: { flex: 1 },
   content: { flexGrow: 1, padding: KIOSK_SPACE.xl, gap: KIOSK_SPACE.xl, justifyContent: 'center' },
   contentWide: { flexDirection: 'row', alignItems: 'center' },
-  left: { flex: 1.3, gap: KIOSK_SPACE.sm, alignSelf: 'stretch' },
+  left: { flex: 1.1, gap: KIOSK_SPACE.sm },
   leftNarrow: { flex: 0 },
   brand: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700' },
   clock: {
@@ -240,9 +252,8 @@ const s = StyleSheet.create({
   mealEyebrow: { fontSize: KIOSK_TYPO.label, fontWeight: '800', letterSpacing: 0.6 },
   mealTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700' },
   fine: { fontSize: KIOSK_TYPO.label, lineHeight: 18, marginTop: KIOSK_SPACE.md },
-  rightWrap: { flex: 1, justifyContent: 'center', maxWidth: 560, width: '100%', alignSelf: 'center', gap: KIOSK_SPACE.md },
   card: {
-    borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.lg,
+    flex: 1, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.lg,
     gap: KIOSK_SPACE.sm, maxWidth: 560, width: '100%', alignSelf: 'center',
   },
   cardTitle: { fontSize: KIOSK_TYPO.title, fontWeight: '800' },

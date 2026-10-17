@@ -338,41 +338,42 @@ const styles = StyleSheet.create({
   },
   cancelText: { fontSize: 14, fontWeight: '600' },
 
-  avatarSection: { alignItems: 'center', gap: 6, marginTop: 24, marginBottom: 36 },
+  avatarSection: { alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 16 },
   avatarCircle: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 76, height: 76, borderRadius: 38,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 3,
   },
-  avatarEmoji: { fontSize: 44 },
-  memberName:  { fontSize: 24, fontWeight: '800', marginTop: 6 },
+  avatarEmoji: { fontSize: 38 },
+  memberName:  { fontSize: 24, fontWeight: '800', marginTop: 4 },
   roleTag:     { fontSize: 13, fontWeight: '600' },
   prompt:      { fontSize: 14, marginTop: 4 },
 
   dotsRow: {
     flexDirection: 'row',
-    gap: 20,
-    marginBottom: 16,
+    gap: 22,
+    marginBottom: 6,
   },
   dot: {
     width: 18, height: 18, borderRadius: 9,
     borderWidth: 2,
   },
 
-  errorWrap: { height: 22, marginBottom: 12 },
+  errorWrap: { height: 22, marginBottom: 8 },
   errorText: { fontSize: 13, fontWeight: '600' },
 
-  pad: { width: '100%', paddingHorizontal: 32, gap: 12 },
-  padRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  keyWrap: { flex: 1 },
+  // A centred 3x4 pad of round keys, sized to sit in the middle of the card rather than stretch across it.
+  pad: { alignSelf: 'center', gap: 14 },
+  padRow: { flexDirection: 'row', justifyContent: 'center', gap: 18 },
+  keyWrap: { width: 76, flex: 0 },
   key: {
-    height: 68, borderRadius: 16, borderWidth: 1,
+    width: 76, height: 76, borderRadius: 38, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  keyText: { fontSize: 24, fontWeight: '600' },
-  keyPlaceholder: { flex: 1 },
+  keyText: { fontSize: 28, fontWeight: '600' },
+  keyPlaceholder: { width: 76, flex: 0 },
 
-  hint: { fontSize: 12, marginTop: 28, textAlign: 'center' },
+  hint: { fontSize: 12, marginTop: 18, textAlign: 'center' },
 
   // Tablet/kiosk only — centered dialog card, same width/radius/maxHeight
   // as KioskFormDrawer's own 'dialog' variant so this reads as one of
@@ -382,9 +383,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)', padding: 24,
   },
   tabletCard: {
-    width: 420, maxWidth: '100%', maxHeight: '85%',
+    width: 400, maxWidth: '100%', maxHeight: '94%',
     borderWidth: 1, borderRadius: KIOSK_RADIUS.lg,
-    alignItems: 'center', paddingTop: 16, paddingBottom: 24,
+    alignItems: 'center', paddingTop: 14, paddingBottom: 20,
     overflow: 'hidden',
   },
 });

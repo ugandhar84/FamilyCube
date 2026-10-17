@@ -38,6 +38,7 @@ import { useKioskColors, kioskPastels, type KioskColors } from '../kioskPalette'
 import { KioskFormDrawer } from './KioskFormDrawer';
 import { KioskDueDateTimePicker } from './KioskDueDateTimePicker';
 import { KioskAvatar } from './KioskAvatar';
+import { KioskAddressInput } from './KioskAddressInput';
 import { Eyebrow, firstName } from './KioskHomeParts';
 
 type Mode = 'chore' | 'event';
@@ -506,7 +507,10 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
               ))}
             </Card>
             <Card title="Where & notes" hint="Optional details" Icon={MapPin} tone={{ card: k.pastelPrimaryCard, fg: k.terracotta }}>
-              <Field label="LOCATION" value={location} set={setLocation} placeholder="Address or place" />
+              <View style={{ gap: 6 }}>
+                <Text style={[s.fieldLabel, { color: k.textFaint }]}>LOCATION</Text>
+                <KioskAddressInput value={location} onChange={setLocation} placeholder="Search an address or place" accent={k.terracotta} />
+              </View>
               <Field label="NOTES" value={notes} set={setNotes} placeholder="Anything to remember" multiline />
             </Card>
             <Card title="Ride" hint="Arrange a drop-off and pick-up" Icon={Car} tone={{ card: k.pastelSageCard, fg: k.sage }}>
@@ -516,8 +520,14 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
               </View>
               {rideOn && (
                 <>
-                  <Field label="PICK UP AT" value={rideFrom} set={setRideFrom} placeholder="From" />
-                  <Field label="DROP OFF AT" value={rideTo} set={setRideTo} placeholder="To" />
+                  <View style={{ gap: 6 }}>
+                    <Text style={[s.fieldLabel, { color: k.textFaint }]}>PICK UP AT</Text>
+                    <KioskAddressInput value={rideFrom} onChange={setRideFrom} placeholder="Home, school or an address" accent={k.sage} />
+                  </View>
+                  <View style={{ gap: 6 }}>
+                    <Text style={[s.fieldLabel, { color: k.textFaint }]}>DROP OFF AT</Text>
+                    <KioskAddressInput value={rideTo} onChange={setRideTo} placeholder="Where they are going" accent={k.sage} />
+                  </View>
                   <Text style={[s.fieldLabel, { color: k.textFaint }]}>DRIVER</Text>
                   <View style={s.wrapRow}>{people_(false, driverId ? [driverId] : [], id => setDriverId(d => (d === id ? undefined : id)), parents)}</View>
                 </>

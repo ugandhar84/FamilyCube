@@ -749,7 +749,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       const l = inScope(sideVaxes).filter(v => vaxStatus === 'all' || (vaxStatus === 'done' && v.done) || (vaxStatus === 'pending' && !v.done) || (vaxStatus === 'due' && !v.done && v.next_due_date && (new Date(v.next_due_date).getTime() - Date.now()) / 86400000 <= 30));
       return (
         <>
-          <Head title="Vaccines" right={<Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} />} />{whoRow}
+          <Head title="Vaccines" right={<View style={s.wrapRow}><Btn kind="sec" label="Scan a vaccine record" Icon={ScanLine} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} /><Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} /></View>} />{whoRow}
           <View style={s.wrapRow}>{([['all', 'All'], ['pending', 'Pending'], ['done', 'Done'], ['due', 'Due soon']] as const).map(([key, t], i) => <Chip2 key={key} label={t} on={vaxStatus === key} onPress={() => setVaxStatus(key)} i={i} />)}</View>
           <View style={{ gap: 8 }}>
             {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No vaccines match.</Text> : (() => {
@@ -821,7 +821,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
             <View style={[s.heroIc, { backgroundColor: k.pastelLavCard }]}><cfg.Icon size={30} color={k.purple} /></View>
             <View style={{ flex: 1 }}><Text style={[s.mcName, { color: k.text }]}>{cfg.big}</Text><Text style={[s.sm, { color: k.textMuted }]}>{cfg.txt}</Text></View>
           </View>
-          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{area === 'bring' && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
+          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{(area === 'bring' || area === 'scanrx') && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
         </>
       );
     }

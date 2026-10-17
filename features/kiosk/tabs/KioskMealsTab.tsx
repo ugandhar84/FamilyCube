@@ -72,6 +72,11 @@ import { CAT_ICON, itemEmoji, mapBoughtRow } from '@/features/grocery/components
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { useKioskColors, type KioskColors } from '../kioskPalette';
 import { WidgetCard, PanelHead, Well, TabTitle, EmptyNote } from '../components/KioskOS';
+import { showToast } from '@/components/AppToast';
+import { KioskWeekPlan } from '../components/KioskWeekPlan';
+import { KioskRecipeBook } from '../components/KioskRecipeBook';
+import { KioskMealsAreaMenu, type MealsArea } from '../components/KioskMealsAreaMenu';
+import { KioskGroceryInsights } from '../components/KioskGroceryInsights';
 import { useKioskMeals, daysFromToday, todayMealDay } from '../useKioskMeals';
 import { KioskAiMealsEngine } from '../components/KioskAiMealsEngine';
 import { useKioskActivity } from '../KioskActivityContext';
@@ -99,7 +104,9 @@ const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
 
 export function KioskMealsTab({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k, isDark } = useKioskColors();
-  const { meals, loading, week, reload: reloadMeals } = useKioskMeals();
+  const { meals, nextMeals, loading, week, nextWeek, reload: reloadMeals } = useKioskMeals();
+  const [area, setArea] = useState<MealsArea>('plan');
+  const [addWeekOf, setAddWeekOf] = useState<string | null>(null);
   const { registerActivity } = useKioskActivity();
   // The full household grocery list is hidden from kids on kiosk
   // specifically (live-reported: "remove groceries for kids" — a kiosk-
@@ -434,7 +441,8 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   };
 
   // Shared "Mon"/"Tue"/etc -> real YYYY-MM-DD for THIS week.
-  const dayNameToDate = (day: string): string => {
+  const dayNameToDate = (day: string, weekOfStr?: string | null): string => {
+    if (weekOfStr) return localDateStr(weekOfAndDayToDate(weekOfStr, day));
     const DAYS_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const todayIdx = new Date().getDay(); // 0=Sun
     const dayIdx = DAYS_ORDER.indexOf(day);
@@ -460,7 +468,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
   // same "funnel every syncable domain through calendar_events" pattern
   // chores' addChore/updateChore/deleteChore got, so a timed meal rides
   // the existing 2-way calendar sync engine for free.
-  const syncMealCalendarEvent = async (meal: { id: string; day: string; title: string; start_time?: string | null; prep_minutes?: number | null; linked_event_id?: string | null }): Promise<string | null> => {
+  const syncMealCalendarEvent = async (meal: { id: string; day: string; week_of?: string | null; title: string; start_time?: string | null; prep_minutes?: number | null; linked_event_id?: string | null }): Promise<string | null> => {
     const time24 = parseTimeLabelTo24h(meal.start_time);
     const { addEvent, updateEvent, deleteEvent } = useEventStore.getState();
 
@@ -468,7 +476,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       if (meal.linked_event_id) deleteEvent(meal.linked_event_id);
       return null;
     }
-    const date = dayNameToDate(meal.day);
+    const date = dayNameToDate(meal.day, meal.week_of);
     const endTime = addMinutesToTime(time24, meal.prep_minutes || 30);
     if (meal.linked_event_id) {
       updateEvent(meal.linked_event_id, { title: meal.title, date, time: time24, endTime });
@@ -481,8 +489,8 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
     });
   };
 
-  const createCookingQuest = (mealTitle: string, chefId: string, day: string, prepMins?: number | null) => {
-    const dueDate = dayNameToDate(day);
+  const createCookingQuest = (mealTitle: string, chefId: string, day: string, prepMins?: number | null, weekOfStr?: string | null) => {
+    const dueDate = dayNameToDate(day, weekOfStr);
     useQuestStore.getState().addQuest({
       title:            `🍳 Cook ${mealTitle}`,
       description:      `Prepare ${mealTitle} for the family on ${day}.`,
@@ -504,6 +512,17 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
     });
   };
 
+  const addWeekToList = () => {
+    const { addItem, items: have } = useGroceryStore.getState();
+    const seen = new Set(have.map(e => e.name.toLowerCase()));
+    let n = 0;
+    meals.forEach(m => (m.ingredients ?? []).forEach((g: string) => {
+      const name = g.trim();
+      if (name && !seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); addItem({ name, category: 'Other', notes: `From ${m.title}`, familyId: familyId ?? '', addedBy: active.id }); n++; }
+    }));
+    showToast(n ? `${n} ingredients added to the list` : 'Everything is already on the list');
+  };
+
   const saveMeal = async (patch: MealFormPatch) => {
     if (!familyId) return;
     setSavingMeal(true);
@@ -514,19 +533,21 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         const fullPatch = { ...patch, linked_event_id: linkedEventId };
         await supabase.from('family_meals').update(fullPatch).eq('id', editingMeal.id);
         if (patch.chef_id && patch.chef_id !== prevChefId) {
-          createCookingQuest(patch.title, patch.chef_id, editingMeal.day, patch.prep_minutes);
+          createCookingQuest(patch.title, patch.chef_id, editingMeal.day, patch.prep_minutes, editingMeal.week_of);
         }
         setEditingMeal(null);
       } else if (addDay) {
-        const newId = `${familyId}-${week}-${addDay}-manual-${Date.now()}`;
-        const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
+        const wk = addWeekOf ?? week;
+        const newId = `${familyId}-${wk}-${addDay}-manual-${Date.now()}`;
+        const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, week_of: wk, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
         await supabase.from('family_meals').insert({
           id: newId,
-          family_id: familyId, week_of: week, day: addDay,
+          family_id: familyId, week_of: wk, day: addDay,
           ...patch, ai_generated: false, linked_event_id: linkedEventId,
         });
-        if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes);
+        if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes, wk);
         setAddDay(null);
+        setAddWeekOf(null);
       }
       reloadMeals();
     } finally {
@@ -737,43 +758,26 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
 
   return (
     <>
-    <ScrollView
-      ref={mealsScrollRef}
-      onScroll={e => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
-      scrollEventThrottle={16}
-      contentContainerStyle={s.scroll}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      onScrollBeginDrag={registerActivity}
-    >
-      <TabTitle
-        title="Meals & Grocery"
-        subtitle={`This week's plan and the household list · week of ${week}`}
-        k={k}
-      />
-
-      <View style={s.columns}>
-        {/* ══ MEAL PLAN ═══════════════════════════════════════════════ */}
-        <View style={s.colWide}>
-          {/* ── CubeAI Meal Planner ──────────────────────────────────────
-              Inline strip above the plan, same as mobile's own always-
-              inline placement — NOT a side drawer (live-clarified: "oh Ai
-              repose can be inline but the open and view the recipies
-              should be side form"). Same column width as "What we're
-              eating" right below it — live-requested: "cube meal planner
-              section length should match to the what weare eating" — so
-              it sits inside colWide instead of spanning the full row.
-              Parent-only action, but kid/teen still SEE the panel —
-              visually obscured with a "Parents only" overlay rather than
-              hidden outright [live-requested: "kube ai we can blur and
-              show the overleay parents ony access?"]. Not a literal
-              expo-blur BlurView: KioskScheduleTab.tsx's own header
-              comment documents that kiosk's whole design layer
-              deliberately avoids frosted glass ("reads as mud on the
-              kiosk's warm near-black dark ground") in favor of solid
-              fills — this reduces opacity + disables touch instead,
-              staying consistent with that same rule while still reading
-              as "there but off-limits." */}
+    <View style={s.shell}>
+      <KioskMealsAreaMenu area={area} setArea={setArea} isKidOrTeen={isKidOrTeen} isKid={isKid} k={k}
+        counts={{ list: visibleItems.length, recipes: 0, runs: runs.filter(r => r.status === 'active').length }} />
+      <View style={s.content}>
+        {area === 'plan' && (
+          <KioskWeekPlan
+            meals={meals} nextMeals={nextMeals} week={week} nextWeek={nextWeek} loading={loading}
+            members={members} isKidOrTeen={isKidOrTeen}
+            onOpenMeal={setOpenMeal}
+            onAddMeal={(d, w) => { setAddWeekOf(w); setAddDay(d); }}
+            onAddWeekToList={addWeekToList}
+            onOpenAi={() => setArea('ai')}
+            query={mealQuery} setQuery={setMealQuery}
+            searchResults={mealSearchResults} searchLoading={mealSearchLoading}
+          />
+        )}
+        {area === 'recipes' && <KioskRecipeBook active={active} members={members} />}
+        {area === 'ai' && !isKidOrTeen && (
+          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" onScrollBeginDrag={registerActivity}>
+            <TabTitle title="CubeAI meal planner" subtitle="Plan the week, then add it to the list" k={k} />
           {!!familyId && (
             <WidgetCard k={k} isDark={isDark} style={s.aiStripCard}>
               <View pointerEvents={isKidOrTeen ? 'none' : 'auto'} style={isKidOrTeen ? s.aiStripLocked : undefined}>
@@ -791,171 +795,22 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
               )}
             </WidgetCard>
           )}
-
-          <WidgetCard k={k} isDark={isDark}>
-            <PanelHead
-              title="What we're eating"
-              k={k}
-              right={meals.length > 0
-                ? <Text style={[s.panelCount, { color: k.textFaint }]}>{meals.length} planned</Text>
-                : undefined}
-            />
-
-            {/* Search — real, new capability (mobile's own MealsTab has no
-                search at all): matches meal name OR date/day, across every
-                week including past ones, not just the current-week list
-                below (live-requested: "lets also add the search function
-                in what we are eating results should be with date and the
-                meals..including past"). Empty query keeps the normal
-                day-grouped view untouched. */}
-            <View style={[s.searchRow, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-              <Search size={14} color={k.textFaint} />
-              <TextInput
-                value={mealQuery}
-                onChangeText={setMealQuery}
-                onFocus={registerActivity}
-                placeholder="Search meals or a date…"
-                placeholderTextColor={k.textFaint}
-                style={[s.searchInput, { color: k.text }]}
-                returnKeyType="search"
-                accessibilityLabel="Search meal plan"
-              />
-              {!!mealQuery && (
-                <Pressable onPress={() => setMealQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
-                  <XIcon size={14} color={k.textFaint} />
-                </Pressable>
-              )}
-            </View>
-
-            {mealQuery.trim() ? (
-              mealSearchLoading ? (
-                <ActivityIndicator color={k.gold} style={{ marginVertical: KIOSK_SPACE.xl }} />
-              ) : !mealSearchResults?.length ? (
-                <EmptyNote text={`No meals match "${mealQuery.trim()}".`} k={k} />
-              ) : (
-                <View style={{ gap: KIOSK_SPACE.xs }}>
-                  {mealSearchResults.map((m, i) => {
-                    const d = weekOfAndDayToDate(m.week_of, m.day);
-                    const dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                    return (
-                      <Pressable
-                        key={m.id}
-                        onPress={() => setOpenMeal(m)}
-                        style={({ pressed }) => [s.mealLine, pressed && { opacity: 0.7 }]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${m.title} on ${dateLabel}`}
-                      >
-                        <Text style={s.mealEmoji}>{m.emoji ?? '🍽️'}</Text>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={1}>{m.title}</Text>
-                          <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={1}>
-                            {[dateLabel, m.type ? cap(m.type) : null, chefName(m.chef_id, members)].filter(Boolean).join(' · ')}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )
-            ) : loading ? (
-              <ActivityIndicator color={k.gold} style={{ marginVertical: KIOSK_SPACE.xl }} />
-            ) : (
-              <View style={{ gap: KIOSK_SPACE.sm }}>
-                {byDay.map(({ day, meals: dayMeals }) => (
-                  <Well
-                    key={day}
-                    k={k}
-                    accent={day === today ? k.gold : undefined}
-                    style={s.dayRow}
-                  >
-                    <View style={s.dayLabelCol}>
-                      <Text
-                        style={[s.dayLabel, { color: day === today ? k.gold : k.textMuted }]}
-                        numberOfLines={1}
-                      >
-                        {day === today ? 'TONIGHT' : day.toUpperCase()}
-                      </Text>
-                      {/* Per-day add — real mobile parity (DayCard.tsx's own
-                          onAdd, present on every day including empty ones),
-                          not just a top-level "Add Meal" button
-                          [live-requested: "we must match the mobile app
-                          functionality and experiance except visual of
-                          kiosk"]. Parent-only (widened from kid-only to
-                          also cover teen — "remove meal editing
-                          /add/delete only give readonly access"). */}
-                      {!isKidOrTeen && (
-                        <Pressable
-                          onPress={() => setAddDay(day)}
-                          hitSlop={10}
-                          style={s.dayAddBtn}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Add a meal for ${day}`}
-                        >
-                          <Plus size={13} color={k.textFaint} />
-                        </Pressable>
-                      )}
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      {dayMeals.length === 0 ? (
-                        <Pressable
-                          onPress={() => !isKidOrTeen && setAddDay(day)}
-                          disabled={isKidOrTeen}
-                          style={({ pressed }) => [s.mealLine, pressed && !isKidOrTeen && { opacity: 0.7 }]}
-                        >
-                          <Text style={[s.mealMeta, { color: k.textFaint }]}>
-                            {isKidOrTeen ? 'Nothing planned' : 'Nothing planned — tap to add'}
-                          </Text>
-                        </Pressable>
-                      ) : dayMeals.map((m, i) => (
-                        <View key={m.id}>
-                          {i > 0 && <View style={[s.mealDivider, { backgroundColor: k.cardBorder }]} />}
-                          <Pressable
-                            onPress={() => setOpenMeal(m)}
-                            style={({ pressed }) => [s.mealLine, pressed && { opacity: 0.7 }]}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${m.title} recipe`}
-                            accessibilityHint="See ingredients and prep steps"
-                          >
-                            <Text style={s.mealEmoji}>{m.emoji ?? '🍽️'}</Text>
-                            <View style={{ flex: 1, minWidth: 0 }}>
-                              <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>
-                                {m.title}
-                              </Text>
-                              <Text style={[s.mealMeta, { color: k.textMuted }]} numberOfLines={1}>
-                                {[
-                                  m.type ? cap(m.type) : null,
-                                  m.start_time || null,
-                                  m.prep_minutes ? `${m.prep_minutes} min` : null,
-                                  chefName(m.chef_id, members),
-                                ].filter(Boolean).join(' · ') || 'No details yet'}
-                              </Text>
-                            </View>
-                          </Pressable>
-                        </View>
-                      ))}
-                    </View>
-                  </Well>
-                ))}
-              </View>
-            )}
-          </WidgetCard>
-        </View>
-
-        {/* ══ GROCERY LIST ════════════════════════════════════════════ */}
-        <View style={s.colNarrow}>
-          {/* Kid/teen: read-only "My requested groceries" — their own
-              grocery-type kidRequestStore requests with per-item pending/
-              approved/declined status, and bought-or-not once approved
-              [live-requested: "as i said we shoun't give the access to
-              grocey add in the melas page they just can see their
-              approved groceries by parents / kids and teens both" /
-              "and that item status if the parent or someone brought
-              that"] — NOT the shared live grocery_items list (no add,
-              search, receipt scan, price-check, or drag-to-move for
-              these two roles at all). Parent (and senior — this whole
-              tab is already unreachable for senior on kiosk per
-              kioskTabs.ts's RAIL_SENIOR) keeps the full live panel below,
-              unchanged. */}
+          </ScrollView>
+        )}
+        {(area === 'runs' || area === 'history' || area === 'insights') && !isKidOrTeen && (
+          <KioskGroceryInsights area={area} runs={runs} items={items} boughtItems={boughtItems} members={members} k={k} onOpenRun={setViewingRun} />
+        )}
+        {area === 'list' && (
+        <ScrollView
+          ref={mealsScrollRef}
+          onScroll={e => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={16}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={registerActivity}
+        >
+          <TabTitle title="Grocery list" subtitle="The household list" k={k} />
           {isKidOrTeen ? (
             <KidGroceryRequestsPanel active={active} k={k} isDark={isDark} groceryItems={items} boughtItems={boughtItems} members={members} />
           ) : (
@@ -1340,9 +1195,10 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
             )}
           </WidgetCard>
           )}
-        </View>
+        </ScrollView>
+        )}
       </View>
-    </ScrollView>
+    </View>
 
     {/* Same real shape as BulkSelectToolbar.tsx: a floating bar while any
         item is selected — count, Select All, destructive Delete (N) with
@@ -1429,7 +1285,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         textPrimary: k.text, textSecondary: k.textMuted, textTertiary: k.textFaint,
       }}
       isDark={isDark}
-      onClose={() => { setAddDay(null); setEditingMeal(null); }}
+      onClose={() => { setAddDay(null); setAddWeekOf(null); setEditingMeal(null); }}
       onSave={saveMeal}
       saving={savingMeal}
     />
@@ -1787,6 +1643,8 @@ const chefName = (id: string | null | undefined, members: FamilyMember[]) => {
 };
 
 const s = StyleSheet.create({
+  shell: { flex: 1, flexDirection: 'row', minHeight: 0 },
+  content: { flex: 1, minWidth: 0 },
   scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
   // Two columns on a wide screen, stacked on a narrow/portrait one — by
   // flexWrap + flexBasis rather than a measured breakpoint, so it reflows

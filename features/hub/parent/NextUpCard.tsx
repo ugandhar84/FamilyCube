@@ -81,7 +81,7 @@ export function NextUpTimeline({
   // text elsewhere, which reads a live clock correctly already); it's a
   // plain string bug, always wrong outside the afternoon.
   const h = new Date().getHours();
-  const todayLabel = h < 12 ? 'Your morning' : h < 17 ? 'Your afternoon' : 'Your evening';
+  const todayLabel = 'Your day';
   // Same bug, second occurrence: the empty-state copy below hardcoded
   // "afternoon" too — e.g. in the morning it read "Nothing scheduled —
   // enjoy the clear afternoon", which doesn't match the heading above it.

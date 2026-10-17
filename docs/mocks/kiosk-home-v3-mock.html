@@ -165,7 +165,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke
 .step{display:flex;gap:12px;font-size:16px;font-weight:600;line-height:1.4}
 .step i{flex:none;width:30px;height:30px;border-radius:50%;background:var(--lav-card);color:var(--lav);font-style:normal;font-weight:800;display:grid;place-items:center}
 .df{padding:14px 22px 18px;border-top:1px solid var(--line);display:flex;gap:10px}.df .btn{flex:1}
-.field{min-height:52px;border-radius:16px;border:1px solid var(--line);background:var(--well);padding:0 16px;font:600 16px var(--body);color:var(--ink);width:100%}
+.kh2{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:18px;padding-bottom:12px;overflow:hidden}.kcol{display:flex;flex-direction:column;gap:10px;min-height:0;overflow-y:auto;padding-bottom:6px}.khero{display:flex;align-items:center;gap:14px;background:var(--sage-col);border:1.5px solid var(--sage-card);border-radius:26px;padding:12px 16px}.khero .dial{width:84px;height:84px;border-radius:50%;display:grid;place-items:center;position:relative;flex:none}.khero .dial i{position:absolute;inset:9px;border-radius:50%;background:var(--sage-col);display:grid;place-items:center;font-style:normal}.khero .dial b{font:800 18px var(--display);display:block;text-align:center;line-height:1}.khero .dial span{font-size:11px;font-weight:800;color:var(--muted);display:block;text-align:center}.field{min-height:52px;border-radius:16px;border:1px solid var(--line);background:var(--well);padding:0 16px;font:600 16px var(--body);color:var(--ink);width:100%}
 textarea.field{padding:12px 16px;min-height:96px;resize:none}
 .flab{font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--faint);margin-bottom:6px;display:block}
 .daypick{display:flex;gap:7px;flex-wrap:wrap}
@@ -305,8 +305,8 @@ textarea.field{padding:12px 16px;min-height:96px;resize:none}
    <li><b>Parent Home is the family’s day on one board.</b> A column per person, hour by hour, with a “now” line that the board scrolls to. Events are pastel blocks by person; chores due at a time sit in as small checkable chips. Tap a block for its details.</li>
    <li><b>Top strip:</b> greeting and chips (waiting on you, plans today, weather), a row of recent memory photos, and four quick actions: <b>＋ Task</b> and <b>＋ Event</b> open the “just describe it” forms, <b>✨ Ask Fam</b> opens the assistant, and <b>🚗 Ride</b>.</li>
    <li><b>Right side:</b> Needs you (Approve or Redo with a reason, kid requests, reward requests), Tonight’s dinner and the Intercom.</li>
-   <li><b>Kid Home is a path through the day:</b> a progress bar and coin jar on top, then chores and events as big stepping stones in time order. Tap a chore to finish it, it goes to a parent to approve and the coins arrive once approved. Ask a parent, Check in and Ask Fam sit on the side.</li>
-   <li><b>Teen</b> sees the kid path with their own events, plus a thin family strip. Switch roles above.</li>
+   <li><b>Kid Home has two clear halves:</b> <b>My to-do</b> (chores with the coins on each, tap when finished, it goes to a parent to approve) and <b>Today’s schedule</b> (their events in time order with the next one outlined). A small pulse on top shows chores done, the streak and the coin jar, then tonight’s dinner and Check in. Ask Fam and Ask a parent are in the top strip.</li>
+   <li><b>Teen</b> gets the same to-do and schedule with their own items. Switch roles above.</li>
   </ul>
   <div class="verdict" role="group" aria-label="Decision"><button class="a" id="va" aria-pressed="false">Approve</button><button class="c" id="vc" aria-pressed="false">Needs changes</button></div>
   <textarea id="cm" placeholder="What should change?" aria-label="Change notes"></textarea>
@@ -331,7 +331,7 @@ const t12=h=>{const a=Math.floor(h),m=Math.round((h-a)*60);return (a%12||12)+':'
 const H0=8,HH=46,NOW=15.7;
 function topbar(){
  const need=S.pend.length+(S.asks?1:0)+(S.rewards?1:0);const id=me();
- const chips=S.role==='parent'?`<span class="ch" style="background:var(--lav-col);color:var(--lav)">${need?need+' waiting on you':'Nothing waiting on you'}</span><span class="ch" style="background:var(--amber-col);color:var(--amber)">${S.ev.length} plans today</span><span class="ch" style="background:var(--well);color:var(--muted)">68°F · Partly cloudy</span>`:`<span class="ch" style="background:var(--lav-col);color:var(--lav)">${S.ch.filter(c=>c.who===id&&!c.d).length} chores to do</span><span class="ch" style="background:var(--amber-col);color:var(--amber)">🪙 ${S.coins[id]||0} coins</span><span class="ch" style="background:var(--well);color:var(--muted)">68°F · Partly cloudy</span>`;
+ const chips=S.role==='parent'?`<span class="ch" style="background:var(--lav-col);color:var(--lav)">${need?need+' waiting on you':'Nothing waiting on you'}</span><span class="ch" style="background:var(--amber-col);color:var(--amber)">${S.ev.length} plans today</span><span class="ch" style="background:var(--well);color:var(--muted)">68°F · Partly cloudy</span>`:`<span class="ch" style="background:var(--lav-col);color:var(--lav)">${S.ch.filter(c=>c.who===id&&!c.d).length} to do today</span><span class="ch" style="background:var(--amber-col);color:var(--amber)">🪙 ${S.coins[id]||0} coins</span><span class="ch" style="background:var(--well);color:var(--muted)">68°F · Partly cloudy</span>`;
  const qa=S.role==='parent'?`<button class="qb" style="background:var(--primary);color:#fff" data-open="task"><span>＋</span>Task</button><button class="qb" style="background:var(--sage-card);color:var(--sage)" data-open="event"><span>＋</span>Event</button><button class="qb" style="background:var(--lav-card);color:var(--lav)" data-open="askfam"><span>✨</span>Ask Fam</button><button class="qb" style="background:var(--peach-card);color:var(--peach-fg)" data-open="ride"><span>🚗</span>Ride</button>`:`<button class="qb" style="background:var(--lav-card);color:var(--lav)" data-open="askfam"><span>✨</span>Ask Fam</button><button class="qb" style="background:var(--primary);color:#fff" data-open="ask"><span>🙋</span>Ask a parent</button>`;
  return `<div class="top"><div><div class="greet">Good afternoon, ${M[id].n}</div><div class="chips">${chips}</div></div><div class="ph" style="margin-left:18px">${['🎂','🍂','🎉'].map((e,i)=>`<div style="background:var(--${PAL[i]}-card)">${e}</div>`).join('')}</div><div class="qa">${qa}</div></div>`}
 function board(){
@@ -350,15 +350,22 @@ function side(){
  <div class="talk">🎙️ Intercom<button class="btn" data-open="intercom">Talk</button></div></div>`}
 function parentHome(){return topbar()+`<div class="body">${board()}${side()}</div>`}
 function kidHome(){
- const id=me();const mine=S.ch.filter(c=>c.who===id).map(c=>({k:'c',h:c.h,t:c.t,c:c.c,d:c.d,id:c.id}));
- const evs=S.ev.filter(e=>e.who===id).map(e=>({k:'e',h:e.s,t:e.n,d:e.e<NOW}));
- const all=[...mine,...evs].sort((a,b)=>a.h-b.h);const todo=mine.filter(c=>!c.d).length,done=mine.length-todo;
- const nowI=all.findIndex(x=>x.h>=NOW-.5);
- return topbar()+`<div class="kh"><div class="path"><div style="display:flex;align-items:center;gap:16px"><div style="flex:1"><div class="big">${done}<span style="font-size:22px;color:var(--muted)"> / ${mine.length} chores</span></div><div style="font-weight:800;color:var(--sage);margin-top:4px">${todo?todo+' to go. You can do it!':'All done! You’re on fire today 🔥'}</div></div><div class="jar"><span class="em">🫙</span><div><div class="big" style="font-size:32px">${S.coins[id]||0}</div><small style="font-weight:800;color:var(--amber)">coins · 🔥 5-day streak</small></div></div></div>
- <div class="bar"><i style="width:${mine.length?done/mine.length*100:0}%"></i></div>
- <div class="stones">${all.map((x,i)=>{const c=PAL[i%4];return `<button class="st ${x.k==='e'?'ev':''} ${x.d?'done':''} ${i===nowI?'now':''}" ${x.k==='c'?`data-chore="${x.id}"`:`data-toast="${x.t}"`} style="--c-col:var(--${c}-col);--c-card:var(--${c}-card);--c-fg:var(--${c==='peach'?'peach-fg':c})"><span class="dot">${x.d?'✓':x.k==='e'?'📅':''}</span><div><b>${x.t}</b><small>${t12(x.h)}${x.k==='c'?(x.d?' · sent to a parent':' · tap when finished'):''}</small></div>${x.k==='c'?`<span class="coin">🪙 ${x.c}</span>`:''}</button>`}).join('')}</div></div>
- <div class="side">${eb('TONIGHT · 6:30 PM','var(--sage)')}<div class="tn"><span class="em">🍝</span><div style="flex:1"><b>Lemon chicken pasta</b><small>Dan is cooking</small></div></div>${eb('FAMILY','var(--primary)')}<div class="card" style="display:flex;gap:6px;flex-wrap:wrap">${IDS.map(p=>`<span style="display:flex;align-items:center;gap:6px;font-weight:800;font-size:13px">${av(p,30)}${M[p].n}</span>`).join('')}</div>
- <div class="talk" style="background:var(--sage-col);border-color:var(--sage-card);color:var(--sage)">📍 Check in<button class="btn" style="background:var(--sage)" data-toast="Maya was told you are home">I’m home</button></div></div></div>`}
+ const id=me();const mine=S.ch.filter(c=>c.who===id).sort((a,b)=>a.h-b.h);
+ const evs=S.ev.filter(e=>e.who===id).sort((a,b)=>a.s-b.s);
+ const todo=mine.filter(c=>!c.d).length,done=mine.length-todo;
+ const nowEv=evs.findIndex(e=>e.e>NOW);
+ const pct=mine.length?Math.round(done/mine.length*100):0;
+ return topbar()+`<div class="kh2"><div class="kcol">
+  <div class="khero"><div class="dial" style="background:conic-gradient(var(--sage) ${pct*3.6}deg,var(--canvas) 0)"><i><div><b>${done}/${mine.length}</b><span>done</span></div></i></div><div style="flex:1"><div style="font:800 21px var(--display);letter-spacing:-.4px">${todo?todo+' to do today':'All done! You’re on fire 🔥'}</div><small style="color:var(--muted);font-weight:700">🔥 5-day streak</small></div><div class="jar"><span class="em">🫙</span><div><div class="big" style="font-size:30px">${S.coins[id]||0}</div><small style="font-weight:800;color:var(--amber)">coins</small></div></div></div>
+  ${eb('MY TO-DO','var(--primary)')}
+  <div class="stones">${mine.map((c,i)=>{const k=PAL[i%4];const sent=c.d;return `<button class="st ${sent?'done':''}" data-chore="${c.id}" style="--c-col:var(--${k}-col);--c-card:var(--${k}-card);--c-fg:var(--${k==='peach'?'peach-fg':k})"><span class="dot">${sent?'✓':''}</span><div><b>${c.t}</b><small>${sent?'Sent to a parent to approve':'Due '+t12(c.h)+' · tap when finished'}</small></div><span class="coin">🪙 ${c.c}</span></button>`}).join('')||'<div class="need"><b>Nothing to do today 🎉</b></div>'}</div>
+  <div class="who" style="gap:6px"><span class="ch" style="background:var(--lav-col);color:var(--lav)">Bounties: 2 open</span><span class="ch" style="background:var(--sage-col);color:var(--sage)">Approved this week: 6</span></div>
+ </div><div class="kcol">
+  ${eb('TODAY’S SCHEDULE','var(--sage)')}
+  <div class="stones">${evs.map((e,i)=>{const k=PAL[(i+1)%4];const past=e.e<=NOW;return `<button class="st ev ${past?'done':''} ${i===nowEv?'now':''}" data-toast="${e.n}" style="--c-col:var(--${k}-col);--c-card:var(--${k}-card);--c-fg:var(--${k==='peach'?'peach-fg':k})"><span class="dot">${past?'✓':'📅'}</span><div><b>${e.n}</b><small>${t12(e.s)} – ${t12(e.e)}${i===nowEv?' · up next':''}</small></div></button>`}).join('')}</div>
+  ${eb('TONIGHT · 6:30 PM','var(--amber)')}<div class="tn"><span class="em">🍝</span><div style="flex:1"><b>Lemon chicken pasta</b><small>Dan is cooking</small></div></div>
+  <div class="talk" style="background:var(--sage-col);border-color:var(--sage-card);color:var(--sage)">📍 Check in<button class="btn" style="background:var(--sage)" data-toast="Maya was told you are home">I’m home</button></div>
+ </div></div>`}
 function dshell(t,sub,em,body,foot){return `<div class="scrim" data-close></div><aside class="drawer" role="dialog" aria-label="${t}"><div class="dh"><div class="em" style="background:var(--lav-card)">${em}</div><div style="flex:1"><h3>${t}</h3><small>${sub||''}</small></div><button class="iconb" data-close aria-label="Close">✕</button></div><div class="db">${body}</div>${foot?`<div class="df">${foot}</div>`:''}</aside>`}
 function drawer(){
  const d=S.drawer;if(!d)return '';const [t,a]=d.split(':');

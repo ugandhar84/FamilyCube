@@ -2,7 +2,7 @@
  * ImportantDateEditScreen — add, edit or delete ONE school date for a child (early release, picture day, conference, field
  * trip…). It is a normal calendar event in the School category, so it shows on the Schedule too.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OverlayPage, OverlayHeading } from '@/components/OverlayPage';
@@ -10,6 +10,7 @@ import { GEMINI } from '@/constants/geminiRhythm';
 import { RHYTHM } from '@/constants/theme';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { ScanDateField } from '../health/ScanDateField';
 import { TimeField } from './TimeField';
 import { fmtDate } from '@/lib/dates';
@@ -23,6 +24,14 @@ export function ImportantDateEditScreen({ colors, isDark, memberId, memberName, 
   zIndex?: number;
 }) {
   const insets = useSafeAreaInsets();
+  const members = useFamilyStore(s => s.members);
+  const allKids = useMemo(() => members.filter(m => m.role === 'kid' || m.role === 'teen'), [members]);
+  // Who it is for: the children it was saved for (or this child, for a new one). Pick one, several or all.
+  const [picked, setPicked] = useState<string[]>(() => {
+    const ids = event?.memberIds?.length ? event.memberIds : event?.memberId ? [event.memberId] : [memberId];
+    const kidIds = ids.filter(id => allKids.some(k => k.id === id));
+    return kidIds.length ? kidIds : [memberId];
+  });
   const [title, setTitle] = useState(event?.title ?? '');
   const [date, setDate] = useState<string | null>(event?.date ?? null);
   const [allDay, setAllDay] = useState(event ? (!event.time || !!event.allDay) : true);
@@ -46,6 +55,7 @@ export function ImportantDateEditScreen({ colors, isDark, memberId, memberName, 
     if (busy) return;
     if (!title.trim()) { setError('Give it a name.'); return; }
     if (!date) { setError('Pick the date.'); return; }
+    if (picked.length === 0) { setError('Choose at least one child.'); return; }
     if (!allDay && (!start || (end && toMin(end) <= toMin(start)))) { setError('The end time has to be after the start time.'); return; }
     setBusy(true);
     try {
@@ -56,12 +66,14 @@ export function ImportantDateEditScreen({ colors, isDark, memberId, memberName, 
         endTime: allDay ? undefined : end ?? undefined,
         allDay: allDay || undefined,
         notes: notes.trim() || undefined,
+        memberId: picked[0],
+        memberIds: picked.length > 1 ? picked : undefined,
       };
       if (event) {
-        await st.updateEvent(event.id, { ...fields, allDay: allDay });
+        await st.updateEvent(event.id, { ...fields, memberIds: picked.length > 1 ? picked : [], allDay: allDay });
       } else {
         const me = useFamilyStore.getState().activeMemberId ?? undefined;
-        const id = await st.addEvent({ ...fields, category: 'School', type: 'event', memberId, createdBy: me, approvalPending: false } as any);
+        const id = await st.addEvent({ ...fields, category: 'School', type: 'event', createdBy: me, approvalPending: false } as any);
         if (!id) { setError('Could not save. Check your connection and try again.'); return; }
       }
       onClose();
@@ -84,6 +96,32 @@ export function ImportantDateEditScreen({ colors, isDark, memberId, memberName, 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, paddingBottom: insets.bottom + RHYTHM.section, gap: RHYTHM.item }}>
+            {allKids.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={[label, { marginBottom: 0 }]}>For</Text>
+                  {allKids.length > 1 && (
+                    <TouchableOpacity onPress={() => { setPicked(picked.length === allKids.length ? [] : allKids.map(k => k.id)); setError(''); }}>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: BLUE }}>{picked.length === allKids.length ? 'Clear' : 'All kids'}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                  {allKids.map(k => {
+                    const on = picked.includes(k.id);
+                    return (
+                      <TouchableOpacity key={k.id} onPress={() => { setPicked(prev => on ? prev.filter(x => x !== k.id) : [...prev, k.id]); setError(''); }}
+                        accessibilityRole="button" accessibilityState={{ selected: on }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 100, borderWidth: 1.5, paddingVertical: 6, paddingLeft: 6, paddingRight: 14,
+                          borderColor: on ? BLUE : border, backgroundColor: on ? BLUE + '18' : cardBg }}>
+                        <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} size={28} />
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: on ? BLUE : titleC }}>{k.name.split(' ')[0]}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
             <View style={field}>
               <Text style={label}>What is it</Text>
               <TextInput value={title} onChangeText={t => { setTitle(t); setError(''); }} placeholder="e.g. Picture day, Early release, Parent conference"

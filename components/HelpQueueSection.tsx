@@ -169,7 +169,7 @@ function BottomSheet({ visible, title, onClose, colors, isDark, children }: {
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(92);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       {/* Backdrop — tap to dismiss */}
       <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
 

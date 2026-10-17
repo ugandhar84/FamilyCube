@@ -323,7 +323,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   if (!visible) return null;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={close}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="slide" onRequestClose={close}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={close} />

@@ -32,7 +32,7 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
   }, []);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <View style={[dm.backdrop, { paddingBottom: keyboardHeight }]}>
         <View style={[dm.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
           <View style={[dm.handle, { backgroundColor: colors.border }]} />

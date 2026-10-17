@@ -196,7 +196,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" presentationStyle="overFullScreen" onRequestClose={resetAndClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" presentationStyle="overFullScreen" onRequestClose={resetAndClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         {/* Backdrop — absolute so it covers the full modal window including tab bar area */}
         <Pressable style={StyleSheet.absoluteFill} onPress={resetAndClose} />

@@ -447,7 +447,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <AiConsentSheet
         visible={showAiConsent}
         memberId={actorId}

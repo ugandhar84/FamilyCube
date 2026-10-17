@@ -2304,7 +2304,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="slide" onRequestClose={onClose}>
       {/* Live-reported: KeyboardAvoidingView previously wrapped the whole
           sheet — 'padding' behavior slid the entire card up 1:1 with the
           keyboard instead of the sheet staying anchored near the screen's

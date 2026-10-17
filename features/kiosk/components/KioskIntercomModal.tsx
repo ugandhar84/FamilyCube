@@ -48,7 +48,7 @@ export function KioskIntercomModal({ visible, onClose, fromMemberId }: {
   const close = () => { setResult(null); setDraft(''); onClose(); };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={close}>
       <KioskModalHost style={s.host}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}

@@ -94,7 +94,7 @@ export function DueDateTimePicker({
       </View>
 
       {(showDatePick || showTimePick) && (
-        <Modal transparent animationType="fade" visible onRequestClose={closeAll}>
+        <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={closeAll}>
           <TouchableOpacity style={overlayStyle} activeOpacity={1} onPress={closeAll}>
             <TouchableOpacity activeOpacity={1} style={[cardStyle, { backgroundColor: colors.card }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>

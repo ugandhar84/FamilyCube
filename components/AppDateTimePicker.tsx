@@ -191,7 +191,7 @@ function AndroidPicker({ visible, value, mode, minimumDate, maximumDate, accent,
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onCancel}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="none" onRequestClose={onCancel}>
       <Animated.View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.45)', opacity: fadeAnim }]}>
         <Pressable style={StyleSheet.absoluteFillObject} onPress={onCancel} />
       </Animated.View>
@@ -318,7 +318,7 @@ export default function AppDateTimePicker({
   const themeVar  = themeVariant ?? (isDark ? 'dark' : 'light');
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={onCancel} />
       <View style={[ios.sheet, { backgroundColor: colors.card }]}>
         {/* Header */}

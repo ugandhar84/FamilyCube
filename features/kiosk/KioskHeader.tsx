@@ -181,7 +181,7 @@ export function KioskHeader({
                     emoji={m.emoji}
                     avatarUrl={m.avatarUrl}
                     siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
-                    size={52}
+                    size={42}
                     ringWidth={3}
                     ringColor={isActive ? tint : k.cardBorder}
                     bgColor={isActive ? tint + (isDark ? '2E' : '1F') : k.well}
@@ -349,12 +349,12 @@ const s = StyleSheet.create({
   brandText: { fontSize: KIOSK_TYPO.micro, fontWeight: '900', letterSpacing: 1.6, maxWidth: 130 },
   avatarScroll: { flex: 1, minWidth: 0 },
   avatarRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, alignItems: 'center' },
-  avatarItem: { alignItems: 'center', gap: 4, width: 72 },
+  avatarItem: { alignItems: 'center', gap: 2, width: 60 },
   avatarRing: {
     width: 42, height: 42, borderRadius: 21, borderWidth: 2.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarRingWrap: { width: 52, height: 52 },
+  avatarRingWrap: { width: 42, height: 42 },
   avatarEmoji: { fontSize: 19 },
   pinBadge: {
     position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9,
@@ -364,7 +364,7 @@ const s = StyleSheet.create({
 
   right: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs, marginLeft: 'auto' },
   clockCol: { alignItems: 'flex-end', marginRight: KIOSK_SPACE.sm },
-  clock: { fontSize: 30, fontWeight: '800', letterSpacing: -1, fontVariant: ['tabular-nums'] },
+  clock: { fontSize: 22, fontWeight: '800', letterSpacing: -1, fontVariant: ['tabular-nums'] },
   date: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
   weatherChip: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3,

@@ -130,7 +130,7 @@ export default function PhotoRedactModal({
        standard native photo-capture-review look — not the app's warm
        Kinfolk palette, same reasoning as the original ScanReviewSheet
        implementation this was extracted from. */
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onDiscard}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} animationType="slide" transparent onRequestClose={onDiscard}>
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <View style={{ paddingTop: insets.top + 12, paddingBottom: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#111' }}>
           <TouchableOpacity onPress={onDiscard} style={{ padding: 6 }}>

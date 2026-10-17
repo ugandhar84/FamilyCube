@@ -41,7 +41,7 @@ export function KioskTabBar({ items, active, onSelect, badges }: {
     >
       {on && <View style={[s.indicator, { backgroundColor: k.primary }]} />}
       <View>
-        <Icon size={26} color={on ? k.primary : k.textFaint} strokeWidth={2} />
+        <Icon size={22} color={on ? k.primary : k.textFaint} strokeWidth={2} />
         {!!badge && (
           <View style={[s.badge, { backgroundColor: k.primary, borderColor: k.card }]}>
             <Text style={[s.badgeText, { color: k.onPrimary }]}>{badge > 9 ? '9+' : badge}</Text>
@@ -67,7 +67,7 @@ export function KioskTabBar({ items, active, onSelect, badges }: {
                 style={({ pressed }) => [s.moreItem, { backgroundColor: on ? k.primarySoft : k.well }, pressed && { opacity: 0.7 }]}
                 accessibilityRole="button" accessibilityLabel={label}
               >
-                <Icon size={26} color={on ? k.primary : k.textMuted} />
+                <Icon size={22} color={on ? k.primary : k.textMuted} />
                 <Text style={[s.moreLabel, { color: on ? k.primary : k.text }]}>{label}</Text>
                 {!!b && <Text style={[s.moreBadge, { color: k.primary }]}>{b}</Text>}
               </Pressable>
@@ -92,7 +92,7 @@ const s = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: KIOSK_SPACE.lg,
     zIndex: 10,
   },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, minHeight: 68 },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, minHeight: 58 },
   indicator: { position: 'absolute', top: 0, left: '24%', right: '24%', height: 3, borderRadius: 2 },
   label: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   badge: {

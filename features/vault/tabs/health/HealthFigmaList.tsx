@@ -621,7 +621,7 @@ export default function HealthFigmaList({
       {/* ── Member picker (drives the real medMemberFilter/vaxMemberFilter
           state — HealthFilterSheet owns the full multi-select UI; this is
           a quick single-tap shortcut matching the mockup's "Ruth ▾" pill). ── */}
-      <Modal visible={showMemberPicker} transparent animationType="fade" onRequestClose={() => setShowMemberPicker(false)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={showMemberPicker} transparent animationType="fade" onRequestClose={() => setShowMemberPicker(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
           activeOpacity={1} onPress={() => setShowMemberPicker(false)}>
           <TouchableOpacity activeOpacity={1} style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: cardBg, paddingBottom: 24, paddingTop: 14, paddingHorizontal: 18 }}>

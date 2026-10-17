@@ -219,7 +219,7 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={m.backdrop}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', maxWidth: 480, alignSelf: 'center' }}>
           <View style={[m.sheet, { backgroundColor: colors.card }]}>

@@ -1802,7 +1802,7 @@ export default function ChatScreen() {
       />
 
       {/* ── Quick emoji (double-tap) ── */}
-      <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
         <Pressable style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setQuickEmojiFor(null)}>
           <View style={withAndroidShadowFix({ flexDirection: 'row', backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 })}>
             {QUICK_REACTIONS.map(e => (
@@ -1849,7 +1849,7 @@ export default function ChatScreen() {
       />
 
       {/* ── Image lightbox ── */}
-      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}
           onPress={() => setLightboxUri(null)}>
           {/* Was height: '80%' — a fixed shrink on top of resizeMode
@@ -1869,7 +1869,7 @@ export default function ChatScreen() {
       </Modal>
 
       {/* ── Video lightbox ── */}
-      <Modal visible={!!videoLightboxUri} transparent animationType="fade"
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!videoLightboxUri} transparent animationType="fade"
         onRequestClose={() => setVideoLightboxUri(null)}>
         <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
           {/* Was height: '55%' — a small fixed-height window floating in a

@@ -116,7 +116,7 @@ export function ChoreHistorySheet({ choreId, title, members, onClose }: {
   const close = () => { setRows([]); onClose(); };
 
   return (
-    <Modal visible={!!choreId} transparent animationType="slide" onRequestClose={close}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={!!choreId} transparent animationType="slide" onRequestClose={close}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
         <Pressable style={{ flex: 1 }} onPress={close} />
         <View style={withAndroidShadowFix({ borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingTop: 12, maxHeight: '80%', backgroundColor: colors.card,

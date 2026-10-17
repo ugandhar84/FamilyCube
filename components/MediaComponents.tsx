@@ -191,7 +191,7 @@ function MediaViewerBase({ visible, mediaType, uri, onClose, urls, startIndex, o
   }, [visible, startIndex, multiImages, screenW]);
 
   return (
-    <Modal visible={visible} animationType="none" statusBarTranslucent onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} animationType="none" statusBarTranslucent onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         {multiImages ? (
           <ScrollView

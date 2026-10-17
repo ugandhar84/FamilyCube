@@ -333,7 +333,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
                 </TouchableOpacity>
               </FieldRow>
               {showAdminPick && (
-                <Modal transparent animationType="fade" visible onRequestClose={() => setShowAdminPick(false)}>
+                <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowAdminPick(false)}>
                   <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowAdminPick(false)}>
                     <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -364,7 +364,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
                 </TouchableOpacity>
               </FieldRow>
               {showNextPick && (
-                <Modal transparent animationType="fade" visible onRequestClose={() => setShowNextPick(false)}>
+                <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowNextPick(false)}>
                   <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowNextPick(false)}>
                     <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

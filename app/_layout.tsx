@@ -1444,7 +1444,7 @@ function RootNavigator() {
       {/* Splash modal — Modal creates its own UIWindow above the tab bar,
           so nothing bleeds through. onLayout fires once the gradient is
           painted, then we call hideAsync so native→animated is a seamless swap. */}
-      <Modal
+      <Modal supportedOrientations={['portrait', 'landscape']}
         visible={!splashGone}
         transparent={true}
         animationType="none"

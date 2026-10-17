@@ -1708,7 +1708,7 @@ export function QuestDetailModal({ quest, onClose, onDelete, canEdit, isParent, 
           still respecting its own aspect ratio — never cropped, never
           stretched, just no longer artificially capped. ── */}
       {proofViewerUri && (
-        <Modal visible animationType="fade" transparent onRequestClose={() => setProofViewerUri(null)}>
+        <Modal supportedOrientations={['portrait', 'landscape']} visible animationType="fade" transparent onRequestClose={() => setProofViewerUri(null)}>
           <TouchableOpacity activeOpacity={1} onPress={() => setProofViewerUri(null)}
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)' }}>
             <View style={{

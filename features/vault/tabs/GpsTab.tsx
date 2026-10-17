@@ -1311,7 +1311,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
         </ScrollView>
       </Animated.View>
 
-      <Modal visible={!!historyFor} animationType="slide" transparent onRequestClose={() => setHistoryFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!historyFor} animationType="slide" transparent onRequestClose={() => setHistoryFor(null)}>
         <View style={g.historyBackdrop}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setHistoryFor(null)} />
           <View style={[g.historySheet, { backgroundColor: colors.background }]}>
@@ -1357,7 +1357,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
         </View>
       </Modal>
 
-      <Modal visible={!!driverReportFor} animationType="slide" transparent onRequestClose={() => setDriverReportFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!driverReportFor} animationType="slide" transparent onRequestClose={() => setDriverReportFor(null)}>
         <View style={g.historyBackdrop}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setDriverReportFor(null)} />
           <View style={[g.historySheet, { backgroundColor: colors.background }]}>

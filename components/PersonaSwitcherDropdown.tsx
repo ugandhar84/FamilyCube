@@ -368,7 +368,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       {/* Light scrim, not a heavy dim — reads as a dropdown rather than a
           sheet, while Modal's own top-level layer still guarantees
           correct stacking above every screen's content. */}

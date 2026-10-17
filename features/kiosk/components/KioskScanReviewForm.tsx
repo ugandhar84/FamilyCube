@@ -170,7 +170,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
   const canSubmit = !!reviewMemberId;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <AiConsentSheet {...aiConsent} colors={{ card: k.card, textPrimary: k.text, textSecondary: k.textFaint, border: k.cardBorder, accent: k.gold }} />
       <KioskModalHost style={s.host}>
         <Pressable

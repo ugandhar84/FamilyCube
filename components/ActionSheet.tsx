@@ -54,7 +54,7 @@ export default function ActionSheet({ visible, onClose, actions }: Props) {
   );
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={ss.backdrop} />
       </TouchableWithoutFeedback>

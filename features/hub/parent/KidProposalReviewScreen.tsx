@@ -43,7 +43,7 @@ function ApproveModal({ chore, reviewerId, onDone, onCancel }: {
   }
 
   return (
-    <Modal transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" onRequestClose={onCancel}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' }}

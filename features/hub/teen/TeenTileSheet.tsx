@@ -21,7 +21,7 @@ export function TeenTileSheet({ visible, onClose, title, accentColor, colors, is
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={s.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { dismiss(); }} />

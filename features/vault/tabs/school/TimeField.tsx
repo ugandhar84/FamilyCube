@@ -70,7 +70,7 @@ export function TimeField({ label, value, onChange, colors, isDark, accent }: {
       </TouchableOpacity>
 
       {showPicker && (
-        <Modal transparent animationType="fade" visible onRequestClose={() => setShowPicker(false)}>
+        <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowPicker(false)}>
           <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}
             activeOpacity={1} onPress={() => setShowPicker(false)}>
             <TouchableOpacity activeOpacity={1}

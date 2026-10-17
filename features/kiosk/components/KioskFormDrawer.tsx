@@ -166,7 +166,7 @@ export function KioskFormDrawer({
   }, []);
 
   return (
-    <Modal
+    <Modal supportedOrientations={['portrait', 'landscape']}
       visible={visible}
       transparent
       // A drawer slides in from the edge it's anchored to; a centered card

@@ -331,7 +331,7 @@ export function GroceryModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -553,7 +553,7 @@ export function SuppliesModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -816,7 +816,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
             </View>
 
             {(pickingStart || pickingEnd) && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => { setPickingStart(false); setPickingEnd(false); }}>
+              <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => { setPickingStart(false); setPickingEnd(false); }}>
                 <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
                   activeOpacity={1} onPress={() => { setPickingStart(false); setPickingEnd(false); }}>
                   <TouchableOpacity activeOpacity={1}
@@ -1067,7 +1067,7 @@ export function AskModal({ visible, onClose, type, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -1148,7 +1148,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />

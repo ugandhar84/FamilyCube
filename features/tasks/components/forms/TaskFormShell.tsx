@@ -96,7 +96,7 @@ export function TaskFormShell({
   const isReview = currentStepId === reviewStepId;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       {/* Live-reported: KeyboardAvoidingView previously wrapped the WHOLE
           sheet — 'padding' behavior slid the entire card (including the
           fixed Next button) up 1:1 with the keyboard, so the button kept

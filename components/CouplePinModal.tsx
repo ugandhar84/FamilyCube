@@ -311,7 +311,7 @@ export default function CouplePinModal({ visible, mode, channelId, otherMemberId
   // poorly for a quick PIN entry [live-reported: "not good just open a
   // pop for the pin"]. Now both share one presentation.
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={styles.tabletScrim} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close">
         <Pressable style={[styles.tabletCard, { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
           {content}

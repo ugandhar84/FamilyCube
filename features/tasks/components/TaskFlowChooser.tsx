@@ -44,7 +44,7 @@ export function TaskFlowChooser({
   ];
 
   return (
-    <Modal
+    <Modal supportedOrientations={['portrait', 'landscape']}
       visible={visible}
       transparent
       animationType="slide"

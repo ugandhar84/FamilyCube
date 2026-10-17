@@ -554,7 +554,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
               </FieldRow>
             </SectionCard>
             {showTimePickerIdx !== null && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => setShowTimePickerIdx(null)}>
+              <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowTimePickerIdx(null)}>
                 <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowTimePickerIdx(null)}>
                   <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -603,7 +603,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
               </TouchableOpacity>
             </FieldRow>
             {showStartPicker && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => setShowStartPicker(false)}>
+              <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowStartPicker(false)}>
                 <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowStartPicker(false)}>
                   <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -631,7 +631,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                 </TouchableOpacity>
               </FieldRow>
             {showEndPicker && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => setShowEndPicker(false)}>
+              <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowEndPicker(false)}>
                 <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowEndPicker(false)}>
                   <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -667,7 +667,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                 </TouchableOpacity>
               </FieldRow>
             {showRefillPicker && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => setShowRefillPicker(false)}>
+              <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowRefillPicker(false)}>
                 <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowRefillPicker(false)}>
                   <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: cardBg }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

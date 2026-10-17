@@ -28,7 +28,7 @@ export function ReceiptSubmissionModal({
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <Pressable style={{ flex: 1, backgroundColor: '#00000060', justifyContent: 'flex-end' }} onPress={dismiss}>
         <Pressable onPress={e => e.stopPropagation()}

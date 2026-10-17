@@ -225,7 +225,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity
         style={s.backdrop}
         activeOpacity={1}

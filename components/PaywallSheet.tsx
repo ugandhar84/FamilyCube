@@ -405,7 +405,7 @@ export default function PaywallSheet({
       {/* Parental gate — App Store guideline 1.3 (Kids category):
           a parent must solve a simple addition challenge before any
           purchase can proceed. A child cannot easily bypass this. */}
-      <Modal
+      <Modal supportedOrientations={['portrait', 'landscape']}
         visible={gateVisible}
         transparent
         animationType="fade"

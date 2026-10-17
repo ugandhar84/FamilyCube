@@ -28,7 +28,7 @@ export function SavingsMatchModal({
 }) {
   const actorName = active?.name ?? 'senior';
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={onClose} />
       <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 14 }}>
         <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Set Up Savings Match</Text>

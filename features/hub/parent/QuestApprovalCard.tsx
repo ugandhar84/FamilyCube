@@ -121,7 +121,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
       </View>
 
       {q.photoUrl && (
-        <Modal visible={photoOpen} transparent animationType="fade" onRequestClose={() => setPhotoOpen(false)}>
+        <Modal supportedOrientations={['portrait', 'landscape']} visible={photoOpen} transparent animationType="fade" onRequestClose={() => setPhotoOpen(false)}>
           <Pressable
             onPress={() => setPhotoOpen(false)}
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}>

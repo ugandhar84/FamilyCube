@@ -578,7 +578,7 @@ function KioskSheet({
 }) {
   const isDrawer = variant === 'drawer';
   return (
-    <Modal visible transparent animationType={isDrawer ? 'slide' : 'fade'} onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType={isDrawer ? 'slide' : 'fade'} onRequestClose={onClose}>
       <KioskModalHost style={s.overlay}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}

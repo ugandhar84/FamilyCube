@@ -86,7 +86,7 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
           </TouchableOpacity>
 
           {showDatePick && (
-            <Modal transparent animationType="fade" visible onRequestClose={() => setShowDatePick(false)}>
+            <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowDatePick(false)}>
               <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
                 activeOpacity={1} onPress={() => setShowDatePick(false)}>
                 <TouchableOpacity activeOpacity={1}

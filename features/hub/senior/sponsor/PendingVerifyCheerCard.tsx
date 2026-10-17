@@ -226,7 +226,7 @@ export function PendingVerifyCheerCard({
       {/* Full-screen photo lightbox — the thumbnail is the only way a GP
           can inspect proof before deciding approve vs. redo, so it needs
           to actually enlarge, not just sit there at 44x44. */}
-      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={{ flex: 1, backgroundColor: '#000' }} onPress={() => setLightboxUri(null)}>
           <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 10 }}>
             <Pressable onPress={() => setLightboxUri(null)}

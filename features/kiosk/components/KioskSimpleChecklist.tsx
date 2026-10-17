@@ -157,19 +157,19 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
 const s = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md,
-    minHeight: 72, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.md,
+    minHeight: 60, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.md,
   },
   circle: {
-    width: 44, height: 44, borderRadius: 22, borderWidth: 3,
+    width: 34, height: 34, borderRadius: 17, borderWidth: 3,
     alignItems: 'center', justifyContent: 'center',
   },
   rowNext: { borderWidth: 3 },
   addBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, fontSize: KIOSK_TYPO.subheading, fontWeight: '700' },
+  title: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   empty: { fontSize: KIOSK_TYPO.body, fontWeight: '600', paddingVertical: KIOSK_SPACE.md },
   allDone: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md,
     borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.md,
   },
-  allDoneText: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  allDoneText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
 });

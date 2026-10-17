@@ -75,7 +75,7 @@ export function Section({ label, accent, k, right, children, flex }: {
 export function Dial({ pct, value, caption, color, track, inner, k }: {
   pct: number; value: string; caption: string; color: string; track: string; inner: string; k: KioskColors;
 }) {
-  const size = 84, stroke = 8, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  const size = 68, stroke = 7, r = (size - stroke) / 2, c = 2 * Math.PI * r;
   const p = Math.max(0, Math.min(1, pct));
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -178,7 +178,7 @@ export function TonightCard({ meal, cook, k, isDark, onOpen }: {
     <Pressable onPress={onOpen} disabled={!onOpen} accessibilityRole="button" accessibilityLabel="Open meals">
       <RaisedCard k={k} isDark={isDark} style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md }}>
         <View style={[s.mealEmoji, { backgroundColor: k.sageSoft }]}>
-          <Text style={{ fontSize: 34 }}>{meal?.emoji ?? '🍽️'}</Text>
+          <Text style={{ fontSize: 28 }}>{meal?.emoji ?? '🍽️'}</Text>
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[s.mealTitle, { color: k.text }]} numberOfLines={2}>{meal ? meal.title : 'No dinner planned yet'}</Text>
@@ -199,7 +199,7 @@ export function ActionTile({ label, emoji, bg, fg, onPress, row }: {
       onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
       style={({ pressed }) => [s.tile, row && s.tileRow, { backgroundColor: bg, opacity: pressed ? 0.75 : 1 }]}
     >
-      <Text style={{ fontSize: row ? 24 : 26 }}>{emoji}</Text>
+      <Text style={{ fontSize: 20 }}>{emoji}</Text>
       <Text style={[s.tileText, { color: fg }]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
@@ -211,24 +211,24 @@ const s = StyleSheet.create({
   eyeText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1.1 },
   eyeRight: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
   section: { gap: KIOSK_SPACE.sm },
-  dialValue: { fontSize: 19, fontWeight: '800' },
-  dialCap: { fontSize: 10.5, fontWeight: '700' },
-  pulse: { borderRadius: KIOSK_RADIUS.xl, borderWidth: 1, padding: KIOSK_SPACE.lg, gap: KIOSK_SPACE.md },
+  dialValue: { fontSize: 15, fontWeight: '800' },
+  dialCap: { fontSize: 9.5, fontWeight: '700' },
+  pulse: { borderRadius: KIOSK_RADIUS.xl, borderWidth: 1, padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.md },
   raised: { borderRadius: KIOSK_RADIUS.xl, borderWidth: 1, padding: KIOSK_SPACE.md },
-  empty: { fontSize: KIOSK_TYPO.body, fontWeight: '600', paddingVertical: KIOSK_SPACE.sm },
+  empty: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', paddingVertical: KIOSK_SPACE.sm },
   evRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm },
-  evTime: { width: 78, textAlign: 'right', fontSize: KIOSK_TYPO.caption, fontWeight: '800', paddingTop: 1 },
+  evTime: { width: 70, textAlign: 'right', fontSize: KIOSK_TYPO.label, fontWeight: '800', paddingTop: 1 },
   evRail: { width: 20, alignItems: 'center' },
   evDot: { width: 12, height: 12, borderRadius: 6, marginTop: 4 },
   evLine: { width: 2, flex: 1, marginTop: 2 },
-  evTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
-  evSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '600' },
-  mealEmoji: { width: 64, height: 64, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', justifyContent: 'center' },
-  mealTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
+  evTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  evSub: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
+  mealEmoji: { width: 52, height: 52, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', justifyContent: 'center' },
+  mealTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
   tile: {
-    flex: 1, minHeight: 78, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', justifyContent: 'center',
+    flex: 1, minHeight: 60, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingHorizontal: 6,
   },
   tileRow: { flexDirection: 'row', gap: 10 },
-  tileText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  tileText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
 });

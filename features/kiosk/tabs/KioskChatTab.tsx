@@ -699,7 +699,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
           earlier version tried sizing this drawer to the grid's own
           measured rect, which left no room for the panel to shrink into
           and broke the keyboard fix again). */}
-      <Modal visible={threadOpen} transparent animationType="slide" onRequestClose={() => setThreadOpen(false)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={threadOpen} transparent animationType="slide" onRequestClose={() => setThreadOpen(false)}>
         <KioskModalHost style={s.threadHost}>
           <Pressable
             style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -1065,7 +1065,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       </Modal>
 
       {/* ── Quick emoji (double-tap) ── */}
-      <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
         {/* KioskModalHost, not just the useKioskLockSuspended above: a
             native Modal renders in its own window, so touches inside it
             never reach KioskScreen's root onTouchStart. The suspension
@@ -1139,7 +1139,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       />
 
       {/* ── Image lightbox ── */}
-      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={s.lightbox} onPress={() => setLightboxUri(null)}>
           {lightboxUri && (
             <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
@@ -1167,7 +1167,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 function VideoLightbox({ uri, onClose }: { uri: string | null; onClose: () => void }) {
   const player = useVideoPlayer(uri, pl => { pl.loop = false; pl.play(); });
   return (
-    <Modal visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.videoLightbox}>
         <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls />
         <Pressable onPress={onClose} style={s.lightboxClose}>

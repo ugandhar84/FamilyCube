@@ -9,9 +9,9 @@ create policy "sticky_notes_select" on family_sticky_notes for select
   using (
     family_id = public.current_user_family_id()::text
     and (
-      author_id in (select (public.current_user_member_ids())::text)
+      author_id in (select public.current_user_member_ids())
       or coalesce(array_length(recipient_ids, 1), 0) = 0
-      or recipient_ids && array(select (public.current_user_member_ids())::text)
+      or recipient_ids && array(select public.current_user_member_ids())
     )
   );
 
@@ -19,7 +19,7 @@ create policy "sticky_notes_select" on family_sticky_notes for select
 create policy "sticky_notes_insert" on family_sticky_notes for insert
   with check (
     family_id = public.current_user_family_id()::text
-    and author_id in (select (public.current_user_member_ids())::text)
+    and author_id in (select public.current_user_member_ids())
   );
 
 -- Delete: the author, or any parent in the family.
@@ -27,7 +27,7 @@ create policy "sticky_notes_delete" on family_sticky_notes for delete
   using (
     family_id = public.current_user_family_id()::text
     and (
-      author_id in (select (public.current_user_member_ids())::text)
+      author_id in (select public.current_user_member_ids())
       or exists (
         select 1 from public.members
         where auth_user_id = auth.uid() and role = 'parent' and family_id::text = family_sticky_notes.family_id

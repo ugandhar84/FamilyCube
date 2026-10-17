@@ -54,6 +54,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications']);
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
@@ -318,6 +319,21 @@ serve(async (req) => {
       return json({ ok: !data?.error, actingAs: actor.name, ...data });
     }
 
+    // 'table' — a table operation AS a scratch member's real session, so row-level security is exercised exactly
+    // as the app hits it (the service role would bypass it). Only for a small allowlist of tables.
+    if (action === 'table') {
+      const { table, op, row, match, select, actingMemberId } = body;
+      if (!TABLE_OP_ALLOWLIST.has(table)) throw new Error(`table not allowed: ${table}`);
+      const { scopedClient, actor } = await mintScratchMemberSession(admin, actingMemberId);
+      let q: any;
+      if (op === 'insert') q = scopedClient.from(table).insert(row).select();
+      else if (op === 'update') { q = scopedClient.from(table).update(row).select(); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
+      else if (op === 'delete') { q = scopedClient.from(table).delete().select(); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
+      else { q = scopedClient.from(table).select(select ?? '*'); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
+      const { data, error } = await q;
+      return json({ ok: !error, data: data ?? null, error: error?.message ?? null, actingAs: actor.name });
+    }
+
     if (action === 'read') {
       const { table, familyId, where } = body;
       if (!READ_ALLOWLIST.has(table)) throw new Error(`table not in allowlist: ${table}`);
@@ -403,6 +419,10 @@ async function deleteFamily(admin: ReturnType<typeof createClient>, familyId: st
   if (rewardIds.length) await admin.from('reward_redemptions').delete().in('reward_id', rewardIds);
   await admin.from('rewards').delete().eq('family_id', familyId);
   await admin.from('grocery_items').delete().eq('family_id', familyId);
+  await admin.from('family_sticky_notes').delete().eq('family_id', familyId);
+  await admin.from('family_meals').delete().eq('family_id', familyId);
+  await admin.from('family_recipes').delete().eq('family_id', familyId);
+  await admin.from('family_medications').delete().eq('family_id', familyId);
   await admin.from('kid_requests').delete().eq('family_id', familyId);
   await admin.from('trips').delete().eq('family_id', familyId);
   await admin.from('activity_log').delete().eq('family_id', familyId);

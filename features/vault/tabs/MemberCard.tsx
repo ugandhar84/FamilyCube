@@ -5,6 +5,8 @@
  * of the mock's like-counter, since PIN management is this app's
  * equivalent small per-card action). Frosted-glass shell for the card body.
  */
+import { relationLabel } from '@/lib/relationLabel';
+import { useFamilyStore } from '@/store/familyStore';
 import { memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -79,7 +81,10 @@ function MemberCardImpl({ m, isActive, isParentViewer, colors, isDark, siblings,
   const rc = roleColor(m.role, colors);
   const hasPin = !!m.pin;
   const baseLabel = m.relationship ?? ROLE_LABEL[m.role] ?? m.role;
-  const subtitle = isActive ? 'You' : (sidePrefix ? `${sidePrefix} ${baseLabel}` : baseLabel);
+  const allMembers = useFamilyStore(st => st.members);
+  const viewer = useFamilyStore(st => st.members.find(x => x.id === st.activeMemberId));
+  const rel = relationLabel(viewer as any, m as any, allMembers as any);
+  const subtitle = isActive ? 'You' : (rel ?? (sidePrefix ? `${sidePrefix} ${baseLabel}` : baseLabel));
 
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} onLongPress={onLongPress} delayLongPress={500}
@@ -250,7 +255,11 @@ function MemberTreeCardImpl({ m, isActive, isParentViewer, colors, isDark, sibli
 }) {
   const hasPin = !!m.pin;
   const baseLabel = m.relationship ?? ROLE_LABEL[m.role] ?? m.role;
-  const subtitle = subtitleOverride ?? (isActive ? `${baseLabel} · You` : baseLabel);
+  // Worded from the signed-in person's side (in-laws, Mom/Dad, Maternal Grandma ...); falls back to the saved label.
+  const allMembers = useFamilyStore(st => st.members);
+  const viewer = useFamilyStore(st => st.members.find(x => x.id === st.activeMemberId));
+  const rel = relationLabel(viewer as any, m as any, allMembers as any);
+  const subtitle = subtitleOverride ?? (isActive ? `${baseLabel} · You` : (rel ?? baseLabel));
   const cardBg = isDark ? colors.card : '#FFFFFF';
   const borderC = isDark ? colors.border : '#E4DFD6';
 

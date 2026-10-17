@@ -67,6 +67,8 @@ import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
 import { showToast } from '@/components/AppToast';
 import { useChatStore, dmChannelId, type ChatMessage } from '@/store/chatStore';
+import { getActiveFamilyKey, setActiveFamilyKey } from '@/lib/chatCrypto';
+import { isFamilyKeyStale } from '@/lib/familyKeyRotation';
 import {
   buildGroupChannels, formatDay, QUICK_REACTIONS, REPLY_KIND_LABEL,
 } from '@/features/chat/components/constants';
@@ -273,6 +275,34 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const [threadOpen, setThreadOpen] = useState(false);
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  // This device may not hold the family's security code yet (or its code is out of date). Then messages
+  // can't be read or sent; show a persistent amber notice with a field to enter the code, not a crash.
+  const familyId = (members[0] as any)?.familyId as string | undefined;
+  const [keyLocked, setKeyLocked] = useState(false);
+  const [codeDraft, setCodeDraft] = useState('');
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  useEffect(() => {
+    if (!familyId) return;
+    let off = false;
+    (async () => {
+      const [key, stale] = await Promise.all([getActiveFamilyKey(familyId), isFamilyKeyStale(familyId)]);
+      if (!off) setKeyLocked(!key || stale);
+    })();
+    return () => { off = true; };
+  }, [familyId]);
+  const unlockWithCode = async () => {
+    if (!familyId || !codeDraft.trim() || codeBusy) return;
+    setCodeBusy(true); setCodeError('');
+    try {
+      await setActiveFamilyKey(familyId, codeDraft.trim());
+      setCodeDraft(''); setKeyLocked(false);
+      await loadChannel(activeChannel);
+    } catch (e: any) {
+      setCodeError('That code was not accepted. Check it and try again.');
+    }
+    setCodeBusy(false);
+  };
   const [text, setText] = useState('');
 
   // Keyboard opening can leave the latest message behind it until the list
@@ -775,6 +805,21 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                   <XCircle size={16} color={k.textFaint} />
                 </Pressable>
               )}
+            </View>
+          )}
+
+          {keyLocked && (
+            <View style={s.amber} accessibilityRole="alert">
+              <Text style={s.amberT}>🔒 This iPad doesn’t have your family security code yet</Text>
+              <Text style={s.amberS}>Messages can’t be read or sent until you enter it. Find it on a phone under Profile → Data recovery.</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <TextInput value={codeDraft} onChangeText={setCodeDraft} placeholder="Family security code" placeholderTextColor="#A8803A" autoCapitalize="characters" autoCorrect={false}
+                  style={s.amberInput} accessibilityLabel="Family security code" onSubmitEditing={unlockWithCode} />
+                <Pressable onPress={unlockWithCode} disabled={codeBusy || !codeDraft.trim()} accessibilityRole="button" style={[s.amberBtn, { opacity: codeBusy || !codeDraft.trim() ? 0.5 : 1 }]}>
+                  <Text style={s.amberBtnT}>{codeBusy ? 'Checking…' : 'Unlock'}</Text>
+                </Pressable>
+              </View>
+              {!!codeError && <Text style={[s.amberS, { color: '#9A3412', marginTop: 4 }]}>{codeError}</Text>}
             </View>
           )}
 
@@ -1363,6 +1408,12 @@ function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPres
 }
 
 const s = StyleSheet.create({
+  amber: { backgroundColor: '#FFF4D6', borderColor: '#D97706', borderWidth: 1.5, borderRadius: 18, padding: 14, marginHorizontal: 4, marginBottom: 8 },
+  amberT: { color: '#7A4A00', fontSize: 16, fontWeight: '800' },
+  amberS: { color: '#7A4A00', fontSize: 13, fontWeight: '600', marginTop: 2, lineHeight: 18 },
+  amberInput: { flex: 1, minHeight: 46, borderRadius: 14, borderWidth: 1, borderColor: '#E0B060', backgroundColor: '#FFFFFF', paddingHorizontal: 14, fontSize: 15, fontWeight: '700', color: '#2C2722' },
+  amberBtn: { minHeight: 46, borderRadius: 14, paddingHorizontal: 18, backgroundColor: '#D97706', alignItems: 'center', justifyContent: 'center' },
+  amberBtnT: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   root: { flex: 1, flexDirection: 'row' },
   listPane: { width: 352, borderRightWidth: StyleSheet.hairlineWidth },
   listHead: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8 },

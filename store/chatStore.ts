@@ -6,6 +6,7 @@
  *  - Supabase Realtime subscription per channel
  *  - AsyncStorage write-ahead cache for offline compose queue
  */
+import { showToast } from '@/components/AppToast';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
@@ -955,10 +956,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const sender = members.find(m => m.id === senderId);
     const familyId = sender?.familyId;
     if (!familyId) throw new Error('Could not determine family for this message.');
-    if (await isFamilyKeyStale(familyId)) {
-      throw new Error('Your family security code is out of date — enter the new code to send messages.');
+    // A device without the current family code can't encrypt. That is an expected state, not a crash:
+    // show a visible alert and send nothing (the chat tab also shows a persistent banner for it).
+    let ciphertext: string;
+    try {
+      if (await isFamilyKeyStale(familyId)) {
+        throw new Error('Your family security code is out of date. Enter the new code to send messages.');
+      }
+      ciphertext = await encryptWithFamilyKey(familyId, text);
+    } catch (e: any) {
+      const noKey = /No family key|security code/i.test(e?.message ?? '');
+      showToast(noKey ? 'This device needs the family security code before it can send messages.' : (e?.message ?? 'Could not send the message.'), noKey ? 'warning' : 'error');
+      return undefined;
     }
-    const ciphertext = await encryptWithFamilyKey(familyId, text);
 
     // Generate UUID client-side — don't rely on DB default in case column was added later
     const msgId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {

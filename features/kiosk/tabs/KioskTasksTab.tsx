@@ -41,6 +41,7 @@
  * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { KioskChoresBoard } from '../components/KioskChoresBoard';
 import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, Modal, useWindowDimensions } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
@@ -126,10 +127,25 @@ export function KioskTasksTab({ active, members, colors, isDark, onNavigate }: {
     return () => clearInterval(id);
   }, []);
 
+  const { k } = useKioskColors();
+  const [fullView, setFullView] = useState<{ composer: boolean } | null>(null);
   if (active.role === 'senior') {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }
-  return <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} onNavigate={onNavigate} />;
+  if (fullView) {
+    return (
+      <View style={{ flex: 1 }}>
+        <Pressable
+          onPress={() => setFullView(null)} accessibilityRole="button" accessibilityLabel="Back to the chores board"
+          style={{ alignSelf: 'flex-start', margin: 12, minHeight: 44, borderRadius: 100, paddingHorizontal: 18, justifyContent: 'center', backgroundColor: k.well }}
+        >
+          <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: k.text }}>← Chores board</Text>
+        </Pressable>
+        <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} onNavigate={onNavigate} initialComposer={fullView.composer} />
+      </View>
+    );
+  }
+  return <KioskChoresBoard active={active} members={members} onFullView={(opts) => setFullView({ composer: !!opts?.composer })} />;
 }
 
 /**
@@ -212,9 +228,11 @@ function FilterPill({
 // including other kids', with no claim/submit action anywhere (live-
 // reported: "we need similar chore/event creation and claim like mobile
 // app... claim, submit, review all exact same mobile app functions").
-function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
+function KioskBoardView({ active, members, colors, isDark, onNavigate, initialComposer }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   onNavigate?: (tab: any) => void;
+  /** Open the new-chore composer immediately (the board's + button). */
+  initialComposer?: boolean;
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
@@ -309,7 +327,7 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
   // point there at all on mobile itself, see this port's own notes) —
   // kiosk's pre-existing `isParent &&` gate on the "New Chore" button
   // already matched that exactly, so it's left as-is here.
-  const [showComposer, setShowComposer] = useState(false);
+  const [showComposer, setShowComposer] = useState(!!initialComposer);
   const [manualQuestPrefill, setManualQuestPrefill] = useState<{
     title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
   } | undefined>(undefined);

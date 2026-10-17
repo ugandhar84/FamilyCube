@@ -162,6 +162,13 @@ const light = {
   /** Text on the standby ground — light in both modes, per the above. */
   standbyText: '#F7F2EE',
   standbyTextMuted: '#B7A9A1',
+  // ── Pastels — the phone's *Light tokens (primaryLight / tealLight /
+  // amberLight / pinkLight) as solid fills, plus a lighter tint of each for
+  // the big container behind them. Used by the Chores board's status columns.
+  pastelPrimary: '#FDF1EB', pastelPrimaryCard: '#FADFD2',
+  pastelSage: '#EAF2ED', pastelSageCard: '#D1E3D9',
+  pastelAmber: '#FCF3E1', pastelAmberCard: '#F9E5C1',
+  pastelLav: '#F2EEF8', pastelLavCard: '#E3DAF0',
 };
 
 const dark: typeof light = {
@@ -248,6 +255,10 @@ const dark: typeof light = {
   glassEdge: 'rgba(255,255,255,0.13)',
   standbyText: '#F7F2EE',
   standbyTextMuted: '#B7A9A1',
+  pastelPrimary: 'rgba(238,128,88,0.12)', pastelPrimaryCard: 'rgba(238,128,88,0.24)',
+  pastelSage: 'rgba(95,163,125,0.12)', pastelSageCard: 'rgba(95,163,125,0.24)',
+  pastelAmber: 'rgba(245,168,90,0.12)', pastelAmberCard: 'rgba(245,168,90,0.24)',
+  pastelLav: 'rgba(167,139,201,0.12)', pastelLavCard: 'rgba(167,139,201,0.24)',
 };
 
 export type KioskColors = typeof light;
@@ -324,4 +335,14 @@ export function kioskTint(accent: string, isDark: boolean): {
     borderColor: accent + (isDark ? '4D' : '3D'),
     color: accent,
   };
+}
+
+/** The four mobile pastels as {column, card, fg} triples, in a stable order. */
+export function kioskPastels(k: KioskColors) {
+  return [
+    { col: k.pastelPrimary, card: k.pastelPrimaryCard, fg: k.primary },
+    { col: k.pastelSage, card: k.pastelSageCard, fg: k.sage },
+    { col: k.pastelAmber, card: k.pastelAmberCard, fg: k.gold },
+    { col: k.pastelLav, card: k.pastelLavCard, fg: k.purple },
+  ];
 }

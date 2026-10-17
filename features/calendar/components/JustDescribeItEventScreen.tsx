@@ -443,12 +443,28 @@ export default function JustDescribeItEventScreen({
       );
       if (m) setEvMemberIds([m.id]);
     }
-    // Said only "pick up" (no "drop"): a single pick-up at the spoken time.
-    const said = input.toLowerCase();
-    const onlyPickup = detection?.category.kind === 'event' && detection.category.eventCategory === 'Ride'
-      && /pick[\s-]?up|collect/.test(said) && !/drop[\s-]?(off|in)?\b/.test(said);
-    setPickupOnly(onlyPickup);
-    if (onlyPickup) { setEvPickupNeeded(true); setEvDropNeeded(false); }
+    // Fill the transport part from what was said (all of it stays editable below).
+    const dir = detection?.rideDirection ?? null;
+    const isRide = detection?.category.kind === 'event' && detection.category.eventCategory === 'Ride';
+    const loc = detection?.locations;
+    if (isRide || dir) {
+      const place = loc?.dropoff ?? loc?.pickup ?? '';
+      if (dir === 'pickup') {
+        // One pick-up at the spoken time.
+        setPickupOnly(true); setEvPickupNeeded(true); setEvDropNeeded(false);
+        if (loc?.pickup) setEvPickupFrom(loc.pickup);
+        if (loc?.dropoff) setEvPickupTo(loc.dropoff);
+      } else if (dir === 'both') {
+        // Drop-off at the spoken time, pick-up at the second time (or an hour later when none was said).
+        setPickupOnly(false); setEvDropNeeded(true); setEvPickupNeeded(true);
+        if (detection?.when.returnTime) setEvEndTime(detection.when.returnTime.slice(0, 5));
+        if (loc?.dropoff ?? place) setEvDropTo(loc?.dropoff ?? place);
+        if (loc?.pickup ?? place) setEvPickupFrom(loc?.pickup ?? place);
+      } else if (dir === 'dropoff') {
+        setPickupOnly(false); setEvDropNeeded(true);
+        if (loc?.dropoff) setEvDropTo(loc.dropoff);
+      }
+    }
     setFormOpen(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   };

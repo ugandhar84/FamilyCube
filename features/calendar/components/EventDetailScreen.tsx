@@ -639,7 +639,16 @@ export default function EventDetailScreen({
           accent="teal"
           topInset={insets.top}
           onTitlePress={onClose}
-          right={
+        />
+
+        <ScrollView contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+
+          {/* ── Hero ── */}
+          <View style={{ paddingHorizontal: 20, paddingTop: 8, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start',
+              justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+              <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {!isPast && (
             <TouchableOpacity onPress={() => setEditing(true)}
@@ -655,17 +664,7 @@ export default function EventDetailScreen({
             </Text>
           </TouchableOpacity>
             </View>
-          }
-        />
-
-        <ScrollView contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-
-          {/* ── Hero ── */}
-          <View style={{ paddingHorizontal: 20, paddingTop: 8, marginBottom: 20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start',
-              justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-              <View style={{ flex: 1 }} />
+              </View>
               <View style={{ marginTop: 5, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
                 backgroundColor: statusInfo.color + '18', borderWidth: 1.5, borderColor: statusInfo.color + '50' }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: statusInfo.color }}>

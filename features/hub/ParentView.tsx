@@ -950,9 +950,10 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           (Dismiss/Assign/Dispatch) for scheduling conflicts and
           confirmed-but-never-dispatched trips, genuinely time-sensitive,
           not routine display like NextUpTimeline above it. */}
-      {showBanner && (
+      {/* Scheduling clashes no longer get their own banner: they show in "Your day" and on the one-decision page. */}
+      {showBanner && neverDispatchedOverdue.length > 0 && (
         <AlertBanner
-          conflictEvents={conflictEvents}
+          conflictEvents={[]}
           neverDispatchedEvents={neverDispatchedOverdue}
           conflictReasons={conflictReasons}
           members={members} colors={colors} isDark={isDark} updateEvent={updateEvent}

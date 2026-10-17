@@ -33,8 +33,7 @@ import FlyerScannerModal from '@/components/FlyerScannerModal';
 import { PageHeading } from '@/components/PageHeading';
 import { OverlayPage, OverlayHeading } from '@/components/OverlayPage';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
-import { CreateScheduleScreen, type ScheduleDraft } from './school/CreateScheduleScreen';
-import { BuildPeriodsScreen } from './school/BuildPeriodsScreen';
+import { NewScheduleScreen } from './school/NewScheduleScreen';
 import { HolidaysScreen } from './school/HolidaysScreen';
 import { ClassEditScreen } from './school/ClassEditScreen';
 import { HolidayEditScreen } from './school/HolidayEditScreen';
@@ -630,10 +629,9 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
   const schedules = useSchoolStore(s => s.schedules);
   const [openDayMemberId, setOpenDayMemberId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [buildOpen, setBuildOpen] = useState(false);
+  const [createKidId, setCreateKidId] = useState<string | undefined>(undefined);
   const [holidaysMemberId, setHolidaysMemberId] = useState<string | null>(null);
   const [flyerOpen, setFlyerOpen] = useState(false);
-  const [draft, setDraft] = useState<ScheduleDraft | null>(null);
 
   const canvas = isDark ? colors.background : CANVAS;
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
@@ -679,10 +677,10 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: titleC }}>
-                  {kids.some(k => !schedules.find(sc => sc.memberId === k.id)) ? 'Set up the school schedule' : 'Add or change a schedule'}
+                  {kids.some(k => !schedules.find(sc => sc.memberId === k.id)) ? 'Build a school schedule' : 'Add another schedule'}
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '500', lineHeight: 18, color: bodyC, marginTop: 2 }}>
-                  Classes, holidays and key dates for each child, so rides, reminders and the calendar know the school day.
+                  Add each class once (name, room, teacher, times and days) or scan the timetable. Rides, reminders and the calendar then know the school day.
                 </Text>
               </View>
             </View>
@@ -730,7 +728,7 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
           onClose={() => setManageKidId(null)}
           onOpenDay={() => setOpenDayMemberId(manageKidId)}
           onOpenHolidays={() => setHolidaysMemberId(manageKidId)}
-          onCreateSchedule={() => setCreateOpen(true)}
+          onCreateSchedule={() => { setCreateKidId(manageKidId ?? undefined); setCreateOpen(true); }}
         />
       )}
 
@@ -746,24 +744,14 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
         />
       )}
 
-      <CreateScheduleScreen
-        visible={createOpen}
-        colors={colors} isDark={isDark}
-        parentName={activeMember?.name ?? ''}
-        onClose={() => setCreateOpen(false)}
-        onContinue={(d) => { setDraft(d); setCreateOpen(false); setBuildOpen(true); }}
-        zIndex={60}
-      />
-
-      <BuildPeriodsScreen
-        visible={buildOpen}
-        colors={colors} isDark={isDark}
-        draft={draft}
-        onClose={() => { setBuildOpen(false); setDraft(null); }}
-        onCancel={() => { setBuildOpen(false); setCreateOpen(true); }}
-        onFinished={() => { setBuildOpen(false); setDraft(null); }}
-        zIndex={61}
-      />
+      {createOpen && (
+        <NewScheduleScreen
+          colors={colors} isDark={isDark}
+          presetMemberId={createKidId}
+          onClose={() => { setCreateOpen(false); setCreateKidId(undefined); }}
+          zIndex={61}
+        />
+      )}
 
       {holidaysMember && (
         <HolidaysScreen

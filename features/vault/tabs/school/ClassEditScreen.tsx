@@ -15,7 +15,7 @@ const DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' }, { key: 'wed', label: 'Wed' }, { key: 'thu', label: 'Thu' }, { key: 'fri', label: 'Fri' },
 ];
 
-export function ClassEditScreen({ colors, isDark, memberId, memberName, period, terms, defaultTerm, onClose, zIndex = 59 }: {
+export function ClassEditScreen({ colors, isDark, memberId, memberName, period, terms, defaultTerm, onClose, zIndex = 59, draft }: {
   colors: any; isDark: boolean;
   memberId: string; memberName: string;
   /** The class being edited; null adds a new one. */
@@ -24,6 +24,8 @@ export function ClassEditScreen({ colors, isDark, memberId, memberName, period, 
   defaultTerm?: string;
   onClose: () => void;
   zIndex?: number;
+  /** Draft mode (a schedule that isn't saved yet): hand the class back instead of writing to the store. */
+  draft?: { onSave: (p: ClassPeriod) => void; onDelete?: () => void };
 }) {
   const insets = useSafeAreaInsets();
   const [subject, setSubject] = useState(period?.subject ?? '');
@@ -51,6 +53,12 @@ export function ClassEditScreen({ colors, isDark, memberId, memberName, period, 
     if (!subject.trim()) { setError('Give the class a name.'); return; }
     if (!start || !end || toMin(end) <= toMin(start)) { setError('The end time has to be after the start time.'); return; }
     if (days.length === 0) { setError('Pick at least one day.'); return; }
+    const patch0 = { subject: subject.trim(), room: room.trim(), teacher: teacher.trim() || undefined, startTime: start, endTime: end, days, term };
+    if (draft) {
+      draft.onSave({ id: period?.id ?? 'p' + Date.now() + Math.floor(Math.random() * 1000), period: period?.period ?? 0, ...patch0 } as ClassPeriod);
+      onClose();
+      return;
+    }
     const st = useSchoolStore.getState();
     const schedule = st.schedules.find(s => s.memberId === memberId);
     if (!schedule) return;
@@ -70,7 +78,10 @@ export function ClassEditScreen({ colors, isDark, memberId, memberName, period, 
     if (!period) return;
     Alert.alert(`Delete ${period.subject}?`, `It's removed from ${memberName.split(' ')[0]}'s timetable${period.term ? ` (${period.term})` : ''}.`, [
       { text: 'Keep', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => { useSchoolStore.getState().deletePeriod(memberId, period.id); onClose(); } },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+        if (draft) draft.onDelete?.(); else useSchoolStore.getState().deletePeriod(memberId, period.id);
+        onClose();
+      } },
     ]);
   };
 
@@ -117,6 +128,12 @@ export function ClassEditScreen({ colors, isDark, memberId, memberName, period, 
               </View>
             </View>
 
+            {draft && (
+              <View style={field}>
+                <Text style={label}>Term (optional)</Text>
+                <TextInput value={term ?? ''} onChangeText={t => setTerm(t.trim() ? t : undefined)} placeholder="e.g. Fall, Term 1, Q1" placeholderTextColor={bodyC + '88'} style={{ fontSize: 15, color: titleC, padding: 0 }} />
+              </View>
+            )}
             {terms.length > 0 && (
               <View>
                 <Text style={label}>Term</Text>

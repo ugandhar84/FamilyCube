@@ -286,7 +286,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
   const [showJustDescribe, setShowJustDescribe] = useState(false);
   const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
-  const [justDescribeEventPrefill, setJustDescribeEventPrefill] = useState<{ date?: string; time?: string }>({});
+  const [justDescribeEventPrefill, setJustDescribeEventPrefill] = useState<{ date?: string; time?: string; text?: string }>({});
   const [detailEvent, setDetailEvent] = useState<FamilyEvent | null>(null);
   const { deleteEvent } = useEventStore();
   useEffect(() => {
@@ -539,6 +539,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
         activeMemberId={activeMemberId ?? ''}
         prefillDate={justDescribeEventPrefill.date}
         prefillTime={justDescribeEventPrefill.time}
+        initialText={justDescribeEventPrefill.text}
         onClose={() => { setShowJustDescribeEvent(false); setJustDescribeEventPrefill({}); }}
       />
     );
@@ -556,8 +557,12 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
               setManualQuestPrefill(prefill as typeof manualQuestPrefill);
               setShowManualQuest(true);
             } else {
-              setManualEventPrefill(prefill as typeof manualEventPrefill);
-              setShowManualEvent(true);
+              // Described as a task but it is really an event: hand it to the Schedule's own full-page "Just describe your
+              // schedule" flow (same text, read again there) instead of a bottom-sheet form.
+              const p = prefill as typeof manualEventPrefill;
+              const [d, t] = (p?.startAt ?? '').split('T');
+              setJustDescribeEventPrefill({ text: p?.title, date: d || undefined, time: t ? t.slice(0, 5) : undefined });
+              setShowJustDescribeEvent(true);
             }
           }, 350);
         }}

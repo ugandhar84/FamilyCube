@@ -154,6 +154,7 @@ export default function JustDescribeItEventScreen({
   activeMemberId: propActiveMemberId,
   prefillDate,
   prefillTime,
+  initialText,
   editEvent,
   backLabel,
 }: {
@@ -163,6 +164,8 @@ export default function JustDescribeItEventScreen({
   activeMemberId?: string;
   prefillDate?: string; // 'YYYY-MM-DD'
   prefillTime?: string; // 'HH:MM'
+  /** Text already typed elsewhere (e.g. detected as an event from Tasks' Just describe): starts in the box so it is read again here. */
+  initialText?: string;
   // Nav-row back label — defaults to the original "Event"/"Schedule" pair
   // (Calendar/Tasks' own call sites) when omitted. HubScreen's "Schedule"
   // Quick Action passes its own label since closing here returns to Hub,
@@ -199,7 +202,7 @@ export default function JustDescribeItEventScreen({
   }, [visible]);
 
   // ── Composer state ─────────────────────────────────────────────────────
-  const [input, setInput]             = useState('');
+  const [input, setInput]             = useState(initialText ?? '');
   const [inputFocused, setInputFocused] = useState(false);
   const [detection, setDetection]     = useState<ReturnType<typeof detectLocalTask>>(null);
   const [aiAutoFilling, setAiAutoFilling] = useState(false);

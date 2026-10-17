@@ -29,6 +29,8 @@ import { KioskRedoReasonDialog } from './KioskRedoReasonDialog';
 import { firstName } from './KioskHomeParts';
 import { KioskAvatar } from './KioskAvatar';
 import { KioskChoreDetailDrawer } from './KioskChoreDetailDrawer';
+import { KioskKidRequestsPanel, pendingKidRequests } from './KioskKidRequestsPanel';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 
 const CATEGORY_EMOJI: Record<string, string> = {
   Kitchen: '🍽️', Room: '🛏️', Yard: '🍂', School: '📚', Pet: '🐕', 'Living Room': '🛋️', Garage: '🧰',
@@ -62,6 +64,11 @@ export function KioskChoresBoard({ active, members, onFullView }: {
   const [boardId, setBoardId] = useState(active.id);
   const [redoId, setRedoId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const kidRequests = useKidRequestStore(s => s.requests);
+  const requestCount = useMemo(() => (active.role === 'parent' ? pendingKidRequests(kidRequests).length : 0), [kidRequests, active.role]);
+  // Parent: Board (per-person columns) or Requests (what the kids are asking
+  // for). Opens on Requests when that is the only thing waiting.
+  const [view, setView] = useState<'board' | 'requests' | null>(null);
 
   const viewId = isParent ? boardId : active.id;
   const person = people.find(p => p.id === viewId) ?? active;
@@ -91,6 +98,8 @@ export function KioskChoresBoard({ active, members, onFullView }: {
   const pct = total ? (approved.length + submitted.length) / total : 0;
   const earned = approved.reduce((n, q) => n + (q.coins ?? 0), 0);
   const redoQuest = submitted.find(q => q.id === redoId);
+  const anyChoreWaiting = isParent && visible.some(q => q.status === 'pending_approval');
+  const shownView: 'board' | 'requests' = !isParent ? 'board' : (view ?? (requestCount > 0 && !anyChoreWaiting ? 'requests' : 'board'));
   const viewer = { id: active.id, role: active.role, isActiveApprover };
 
   const tick = (q: Quest) => {
@@ -171,6 +180,20 @@ export function KioskChoresBoard({ active, members, onFullView }: {
       <View style={s.top}>
         <Text style={[s.title, { color: k.text }]}>{isParent ? 'Chores' : 'My chores'}</Text>
         {isParent && (
+          <View style={[s.seg, { backgroundColor: k.well }]}>
+            {([['board', 'Board', 0], ['requests', 'Requests', requestCount]] as const).map(([key, label, n]) => {
+              const on = shownView === key;
+              return (
+                <Pressable key={key} onPress={() => setView(key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
+                  style={[s.segBtn, on && { backgroundColor: k.card }]}>
+                  <Text style={[s.segText, { color: on ? k.text : k.textMuted }]}>{label}</Text>
+                  {n > 0 && <View style={[s.dot, { backgroundColor: k.primary }]}><Text style={[s.dotText, { color: k.onPrimary }]}>{n}</Text></View>}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {isParent && shownView === 'board' && (
           <View style={s.chips}>
             {people.map(p => {
               const on = p.id === person.id;
@@ -193,6 +216,9 @@ export function KioskChoresBoard({ active, members, onFullView }: {
         </Pressable>
       </View>
 
+      {shownView === 'requests' ? (
+        <KioskKidRequestsPanel active={active} members={members} />
+      ) : (<>
       <View style={[s.person, { backgroundColor: mine_.card }]}>
         <KioskAvatar name={person.name} emoji={person.emoji} avatarUrl={person.avatarUrl} size={44} bgColor={k.card} k={k} />
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -209,6 +235,8 @@ export function KioskChoresBoard({ active, members, onFullView }: {
         {column('Approved', approved, 'ok', 'Finished chores show here', PS)}
         {column('Bounties', bounties, 'bounty', 'No open bounties', PA)}
       </View>
+
+      </>)}
 
       {isParent && (
         <Pressable onPress={() => onFullView({ composer: true })} accessibilityRole="button" accessibilityLabel="Add a chore"
@@ -254,6 +282,9 @@ const s = StyleSheet.create({
   chipText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   dot: { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   dotText: { fontSize: 11, fontWeight: '800' },
+  seg: { flexDirection: 'row', borderRadius: 100, padding: 3 },
+  segBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, borderRadius: 100, paddingHorizontal: 16 },
+  segText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   fullBtn: { marginLeft: 'auto', minHeight: 44, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   fullText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   person: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl, paddingVertical: 10, paddingHorizontal: KIOSK_SPACE.md },

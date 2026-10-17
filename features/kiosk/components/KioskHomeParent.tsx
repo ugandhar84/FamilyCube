@@ -15,6 +15,8 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useRewardStore } from '@/store/rewardStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
+import { pendingKidRequests } from './KioskKidRequestsPanel';
 import { showToast } from '@/components/AppToast';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
@@ -53,7 +55,9 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom }: {
   const people = useMemo(() => members.filter(m => !m.deletedAt && m.inviteStatus !== 'pending'), [members]);
   const pending = quests.filter((q: any) => q.status === 'pending_approval');
   const rewardReqs = redemptions.filter(r => r.status === 'pending').length;
-  const needCount = pending.length + (rewardReqs ? 1 : 0);
+  const kidAsks = useKidRequestStore(s => s.requests);
+  const askCount = useMemo(() => pendingKidRequests(kidAsks).length, [kidAsks]);
+  const needCount = pending.length + (rewardReqs ? 1 : 0) + (askCount ? 1 : 0);
   const sharingCount = sharing ? people.filter(p => sharing.has(p.id)).length : 0;
   const tonight = useMemo(() => {
     const td = meals.filter(m => m.day === todayMealDay()).sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
@@ -135,6 +139,16 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom }: {
                   <Pressable onPress={() => onNavigate('tasks')} accessibilityRole="button">
                     <Text style={[s.more, { color: k.primary }]}>+{pending.length - 3} more · Review all →</Text>
                   </Pressable>
+                )}
+                {askCount > 0 && (
+                  <RaisedCard k={k} isDark={isDark} style={s.needRow}>
+                    <View style={[s.needIcon, { backgroundColor: k.purpleSoft }]}><Text style={{ fontSize: 20 }}>🙋</Text></View>
+                    <Text style={[s.needTitle, { color: k.text, flex: 1 }]}>{askCount} kid request{askCount === 1 ? '' : 's'}</Text>
+                    <Pressable onPress={() => onNavigate('tasks')} accessibilityRole="button"
+                      style={[s.btn, { backgroundColor: k.primary }]}>
+                      <Text style={[s.btnText, { color: k.onPrimary }]}>Review</Text>
+                    </Pressable>
+                  </RaisedCard>
                 )}
                 {rewardReqs > 0 && (
                   <RaisedCard k={k} isDark={isDark} style={s.needRow}>

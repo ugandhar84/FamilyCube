@@ -60,6 +60,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { KioskIntercomModal } from './components/KioskIntercomModal';
 import { useNotifStore } from '@/store/notifStore';
 import { KioskTabBar } from './components/KioskTabBar';
+import { pendingKidRequests } from './components/KioskKidRequestsPanel';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { KioskFormDrawer } from './components/KioskFormDrawer';
@@ -285,17 +286,19 @@ export default function KioskScreen() {
   // Tab-bar badges: what is waiting on THIS person.
   const redemptions = useRewardStore(s => s.redemptions);
   const unreadChat = useNotifStore(s => s.unreadCount);
+  const kidRequestList = useKidRequestStore(s => s.requests);
   const tabBadges = useMemo(() => {
     const out: Partial<Record<KioskTabKey, number>> = {};
     if (active?.role === 'parent') {
       const pending = quests.filter(q => q.status === 'pending_approval').length;
-      if (pending) out.tasks = pending;
+      const kidReqs = pendingKidRequests(kidRequestList).length;
+      if (pending + kidReqs) out.tasks = pending + kidReqs;
       const rewards = redemptions.filter(r => r.status === 'pending').length;
       if (rewards) out.store = rewards;
     }
     if (unreadChat) out.chat = unreadChat;
     return out;
-  }, [quests, redemptions, unreadChat, active?.role]);
+  }, [quests, redemptions, unreadChat, kidRequestList, active?.role]);
 
   /**
    * The next thing on today's calendar, for the standby panel.

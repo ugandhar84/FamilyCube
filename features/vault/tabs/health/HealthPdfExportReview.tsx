@@ -189,7 +189,7 @@ export default function HealthPdfExportReview({
       />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         {/* ── Populated fields — honest scope summary, not invented options ── */}
         <View style={{ gap: 10 }}>

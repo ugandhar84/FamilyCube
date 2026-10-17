@@ -110,7 +110,7 @@ export function NoteDetailSheet({ visible, note, colors, isDark, onClose, onEdit
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 48, gap: 10 }}>
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}>
 
           {/* WHAT — title note, room */}
           <SectionHeading label="What" colors={colors} isDark={isDark} />

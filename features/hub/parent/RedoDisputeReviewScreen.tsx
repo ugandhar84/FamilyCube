@@ -90,7 +90,7 @@ export function RedoDisputeReviewScreen({ choreId, onClose }: {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Detail card: what happened ── */}

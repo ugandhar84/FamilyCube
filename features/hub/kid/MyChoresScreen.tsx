@@ -97,7 +97,7 @@ export function MyChoresScreen({
         />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 32 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 32 }}>
 
         {/* ── Propose a Chore banner — same Figma rhythm as Health's
             "Health documents" banner (HealthRecordsScreen.tsx): bright

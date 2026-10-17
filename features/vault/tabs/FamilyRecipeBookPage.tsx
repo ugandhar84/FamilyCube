@@ -285,7 +285,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 80 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 80 }}>
 
         {/* Search */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -773,7 +773,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           <OverlayHeading eyebrow="FAMILY CUBE · MEALS" title="Add to this week" accent="amber" Icon={BookOpen} onTitlePress={() => setAddTarget(null)} topInset={insets.top} />
 
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: insets.bottom + 100 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: insets.bottom + 100 }}>
 
             {/* Recipe preview */}
             {addTarget && (

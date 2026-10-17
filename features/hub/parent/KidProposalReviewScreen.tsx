@@ -189,7 +189,7 @@ export function KidProposalReviewScreen({ onClose }: { onClose: () => void }) {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 16, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         <Text style={{ fontSize: 15, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>

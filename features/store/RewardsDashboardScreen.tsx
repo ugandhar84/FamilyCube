@@ -169,7 +169,7 @@ function RedemptionDetailScreen({ redemption, reward, colors, isDark, onClose, o
 
           {redemption && (
             <ScrollView showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 10 }}>
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 48, gap: 12 }}>
 
               <DetailField label="Coin cost" value={`${redemption.deductedCoins} coins 🪙`} colors={colors} isDark={isDark} />
 
@@ -284,7 +284,7 @@ function RewardDetailScreen({ reward, colors, isDark, myCoins, isGoal, onClose, 
 
           {reward && (
             <ScrollView showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 10 }}>
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 48, gap: 12 }}>
 
               <DetailField label="Coin cost" value={`${reward.cost} coins 🪙`} colors={colors} isDark={isDark} />
 

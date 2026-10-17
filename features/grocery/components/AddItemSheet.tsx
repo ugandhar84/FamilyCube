@@ -159,7 +159,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
 
       <ScrollView
         keyboardShouldPersistTaps="always"
-        contentContainerStyle={{ padding: 24, paddingBottom: insets.bottom + 40, gap: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 40, gap: 12 }}
         showsVerticalScrollIndicator={false}>
 
           {/* Status pill */}

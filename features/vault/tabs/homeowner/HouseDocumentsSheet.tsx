@@ -233,7 +233,7 @@ export function HouseDocumentsSheet({ visible, colors, isDark, onClose, zIndex =
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 48, gap: 14 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}>
 
             {!pending ? (
               <>

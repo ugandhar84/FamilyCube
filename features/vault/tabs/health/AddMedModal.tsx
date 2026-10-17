@@ -285,7 +285,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
           />
 
           <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, gap: 12 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8, gap: 12 }}>
 
             {/* Draft pill + disclaimer */}
             <View style={{ flexDirection: 'row' }}>

@@ -95,7 +95,7 @@ export function RewardReviewScreen({ redemptionId, onClose }: Props) {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 16, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Status pill */}

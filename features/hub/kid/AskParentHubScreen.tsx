@@ -134,7 +134,7 @@ export function AskParentHubScreen({ onClose, onSelect, activeMemberId }: {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* ── My Requests — tabbed status view of this kid's own

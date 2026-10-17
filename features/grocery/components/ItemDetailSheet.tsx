@@ -35,7 +35,7 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
           </View>
         )} />
 
-      <ScrollView contentContainerStyle={{ padding: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12 }} showsVerticalScrollIndicator={false}>
         {/* Category icon card */}
         <View style={{ backgroundColor: dotColor + '12', borderRadius: 22, padding: 16,
           flexDirection: 'row', alignItems: 'center', gap: 14 }}>

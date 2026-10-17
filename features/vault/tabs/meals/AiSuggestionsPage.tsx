@@ -457,7 +457,7 @@ export default function AiSuggestionsPage({
             />
 
             <ScrollView showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32, gap: 16 }}>
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 32, gap: 24 }}>
 
               {/* ── AI planner banner — always visible so user can re-generate ── */}
               <View style={{

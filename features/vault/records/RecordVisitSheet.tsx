@@ -576,7 +576,7 @@ export default function RecordVisitSheet({ visible, onClose, familyId, memberId,
           </TouchableOpacity>
         }
       />
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40, gap: 16 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 40, gap: 24 }} showsVerticalScrollIndicator={false}>
         {/* The appointment this recording belongs to, shown in every state. */}
         <View style={[cardStyle, { gap: 4 }]}>
           <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>APPOINTMENT</Text>

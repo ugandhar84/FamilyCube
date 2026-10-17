@@ -89,7 +89,7 @@ export function CompleteNoteSheet({ visible, note, colors, isDark, onClose, onCo
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 48, gap: 14 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}>
 
             {/* Completion summary card */}
             <View style={{ borderRadius: 18, backgroundColor: isDark ? colors.surface : GREEN_BG, padding: 18, gap: 14 }}>

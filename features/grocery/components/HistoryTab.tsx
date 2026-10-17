@@ -115,7 +115,7 @@ export function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: s
 
   return (
     <>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
 
         {/* Figma: subtitle line under page title */}
         <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
@@ -224,7 +224,7 @@ export function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: s
               <PageHeading eyebrow="FAMILY CUBE · RECEIPT" title={dr.store ?? 'Unknown Store'} accent="teal" Icon={Receipt} onTitlePress={() => setDetailReceipt(null)} topInset={insets.top}
                 right={<Text style={{ fontSize: 20, fontWeight: '900', color: colors.primary }}>${(dr.total ?? 0).toFixed(2)}</Text>} />
               <ScrollView showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 40 }}>
+                contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 40 }}>
                 {dr.image_url && (
                   <Image source={{ uri: dr.image_url }} style={{ width: '100%', height: 200, borderRadius: 14 }} resizeMode="cover" />
                 )}

@@ -105,7 +105,7 @@ export default function BringInDocumentScreen({
       />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ backgroundColor: BLUE + '15', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>

@@ -94,7 +94,7 @@ export default function BringInPrescriptionScreen({
       />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 14 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         {/* Type badge */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

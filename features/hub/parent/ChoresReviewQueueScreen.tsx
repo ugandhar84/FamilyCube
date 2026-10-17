@@ -138,7 +138,7 @@ export function ChoresReviewQueueScreen({ onSelectRow, onClose }: {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 20, gap: 10, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {rows.length === 0 ? (

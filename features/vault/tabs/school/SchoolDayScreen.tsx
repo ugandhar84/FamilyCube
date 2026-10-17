@@ -130,7 +130,7 @@ export function SchoolDayScreen({ visible, colors, isDark, memberId, memberName,
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 48, gap: 14 }}>
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}>
 
           {!schedule ? (
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 16, backgroundColor: cardBg,

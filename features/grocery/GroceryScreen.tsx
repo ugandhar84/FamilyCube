@@ -548,7 +548,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: insets.bottom + 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}
         style={{ flex: 1 }}
       >
         {/* Active run inline alert card */}

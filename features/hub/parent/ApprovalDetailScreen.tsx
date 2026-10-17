@@ -224,7 +224,7 @@ export function ApprovalDetailScreen({ choreId, onClose }: { choreId: string; on
         }
       />
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
         <View style={{ borderRadius: 16, padding: 16, gap: 6, backgroundColor: isDark ? colors.card : colors.surface }}>
           <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {approverName} approved this{approvedOn ? ` on ${approvedOn}` : ''}.

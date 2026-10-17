@@ -85,7 +85,7 @@ export function PiggyBankScreen({
           topInset={insets.top}
         />
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
         <View style={{ borderRadius: 22, padding: 20, alignItems: 'center', gap: 6, backgroundColor: colors.amberLight, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border, ...cardShadow }}>
           <PiggyBank size={34} color={colors.amber} />
           <Text style={{ fontSize: KID.hero, fontWeight: '900', color: colors.amber, lineHeight: 36 }}>{mainCoins}</Text>

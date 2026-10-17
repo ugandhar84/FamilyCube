@@ -107,7 +107,7 @@ export function RewardsReviewQueueScreen({ onSelectRow, onClose }: {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         <View style={{

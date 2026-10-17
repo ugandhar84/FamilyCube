@@ -281,7 +281,7 @@ export function RidesControlRoomScreen({
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 24, gap: 20, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Active ride alert */}

@@ -205,7 +205,7 @@ export function BuildPeriodsScreen({ visible, colors, isDark, draft, onClose, on
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 48, gap: 12 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}>
 
             {/* Periods card */}
             <View style={{ borderWidth: 1, borderColor: border, borderRadius: 16, backgroundColor: cardBg, overflow: 'hidden' }}>

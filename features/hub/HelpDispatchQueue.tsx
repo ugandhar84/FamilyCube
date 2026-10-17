@@ -301,7 +301,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
 
         {/* Auto-flush notice — requests older than 15 days (answered or not)
             are cleared automatically so this list doesn't pile up with

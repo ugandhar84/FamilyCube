@@ -333,7 +333,7 @@ function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClos
 
         {reward && (
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 10 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 48, gap: 12 }}>
 
             <DetailField label="Coin cost" value={`${reward.cost} coins 🪙`} colors={colors} isDark={isDark} />
 
@@ -446,7 +446,7 @@ function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete
             keyboardShouldPersistTaps="always"
             onScrollBeginDrag={Keyboard.dismiss}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 48, gap: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 48, gap: 12 }}
             style={{ flex: 1, backgroundColor: canvas }}>
 
             <FieldCard label="Perk title" colors={colors} isDark={isDark}>
@@ -742,7 +742,7 @@ export default function StoreScreen({
       <ScrollView
         showsVerticalScrollIndicator={false}
         style={{ flex: 1, backgroundColor: canvas }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 12, paddingBottom: insets.bottom + 48 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}>
 
         {/* ── AI Perks banner (parent) ── */}
         {isParent && (

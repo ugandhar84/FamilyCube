@@ -133,7 +133,7 @@ export function TeenGasVehiclePage({
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >

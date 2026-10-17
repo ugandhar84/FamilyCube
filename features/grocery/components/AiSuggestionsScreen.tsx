@@ -282,7 +282,7 @@ export function AiSuggestionsScreen({
         </View>
       ) : (
         <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}>
 
           {/* Lavender info card */}
           <View style={{ backgroundColor: colors.pinkLight, borderRadius: 22, padding: 20, gap: 6 }}>

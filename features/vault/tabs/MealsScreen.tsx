@@ -387,7 +387,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 32 }}
       >
 
         {/* ── Tonight's dinner hero card ── */}

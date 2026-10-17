@@ -93,7 +93,7 @@ export default function RecordsFilterScreen({
       />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         <View style={contentGroupStyle(cardBg, isDark, border)}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>

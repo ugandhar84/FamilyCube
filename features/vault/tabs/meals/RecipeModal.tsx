@@ -109,7 +109,7 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
 
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32, gap: 16 }}>
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 32, gap: 24 }}>
 
               {/* Info card */}
               <View style={{ backgroundColor: colors.card, borderRadius: 16, borderWidth: 1,

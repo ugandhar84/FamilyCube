@@ -130,7 +130,7 @@ export default function ReviewFindingsScreen({
       />
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 24, gap: 12 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
         <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19 }}>
           Review every field before approving — AI can misread medical text.

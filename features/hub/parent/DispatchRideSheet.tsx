@@ -299,7 +299,7 @@ export function DispatchRideSheet({
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, gap: 16, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >

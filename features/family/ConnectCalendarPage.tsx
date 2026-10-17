@@ -291,7 +291,7 @@ export function ConnectCalendarPage({ onClose }: { onClose: () => void }) {
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: insets.bottom + 60, gap: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 60, gap: 12 }}
           >
             {/* ── Status banner ── */}
             {connectedCount > 0 ? (

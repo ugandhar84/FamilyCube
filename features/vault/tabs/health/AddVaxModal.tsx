@@ -194,7 +194,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
           />
 
           <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, gap: 12 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8, gap: 12 }}>
 
             <View style={{ flexDirection: 'row' }}>
               <View style={{ backgroundColor: colors.primaryLight, borderRadius: 100, paddingVertical: 5, paddingHorizontal: 10 }}>

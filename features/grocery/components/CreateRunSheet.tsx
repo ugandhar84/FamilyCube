@@ -90,7 +90,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
       <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title="Start shopping run" subtitle="Choose a store and a time. Pending Kid requests stay out of the run." accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
 
       <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 48 }}>
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}>
 
         {/* Figma: "Planned start" labeled field card */}
         <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16 }}>

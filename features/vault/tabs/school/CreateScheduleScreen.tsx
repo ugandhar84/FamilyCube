@@ -186,7 +186,7 @@ export function CreateScheduleScreen({ visible, colors, isDark, parentName, onCl
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 48, gap: 12 }}>
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48, gap: 12 }}>
 
             {kids.length === 0 ? (
               <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,

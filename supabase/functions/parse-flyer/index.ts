@@ -159,7 +159,7 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
       // null [live-reported: "scanner is not decoding the start/end
       // times and locations"], thinking genuinely enabled should be tried
       // first, not accidentally suppressed.
-      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384 };
+      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384, seed: 42 };
       if (!m.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       const reqBody = JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
@@ -227,9 +227,30 @@ serve(async (req) => {
       if (!img.data || !img.mimeType) return json({ error: 'Each image needs data and mimeType' }, 400);
     }
 
-    const raw    = await callGemini(geminiKey, images);
-    console.log(`[parse-flyer] gemini raw (first 300): ${raw.slice(0, 300)}`);
-    const parsed = extractJson(raw);
+    // Read the document twice in parallel and merge: one read can stop early or skip a month, so the union of two is
+    // steadier than either alone (the same flyer used to give 26, 50, 52 or 56 events).
+    const settled = await Promise.allSettled([callGemini(geminiKey, images), callGemini(geminiKey, images)]);
+    const parsedReads: Record<string, unknown>[] = [];
+    for (const r of settled) {
+      if (r.status !== 'fulfilled') { console.error('[parse-flyer] a read failed:', String(r.reason)); continue; }
+      try { parsedReads.push(extractJson(r.value)); } catch (e) { console.error('[parse-flyer] a read was not valid JSON:', String(e)); }
+    }
+    if (parsedReads.length === 0) throw new Error('Could not read the document. Try again.');
+    console.log(`[parse-flyer] ${parsedReads.length} read(s) ok`);
+    const parsed = parsedReads[0];
+    if (parsed.type === 'calendar' && parsedReads.length > 1) {
+      const key = (e: any) => `${String(e?.title ?? '').toLowerCase().replace(/\s+/g, ' ').trim()}|${e?.date ?? ''}`;
+      const base = ((parsed as any).calendar?.events ?? []) as any[];
+      const seen = new Set(base.map(key));
+      for (const other of parsedReads.slice(1)) {
+        if (other.type !== 'calendar') continue;
+        for (const e of ((other as any).calendar?.events ?? []) as any[]) {
+          if (!seen.has(key(e))) { seen.add(key(e)); base.push(e); }
+        }
+      }
+      (parsed as any).calendar.events = base.sort((a, b) => String(a?.date ?? '9').localeCompare(String(b?.date ?? '9')));
+      console.log(`[parse-flyer] merged calendar events: ${base.length}`);
+    }
 
     // Validate type field
     const type = parsed.type as string;

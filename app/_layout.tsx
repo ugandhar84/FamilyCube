@@ -801,6 +801,7 @@ function RootNavigator() {
             data: row.data ?? row.meta ?? {}, read: row.read ?? false,
             created_at: row.created_at ?? row.timestamp,
           });
+          if (isChatPushForOpenThread(row?.type, row?.data ?? row?.meta)) return;
           showInAppToast({ title: row?.title ?? 'New notification', body: row?.body ?? row?.message, type: row?.type, data: row?.data ?? row?.meta });
         },
       )
@@ -844,7 +845,7 @@ function RootNavigator() {
       const body  = content?.body ?? undefined;
       const data  = (content?.data ?? undefined) as Record<string, any> | undefined;
       // Already looking at this conversation: the message is on screen, so no banner for it.
-      if ((data?.type === 'chat_message' || data?.type === 'chat_mention') && isChatChannelOpen(data?.channelId)) return;
+      if (isChatPushForOpenThread(data?.type, data)) return;
       showInAppToast({ title, body, type: data?.type, data });
 
       // Was: relied entirely on the recipient's own games:{familyId}
@@ -1546,6 +1547,13 @@ export function ErrorBoundary({ error }: { error: Error }) {
       <Text style={{ fontSize: 13, color: '#888', textAlign: 'center' }}>{error.message}</Text>
     </View>
   );
+}
+
+// A chat push/notification row for the conversation that is open on screen is just noise. The payload's own `type`
+// is not always present (family-notifier sends { screen: 'Chat', channelId }), so match on either signal.
+function isChatPushForOpenThread(type: string | undefined, data: Record<string, any> | undefined): boolean {
+  const isChat = type === 'chat_message' || type === 'chat_mention' || data?.screen === 'Chat' || !!data?.channelId;
+  return isChat && isChatChannelOpen(data?.channelId);
 }
 
 export default function RootLayout() {

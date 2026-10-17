@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, StyleSheet, Animated, Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/lib/ThemeContext';
 import { FamilyMember, useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
@@ -193,6 +194,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
           if (result.grant_token && result.grant_expires_at) {
             useFamilyStore.getState().setActiveMemberGrant(member.id, result.grant_token, result.grant_expires_at);
           }
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           onSuccess(member);
           setEntered('');
           setAttempts(0);
@@ -211,6 +213,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
   }, [entered]);
 
   const shakeAndClear = (msg: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     Vibration.vibrate(400);
     setErrorMsg(msg);
     Animated.sequence([
@@ -225,9 +228,12 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
   const handleKey = (key: string) => {
     if (locked) return;
     if (key === '⌫') {
+      Haptics.selectionAsync().catch(() => {});
       setEntered(p => p.slice(0, -1));
       if (errorMsg) setErrorMsg('');
     } else if (entered.length < PIN_LENGTH) {
+      // A light tap for every digit; the last digit gets a firmer one as the PIN is checked.
+      Haptics.impactAsync(entered.length + 1 === PIN_LENGTH ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       setEntered(p => p + key);
     }
   };

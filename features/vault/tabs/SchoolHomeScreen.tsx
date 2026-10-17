@@ -22,12 +22,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, GraduationCap, PartyPopper, CalendarDays } from 'lucide-react-native';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { fmtDate, fmtDateShort } from '@/lib/dates';
 import { RHYTHM } from '@/constants/theme';
 import { useUIStore } from '@/store/uiStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
-import { useSchoolStore, type ClassPeriod } from '@/store/schoolStore';
+import { useSchoolStore, type ClassPeriod, type SchoolHoliday } from '@/store/schoolStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import FlyerScannerModal from '@/components/FlyerScannerModal';
 import { PageHeading } from '@/components/PageHeading';
@@ -37,6 +37,8 @@ import { CreateScheduleScreen, type ScheduleDraft } from './school/CreateSchedul
 import { BuildPeriodsScreen } from './school/BuildPeriodsScreen';
 import { HolidaysScreen } from './school/HolidaysScreen';
 import { ClassEditScreen } from './school/ClassEditScreen';
+import { HolidayEditScreen } from './school/HolidayEditScreen';
+import { ImportantDateEditScreen } from './school/ImportantDateEditScreen';
 import { SchoolDayScreen } from './school/SchoolDayScreen';
 
 // "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — warm
@@ -296,6 +298,8 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
   const [view, setView] = useState<'day' | 'week'>('day');
   const [dayPick, setDayPick] = useState<string | undefined>(undefined);
   const [editing, setEditing] = useState<ClassPeriod | 'new' | null>(null);
+  const [editingDate, setEditingDate] = useState<FamilyEvent | 'new' | null>(null);
+  const [editingHoliday, setEditingHoliday] = useState<SchoolHoliday | 'new' | null>(null);
   const terms = termsOf(schedule?.periods ?? []);
   const [termPick, setTermPick] = useState<string | undefined>(undefined);
   const term = termPick ?? guessCurrentTerm(terms);
@@ -319,7 +323,7 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
   const today = localTodayStr();
   const dates = events
     .filter(e => e.date >= today && (e.category === 'School' || e.category === 'Study') && !DAY_OFF_RE.test(e.title)
-      && (e.memberId === kid.id || e.memberIds?.includes(kid.id)))
+      && !e.seriesId && (e.memberId === kid.id || e.memberIds?.includes(kid.id)))
     .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
     .filter((e, i, arr) => arr.findIndex(x => x.title === e.title && x.date === e.date) === i)
     .slice(0, 40);
@@ -496,8 +500,8 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                 ) : holidays.map((h, i) => {
                   const on = picked.has(h.id);
                   return (
-                    <TouchableOpacity key={h.id} activeOpacity={selecting ? 0.6 : 1}
-                      onPress={() => { if (selecting) setPicked(prev => { const n = new Set(prev); on ? n.delete(h.id) : n.add(h.id); return n; }); }}
+                    <TouchableOpacity key={h.id} activeOpacity={selecting || canEdit ? 0.6 : 1}
+                      onPress={() => { if (selecting) setPicked(prev => { const n = new Set(prev); on ? n.delete(h.id) : n.add(h.id); return n; }); else if (canEdit) setEditingHoliday(h); }}
                       style={{ flexDirection: 'row', gap: 10, alignItems: 'center', paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
                       {selecting ? (
                         <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
@@ -511,6 +515,7 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                           {h.startDate === h.endDate ? fmtDate(h.startDate) : `${fmtDate(h.startDate)} – ${fmtDate(h.endDate)}`}
                         </Text>
                       </View>
+                      {canEdit && !selecting ? <Text style={{ fontSize: 12, fontWeight: '800', color: BLUE }}>Edit</Text> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -531,33 +536,58 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                 </TouchableOpacity>
               )}
               {canEdit && !selecting && (
-                <TouchableOpacity onPress={onOpenHolidays} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Add or edit holidays</Text>
+                <TouchableOpacity onPress={() => setEditingHoliday('new')} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>+ Add a holiday</Text>
                 </TouchableOpacity>
               )}
             </>
           ) : (
-            dates.length === 0 ? (
-              <View style={card as any}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>No important dates yet</Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>Early release, picture day, conferences and other school dates show here. Scan a school calendar flyer to add them.</Text>
-              </View>
-            ) : (
-              <View style={card as any}>
-                {dates.map((e, i) => (
-                  <View key={e.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-                    <CalendarDays size={16} color={BLUE} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }} numberOfLines={2}>{e.title}</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, marginTop: 1 }}>{fmtDateShort(e.date)}{e.time ? ` · ${fmtTime12(e.time)}` : ''}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )
+            <>
+              {dates.length === 0 ? (
+                <View style={card as any}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>No important dates yet</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>Early release, picture day, conferences and other school dates show here. Add one, or scan a school calendar flyer.</Text>
+                </View>
+              ) : (
+                <View style={card as any}>
+                  {dates.map((e, i) => (
+                    <TouchableOpacity key={e.id} activeOpacity={canEdit ? 0.6 : 1} disabled={!canEdit} onPress={() => setEditingDate(e)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
+                      <CalendarDays size={16} color={BLUE} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }} numberOfLines={2}>{e.title}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, marginTop: 1 }}>{fmtDateShort(e.date)}{e.time ? ` · ${fmtTime12(e.time)}` : ' · All day'}</Text>
+                      </View>
+                      {canEdit ? <Text style={{ fontSize: 12, fontWeight: '800', color: BLUE }}>Edit</Text> : null}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {canEdit && (
+                <TouchableOpacity onPress={() => setEditingDate('new')} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>+ Add a school date</Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </ScrollView>
       </View>
+      {editingDate && (
+        <ImportantDateEditScreen
+          colors={colors} isDark={isDark}
+          memberId={kid.id} memberName={kid.name}
+          event={editingDate === 'new' ? null : editingDate}
+          onClose={() => setEditingDate(null)}
+        />
+      )}
+      {editingHoliday && (
+        <HolidayEditScreen
+          colors={colors} isDark={isDark}
+          memberId={kid.id} memberName={kid.name}
+          holiday={editingHoliday === 'new' ? null : editingHoliday}
+          onClose={() => setEditingHoliday(null)}
+        />
+      )}
       {editing && (
         <ClassEditScreen
           colors={colors} isDark={isDark}

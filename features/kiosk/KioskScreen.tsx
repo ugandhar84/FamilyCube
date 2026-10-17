@@ -433,10 +433,10 @@ export default function KioskScreen() {
           items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setBarHidden(false); setTab(t); }} badges={tabBadges}
           leading={<KioskBarProfile member={active} open={menuOpen} onPress={() => setMenuOpen(o => !o)} />}
           trailing={<KioskBarClock />}
-          hidden={barHidden}
+          hidden={barHidden || showStandby}
         />
 
-        {barHidden && (
+        {barHidden && !showStandby && (
           <Pressable onPress={() => setBarHidden(false)} accessibilityRole="button" accessibilityLabel="Show the menu bar" style={[s.barHandle, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
             <View style={[s.barHandleGrip, { backgroundColor: k.textFaint }]} />
           </Pressable>

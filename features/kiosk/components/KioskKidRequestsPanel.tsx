@@ -59,6 +59,7 @@ export function KioskKidRequestsPanel({ active, members }: { active: FamilyMembe
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [coins, setCoins] = useState<Record<string, number>>({});
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
   const [history, setHistory] = useState(false);
   const familyId = active.familyId ?? '';
   const detail = requests.find(r => r.id === detailId) ?? null;
@@ -132,18 +133,18 @@ export function KioskKidRequestsPanel({ active, members }: { active: FamilyMembe
             return (
               <View key={r.id} style={[s.card, { backgroundColor: tone.col, borderColor: tone.card }]}>
                 <View style={s.cardTop}>
-                  <View style={[s.emoji, { backgroundColor: tone.card }]}><Text style={{ fontSize: 24 }}>{meta?.emoji ?? '📨'}</Text></View>
+                  <View style={[s.emoji, { backgroundColor: tone.card }]}><Text style={{ fontSize: 20 }}>{meta?.emoji ?? '📨'}</Text></View>
                   <Pressable onPress={() => setDetailId(r.id)} style={{ flex: 1, minWidth: 0 }} accessibilityRole="button" accessibilityLabel={`Open request: ${requestDisplayTitle(r, meta?.label)}`}>
                     <Text style={[s.title, { color: k.text }]} numberOfLines={2}>{requestDisplayTitle(r, meta?.label)}</Text>
                     <Text style={[s.sub, { color: k.textMuted }]} numberOfLines={1}>{meta?.label} · {stamp(r.requestedAt)}</Text>
                   </Pressable>
                   <View style={s.who}>
-                    <KioskAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} size={34} bgColor={k.card} k={k} />
+                    <KioskAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} size={28} bgColor={k.card} k={k} />
                     <Text style={[s.whoName, { color: tone.fg }]} numberOfLines={1}>{firstName(kid)}</Text>
                   </View>
                 </View>
                 {urgent && <View style={[s.urgent, { backgroundColor: k.pastelPrimaryCard }]}><Text style={[s.urgentText, { color: k.danger }]}>{r.urgency === 'emergency' ? '🚨 Emergency' : 'Urgent'}</Text></View>}
-                {!!r.detail && !isList && <Text style={[s.detail, { color: k.text }]} numberOfLines={3}>{r.detail}</Text>}
+                {!!r.detail && !isList && <Text style={[s.detail, { color: k.text }]} numberOfLines={2}>{r.detail}</Text>}
                 {isList && <Text style={[s.detail, { color: k.text }]} numberOfLines={2}>{r.items!.map(it => it.name).join(', ')}</Text>}
                 {!!r.scheduledDate && <Text style={[s.sub, { color: k.textMuted }]}>📅 {r.scheduledDate}{r.scheduledTime ? ` · ${r.scheduledTime}` : ''}</Text>}
 
@@ -158,13 +159,17 @@ export function KioskKidRequestsPanel({ active, members }: { active: FamilyMembe
                   </View>
                 )}
 
-                {!isCheckin && (
+                {!isCheckin && (replyOpen[r.id] ? (
                   <TextInput
-                    value={notes[r.id] ?? ''} onChangeText={t => setNotes(p => ({ ...p, [r.id]: t }))}
+                    value={notes[r.id] ?? ''} onChangeText={t => setNotes(p => ({ ...p, [r.id]: t }))} autoFocus
                     placeholder="Reply to them (optional)" placeholderTextColor={k.textFaint}
                     style={[s.input, { color: k.text, backgroundColor: k.card, borderColor: tone.card }]} maxLength={140}
                   />
-                )}
+                ) : (
+                  <Pressable onPress={() => setReplyOpen(p => ({ ...p, [r.id]: true }))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a reply">
+                    <Text style={[s.replyLink, { color: tone.fg }]}>{notes[r.id]?.trim() ? `Reply: “${notes[r.id].trim()}”` : '＋ Reply'}</Text>
+                  </Pressable>
+                ))}
 
                 <View style={s.actions}>
                   {isCheckin ? (
@@ -173,7 +178,7 @@ export function KioskKidRequestsPanel({ active, members }: { active: FamilyMembe
                     <>
                       <Btn label="Decline" bg={k.card} fg={k.text} onPress={() => (isIdea ? declineIdea(r) : isList ? declineList(r) : declineGeneric(r))} flex />
                       <Btn
-                        label={isIdea ? `Approve · ${picked} coins` : isList ? 'Approve all' : 'Approve'}
+                        label={isIdea ? `Approve · ${picked}🪙` : isList ? 'Approve all' : 'Approve'}
                         bg={k.primary} fg={k.onPrimary}
                         onPress={() => (isIdea ? approveIdea(r) : isList ? approveList(r) : approveGeneric(r))} flex
                       />
@@ -207,23 +212,24 @@ const s = StyleSheet.create({
   histBtn: { minHeight: 40, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   histText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, paddingBottom: KIOSK_SPACE.xl },
-  card: { width: '48.8%', borderRadius: KIOSK_RADIUS.xl, borderWidth: 1.5, padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.sm },
+  card: { width: '32.4%', borderRadius: KIOSK_RADIUS.lg, borderWidth: 1.5, padding: KIOSK_SPACE.sm + 2, gap: 6 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
-  emoji: { width: 46, height: 46, borderRadius: KIOSK_RADIUS.md, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
-  sub: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
-  who: { alignItems: 'center', gap: 2, minWidth: 54 },
-  whoName: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', maxWidth: 62 },
-  detail: { fontSize: KIOSK_TYPO.body, fontWeight: '600' },
+  emoji: { width: 38, height: 38, borderRadius: KIOSK_RADIUS.sm + 2, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  sub: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  who: { alignItems: 'center', gap: 1, minWidth: 40 },
+  whoName: { fontSize: 10.5, fontWeight: '800', maxWidth: 52 },
+  detail: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
+  replyLink: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   urgent: { alignSelf: 'flex-start', borderRadius: 9, paddingHorizontal: 11, paddingVertical: 4 },
   urgentText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   coinRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  coin: { minHeight: 40, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  coinText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
-  input: { minHeight: 44, borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, paddingHorizontal: 12, fontSize: KIOSK_TYPO.caption },
-  actions: { flexDirection: 'row', gap: KIOSK_SPACE.sm },
-  btn: { minHeight: 48, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
-  btnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  coin: { minHeight: 34, borderRadius: KIOSK_RADIUS.sm + 2, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center' },
+  coinText: { fontSize: 11.5, fontWeight: '800' },
+  input: { minHeight: 40, borderRadius: KIOSK_RADIUS.sm + 2, borderWidth: 1.5, paddingHorizontal: 10, fontSize: KIOSK_TYPO.label },
+  actions: { flexDirection: 'row', gap: 6 },
+  btn: { minHeight: 42, borderRadius: KIOSK_RADIUS.sm + 2, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  btnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
   empty: { borderRadius: KIOSK_RADIUS.xl, padding: KIOSK_SPACE.xl, gap: 4 },
   emptyTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
 });

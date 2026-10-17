@@ -44,7 +44,7 @@ export function SubmitQuestSheet({
 
   return (
     <>
-      <Modal visible={!!submitTarget} transparent animationType="slide" onRequestClose={dismiss}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!submitTarget} transparent animationType="slide" onRequestClose={dismiss}>
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
             <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
             <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
@@ -112,7 +112,7 @@ export function SubmitQuestSheet({
                     ) : (
                       <View style={{ borderRadius: 14, padding: 13, borderWidth: 1.5, borderStyle: 'dashed', borderColor: submitTarget?.photoRequired ? '#F59E0B' : colors.border,
                         backgroundColor: submitTarget?.photoRequired ? '#FEF3C710' : 'transparent' }}>
-                        <Text style={{ fontSize: TYPO.label, color: submitTarget?.photoRequired ? '#D97706' : colors.textTertiary, textAlign: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, color: submitTarget?.photoRequired ? colors.amber : colors.textTertiary, textAlign: 'center' }}>
                           {submitTarget?.photoRequired ? 'Attach a photo to unlock submission.' : 'No photo attached yet.'}
                         </Text>
                       </View>
@@ -151,7 +151,7 @@ export function SubmitQuestSheet({
       </Modal>
 
       {/* Full-screen review of a submitted photo proof */}
-      <Modal
+      <Modal supportedOrientations={['portrait', 'landscape']}
         visible={!!proofPhotoViewerUri}
         transparent
         animationType="fade"

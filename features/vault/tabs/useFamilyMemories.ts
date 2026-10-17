@@ -221,6 +221,11 @@ export function useFamilyMemories({ focusMemoryId }: {
         : uploadFamilyMemoryPhoto(familyId, m.uri, media.length > 1 ? i : undefined)
     ));
     const mediaTypes = media.map(m => m.type);
+    // Temporary diagnostic for the still-open "video playback is still not
+    // working" bug — logs the actual uploaded URL(s) and media_types going
+    // into the insert, so we can see whether the video URL/type made it
+    // through upload intact before worrying about playback itself.
+    console.log('[MemoriesTab] postMemory uploaded urls:', urls, 'mediaTypes:', mediaTypes);
     // No title field in the photo-first compose flow — `title` is NOT NULL
     // at the DB level, so fall back to something reasonable when there's no
     // caption to reuse. `description` is the actual caption text.
@@ -242,6 +247,10 @@ export function useFamilyMemories({ focusMemoryId }: {
       console.error('[MemoriesTab] postMemory insert failed:', error.message, error);
       throw new Error(error.message);
     }
+    console.log('[MemoriesTab] postMemory inserted row:', data && {
+      id: (data as any).id, photo_url: (data as any).photo_url,
+      photo_urls: (data as any).photo_urls, media_types: (data as any).media_types,
+    });
     if (data) setMemories(prev => [data as Memory, ...prev]);
 
     const posterName = members.find(m => m.id === myId)?.name ?? 'Someone';

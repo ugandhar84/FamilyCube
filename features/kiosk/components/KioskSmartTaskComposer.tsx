@@ -415,7 +415,10 @@ export default function KioskSmartTaskComposer({
       confidence: 90,
       title: task.title,
       when: task.startAt ? { date: task.startAt.slice(0, 10), time: task.startAt.length > 10 ? task.startAt.slice(11, 16) : null, returnTime: null } : { date: null, time: null, returnTime: null },
-      locations: { pickup: null, dropoff: null },
+      // AI-extracted pickup/dropoff only populate for category: 'transport'
+      // (see family-ai edge function's extract_responsibility prompt) — null
+      // for every other category, same as before.
+      locations: { pickup: task.pickupLocation ?? null, dropoff: task.dropoffLocation ?? null },
       memberNames: names,
       amount: null,
       // Older cached responses (before recurrence/urgency were added to the
@@ -430,6 +433,7 @@ export default function KioskSmartTaskComposer({
       driverName: null,
       driverId: null,
       alertCall: task.alertCall ?? false,
+      rideDirection: task.rideDirection ?? null,
     });
     // family-ai's `requirements` is exactly "what the AI inferred beyond
     // the structured fields" — surface it into Notes and open the toggle
@@ -1450,34 +1454,40 @@ export default function KioskSmartTaskComposer({
 
                 {/* Call reminder — VoIP-style ringing alert (call-reminder-
                     sweeper cron), distinct from ordinary push notifications.
-                    Off by default; turning it on defaults to 10 min before,
-                    same default AskCubeProposalCard's ReminderPicker uses
-                    when a reminder is first added. */}
-                <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
-                    borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,
-                    borderWidth: 1, borderColor: alertCall ? colors.primary + '50' : colors.border, marginTop: 4 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCall ? colors.primary : colors.textPrimary }}>
-                    📞 Call reminder {alertCall ? `— ${alertCallLeadMinutes} min before` : 'off'}
-                  </Text>
-                </Pressable>
-                {alertCall && (
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {[0, 10, 15, 30].map(mins => {
-                      const active = alertCallLeadMinutes === mins;
-                      return (
-                        <Pressable key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
-                          style={{ flex: 1, borderRadius: RADIUS.sm, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center',
-                            borderColor: active ? colors.primary : colors.border,
-                            backgroundColor: active ? colors.primaryLight : 'transparent' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? colors.primary : colors.textSecondary }}>
-                            {mins === 0 ? 'On time' : `${mins}m`}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                    Restricted to events only now [live-requested: "we
+                    should only alert the meaningful - dont use the
+                    annolying calls"] — see SmartTaskComposer.tsx's matching
+                    comment. Off by default; turning it on defaults to 10
+                    min before. */}
+                {isEvent && (
+                  <>
+                    <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
+                        borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,
+                        borderWidth: 1, borderColor: alertCall ? colors.primary + '50' : colors.border, marginTop: 4 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCall ? colors.primary : colors.textPrimary }}>
+                        📞 Call reminder {alertCall ? `— ${alertCallLeadMinutes} min before` : 'off'}
+                      </Text>
+                    </Pressable>
+                    {alertCall && (
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {[0, 10, 15, 30].map(mins => {
+                          const active = alertCallLeadMinutes === mins;
+                          return (
+                            <Pressable key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                              style={{ flex: 1, borderRadius: RADIUS.sm, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center',
+                                borderColor: active ? colors.primary : colors.border,
+                                backgroundColor: active ? colors.primaryLight : 'transparent' }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? colors.primary : colors.textSecondary }}>
+                                {mins === 0 ? 'On time' : `${mins}m`}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
                 )}
             </View>
 

@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
+  TextInput, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import BottomSheet from '@/components/BottomSheet';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { showAlert } from '@/components/AppAlert';
 import { IconCubeMark, Wordmark } from '@/components/FamilyCubeLogo';
 import { getOfferings, purchasePackage, restorePurchases, isRevenueCatReady } from '@/lib/subscription';
@@ -12,6 +14,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { supabase } from '@/lib/supabase';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Ionicons names (matches the icon set already used throughout this
 // component and the rest of the app, e.g. PinEntryModal) — SVG glyphs
@@ -41,6 +44,7 @@ export default function PaywallSheet({
   headline,
 }: PaywallSheetProps) {
   const { colors, isDark: dark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const { tier: currentTier, isTrial, trialDaysLeft } = useSubscriptionStore();
 
@@ -48,6 +52,15 @@ export default function PaywallSheet({
   const [offering, setOffering]     = useState<any>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring]   = useState(false);
+
+  // Parental gate — required by App Store guideline 1.3 (Kids category):
+  // a child must not be able to trigger purchases without a parent solving
+  // a simple math challenge first. Gate is shown before every purchase
+  // attempt and re-generated each time.
+  const [gateVisible, setGateVisible]   = useState(false);
+  const [gateQuestion, setGateQuestion] = useState<{ a: number; b: number; answer: number }>({ a: 0, b: 0, answer: 0 });
+  const [gateInput, setGateInput]       = useState('');
+  const [gateError, setGateError]       = useState(false);
   // Admin-editable DISPLAY pricing (pricing_config table) — used only as
   // the fallback before RevenueCat's real offering loads, and as the
   // source of the discount badge/strikethrough RevenueCat has no
@@ -141,7 +154,26 @@ export default function PaywallSheet({
     return !!pkg?.product?.introPrice;
   };
 
-  const handlePurchase = async () => {
+  const openGate = () => {
+    const a = Math.floor(Math.random() * 90) + 10;
+    const b = Math.floor(Math.random() * 90) + 10;
+    setGateQuestion({ a, b, answer: a + b });
+    setGateInput('');
+    setGateError(false);
+    setGateVisible(true);
+  };
+
+  const confirmGate = () => {
+    if (parseInt(gateInput, 10) === gateQuestion.answer) {
+      setGateVisible(false);
+      executePurchase();
+    } else {
+      setGateError(true);
+      setGateInput('');
+    }
+  };
+
+  const executePurchase = async () => {
     if (purchasingRef.current) return;
     if (!isRevenueCatReady()) {
       closeAndAlert('Not available', 'Subscriptions require a TestFlight or App Store build.');
@@ -172,6 +204,8 @@ export default function PaywallSheet({
       closeAndAlert('Purchase failed', result.error);
     }
   };
+
+  const handlePurchase = () => openGate();
 
   const handleRestore = async () => {
     if (!user?.id) { closeAndAlert('Sign in required', 'Please sign in to restore purchases.'); return; }
@@ -210,25 +244,34 @@ export default function PaywallSheet({
         || (pricingConfig?.yearlyDiscountPct ? `Save ${pricingConfig.yearlyDiscountPct}%` : null))
     : null;
 
+  if (!visible) return null;
+
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      onDismiss={handleDismiss}
-      title="Family Plan"
-      titleIcon={<Text style={{ fontSize: 22 }}>🏡</Text>}
-      subtitle="Everything your family needs, in one place"
-    >
+    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={70}>
+      <View style={{ flex: 1, backgroundColor: dark ? colors.background : GEMINI.canvas }}>
+        {/* Same Figma header rhythm as InvitePage.tsx — breadcrumb link,
+            eyebrow, big title, subtitle — instead of a bottom sheet
+            [live-requested: "lets make the paywall as full page overley" /
+            "with figma rythem"]. */}
+        <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 24, paddingBottom: 2 }}>
+          <TouchableOpacity onPress={() => { handleDismiss(); onClose(); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 12, fontWeight: '500', color: GEMINI.blue }}>← Close</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 19, fontWeight: '800', color: dark ? colors.textPrimary : GEMINI.titleColor, marginTop: 6, lineHeight: 24 }} numberOfLines={2}>
+            {headline ?? 'Keep your family organized, connected, and rewarded'}
+          </Text>
+        </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.content}
+        contentContainerStyle={[s.content, { paddingHorizontal: 24, paddingTop: 10, paddingBottom: insets.bottom + 12 }]}
         bounces={false}
       >
 
         {/* Logo — same mark as the splash screen / launch icon, for brand consistency */}
         <View style={s.logoRow}>
-          <IconCubeMark size={48} />
-          <Wordmark fontSize={22} dark={dark} />
+          <IconCubeMark size={32} />
+          <Wordmark fontSize={17} dark={dark} />
         </View>
 
         {/* Trial countdown banner */}
@@ -246,19 +289,22 @@ export default function PaywallSheet({
           </View>
         )}
 
-        {/* Headline */}
-        <Text style={[s.headline, { color: colors.textPrimary }]}>
-          {headline ?? 'Keep your family organized, connected, and rewarded'}
-        </Text>
-
-        {/* Features grid */}
-        <View style={s.featuresGrid}>
+        {/* Features — bordered Gemini card instead of a borderless grid,
+            matching InvitePage.tsx's "Add Someone New" card language. */}
+        <View style={{
+          borderRadius: 22, borderWidth: 1, padding: 20,
+          backgroundColor: dark ? colors.card : GEMINI.cardBg,
+          borderColor: dark ? colors.border : GEMINI.border,
+        }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: dark ? colors.textSecondary : GEMINI.bodyColor, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
+            What's included
+          </Text>
           {FEATURES.map((f, i) => (
-            <View key={i} style={[s.featureRow, { borderBottomColor: colors.border }]}>
+            <View key={i} style={[s.featureRow, { borderBottomColor: dark ? colors.border : GEMINI.border, borderBottomWidth: i < FEATURES.length - 1 ? StyleSheet.hairlineWidth : 0 }]}>
               <View style={s.featureIcon}>
-                <Ionicons name={f.icon} size={18} color={colors.primary} />
+                <Ionicons name={f.icon} size={18} color={GEMINI.blue} />
               </View>
-              <Text style={[s.featureText, { color: colors.textPrimary }]}>{f.text}</Text>
+              <Text style={[s.featureText, { color: dark ? colors.textPrimary : GEMINI.titleColor }]}>{f.text}</Text>
               <Ionicons name="checkmark-circle" size={18} color={colors.teal} />
             </View>
           ))}
@@ -355,36 +401,107 @@ export default function PaywallSheet({
         </Text>
 
       </ScrollView>
-    </BottomSheet>
+
+      {/* Parental gate — App Store guideline 1.3 (Kids category):
+          a parent must solve a simple addition challenge before any
+          purchase can proceed. A child cannot easily bypass this. */}
+      <Modal supportedOrientations={['portrait', 'landscape']}
+        visible={gateVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGateVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.gateOverlay}
+        >
+          <View style={[s.gateCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="shield-checkmark-outline" size={32} color={colors.primary} style={{ alignSelf: 'center', marginBottom: 8 }} />
+            <Text style={[s.gateTitle, { color: colors.textPrimary }]}>Parent Check</Text>
+            <Text style={[s.gateSub, { color: colors.textSecondary }]}>
+              To confirm this purchase, please answer the question below.
+            </Text>
+            <Text style={[s.gateQ, { color: colors.textPrimary }]}>
+              What is {gateQuestion.a} + {gateQuestion.b}?
+            </Text>
+            <TextInput
+              style={[s.gateInput, {
+                backgroundColor: colors.surface,
+                color: colors.textPrimary,
+                borderColor: gateError ? colors.danger : colors.border,
+              }]}
+              keyboardType="number-pad"
+              value={gateInput}
+              onChangeText={v => { setGateInput(v); setGateError(false); }}
+              placeholder="Your answer"
+              placeholderTextColor={colors.textTertiary}
+              autoFocus
+              maxLength={6}
+            />
+            {gateError && (
+              <Text style={[s.gateErr, { color: colors.danger }]}>Incorrect — please try again.</Text>
+            )}
+            <View style={s.gateButtons}>
+              <TouchableOpacity
+                onPress={() => setGateVisible(false)}
+                style={[s.gateCancelBtn, { borderColor: colors.border }]}
+              >
+                <Text style={[s.gateCancelTxt, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmGate}
+                style={[s.gateConfirmBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={s.gateConfirmTxt}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      </View>
+    </FullPageOverlay>
   );
 }
 
 const s = StyleSheet.create({
-  content:          { paddingBottom: 32, gap: 16 },
-  logoRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 4 },
-  trialBanner:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderWidth: 1, borderRadius: 14, padding: 14 },
-  trialBannerTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  trialBannerSub:   { fontSize: 12, lineHeight: 16 },
+  content:          { paddingBottom: 16, gap: 10 },
+  logoRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 0 },
+  trialBanner:      { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderWidth: 1, borderRadius: 12, padding: 10 },
+  trialBannerTitle: { fontSize: 13, fontWeight: '700', marginBottom: 1 },
+  trialBannerSub:   { fontSize: 11, lineHeight: 14 },
   headline:         { fontSize: 17, fontWeight: '700', textAlign: 'center', lineHeight: 24, paddingHorizontal: 4 },
   featuresGrid:     { borderRadius: 14, overflow: 'hidden' },
-  featureRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
-  featureIcon:      { width: 26, alignItems: 'center', justifyContent: 'center' },
-  featureText:      { flex: 1, fontSize: 14, fontWeight: '500' },
-  billingToggle:    { flexDirection: 'row', padding: 4, gap: 4 },
-  billingOption:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8 },
-  billingLabel:     { fontSize: 14, fontWeight: '600' },
-  savePill:         { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  featureRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
+  featureIcon:      { width: 22, alignItems: 'center', justifyContent: 'center' },
+  featureText:      { flex: 1, fontSize: 12.5, fontWeight: '500' },
+  billingToggle:    { flexDirection: 'row', padding: 3, gap: 3 },
+  billingOption:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 6 },
+  billingLabel:     { fontSize: 13, fontWeight: '600' },
+  savePill:         { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1.5 },
   savePillText:     { fontSize: 11, fontWeight: '700' },
-  priceCard:        { borderWidth: 1.5, borderRadius: 16, padding: 18, alignItems: 'center', gap: 4 },
+  priceCard:        { borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: 'center', gap: 2 },
   priceRow:         { flexDirection: 'row', alignItems: 'baseline' },
-  priceWas:         { fontSize: 18, fontWeight: '600', textDecorationLine: 'line-through', opacity: 0.55, marginRight: 6 },
-  priceMain:        { fontSize: 38, fontWeight: '800', letterSpacing: -1 },
-  pricePer:         { fontSize: 16, fontWeight: '600' },
-  priceEquiv:       { fontSize: 13, fontWeight: '500', opacity: 0.8 },
-  trialNote:        { fontSize: 12, textAlign: 'center', marginTop: 2 },
-  cta:              { borderRadius: 16, paddingVertical: 17, alignItems: 'center', shadowColor: '#CD7B57', shadowOpacity: 0.35, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 6 },
-  ctaText:          { color: '#fff', fontSize: 17, fontWeight: '700', letterSpacing: 0.2 },
-  restoreBtn:       { alignItems: 'center', paddingVertical: 4 },
-  restoreText:      { fontSize: 13 },
-  legal:            { fontSize: 11, textAlign: 'center', lineHeight: 16, opacity: 0.7 },
+  priceWas:         { fontSize: 14, fontWeight: '600', textDecorationLine: 'line-through', opacity: 0.55, marginRight: 5 },
+  priceMain:        { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+  pricePer:         { fontSize: 13, fontWeight: '600' },
+  priceEquiv:       { fontSize: 11, fontWeight: '500', opacity: 0.8 },
+  trialNote:        { fontSize: 10.5, textAlign: 'center', marginTop: 1 },
+  cta:              { borderRadius: 14, paddingVertical: 13, alignItems: 'center', shadowColor: '#CD7B57', shadowOpacity: 0.3, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8, elevation: 4 },
+  ctaText:          { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
+  restoreBtn:       { alignItems: 'center', paddingVertical: 2 },
+  restoreText:      { fontSize: 12 },
+  legal:            { fontSize: 10, textAlign: 'center', lineHeight: 13, opacity: 0.7 },
+  gateOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 28 },
+  gateCard:         { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24, gap: 10 },
+  gateTitle:        { fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  gateSub:          { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  gateQ:            { fontSize: 22, fontWeight: '700', textAlign: 'center', marginTop: 4 },
+  gateInput:        { borderWidth: 1.5, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  gateErr:          { fontSize: 13, textAlign: 'center' },
+  gateButtons:      { flexDirection: 'row', gap: 10, marginTop: 4 },
+  gateCancelBtn:    { flex: 1, borderWidth: 1.5, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  gateCancelTxt:    { fontSize: 15, fontWeight: '600' },
+  gateConfirmBtn:   { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  gateConfirmTxt:   { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

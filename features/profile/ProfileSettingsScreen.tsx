@@ -10,25 +10,25 @@
 // Role-gating follows the same `roles: MemberRole[]` convention VaultScreen's
 // own FEATURES array and Hub's role views already use — no new pattern.
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform, Share, Image, InteractionManager, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform, Share, Image, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMember } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useAuthStore } from '@/store/authStore';
-import { supabase, uploadMemberAvatar } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { setFamilyPhotoFrameEnabled } from '@/features/hub/parent/FamilyPhotoFrameCard';
 import { showAlert } from '@/components/AppAlert';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { restorePurchases, isRevenueCatReady } from '@/lib/subscription';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import { EditMyProfileScreen } from '@/features/profile/EditMyProfileScreen';
 import {
   isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, getBiometricLabel,
 } from '@/lib/biometrics';
@@ -40,14 +40,11 @@ import { useFeatureFlag } from '@/lib/featureFlags';
 import { CarouselMemberCard } from '@/features/vault/tabs/MemberCard';
 import { FamilyTreeView } from '@/features/vault/tabs/FamilyTreeView';
 import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
-import { PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
 import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { localDateStr, fmtDate } from '@/lib/dates';
-import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
-import { useIsAppAdmin } from '@/lib/hooks/useIsAppAdmin';
 import { useTermsContent } from '@/features/onboarding/screens/TermsScreen';
 import DataRecoveryScreen from '@/features/profile/DataRecoveryScreen';
-import { CalendarSyncBody } from '@/features/profile/CalendarSyncScreen';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Same category buckets family-notifier's own categoryFor() groups every
 // real notification type into (supabase/functions/family-notifier/index.ts)
@@ -85,10 +82,10 @@ const CURRENCIES: { code: string; symbol: string; label: string }[] = [
 // than pulling in hub's SectionCard, which is tuned for Hub's specific
 // collapsible/badge shape and would be fighting its own defaults here) ──────
 
-function SectionHeader({ label, colors }: { label: string; colors: any }) {
+function SectionHeader({ label, colors, isDark }: { label: string; colors: any; isDark: boolean }) {
   return (
     <Text style={{
-      fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+      fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight,
       textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10,
     }}>
       {label}
@@ -100,14 +97,14 @@ function SectionHeader({ label, colors }: { label: string; colors: any }) {
 // exported so kiosk can render it inside its own side drawer instead of
 // router.push'ing that full-screen route [live-requested: "tems and
 // prviacy should show side bar"].
-export function TermsContentBody({ colors }: { colors: any }) {
+export function TermsContentBody({ colors, isDark = false }: { colors: any; isDark?: boolean }) {
   const { content: termsContent } = useTermsContent();
   return (
     <View style={{
-      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
-      backgroundColor: colors.card, padding: 16,
+      borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+      backgroundColor: isDark ? colors.card : GEMINI.cardBg, padding: 16,
     }}>
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 20 }}>
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 20 }}>
         {termsContent}
       </Text>
     </View>
@@ -135,9 +132,9 @@ function Row({
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 12,
         paddingVertical: 13, paddingHorizontal: 14,
-        borderRadius: RADIUS.md, backgroundColor: isDark ? tint + '16' : tint + '14',
-        borderWidth: 1, borderColor: tint + (isDark ? '40' : '30'),
+        borderRadius: RADIUS.md, backgroundColor: isDark ? colors.card : GEMINI.cardBg,
         marginBottom: 8,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
       }}
     >
       <View style={{
@@ -147,12 +144,12 @@ function Row({
         <Ionicons name={icon} size={17} color="#fff" />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: danger ? colors.danger : colors.textPrimary }}>{label}</Text>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: danger ? colors.danger : (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{label}</Text>
         {subtitle ? (
-          <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 1 }}>{subtitle}</Text>
+          <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginTop: 1 }}>{subtitle}</Text>
         ) : null}
       </View>
-      {right ?? (onPress ? <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} /> : null)}
+      {right ?? (onPress ? <Ionicons name="chevron-forward" size={18} color={isDark ? colors.textTertiary : GEMINI.bodyColorLight} /> : null)}
     </Wrapper>
   );
 }
@@ -218,7 +215,7 @@ export function NotificationsSheetBody({
 
   return (
     <>
-      <SectionHeader label="Categories" colors={colors} />
+      <SectionHeader label="Categories" colors={colors} isDark={isDark} />
       {NOTIF_CATEGORIES.map(cat => {
         const enabled = notifPrefs[cat.key] !== false;
         return (
@@ -236,7 +233,7 @@ export function NotificationsSheetBody({
                   setNotifPrefs(nextPrefs);
                   updateMember(activeMember.id, { notificationPrefs: nextPrefs });
                 }}
-                trackColor={{ false: colors.border, true: colors.primary }}
+                trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.primary }}
                 thumbColor="#fff"
               />
             }
@@ -255,14 +252,14 @@ export function NotificationsSheetBody({
               setStoreReminders(next);
               updateMember(activeMember.id, { storeProximityRemindersEnabled: next });
             }}
-            trackColor={{ false: colors.border, true: colors.primary }}
+            trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.primary }}
             thumbColor="#fff"
           />
         }
       />
 
       <View style={{ marginTop: 18 }}>
-        <SectionHeader label="Call Alerts" colors={colors} />
+        <SectionHeader label="Call Alerts" colors={colors} isDark={isDark} />
         <Row
           icon="call-outline"
           label="Call-style reminders"
@@ -275,7 +272,7 @@ export function NotificationsSheetBody({
                 setCallAlertsEnabled(next);
                 updateMember(activeMember.id, { callAlertsEnabled: next });
               }}
-              trackColor={{ false: colors.border, true: colors.primary }}
+              trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.primary }}
               thumbColor="#fff"
             />
           }
@@ -283,7 +280,7 @@ export function NotificationsSheetBody({
       </View>
 
       <View style={{ marginTop: 18 }}>
-        <SectionHeader label="Quiet Hours" colors={colors} />
+        <SectionHeader label="Quiet Hours" colors={colors} isDark={isDark} />
         <Row
           icon="moon-outline"
           label="Enable quiet hours"
@@ -296,7 +293,7 @@ export function NotificationsSheetBody({
                 setQuietEnabled(next);
                 updateMember(activeMember.id, { quietHoursEnabled: next });
               }}
-              trackColor={{ false: colors.border, true: colors.primary }}
+              trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.primary }}
               thumbColor="#fff"
             />
           }
@@ -304,18 +301,18 @@ export function NotificationsSheetBody({
         {quietEnabled && (
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity onPress={() => setPickerTarget('start')} style={{
-              flex: 1, paddingVertical: 12, borderRadius: RADIUS.md, backgroundColor: colors.card,
-              borderWidth: 1, borderColor: colors.border, alignItems: 'center',
+              flex: 1, paddingVertical: 12, borderRadius: RADIUS.md, backgroundColor: isDark ? colors.card : GEMINI.cardBg,
+              borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border, alignItems: 'center',
             }}>
-              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginBottom: 2 }}>From</Text>
-              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{fmt12Hour(quietStart)}</Text>
+              <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginBottom: 2 }}>From</Text>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{fmt12Hour(quietStart)}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setPickerTarget('end')} style={{
-              flex: 1, paddingVertical: 12, borderRadius: RADIUS.md, backgroundColor: colors.card,
-              borderWidth: 1, borderColor: colors.border, alignItems: 'center',
+              flex: 1, paddingVertical: 12, borderRadius: RADIUS.md, backgroundColor: isDark ? colors.card : GEMINI.cardBg,
+              borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border, alignItems: 'center',
             }}>
-              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginBottom: 2 }}>Until</Text>
-              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{fmt12Hour(quietEnd)}</Text>
+              <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginBottom: 2 }}>Until</Text>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{fmt12Hour(quietEnd)}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -403,7 +400,7 @@ export function CurrencySheetBody({
 
   return (
     <>
-      <SectionHeader label="Currency" colors={colors} />
+      <SectionHeader label="Currency" colors={colors} isDark={isDark} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
         {CURRENCIES.map(c => {
           const active = householdSettings.currencyCode === c.code;
@@ -413,11 +410,11 @@ export function CurrencySheetBody({
               onPress={() => updateHouseholdSettings({ currencyCode: c.code, currencySymbol: c.symbol })}
               style={{
                 paddingHorizontal: 12, paddingVertical: 9, borderRadius: RADIUS.md,
-                backgroundColor: active ? colors.primary : colors.card,
-                borderWidth: 1, borderColor: active ? colors.primary : colors.border,
+                backgroundColor: active ? colors.primary : (isDark ? colors.card : GEMINI.cardBg),
+                borderWidth: 1, borderColor: active ? colors.primary : (isDark ? colors.border : GEMINI.border),
               }}
             >
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : colors.textPrimary }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 {c.symbol} {c.code}
               </Text>
             </TouchableOpacity>
@@ -425,26 +422,26 @@ export function CurrencySheetBody({
         })}
       </View>
 
-      <SectionHeader label="Conversion Rate" colors={colors} />
+      <SectionHeader label="Conversion Rate" colors={colors} isDark={isDark} />
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14,
-        borderRadius: RADIUS.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+        borderRadius: RADIUS.md, backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
       }}>
         <TextInput
           value={coinsPerUnit}
           onChangeText={applyCoinsPerUnit}
           keyboardType="number-pad"
           style={{
-            flex: 1, fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary,
-            borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.sm,
-            paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.surface,
+            flex: 1, fontSize: TYPO.heading, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor,
+            borderWidth: 1.5, borderColor: isDark ? colors.border : GEMINI.border, borderRadius: RADIUS.sm,
+            paddingHorizontal: 12, paddingVertical: 8, backgroundColor: isDark ? colors.surface : GEMINI.surface,
           }}
         />
-        <Text style={{ fontSize: TYPO.body, color: colors.textSecondary }}>
+        <Text style={{ fontSize: TYPO.body, color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
           coins = 1 {householdSettings.currencySymbol}
         </Text>
       </View>
-      <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 10 }}>
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginTop: 10 }}>
         Example: 250 coins = {householdSettings.currencySymbol}{(250 * householdSettings.pointsToFiatRatio).toFixed(2)}
       </Text>
     </>
@@ -512,12 +509,12 @@ export function FamilyNameSheetBody({
         value={name}
         onChangeText={t => { setName(t); setError(''); }}
         placeholder="e.g. The Smith Family"
-        placeholderTextColor={colors.textTertiary}
+        placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
         autoFocus
         style={{
-          fontSize: TYPO.heading, fontWeight: '700', color: colors.textPrimary,
-          borderWidth: 1.5, borderColor: error ? colors.danger : colors.border, borderRadius: RADIUS.md,
-          paddingHorizontal: 14, paddingVertical: 12, backgroundColor: colors.surface, marginTop: 8,
+          fontSize: TYPO.heading, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor,
+          borderWidth: 1.5, borderColor: error ? colors.danger : (isDark ? colors.border : GEMINI.border), borderRadius: RADIUS.md,
+          paddingHorizontal: 14, paddingVertical: 12, backgroundColor: isDark ? colors.surface : GEMINI.surface, marginTop: 8,
         }}
       />
       {error ? <Text style={{ color: colors.danger, fontSize: TYPO.caption, marginTop: 6 }}>{error}</Text> : null}
@@ -742,16 +739,16 @@ function InviteMemberSheet({
   const body = (
     <>
 
-      <SectionHeader label="Add Someone New" colors={colors} />
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Name</Text>
+      <SectionHeader label="Add Someone New" colors={colors} isDark={isDark} />
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginBottom: 8 }}>Name</Text>
       <TextInput
         value={name} onChangeText={setName} onBlur={() => setTouched(t => ({ ...t, name: true }))}
         placeholder="e.g. Emma" maxLength={60}
-        placeholderTextColor={colors.textTertiary}
+        placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
         style={{
-          borderWidth: 1.5, borderColor: (touched.name && nameError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
+          borderWidth: 1.5, borderColor: (touched.name && nameError) ? colors.danger : (isDark ? colors.border : GEMINI.border), borderRadius: RADIUS.sm,
           paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
-          color: colors.textPrimary, backgroundColor: colors.surface,
+          color: isDark ? colors.textPrimary : GEMINI.titleColor, backgroundColor: isDark ? colors.surface : GEMINI.surface,
         }}
       />
       {touched.name && nameError ? (
@@ -759,7 +756,7 @@ function InviteMemberSheet({
       ) : null}
       <View style={{ marginBottom: 14 }} />
 
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Role</Text>
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginBottom: 8 }}>Role</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         {INVITE_ROLES.map(r => {
           const active = role === r.value;
@@ -769,11 +766,11 @@ function InviteMemberSheet({
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
                 paddingHorizontal: 12, paddingVertical: 9, borderRadius: RADIUS.md,
-                backgroundColor: active ? colors.primary : colors.card,
-                borderWidth: 1, borderColor: active ? colors.primary : colors.border,
+                backgroundColor: active ? colors.primary : (isDark ? colors.card : GEMINI.cardBg),
+                borderWidth: 1, borderColor: active ? colors.primary : (isDark ? colors.border : GEMINI.border),
               }}>
               <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : colors.textPrimary }}>{r.label}</Text>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{r.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -781,7 +778,7 @@ function InviteMemberSheet({
 
       {relationshipOptions.length > 0 && (
         <>
-          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+          <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginBottom: 8 }}>
             Relationship <Text style={{ fontWeight: '400' }}>(optional)</Text>
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
@@ -791,10 +788,10 @@ function InviteMemberSheet({
                 <TouchableOpacity key={opt} onPress={() => setRelationship(picked ? undefined : opt)}
                   style={{
                     paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
-                    backgroundColor: picked ? colors.teal : colors.card,
-                    borderWidth: 1, borderColor: picked ? colors.teal : colors.border,
+                    backgroundColor: picked ? colors.teal : (isDark ? colors.card : GEMINI.cardBg),
+                    borderWidth: 1, borderColor: picked ? colors.teal : (isDark ? colors.border : GEMINI.border),
                   }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: picked ? '#fff' : colors.textPrimary }}>{opt}</Text>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: picked ? '#fff' : (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{opt}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -808,19 +805,19 @@ function InviteMemberSheet({
           (localDateStr) rather than inventing a second date representation.
           Optional — skipping it is a real, supported choice, same as it is
           post-onboarding. */}
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginBottom: 8 }}>
         Date of birth <Text style={{ fontWeight: '400' }}>(optional)</Text>
       </Text>
       <TouchableOpacity
         onPress={() => setShowDobPicker(v => !v)}
         style={{
           flexDirection: 'row', alignItems: 'center', gap: 8,
-          borderWidth: 1.5, borderColor: (dobError) ? colors.danger : (showDobPicker ? colors.primary : colors.border),
+          borderWidth: 1.5, borderColor: (dobError) ? colors.danger : (showDobPicker ? colors.primary : (isDark ? colors.border : GEMINI.border)),
           borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 10,
-          backgroundColor: colors.surface,
+          backgroundColor: isDark ? colors.surface : GEMINI.surface,
         }}>
-        <Ionicons name="calendar-outline" size={15} color={colors.textSecondary} />
-        <Text style={{ fontSize: TYPO.body, color: dob ? colors.textPrimary : colors.textTertiary }}>
+        <Ionicons name="calendar-outline" size={15} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />
+        <Text style={{ fontSize: TYPO.body, color: dob ? (isDark ? colors.textPrimary : GEMINI.titleColor) : (isDark ? colors.textTertiary : GEMINI.bodyColorLight) }}>
           {dob ? fmtDate(localDateStr(dob)) : 'Tap to choose a date'}
         </Text>
       </TouchableOpacity>
@@ -828,7 +825,7 @@ function InviteMemberSheet({
         <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{dobError}</Text>
       ) : null}
       {showDobPicker && (
-        <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }}>
+        <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border, backgroundColor: isDark ? colors.card : GEMINI.cardBg, marginTop: 8 }}>
           <DateTimePicker
             value={dob ?? MAX_DOB}
             mode="date"
@@ -836,7 +833,7 @@ function InviteMemberSheet({
             minimumDate={MIN_DOB}
             maximumDate={MAX_DOB}
             onChange={(_e, d) => { if (d) setDob(d); }}
-            textColor={colors.textPrimary}
+            textColor={isDark ? colors.textPrimary : GEMINI.titleColor}
             style={{ height: 180, width: '100%' }}
           />
           <TouchableOpacity onPress={() => setShowDobPicker(false)} style={{ alignSelf: 'flex-end', padding: 12 }}>
@@ -851,17 +848,17 @@ function InviteMemberSheet({
           member_invitations/send-member-invite email system). Reuses
           FamilyMember.email, the same field an accepted email invite or a
           code-joined member ends up with. */}
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginBottom: 8 }}>
         Email <Text style={{ fontWeight: '400' }}>(optional)</Text>
       </Text>
       <TextInput
         value={email} onChangeText={setEmail} onBlur={() => setTouched(t => ({ ...t, email: true }))}
-        placeholder="e.g. emma@example.com" placeholderTextColor={colors.textTertiary}
+        placeholder="e.g. emma@example.com" placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
         autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
         style={{
-          borderWidth: 1.5, borderColor: (touched.email && emailError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
+          borderWidth: 1.5, borderColor: (touched.email && emailError) ? colors.danger : (isDark ? colors.border : GEMINI.border), borderRadius: RADIUS.sm,
           paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
-          color: colors.textPrimary, backgroundColor: colors.surface,
+          color: isDark ? colors.textPrimary : GEMINI.titleColor, backgroundColor: isDark ? colors.surface : GEMINI.surface,
         }}
       />
       {touched.email && emailError ? (
@@ -883,11 +880,11 @@ function InviteMemberSheet({
         )}
       </TouchableOpacity>
 
-      <SectionHeader label={`Pending Invites (${pendingMembers.length})`} colors={colors} />
+      <SectionHeader label={`Pending Invites (${pendingMembers.length})`} colors={colors} isDark={isDark} />
       {loadingInvites ? (
         <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
       ) : pendingMembers.length === 0 ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: 12 }}>
+        <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, textAlign: 'center', paddingVertical: 12 }}>
           No pending invites — add someone above.
         </Text>
       ) : (
@@ -896,14 +893,14 @@ function InviteMemberSheet({
           const isLive = inv && inv.status === 'pending';
           return (
             <View key={m.id} style={{
-              borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
-              backgroundColor: colors.card, padding: 12, marginBottom: 10,
+              borderRadius: RADIUS.md, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+              backgroundColor: isDark ? colors.card : GEMINI.cardBg, padding: 12, marginBottom: 10,
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={{ fontSize: 18 }}>{m.emoji ?? '👤'}</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{m.name}</Text>
-                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{m.name}</Text>
+                  <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>
                     {m.relationship ?? m.role} · Not yet joined
                   </Text>
                 </View>
@@ -914,31 +911,31 @@ function InviteMemberSheet({
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.primary + '40',
                     backgroundColor: colors.primaryLight, paddingHorizontal: 12, paddingVertical: 10 }}>
-                    <Text style={{ fontSize: 18, fontWeight: '900', letterSpacing: 3, color: colors.textPrimary }}>{inv.code}</Text>
-                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{fmtExpiry(inv.expires_at)}</Text>
+                    <Text style={{ fontSize: 18, fontWeight: '900', letterSpacing: 3, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{inv.code}</Text>
+                    <Text style={{ fontSize: TYPO.micro, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>{fmtExpiry(inv.expires_at)}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity onPress={() => copyCode(m.id, inv.code)}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border }}>
-                      <Ionicons name={copiedId === m.id ? 'checkmark' : 'copy-outline'} size={14} color={colors.textPrimary} />
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border }}>
+                      <Ionicons name={copiedId === m.id ? 'checkmark' : 'copy-outline'} size={14} color={isDark ? colors.textPrimary : GEMINI.titleColor} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
                         {copiedId === m.id ? 'Copied' : 'Copy'}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => shareCode(m.name, inv.code)}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border }}>
-                      <Ionicons name="share-outline" size={14} color={colors.textPrimary} />
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>Share</Text>
+                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border }}>
+                      <Ionicons name="share-outline" size={14} color={isDark ? colors.textPrimary : GEMINI.titleColor} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Share</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => generateCodeFor(m.id)} disabled={regenerating === m.id}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border }}>
+                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border }}>
                       {regenerating === m.id
-                        ? <ActivityIndicator size="small" color={colors.textPrimary} />
-                        : <><Ionicons name="refresh-outline" size={14} color={colors.textPrimary} />
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>New Code</Text></>}
+                        ? <ActivityIndicator size="small" color={isDark ? colors.textPrimary : GEMINI.titleColor} />
+                        : <><Ionicons name="refresh-outline" size={14} color={isDark ? colors.textPrimary : GEMINI.titleColor} />
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>New Code</Text></>}
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -978,17 +975,17 @@ function InviteMemberSheet({
 
       {claimedInvitees.length > 0 && (
         <View style={{ marginTop: 8 }}>
-          <SectionHeader label={`Already Joined (${claimedInvitees.length})`} colors={colors} />
+          <SectionHeader label={`Already Joined (${claimedInvitees.length})`} colors={colors} isDark={isDark} />
           {claimedInvitees.map(m => (
             <View key={m.id} style={{
               flexDirection: 'row', alignItems: 'center', gap: 8,
               paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.sm,
-              backgroundColor: colors.surface, marginBottom: 6,
+              backgroundColor: isDark ? colors.surface : GEMINI.surface, marginBottom: 6,
               borderWidth: 1, borderColor: colors.success + '30',
             }}>
               <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{m.relationship ?? m.role}</Text>
+              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{m.name}</Text>
+              <Text style={{ fontSize: TYPO.micro, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>{m.relationship ?? m.role}</Text>
             </View>
           ))}
         </View>
@@ -1004,303 +1001,6 @@ function InviteMemberSheet({
   );
 }
 
-// ─── Edit My Profile sheet ──────────────────────────────────────────────────
-// Self-service — the CURRENTLY ACTIVE member editing their OWN name/DOB/
-// email/avatar. Distinct from EditMemberModal (RosterTab.tsx), which is the
-// parent-edits-a-DIFFERENT-member flow with its own role/relationship/
-// driving-earnings fields that don't apply to editing yourself. Same avatar
-// picker pattern as CompleteProfileScreen (emoji grid or a real photo via
-// expo-image-picker + uploadMemberAvatar) and the same DOB/email validation
-// InviteMemberSheet's add-form uses. Saves go straight through
-// updateMember() — a member always has permission to write their own row,
-// no saveMemberEdit role-vocabulary translation needed since role isn't
-// editable here.
-const AVATAR_EMOJIS = ['🧒','👦','👧','🧑','👩','👨','🧓','👴','👵','🦸','🧙','🧜','🦊','🐶','🐱','⭐'];
-
-// Exported so kiosk's own persistent sidebar (ParentStatsColumn.tsx /
-// KioskKidTeenStatsColumn.tsx) can mount this same real sheet from a
-// long-press on its identity card, instead of only ever being reachable
-// via this screen's own (now kiosk-hidden) hero card [live-requested:
-// "remove the heroin the profile as we aalready have it in the static
-// side bar we can add that fuctionality long press"].
-export function EditMyProfileSheet({
-  visible, onClose, member, colors, isDark, renderShell,
-}: {
-  visible: boolean; onClose: () => void; member: FamilyMember; colors: any; isDark: boolean;
-  /** Kiosk-only — swaps this sheet's own AppBottomSheet for kiosk's real
-   * side-sheet form [live-requested: "edit my profile also side form" /
-   * "i need all these to be side bar forms"], same renderShell pattern
-   * used elsewhere in this file (see dataRecoveryShell's own comment) —
-   * wraps this component's real body/state, nothing forked. Mobile never
-   * passes this, so its own AppBottomSheet (opened from the tappable
-   * identity card) is completely unchanged. */
-  renderShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
-}) {
-  const updateMember = useFamilyStore(s => s.updateMember);
-  const [name, setName] = useState(member.name);
-  const [email, setEmail] = useState(member.email ?? '');
-  const [dob, setDob] = useState<Date | null>(member.dateOfBirth ? new Date(member.dateOfBirth + 'T00:00:00') : null);
-  const [showDobPicker, setShowDobPicker] = useState(false);
-  const [pickedEmoji, setPickedEmoji] = useState<string | undefined>(undefined);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [touched, setTouched] = useState<{ name?: boolean; email?: boolean }>({});
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
-
-  // Same fix as InviteMemberSheet's identical showDobPicker — closing this
-  // sheet while the DOB picker was still open left its native inline
-  // DateTimePicker mounted underneath the closing Modal, freezing all touch.
-  useEffect(() => {
-    if (!visible) setShowDobPicker(false);
-  }, [visible]);
-
-  // On kiosk this component's instance survives an active-profile switch
-  // (KioskScreen.tsx renders it under `{active && ...}`, not
-  // `{showEditMyProfile && ...}` — some member is always active, so it
-  // never unmounts). The useState initializers below only ever run on
-  // first mount, so without this the form kept showing whichever member
-  // was active the FIRST time it was ever opened — live-reproduced:
-  // editing Jak, switching to Jessica, then reopening still showed Jak's
-  // name and his real auth email. Re-seed every field whenever the sheet
-  // opens, keyed on member.id, so a stale profile can never be shown.
-  useEffect(() => {
-    if (!visible) return;
-    setName(member.name);
-    setEmail(member.email ?? '');
-    setDob(member.dateOfBirth ? new Date(member.dateOfBirth + 'T00:00:00') : null);
-    setPickedEmoji(undefined);
-    setPhotoUri(null);
-    setTouched({});
-  }, [visible, member.id]);
-
-  // A member with a real Supabase Auth account (signed up themselves,
-  // rather than a PIN-only profile someone else created) already has a
-  // verified email on file in auth.users — pull it in instead of asking
-  // them to retype it, and don't let it be hand-edited into something that
-  // no longer matches their actual login. PIN-only members (kids/seniors
-  // with no auth_user_id) have no auth.users row at all, so they keep the
-  // plain editable field below.
-  const hasRealAuth = !!member.authUserId;
-  useEffect(() => {
-    if (!hasRealAuth) return;
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user && data.user.id === member.authUserId && data.user.email) setEmail(data.user.email);
-    });
-  }, [hasRealAuth, member.authUserId]);
-
-  const MAX_DOB = new Date();
-  const MIN_DOB = new Date(Date.now() - 110 * 365.25 * 24 * 3600_000);
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const nameError = !name.trim() ? 'Name is required.' : name.trim().length > 60 ? 'Name is too long.' : undefined;
-  const emailError = email.trim() && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : undefined;
-  const dobError = dob && (dob > MAX_DOB ? 'Date of birth can\'t be in the future.' : dob < MIN_DOB ? 'That date seems too far in the past.' : undefined);
-  const formValid = !nameError && !emailError && !dobError;
-
-  const currentAvatarPreview = photoUri ?? (pickedEmoji ? undefined : member.avatarUrl);
-  const currentEmojiPreview = pickedEmoji ?? (member.avatarUrl ? undefined : member.emoji);
-
-  // Close the picker sheet fully BEFORE launching the native camera/library
-  // UI — same deliberate ordering as RosterTab.tsx's EditMemberModal (this
-  // sheet is itself an AppBottomSheet, i.e. an RN <Modal>; stacking a
-  // second native picker presentation on top of one still visible is a
-  // known iOS freeze/deadlock).
-  const pickPhoto = async (fromCamera: boolean) => {
-    setShowPhotoPicker(false);
-    const permission = fromCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permission.status !== 'granted') {
-      showAlert('Permission needed', `Allow ${fromCamera ? 'camera' : 'photo library'} access to change your photo.`);
-      return;
-    }
-    try {
-      await showPickerLoading(fromCamera ? 'Waiting for camera…' : 'Opening library…');
-      const result = fromCamera
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 });
-      hidePickerLoading();
-      if (!result.canceled && result.assets[0]) { setPhotoUri(result.assets[0].uri); setPickedEmoji(undefined); }
-    } catch (e: any) {
-      hidePickerLoading();
-      showAlert(`Could not open ${fromCamera ? 'camera' : 'library'}`, e?.message);
-    }
-  };
-
-  const handleSave = async () => {
-    setTouched({ name: true, email: true });
-    if (!formValid) return;
-    setSaving(true);
-    let avatarUrl: string | undefined;
-    if (photoUri && member.familyId) {
-      setUploading(true);
-      try {
-        avatarUrl = await uploadMemberAvatar(member.familyId, member.id, photoUri);
-      } catch (e: any) {
-        showAlert('Photo upload failed', "Couldn't upload the photo — other changes will still be saved.");
-      }
-      setUploading(false);
-    }
-    // Dismiss FIRST, defer the store write (updateMember) until after the
-    // dismiss animation settles — same fix as RosterTab.tsx's EditMemberModal
-    // Save handler (see its comment for the full why: this member's card
-    // renders in BOTH the carousel below and the identity card above on
-    // this same screen, so updateMember here re-renders more of this screen
-    // than almost any other save path in the app).
-    const patch = {
-      name: name.trim(),
-      email: email.trim() ? email.trim().toLowerCase() : undefined,
-      dateOfBirth: dob ? localDateStr(dob) : undefined,
-      ...(avatarUrl ? { avatarUrl, emoji: undefined } : {}),
-      ...(pickedEmoji ? { emoji: pickedEmoji, avatarUrl: undefined } : {}),
-    };
-    onClose();
-    InteractionManager.runAfterInteractions(() => {
-      setSaving(false);
-      updateMember(member.id, patch);
-    });
-  };
-
-  const body = (
-    <>
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Photo</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <TouchableOpacity
-          onPress={() => setShowPhotoPicker(true)}
-          style={{ width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: colors.primaryLight, borderWidth: 2, borderColor: colors.primary, overflow: 'hidden' }}>
-          {currentAvatarPreview ? (
-            <Image source={{ uri: currentAvatarPreview }} style={{ width: 64, height: 64 }} />
-          ) : (
-            <Text style={{ fontSize: 30 }}>{currentEmojiPreview ?? '👤'}</Text>
-          )}
-        </TouchableOpacity>
-        {(photoUri || pickedEmoji) && (
-          <TouchableOpacity onPress={() => { setPhotoUri(null); setPickedEmoji(undefined); }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Reset</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
-        {AVATAR_EMOJIS.map(e => (
-          <TouchableOpacity key={e}
-            onPress={() => { setPickedEmoji(e); setPhotoUri(null); }}
-            style={{ width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: pickedEmoji === e ? colors.primaryLight : 'transparent',
-              borderWidth: pickedEmoji === e ? 1.5 : 0, borderColor: colors.primary }}>
-            <Text style={{ fontSize: 18 }}>{e}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Name</Text>
-      <TextInput
-        value={name} onChangeText={setName} onBlur={() => setTouched(t => ({ ...t, name: true }))}
-        maxLength={60} placeholderTextColor={colors.textTertiary}
-        style={{
-          borderWidth: 1.5, borderColor: (touched.name && nameError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
-          paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
-          color: colors.textPrimary, backgroundColor: colors.surface,
-        }}
-      />
-      {touched.name && nameError ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{nameError}</Text>
-      ) : null}
-      <View style={{ marginBottom: 14 }} />
-
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
-        Date of birth <Text style={{ fontWeight: '400' }}>(optional)</Text>
-      </Text>
-      <TouchableOpacity
-        onPress={() => setShowDobPicker(v => !v)}
-        style={{
-          flexDirection: 'row', alignItems: 'center', gap: 8,
-          borderWidth: 1.5, borderColor: dobError ? colors.danger : (showDobPicker ? colors.primary : colors.border),
-          borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 10,
-          backgroundColor: colors.surface,
-        }}>
-        <Ionicons name="calendar-outline" size={15} color={colors.textSecondary} />
-        <Text style={{ fontSize: TYPO.body, color: dob ? colors.textPrimary : colors.textTertiary }}>
-          {dob ? fmtDate(localDateStr(dob)) : 'Tap to choose a date'}
-        </Text>
-      </TouchableOpacity>
-      {dobError ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{dobError}</Text>
-      ) : null}
-      {showDobPicker && (
-        <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }}>
-          <DateTimePicker
-            value={dob ?? MAX_DOB}
-            mode="date"
-            display="spinner"
-            minimumDate={MIN_DOB}
-            maximumDate={MAX_DOB}
-            onChange={(_e, d) => { if (d) setDob(d); }}
-            textColor={colors.textPrimary}
-            style={{ height: 180, width: '100%' }}
-          />
-          <TouchableOpacity onPress={() => setShowDobPicker(false)} style={{ alignSelf: 'flex-end', padding: 12 }}>
-            <Text style={{ color: colors.primary, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <View style={{ marginBottom: 14 }} />
-
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
-        Email {hasRealAuth ? <Text style={{ fontWeight: '400' }}>(from your sign-in, can't be edited here)</Text> : <Text style={{ fontWeight: '400' }}>(optional)</Text>}
-      </Text>
-      <TextInput
-        value={email} onChangeText={setEmail} onBlur={() => setTouched(t => ({ ...t, email: true }))}
-        placeholder="e.g. you@example.com" placeholderTextColor={colors.textTertiary}
-        autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
-        editable={!hasRealAuth}
-        style={{
-          borderWidth: 1.5, borderColor: (touched.email && emailError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
-          paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
-          color: hasRealAuth ? colors.textSecondary : colors.textPrimary,
-          backgroundColor: hasRealAuth ? colors.border + '30' : colors.surface,
-        }}
-      />
-      {touched.email && emailError ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{emailError}</Text>
-      ) : null}
-
-      {member.createdAt ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 14 }}>
-          Member since {new Date(member.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-        </Text>
-      ) : null}
-
-      <TouchableOpacity onPress={handleSave} disabled={saving || !formValid}
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-          borderRadius: RADIUS.md, paddingVertical: 12, marginTop: 20, marginBottom: 12,
-          backgroundColor: colors.primary, opacity: (saving || !formValid) ? 0.5 : 1,
-        }}>
-        {saving ? <ActivityIndicator size="small" color="#fff" /> : (
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>{uploading ? 'Uploading…' : 'Save Changes'}</Text>
-        )}
-      </TouchableOpacity>
-
-      <PhotoPickerSheet
-        visible={showPhotoPicker} onClose={() => setShowPhotoPicker(false)}
-        onTakePhoto={() => pickPhoto(true)} onChooseLibrary={() => pickPhoto(false)}
-        onRemove={currentAvatarPreview ? () => { setShowPhotoPicker(false); setPhotoUri(null); setPickedEmoji(undefined); } : undefined}
-        avatarUri={currentAvatarPreview} avatarEmoji={currentEmojiPreview} name={member.name}
-        colors={colors} isDark={isDark} />
-    </>
-  );
-
-  if (renderShell) return <>{renderShell(visible, onClose, body)}</>;
-
-  return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Edit My Profile"
-      subtitle="Your own name, photo, birthday, and email" minHeight="65%" maxHeight="92%">
-      {body}
-    </AppBottomSheet>
-  );
-}
-
 // ─── Delete flows ───────────────────────────────────────────────────────────
 
 // Type-to-confirm — matches the "scary enough" bar the spec asks for, one
@@ -1308,12 +1008,12 @@ export function EditMyProfileSheet({
 // someone else; this is a person removing themselves or a parent
 // permanently affecting their own family, so it gets the stricter gate).
 function TypeToConfirmRow({
-  expected, value, onChange, colors,
-}: { expected: string; value: string; onChange: (v: string) => void; colors: any }) {
+  expected, value, onChange, colors, isDark,
+}: { expected: string; value: string; onChange: (v: string) => void; colors: any; isDark: boolean }) {
   return (
     <View style={{ marginTop: 4, marginBottom: 14 }}>
-      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
-        Type <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{expected}</Text> to confirm.
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginBottom: 8 }}>
+        Type <Text style={{ fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{expected}</Text> to confirm.
       </Text>
       <TextInput
         value={value}
@@ -1321,18 +1021,18 @@ function TypeToConfirmRow({
         autoCapitalize="none"
         autoCorrect={false}
         placeholder={expected}
-        placeholderTextColor={colors.textTertiary}
+        placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
         style={{
-          borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.sm,
+          borderWidth: 1.5, borderColor: isDark ? colors.border : GEMINI.border, borderRadius: RADIUS.sm,
           paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
-          color: colors.textPrimary, backgroundColor: colors.surface,
+          color: isDark ? colors.textPrimary : GEMINI.titleColor, backgroundColor: isDark ? colors.surface : GEMINI.surface,
         }}
       />
     </View>
   );
 }
 
-export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell, calendarSyncShell, inviteShell }: {
+export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell, inviteShell }: {
   hideBackButton?: boolean; hideSensitiveAdminRows?: boolean;
   // Kiosk-only: the identity card (avatar/name/role, tappable to edit) is
   // redundant there — the same identity already sits in kiosk's own
@@ -1340,8 +1040,8 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // visible on every tab, not just this one [live-requested: "remove the
   // heroin the profile as we aalready have it in the static side bar we
   // can add that fuctionality long press"]. Mobile never passes this, so
-  // its own identity card (the only way to reach EditMyProfileSheet there)
-  // is completely unchanged. EditMyProfileSheet itself still mounts below
+  // its own identity card (the only way to reach EditMyProfileScreen there)
+  // is completely unchanged. EditMyProfileScreen itself still mounts below
   // regardless — kiosk's sidebar now opens it directly via long-press.
   hideHero?: boolean;
   // Kiosk-only: re-flows the same sections (unchanged content/order/logic)
@@ -1395,13 +1095,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // exists for it, and none was requested. Mobile never passes this, so
   // its real pushed route is completely unchanged.
   dataRecoveryShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
-  // Kiosk-only: Calendar Sync opens this shell instead of router.push'ing
-  // its own full-screen route, same reasoning as termsShell/dataRecoveryShell
-  // above [live-requested: "calendar sync also like wide seems like using
-  // the mobile view can we make the kiosk dedicated view like showing the
-  // side bar recipe"]. Mobile never passes this, so its real pushed route
-  // (app/profile-settings/calendar-sync.tsx) is completely unchanged.
-  calendarSyncShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
   // Kiosk-only: same renderShell swap as currencyShell/familyNameShell, for
   // the Invite Family Member sheet [live-requested: "invite family also
   // should be side firm"] — mirrors the earlier School Schedule modal fix
@@ -1409,7 +1102,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // Mobile never passes this, so its own AppBottomSheet is unchanged.
   inviteShell?: (visible: boolean, onClose: () => void, children: React.ReactNode) => React.ReactNode;
 } = {}) {
-  const { colors, isDark, mode, setMode } = useTheme();
+  const { colors, isDark } = useTheme();
   // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
   // with no selector, which subscribes to the ENTIRE store object and
   // re-renders this whole screen (carousel, FamilyTreeView, and whichever
@@ -1463,8 +1156,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   const [showTerms, setShowTerms] = useState(false);
   // Kiosk-only — see dataRecoveryShell's own comment.
   const [showDataRecovery, setShowDataRecovery] = useState(false);
-  // Kiosk-only — see calendarSyncShell's own comment.
-  const [showCalendarSync, setShowCalendarSync] = useState(false);
 
   // Same "who's actually in this family right now" filter RosterTab uses —
   // soft-deleted members and not-yet-claimed pending invitees stay out of
@@ -1518,110 +1209,8 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   // activeMember IS the kid, so isParent reads false even though the real
   // signed-in owner is a parent. Use the real owner's own role for that.
   const isRealOwnerParent = authOwnerMember?.role === 'parent';
-  // Cheap RLS-scoped self-lookup (app_admins_select_self) — a kid/senior
-  // profile's auth session (if any) simply won't have a matching row, so
-  // this always resolves to false for them; gated below on isParent too.
-  const { isAdmin: isAppAdmin } = useIsAppAdmin();
 
-  // Member carousel + inline family tree — same single unified-sheet wiring
-  // RosterTab.tsx uses: ONE MemberProfileSheet instance per member, whose
-  // own internal `section` state (view/edit/pin/confirmRemove) handles
-  // everything that used to be three separate stacked modals
-  // (MemberProfileSheet/EditMemberModal/PinModal). viewTarget tracks which
-  // member the sheet is open for; initialSection tracks which section it
-  // should land on (tap → 'view', long-press → 'edit', key icon → 'pin').
-  const [viewTarget, setViewTarget] = useState<FamilyMember | null>(null);
-  const [initialSection, setInitialSection] = useState<'view' | 'edit' | 'pin'>('view');
-  const openMember = (m: FamilyMember, section: 'view' | 'edit' | 'pin' = 'view') => { setInitialSection(section); setViewTarget(m); };
-  const [showFullTree, setShowFullTree] = useState(false);
-  const [showInviteSheet, setShowInviteSheet] = useState(false);
   const [showEditMyProfile, setShowEditMyProfile] = useState(false);
-
-  const savePin = async (memberId: string, pin: string) => {
-    // Was a raw supabase.from('members').update() + updateMember() bypass
-    // that skipped familyStore's own setMemberPin() entirely — same
-    // duplicated-bypass shape as RosterTab.tsx's identical savePin (both
-    // fixed together). Routing through setMemberPin gets the error handling
-    // this already had AND the co-parent security notify it didn't: this
-    // sheet is reachable by a parent resetting a DIFFERENT member's PIN
-    // (canChangePin={isParent || viewTarget.id === activeMemberId} above),
-    // which previously told nobody else it happened.
-    try {
-      await useFamilyStore.getState().setMemberPin(memberId, pin, activeMemberId ?? undefined);
-    } catch (e: any) {
-      showAlert("Couldn't save PIN", e?.message ?? 'Something went wrong.');
-    }
-  };
-
-  const saveMember = async (memberId: string, name: string, mRole: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => {
-    const { error } = await saveMemberEdit(updateMember, memberId, name, mRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship, avatarEmoji, avatarUrl);
-    if (error) showAlert("Couldn't save changes", error);
-  };
-
-  const deleteFamilyMember = async (memberId: string) => {
-    try {
-      await removeMember(memberId);
-    } catch (e: any) {
-      showAlert('Could Not Remove Member', e?.message || 'Something went wrong removing this family member.');
-    }
-  };
-
-  // Member-scoped resend, mirroring RosterTab.tsx's own resendInviteFor —
-  // used by the unified member sheet's GP-only "Resend Invite" action.
-  // Generates a brand-new code tied to that member's row (targetMemberId),
-  // same per-invitee model InviteMemberSheet uses. Returns the result
-  // instead of alerting directly — this runs from inside
-  // MemberProfileSheet's still-open bottom sheet (a Modal), and firing an
-  // alert while that Modal is visible reproduced a real on-device freeze;
-  // the sheet renders the result inline (code + copy/share) instead.
-  const resendInviteFor = async (targetMember: FamilyMember): Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }> => {
-    if (!familyId || !activeMember?.id) return { ok: false, error: 'Not ready yet — try again in a moment.' };
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-      const res = await fetch(`${supabaseUrl}/functions/v1/generate-invite-code`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json', 'apikey': anonKey,
-          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ familyId, memberId: activeMember.id, targetMemberId: targetMember.id }),
-      });
-      const json = await res.json();
-      if (json.ok) return { ok: true, code: json.code, emailSent: json.emailSent, emailError: json.emailError };
-      return { ok: false, error: json.error ?? 'Something went wrong.' };
-    } catch (e: any) {
-      return { ok: false, error: e?.message ?? 'Network error.' };
-    }
-  };
-
-  // Same pattern as resendInviteFor above, but for an already-ACTIVE member
-  // whose original device was lost/wiped — see RosterTab.tsx's identical
-  // generateRecoveryCodeFor for the full rationale (distinct edge
-  // function/table from generate-invite-code; re-authenticates an EXISTING
-  // identity instead of claiming a pending one).
-  const generateRecoveryCodeFor = async (targetMember: FamilyMember): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
-    if (!familyId || !activeMember?.id) return { ok: false, error: 'Not ready yet — try again in a moment.' };
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-      const res = await fetch(`${supabaseUrl}/functions/v1/generate-recovery-code`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json', 'apikey': anonKey,
-          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ familyId, memberId: activeMember.id, targetMemberId: targetMember.id }),
-      });
-      const json = await res.json();
-      if (json.ok) return { ok: true, code: json.code };
-      return { ok: false, error: json.error ?? 'Something went wrong.' };
-    } catch (e: any) {
-      return { ok: false, error: e?.message ?? 'Network error.' };
-    }
-  };
 
   // "Just Us" — private parents-only chat channel. Hard-locked to exactly
   // the 2 parent-role members present (no "pick which 2" UI in v1), so the
@@ -1672,7 +1261,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
 
   if (!activeMember) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.primary} />
       </SafeAreaView>
     );
@@ -1759,7 +1348,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
   const canShowDangerZone = hasRealAccount || (isRealOwnerParent && !viewingOwnProfile);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top']}>
       {/* Header — back button hidden on kiosk (KioskProfileTab passes
           hideBackButton): kiosk embeds this screen directly inside its own
           tabbed rail content, not pushed as a real route, so there's no
@@ -1768,10 +1357,10 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 }}>
         {!hideBackButton && (
           <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+            <Ionicons name="chevron-back" size={24} color={isDark ? colors.textPrimary : GEMINI.titleColor} />
           </TouchableOpacity>
         )}
-        <Text style={{ fontSize: TYPO.subheading, fontWeight: '900', color: colors.textPrimary }}>
+        <Text style={{ fontSize: TYPO.subheading, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
           Profile & Settings
         </Text>
       </View>
@@ -1796,150 +1385,52 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           "APPEARANCE" labels overlapping the page title]. Mobile
           (columns=1) keeps the original 16 — its own hero card already
           sits between the title and first section there. */}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns > 1 ? 28 : 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: columns > 1 ? 28 : 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-        {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
+        {/* Identity card — tappable, opens EditMyProfileScreen (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,
             available to everyone regardless of role). Distinct from the
             unified MemberProfileSheet's edit section below, which is the
             parent-edits-someone-ELSE flow. Hidden on kiosk (hideHero) —
             the same identity already sits in kiosk's own persistent
-            sidebar; a long-press there opens this same EditMyProfileSheet
+            sidebar; a long-press there opens this same EditMyProfileScreen
             instead [live-requested: "remove the heroin the profile as we
             aalready have it in the static side bar we can add that
-            fuctionality long press"]. */}
+            fuctionality long press"]. Centered circular photo + pastel
+            status pill + name + subtitle layout per provided mockup
+            [live-requested: "make the hero card like this and on tap it
+            should open edit profile"]. */}
         {!hideHero && (
           <TouchableOpacity onPress={() => setShowEditMyProfile(true)} activeOpacity={0.75} style={{
-            flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16,
-            borderRadius: RADIUS.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+            alignItems: 'center', padding: 24,
+            borderRadius: RADIUS.lg, backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
             marginBottom: 24,
+            ...(isDark ? null : GEMINI.cardShadow),
           }}>
             <View style={{
-              width: 52, height: 52, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center',
+              width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center',
               backgroundColor: role === 'parent' ? colors.parentLight : colors.kidLight, overflow: 'hidden',
+              marginBottom: 14,
             }}>
               {activeMember.avatarUrl ? (
-                <Image source={{ uri: activeMember.avatarUrl }} style={{ width: 52, height: 52 }} />
+                <Image source={{ uri: activeMember.avatarUrl }} style={{ width: 88, height: 88 }} />
               ) : (
-                <Text style={{ fontSize: 26 }}>{activeMember.emoji ?? '👤'}</Text>
+                <Text style={{ fontSize: 42 }}>{activeMember.emoji ?? '👤'}</Text>
               )}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>{activeMember.name}</Text>
-              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 2 }}>
-                {role.charAt(0).toUpperCase() + role.slice(1)}
-                {isAuthLinked ? ' · Signed in' : ' · PIN profile'}
+            <View style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+              backgroundColor: (isDark ? colors.pink : GEMINI.blue) + '14', marginBottom: 14 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? colors.pink : GEMINI.blue }}>
+                You · {role.charAt(0).toUpperCase() + role.slice(1)}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-          </TouchableOpacity>
-        )}
-
-        <EditMyProfileSheet visible={showEditMyProfile} onClose={() => setShowEditMyProfile(false)}
-          member={activeMember} colors={colors} isDark={isDark} />
-
-        {/* Family — member carousel + expandable full tree, the same
-            underlying components (MemberCard/FamilyTreeView/
-            MemberProfileSheet) RosterTab.tsx uses, so this page offers a
-            first-class version of the same experience instead of just
-            linking out to the Roster tab. Tap a card → the unified
-            MemberProfileSheet, read-only 'view' section (never switches
-            activeMemberId — an admin views without impersonating). Long-
-            press (parents only) → same sheet, landing on its 'edit'
-            section. Key icon → same sheet, landing on its 'pin' section.
-            Kept OUT of the 3-column grid below and given its own full-
-            width row — its horizontal member carousel wants more than a
-            31%-wide column, and its natural height (a short row of cards)
-            was leaving a tall empty gap under it when it sat as one grid
-            cell next to much shorter Subscription/Notifications cards
-            [live-reported: screenshot showed a big stretched empty area
-            under Family]. */}
-        <View style={{ marginBottom: 24 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <SectionHeader label="Family" colors={colors} />
-            {isParent && (
-              <TouchableOpacity onPress={() => setShowInviteSheet(true)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto', marginBottom: 10 }}>
-                <Ionicons name="person-add-outline" size={14} color={colors.primary} />
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.primary }}>Invite</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Explicit width:'100%' — without it this nested horizontal
-              ScrollView sizes to fit ALL member cards unclipped instead of
-              scrolling, which was harmless at full mobile page width but
-              overflowed its own column and cut a member off once this
-              section became a ~31%-wide kiosk column (columns=3)
-              [live-reported: screenshot showed Jas's card cut off at the
-              column edge]. */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-            {members.map(m => (
-              <CarouselMemberCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
-                colors={colors} isDark={isDark}
-                onPress={() => openMember(m, 'view')}
-                onLongPress={() => { if (isParent) openMember(m, 'edit'); }}
-                onPinPress={() => openMember(m, 'pin')} />
-            ))}
-          </ScrollView>
-
-          <TouchableOpacity onPress={() => setShowFullTree(v => !v)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-              marginTop: 12, paddingVertical: 10, borderRadius: RADIUS.md,
-              backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-            }}>
-            <Ionicons name={showFullTree ? 'chevron-up' : 'git-network-outline'} size={15} color={colors.textSecondary} />
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
-              {showFullTree ? 'Hide full family tree' : 'See full family tree'}
+            <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>
+              {activeMember.name}
+            </Text>
+            <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginTop: 6, textAlign: 'center' }}>
+              {isAuthLinked ? 'Signed in · tap to edit your profile' : 'PIN profile · tap to edit your profile'}
             </Text>
           </TouchableOpacity>
-
-          {showFullTree && (
-            // maxWidth + centered — FamilyTreeView's cards are a fixed
-            // 180px wide, tuned for a phone-width column; letting them
-            // stretch across kiosk's much wider full-width Family row
-            // spread the whole tree thin with huge dead gaps between
-            // columns instead of reading as a compact tree [live-reported:
-            // "family tree is not showing good on this kiosek"]. Capped
-            // rather than widened FamilyTreeView itself, since its real
-            // card sizing/columns are unchanged and still correct at
-            // mobile's own width.
-            <View style={{ marginTop: 14, maxWidth: 560, alignSelf: 'center', width: '100%' }}>
-              <FamilyTreeView
-                members={members} activeMemberId={activeMemberId} isParent={isParent}
-                colors={colors} isDark={isDark}
-                onView={(m) => openMember(m, 'view')} onEdit={(m) => openMember(m, 'edit')} onPin={(m) => openMember(m, 'pin')}
-              />
-            </View>
-          )}
-        </View>
-
-        {/* Member sheet — ONE unified instance (view/edit/pin/confirmRemove
-            all live inside MemberProfileSheet's own `section` state)
-            instead of the old MemberProfileSheet/EditMemberModal/PinModal
-            trio of separately-mounted Modals. */}
-        {viewTarget && (
-          <MemberProfileSheet member={viewTarget} siblings={members.map(m => m.name)} allMembers={members}
-            visible onClose={() => setViewTarget(null)}
-            initialSection={initialSection}
-            isParentViewer={isParent}
-            canChangePin={isParent || viewTarget.id === activeMemberId}
-            onSave={saveMember}
-            onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
-            onDelete={deleteFamilyMember}
-            onSavePin={savePin}
-            onResetPin={(m) => openMember(m, 'pin')}
-            onResendInvite={(m) => resendInviteFor(m)}
-            onGenerateRecoveryCode={(m) => generateRecoveryCodeFor(m)}
-            colors={colors} isDark={isDark}
-            renderShell={memberSheetShell}
-          />
-        )}
-        {isParent && familyId && (
-          <InviteMemberSheet visible={showInviteSheet} onClose={() => setShowInviteSheet(false)}
-            familyId={familyId} callerMemberId={activeMember.id} members={allMembers}
-            colors={colors} isDark={isDark} renderShell={inviteShell} />
         )}
 
         {/* Kiosk-only: from here down, every section is an independent
@@ -1967,48 +1458,15 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         <View style={columns > 1 ? { flexDirection: 'row', gap: 16, alignItems: 'flex-start' } : undefined}>
         <View style={columns > 1 ? { flex: 1, minWidth: 0 } : undefined}>
 
-        {/* Subscription */}
-        <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-          <SectionHeader label="Subscription" colors={colors} />
-          <Row
-            icon="star-outline"
-            label={
-              isTrial
-                ? `Free Trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left`
-                : tier !== 'free'
-                  ? 'Family Plan — Active'
-                  : 'Free Plan'
-            }
-            subtitle={
-              tier === 'free' && !isTrial
-                ? 'Tap to unlock full access'
-                : isTrial
-                  ? 'Full access until trial ends'
-                  : undefined
-            }
-            onPress={tier === 'free' && !isTrial ? () => usePaywallSheetStore.getState().show({ headline: 'Family Plan', body: 'Unlock full access for your whole family.' }) : undefined}
-            colors={colors} isDark={isDark}
-          />
-          <Row
-            icon="refresh-outline"
-            label={restoringPurchase ? 'Restoring…' : 'Restore Purchases'}
-            onPress={restoringPurchase ? undefined : handleRestorePurchases}
-            colors={colors} isDark={isDark}
-          />
-        </View>
-
         {/* Notifications — was 6+ toggle rows sitting flat on this page;
             collapsed into one summary row that opens NotificationsSheet
             (categories, quiet hours, call alerts all together), same
             "tap a row → bottom sheet" pattern the app uses elsewhere. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
-          <SectionHeader label="Notifications" colors={colors} />
+          <SectionHeader label="Notifications" colors={colors} isDark={isDark} />
           <Row
             icon="notifications-outline"
             label="Notifications"
@@ -2035,47 +1493,42 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           renderShell={notificationsShell}
         />
 
-        {/* Appearance */}
-        <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-          <SectionHeader label="Appearance" colors={colors} />
-          <View style={{
-            flexDirection: 'row', borderRadius: RADIUS.md, backgroundColor: colors.card,
-            borderWidth: 1, borderColor: colors.border, padding: 4, gap: 4,
-          }}>
-            {([
-              { key: 'system', label: 'System', icon: 'phone-portrait-outline' },
-              { key: 'light',  label: 'Light',  icon: 'sunny-outline' },
-              { key: 'dark',   label: 'Dark',   icon: 'moon-outline' },
-            ] as { key: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[]).map(opt => {
-              const active = mode === opt.key;
-              return (
-                <TouchableOpacity
-                  key={opt.key}
-                  onPress={() => setMode(opt.key)}
-                  style={{
-                    flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: RADIUS.sm,
-                    backgroundColor: active ? colors.primary : 'transparent',
-                  }}
-                >
-                  <Ionicons name={opt.icon} size={18} color={active ? '#fff' : colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : colors.textSecondary }}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        {/* Vehicle — teen-only opt-in for the Gas & Vehicle log tile on the
+            Teen Hub. Was originally labeled for the sibling-pickup dispatch
+            feature, which has since been removed entirely from the Teen Hub
+            ["sibling rids we can remove right??"] — hasCar is kept as the
+            same underlying field (TeenGasLogSection's gate), just relabeled
+            since its only remaining consumer is the gas/vehicle log now. */}
+        {role === 'teen' && (
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+            backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            borderRadius: RADIUS.lg, padding: 14,
+          }]}>
+            <SectionHeader label="Vehicle" colors={colors} isDark={isDark} />
+            <Row
+              icon="car-outline"
+              label="I drive"
+              subtitle={activeMember?.hasCar ? 'Gas & Vehicle log is on your Hub' : 'Turn on to track gas fill-ups and vehicle issues'}
+              accent={colors.amber}
+              colors={colors} isDark={isDark}
+              right={
+                <Switch
+                  value={activeMember?.hasCar ?? false}
+                  onValueChange={(next) => activeMember && updateMember(activeMember.id, { hasCar: next })}
+                  trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.amber }}
+                  thumbColor="#fff"
+                />
+              }
+            />
           </View>
-        </View>
+        )}
 
         {/* Security */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
-          <SectionHeader label="Security" colors={colors} />
+          <SectionHeader label="Security" colors={colors} isDark={isDark} />
           {bioAvailable && (
             <Row
               icon="finger-print-outline"
@@ -2089,7 +1542,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
                     setBioEnabled(next);
                     await setBiometricEnabled(next);
                   }}
-                  trackColor={{ false: colors.border, true: colors.primary }}
+                  trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.primary }}
                   thumbColor="#fff"
                 />
               }
@@ -2115,36 +1568,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           <>{dataRecoveryShell(showDataRecovery, () => setShowDataRecovery(false), <DataRecoveryScreen hideChrome />)}</>
         )}
 
-        {/* Family Name — familyName was previously stuck forever at the
-            store's 'Our Family' default (nothing fetched families.name or
-            wrote a rename back to it); this is the first working rename
-            path. Same parent-editable / read-only-for-others split as
-            Currency below. */}
-        <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-          <SectionHeader label="Family" colors={colors} />
-          <Row
-            icon="home-outline"
-            label={familyName}
-            subtitle={isParent ? 'Tap to rename' : undefined}
-            onPress={isParent ? () => setShowFamilyNameSheet(true) : undefined}
-            colors={colors} isDark={isDark}
-          />
-        </View>
-
-        {isParent && (
-          <FamilyNameSheet
-            visible={showFamilyNameSheet}
-            onClose={() => setShowFamilyNameSheet(false)}
-            currentName={familyName}
-            renameFamily={renameFamily}
-            colors={colors} isDark={isDark}
-            renderShell={familyNameShell}
-          />
-        )}
-
         </View>
         <View style={columns > 1 ? { flex: 1, minWidth: 0 } : undefined}>
 
@@ -2154,10 +1577,10 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             change it at all. Parent-editable; everyone else sees the same
             row as read-only display, per explicit request. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
-          <SectionHeader label="Currency" colors={colors} />
+          <SectionHeader label="Currency" colors={colors} isDark={isDark} />
           <Row
             icon="cash-outline"
             label={`${householdSettings.currencyCode} (${householdSettings.currencySymbol})`}
@@ -2182,59 +1605,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           />
         )}
 
-        {/* Family Photo — a simple on/off toggle for whether the Hub
-            greeting's photo frame (TodayView.tsx) appears at all. ON by
-            default (matches the frame_enabled column's own default),
-            OFF hides the card entirely; turning it back on shows the
-            empty-illustration frame, ready for the existing
-            long-press-to-upload flow — this toggle does NOT open a picker
-            itself [live-requested: "don't open the gallery upon setting it,
-            it just appears the frame card with empty model"]. */}
-        {isParent && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-            backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-            borderRadius: RADIUS.lg, padding: 14,
-          }]}>
-            <SectionHeader label="Family Photo" colors={colors} />
-            <Row
-              icon="image-outline"
-              label="Show photo frame on Hub"
-              subtitle="Long-press the frame on your Hub to set a photo"
-              colors={colors} isDark={isDark}
-              right={
-                <Switch
-                  value={familyPhotoFrameEnabled}
-                  onValueChange={async (next) => {
-                    setFamilyPhotoFrameEnabled_(next);
-                    if (familyId && activeMemberId) await setFamilyPhotoFrameEnabled(familyId, activeMemberId, next);
-                  }}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor="#fff"
-                />
-              }
-            />
-          </View>
-        )}
-
-        {/* Calendar Sync — parent-only, per-member OAuth connection used
-            purely for FreeBusy conflict detection (not full 2-way sync,
-            see CalendarSyncScreen.tsx's own header comment). */}
-        {isParent && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <SectionHeader label="Calendar" colors={colors} />
-            <Row
-              icon="calendar-outline"
-              label="Calendar Sync"
-              subtitle="Connect your work calendar to catch scheduling conflicts"
-              onPress={() => calendarSyncShell ? setShowCalendarSync(true) : router.push('/profile-settings/calendar-sync')}
-              colors={colors} isDark={isDark}
-            />
-          </View>
-        )}
-
         {/* "Just Us" — private chat + plans coordination between exactly
             the family's 2 parent-role members, PIN-gated. Only offered
             when there are precisely 2 parents (no "pick which 2" UI) and
@@ -2245,10 +1615,10 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             disable the feature to hide it. */}
         {coupleChannelFlagOn && coupleChanId && (
           <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
-            <SectionHeader label="Just Us" colors={colors} />
+            <SectionHeader label="Just Us" colors={colors} isDark={isDark} />
             <Row
               icon="heart-outline"
               label="Just Us"
@@ -2258,7 +1628,7 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
                 <Switch
                   value={isCoupleEnabled(coupleChanId)}
                   onValueChange={(next) => setCouplePinModal(next ? 'set' : 'disable')}
-                  trackColor={{ false: colors.border, true: colors.primary }}
+                  trackColor={{ false: isDark ? colors.border : GEMINI.border, true: colors.primary }}
                   thumbColor="#fff"
                 />
               }
@@ -2280,9 +1650,6 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
           />
         )}
 
-        {calendarSyncShell && showCalendarSync && (
-          <>{calendarSyncShell(showCalendarSync, () => setShowCalendarSync(false), <CalendarSyncBody />)}</>
-        )}
 
         {/* Legal — kiosk opens this as its own side drawer instead of
             router.push'ing a full-screen route [live-requested: "tems and
@@ -2293,10 +1660,10 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             passes hideBackButton for THIS screen. Mobile (no termsShell)
             keeps the real route, completely unchanged. */}
         <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
           borderRadius: RADIUS.lg, padding: 14,
         }]}>
-          <SectionHeader label="Legal" colors={colors} />
+          <SectionHeader label="Legal" colors={colors} isDark={isDark} />
           <Row
             icon="document-text-outline"
             label="Terms & Privacy"
@@ -2307,197 +1674,29 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
         </View>
 
         {termsShell && showTerms && (
-          <>{termsShell(showTerms, () => setShowTerms(false), <TermsContentBody colors={colors} />)}</>
+          <>{termsShell(showTerms, () => setShowTerms(false), <TermsContentBody colors={colors} isDark={isDark} />)}</>
         )}
 
-        {/* Admin console — hidden entry point. Only rendered for a parent
-            whose auth session is confirmed as a platform admin (app_admins
-            row) via the same useIsAppAdmin() hook the /admin gate itself
-            uses, so a non-admin parent never sees this row AND can't reach
-            the gate by any other path either — see features/admin/_layout.tsx. */}
-        {isParent && isAppAdmin && !hideSensitiveAdminRows && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <SectionHeader label="Admin" colors={colors} />
-            <Row
-              icon="shield-checkmark-outline"
-              label="Admin Console"
-              subtitle="Analytics, families, feature flags, paywall, broadcast"
-              onPress={() => router.push('/admin')}
-              colors={colors} isDark={isDark}
-            />
-          </View>
-        )}
 
-        {/* Sign out — plain, reversible action, distinct from the danger
-            zone's "Delete account" below (that's permanent; this just ends
-            the device session, same signOut()+redirect the delete-account
-            handler already runs after its own soft-delete). Only shown for
-            an auth-linked, NON-anonymous member — a PIN-only kid/senior
-            profile has no independent session of their own to sign out of
-            (they switch profiles instead), and an anonymous joiner has no
-            credential to sign back in with once this revokes their session
-            (see isAnonymousSession's comment above) — for them this would
-            be a real dead end, not a reversible everyday action. No
-            confirmation needed for the real-account case — signing out is
-            normal, everyday UX. */}
-        {isAuthLinked && viewingOwnProfile && !isAnonymousSession && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <Row
-              icon="log-out-outline"
-              label="Sign Out"
-              subtitle="You can sign back in anytime"
-              onPress={async () => {
-                try {
-                  await signOut();
-                } catch (e: any) {
-                  console.error('[ProfileSettingsScreen] Sign Out failed:', e?.message, e);
-                  // Don't leave the user stuck mid-session on a failed sign-out —
-                  // navigate to login regardless, since local state was likely
-                  // still cleared even if the network signOut() call itself threw.
-                }
-                // Must match the SIGNED_OUT listener's own destination in
-                // app/_layout.tsx EXACTLY (same signedOut=1 param) — this was
-                // previously a bare '/(auth)/login' with no param, so if this
-                // navigation won a race against the listener's, LoginScreen
-                // mounted with justSignedOut=false and could auto-trigger its
-                // Face ID/biometric-restore effect right after an explicit
-                // sign-out (reported: sign-out skipped the login screen
-                // entirely and landed on /onboarding, consistent with a
-                // stale/racing session getting silently restored).
-                router.replace('/(auth)/login?signedOut=1' as any);
-              }}
-              colors={colors} isDark={isDark}
-            />
-          </View>
-        )}
-
-        {/* Anonymous joiner's own profile — no real Sign Out (see the gate
-            above), but staying silent here would look like the feature was
-            simply forgotten, not deliberately withheld. Explain why, and
-            point at the one thing that IS safe: locking the device (which
-            just requires the PIN again next time, no session loss) instead
-            of a real sign-out with no way back in. */}
-        {isAuthLinked && viewingOwnProfile && isAnonymousSession && (
-          <View style={[{ marginBottom: 24, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
-            backgroundColor: colors.surface, padding: 14, gap: 6 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
-              No Sign Out here
-            </Text>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 }}>
-              You joined with an invite code, not an email — there's nothing to sign back in WITH if you sign out. If you're switching to someone else's profile, use the switcher instead. If you lose this device, ask a parent for a recovery code.
-            </Text>
-          </View>
-        )}
-
-        {/* PIN-switched into a sub-profile (GP/kid/teen/etc, no authUserId
-            of their own) — never show a real Sign Out here, since tapping
-            it would end the REAL account's session while looking at
-            someone else's profile. Only a Lock/"Switch back" is safe:
-            purely a local activeMemberId swap gated by the real owner's
-            own PIN, no Supabase call at all. */}
-        {!viewingOwnProfile && authOwnerMember && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <Row
-              icon="lock-closed-outline"
-              label="Lock & Switch Back"
-              subtitle={`Return to ${authOwnerMember.name.split(' ')[0]}'s profile`}
-              onPress={() => {
-                // Always lands on the shared-device profile picker instead
-                // of going straight back into the owner's own Hub — any
-                // family member can tap their own avatar next, kiosk-style.
-                // Deliberately does NOT touch activeMemberId here: the
-                // picker screen owns the actual member swap (same
-                // tap-avatar-then-PIN flow PersonaSwitcherSheet already
-                // uses), so there's never a moment where activeMemberId is
-                // null/invalid for the rest of the app's code to trip over.
-                router.replace('/(auth)/profile-picker' as any);
-              }}
-              colors={colors} isDark={isDark}
-            />
-          </View>
-        )}
-
-        {/* Danger zone */}
-        {canShowDangerZone && (
-          <View style={[{ marginBottom: 24 }, columns > 1 && {
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-          borderRadius: RADIUS.lg, padding: 14,
-        }]}>
-            <SectionHeader label="Danger Zone" colors={colors} />
-            {!showDangerConfirm ? (
-              <Row
-                icon="warning-outline"
-                label={hasRealAccount ? 'Delete account' : `Delete ${activeMember.name}'s profile`}
-                subtitle={hasRealAccount
-                  ? 'Permanently deletes your account in 7 days'
-                  : 'Permanently deletes this profile in 7 days'}
-                danger
-                onPress={() => setShowDangerConfirm(true)}
-                colors={colors} isDark={isDark}
-              />
-            ) : (
-              <View style={{
-                padding: 14, borderRadius: RADIUS.md, backgroundColor: colors.card,
-                borderWidth: 1.5, borderColor: colors.danger + '50',
-              }}>
-                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.danger, marginBottom: 6 }}>
-                  {hasRealAccount ? 'Delete your account?' : `Delete ${activeMember.name}'s profile?`}
-                </Text>
-                <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 12, lineHeight: 18 }}>
-                  {hasRealAccount
-                    ? `Your account, and everything tied to it, will be scheduled for permanent deletion. You have 7 days to change your mind — just log back in and everything is restored automatically. After 7 days this cannot be undone.`
-                    : `${activeMember.name} will be removed from the family right away. Their profile is kept for 7 days in case you change your mind — entering their PIN again restores everything. After 7 days this cannot be undone.`}
-                </Text>
-                <TypeToConfirmRow
-                  expected={expectedConfirmWord}
-                  value={confirmText}
-                  onChange={setConfirmText}
-                  colors={colors}
-                />
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TouchableOpacity
-                    onPress={() => { setShowDangerConfirm(false); setConfirmText(''); }}
-                    style={{
-                      flex: 1, paddingVertical: 11, borderRadius: RADIUS.sm, alignItems: 'center',
-                      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-                    }}
-                  >
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    disabled={confirmText.trim().toUpperCase() !== expectedConfirmWord || deleting}
-                    onPress={dangerAction}
-                    style={{
-                      flex: 1, paddingVertical: 11, borderRadius: RADIUS.sm, alignItems: 'center',
-                      backgroundColor: colors.danger,
-                      opacity: (confirmText.trim().toUpperCase() !== expectedConfirmWord || deleting) ? 0.4 : 1,
-                    }}
-                  >
-                    {deleting
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>Delete</Text>}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </View>
-        )}
         </View>
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Rendered as a SIBLING of the ScrollView, not nested inside it —
+          FullPageOverlay positions itself absolute/bottom:0 relative to
+          its nearest positioned ancestor, and a ScrollView's content view
+          doesn't give that a reliable full-screen bottom edge to anchor
+          to. Nested inside the scroll, the overlay's "full page" ended up
+          sized/positioned relative to the SCROLL CONTENT instead of the
+          real device viewport — the parent's own fixed header stayed
+          visible above it and a huge blank gap opened up below the card
+          [live-reported via screenshot: "it is not just 70 - it is may be
+          500??" / confirmed "it is edit my profile page"]. Every other
+          FullPageOverlay in this app (FamilyScreen.tsx, etc.) is already a
+          ScrollView sibling — this just matches that. */}
+      <EditMyProfileScreen visible={showEditMyProfile} onClose={() => setShowEditMyProfile(false)}
+        member={activeMember} colors={colors} isDark={isDark} />
     </SafeAreaView>
   );
 }

@@ -1,11 +1,11 @@
 import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
 import { PiggyBank, Star, Target, CheckCircle2, Flame, Zap, Lightbulb, Receipt } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import type { Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
+import { useUIStore } from '@/store/uiStore';
 
 // Money-green — "cash value" accent, distinct from brand teal used
 // elsewhere in this sheet. Not colors.success (which IS brand teal in this
@@ -135,7 +135,7 @@ export function PiggyBankSheet({
           const remaining = Math.max(goalReward.cost - mainCoins, 0);
           const pct = Math.min(mainCoins / goalReward.cost, 1);
           return (
-            <Pressable onPress={() => { onClose(); router.push('/(tabs)/store' as any); }}
+            <Pressable onPress={() => { onClose(); useUIStore.getState().setOpenRewardsScreenRequested(true); }}
               style={{ borderRadius: 14, padding: 13, backgroundColor: BRAND.purple + '10', borderWidth: 1.5, borderColor: BRAND.purple + '50', gap: 9 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Target size={14} color={BRAND.purple} />

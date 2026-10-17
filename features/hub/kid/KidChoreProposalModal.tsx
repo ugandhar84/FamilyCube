@@ -42,13 +42,13 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
   const { submitting, guard } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
-  if (!active) return null;
 
   const pickableMembers = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const accent = BRAND.purple;
 
-  const dismiss = () => { setTitle(''); setForId(active.id); setError(null); onClose(); };
+  const dismiss = () => { setTitle(''); setForId(active?.id ?? ''); setError(null); onClose(); };
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
+  if (!active) return null;
 
   const submit = guard(async () => {
     const trimmed = title.trim();
@@ -77,7 +77,7 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
   });
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />

@@ -37,6 +37,12 @@ export interface Medication {
   escalation_to: string[];
   notes: string | null;
   updated_at: string | null;
+  // Optional free-text "source / verification" note (e.g. "Prescription
+  // label", "Confirmed with Dr. Harper") — real DB column added via
+  // supabase/migrations/20261001000000_med_source_note.sql, implied by
+  // the Health & Records "Add medication" mockup's own field of the same
+  // name. Nullable/optional everywhere; never required.
+  source_note: string | null;
 }
 
 export interface Vaccine {
@@ -58,7 +64,8 @@ export interface Vaccine {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 export const FREQ_LABELS: Record<string, string> = {
-  daily: 'Daily', twice_daily: '2× Daily', weekly: 'Weekly', as_needed: 'As Needed',
+  daily: 'Daily', twice_daily: '2× Daily', three_daily: '3× Daily', four_daily: '4× Daily',
+  weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', as_needed: 'As Needed',
 };
 // Was a static object built from the hardcoded PawBond-era BRAND palette
 // (BRAND.purple/teal/emerald/amber/blue) — a module-level const can't read
@@ -101,6 +108,13 @@ export interface MedForm {
   // chores/events) instead of a plain push, applied to every dose time.
   start_date: string; end_date: string; reminder_times: string[];
   alert_call: boolean;
+  // Optional free-text source/verification note — see Medication.source_note.
+  source_note: string;
+  // How many units per dose (e.g. 2 tablets), defaults 1.
+  dosage_count: number;
+  // Which weekdays apply when frequency is 'weekly' — 0=Sun..6=Sat.
+  // Empty array = all days (not yet set by user), non-empty = specific days.
+  frequency_days: number[];
 }
 // Number of reminder times FREQUENCY implies — daily/weekly/as_needed are
 // one dose, twice_daily is two. Used both to size BLANK_MED's initial
@@ -108,7 +122,10 @@ export interface MedForm {
 // after already picking times (never silently discards an already-set
 // time — see AddMedModal's frequency-change handler).
 export function doseCountForFrequency(frequency: string): number {
-  return frequency === 'twice_daily' ? 2 : 1;
+  if (frequency === 'twice_daily') return 2;
+  if (frequency === 'three_daily') return 3;
+  if (frequency === 'four_daily')  return 4;
+  return 1;
 }
 
 // ─── Medication adherence history ──────────────────────────────────────────
@@ -217,7 +234,8 @@ export const BLANK_MED: MedForm = {
   refill_date: '', pills_remaining: '', instructions: '', notes: '',
   escalation_enabled: false, escalation_after_min: '60',
   start_date: today(), end_date: '', reminder_times: ['08:00'],
-  alert_call: false,
+  alert_call: false, source_note: '',
+  dosage_count: 1, frequency_days: [],
 };
 
 // Quick pick suggestions by medication category

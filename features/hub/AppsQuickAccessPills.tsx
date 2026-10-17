@@ -19,11 +19,12 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check, UserCircle2 } from 'lucide-react-native';
+import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check, UserCircle2, Gift } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
 import { useNotifStore } from '@/store/notifStore';
+import { useUIStore } from '@/store/uiStore';
 
 type PillId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'grocery' | 'store' | 'profile';
 
@@ -64,6 +65,7 @@ const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
   // entry point for every role (the header gear icon was removed once
   // this shipped), so it leads the default row rather than trailing it.
   { id: 'profile',  label: 'Profile',  Icon: UserCircle2,  roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'store',    label: 'Store',    Icon: Gift,         roles: ['parent', 'kid', 'teen'] },
   { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid', 'teen'] },
   { id: 'health',   label: 'Health',   Icon: Heart,        roles: ['parent', 'kid', 'teen'] },
   { id: 'memories', label: 'Memories', Icon: ImageIcon,    roles: ['parent', 'kid', 'teen', 'senior'] },
@@ -194,7 +196,7 @@ function DraggableRow({ id, pill, total, positions, draggingId, onRemove, onComm
   return (
     <Animated.View style={[{ height: ROW_HEIGHT - 8, paddingBottom: 8 }, animatedStyle]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
-        borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC',
+        borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
         padding: 10, height: ROW_HEIGHT - 8 }}>
         <GestureDetector gesture={pan}>
           <View style={{ padding: 8, marginLeft: -8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -242,7 +244,7 @@ function PillOrderSheet({ visible, onClose, available, order, onSave, colors, is
   const hidden = available.filter(p => !draft.includes(p.id));
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={{ borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingTop: 12, maxHeight: '80%', backgroundColor: colors.card }}>
@@ -253,7 +255,7 @@ function PillOrderSheet({ visible, onClose, available, order, onSave, colors, is
               <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>Drag the handle to reorder</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-              style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
+              style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
               <X size={18} color={colors.textSecondary} />
             </Pressable>
           </View>
@@ -280,7 +282,7 @@ function PillOrderSheet({ visible, onClose, available, order, onSave, colors, is
                   {hidden.map(pill => (
                     <Pressable key={pill.id} onPress={() => toggle(pill.id)}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
-                        borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 10, opacity: 0.6 }}>
+                        borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, padding: 10, opacity: 0.6 }}>
                       <pill.Icon size={16} color={PILL_COLORS[pill.id].deep} />
                       <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{pill.label}</Text>
                       <Check size={16} color={colors.textTertiary} />
@@ -313,6 +315,8 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
   const [editing, setEditing] = useState(false);
 
   const available = PILLS.filter(p => p.roles.includes(role));
+  const notifications = useNotifStore(s => s.notifications);
+  const hasUnreadMemory = (notifications ?? []).some(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked'));
   if (available.length === 0) return null;
   const visible = orderPills(available, savedOrder);
 
@@ -322,8 +326,6 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
   // persisted by MemoriesTab.tsx's postMemory/heartMemory) rather than a
   // separate last-viewed-timestamp mechanism — same source of truth the
   // bell icon's own unread badge already reads.
-  const notifications = useNotifStore(s => s.notifications);
-  const hasUnreadMemory = (notifications ?? []).some(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked'));
 
   return (
     <View style={{ paddingBottom: 12 }}>
@@ -337,7 +339,25 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
           const { light, deep } = PILL_COLORS[p.id];
           return (
             <TouchableOpacity key={p.id} activeOpacity={0.75}
-              onPress={() => router.push(PILL_ROUTES[p.id] as any)}
+              onPress={() => {
+                // 'store'/'ledger' both point at Rewards — a real-but-
+                // hidden tab route kept only for stale deep links. This
+                // pill is rendered inside HubScreen, which already owns
+                // the FullPageOverlay (showRewards) this flag opens.
+                if (p.id === 'store' || p.id === 'ledger') {
+                  useUIStore.getState().setOpenRewardsScreenRequested(true);
+                  return;
+                }
+                // Memories is a real-but-hidden tab route kept only for
+                // stale deep links — this pill is rendered inside
+                // HubScreen, which already owns the FullPageOverlay
+                // (showMemories) this flag opens.
+                if (p.id === 'memories') {
+                  useUIStore.getState().setOpenMemoriesScreenRequested(true);
+                  return;
+                }
+                router.push(PILL_ROUTES[p.id] as any);
+              }}
               onLongPress={() => setEditing(true)}
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -356,7 +376,7 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
               {p.id === 'memories' && hasUnreadMemory && (
                 <View pointerEvents="none" style={{ position: 'absolute', top: 4, right: 4,
                   width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger,
-                  borderWidth: 1.5, borderColor: isDark ? '#0E0C13' : '#FAF8F4' }} />
+                  borderWidth: 1.5, borderColor: colors.background }} />
               )}
             </TouchableOpacity>
           );
@@ -366,8 +386,8 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
           style={{
             flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
             width: 34, height: 34, borderRadius: 17,
-            backgroundColor: isDark ? colors.surface : '#F2ECE1',
-            borderWidth: 1, borderColor: isDark ? colors.border : '#E5DFC8',
+            backgroundColor: colors.surface,
+            borderWidth: 1, borderColor: colors.border,
           }}>
           <SlidersHorizontal size={13} color={colors.textSecondary} />
         </TouchableOpacity>

@@ -6,6 +6,7 @@ import { TYPO, RADIUS } from '@/constants/theme';
 import { localDateStr, fmtDate } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Coming Saturday — the default due date offered when a parent approves a
 // kid's chore proposal, per explicit product direction. "Coming" means the
@@ -50,15 +51,15 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Sparkles size={15} color={colors.primary} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
             {proposer?.name.split(' ')[0] ?? 'A kid'} proposed this
             {isForSelf ? ' for themselves' : ` for ${forMember?.name.split(' ')[0] ?? 'a sibling'}`}
           </Text>
         </View>
       </View>
       {c.description ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 18 }}>{c.description}</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>{c.description}</Text>
       ) : null}
 
       {approving ? (
@@ -72,26 +73,26 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
               autoFocus
               style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
                 backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
-                fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
+                fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
             />
           </View>
           <TouchableOpacity onPress={() => setShowDatePick(true)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
               backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8 }}>
             <Calendar size={14} color={colors.primary} />
-            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
               {fmtDate(dueDate)}
             </Text>
           </TouchableOpacity>
 
           {showDatePick && (
-            <Modal transparent animationType="fade" visible onRequestClose={() => setShowDatePick(false)}>
+            <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => setShowDatePick(false)}>
               <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
                 activeOpacity={1} onPress={() => setShowDatePick(false)}>
                 <TouchableOpacity activeOpacity={1}
                   style={{ backgroundColor: colors.card, borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingBottom: 20 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>📅 Pick a Date</Text>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>📅 Pick a Date</Text>
                     <TouchableOpacity onPress={() => setShowDatePick(false)}>
                       <Text style={{ color: colors.primary, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
                     </TouchableOpacity>
@@ -103,7 +104,7 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
                       if (Platform.OS === 'android') setShowDatePick(false);
                       if (selected) setDueDate(localDateStr(selected));
                     }}
-                    textColor={colors.textPrimary}
+                    textColor={(isDark ? colors.textPrimary : GEMINI.titleColor)}
                     style={{ height: 180, width: '100%' }}
                   />
                 </TouchableOpacity>
@@ -113,7 +114,7 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
           <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
             <Pressable onPress={() => setApproving(false)}
               style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Cancel</Text>
             </Pressable>
             <Pressable onPress={confirmApprove}
               style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.primary }}>
@@ -134,7 +135,7 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
             )}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
               borderWidth: 1.5, borderColor: colors.border }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Decline</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Decline</Text>
           </Pressable>
           <Pressable
             onPress={() => setApproving(true)}

@@ -19,12 +19,16 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Image as ImageIcon, Heart, Trash2, Camera, ImagePlus, X, Download, Layers } from 'lucide-react-native';
+import { Image as ImageIcon, Heart, Trash2, Camera, ImagePlus, X, Download, Layers, Plus } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { todayLocal, fmtDateShort } from '@/lib/dates';
+import { RADIUS } from '@/constants/theme';
+import { GEMINI } from '@/constants/geminiRhythm';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
+import FullPageOverlay from '@/components/FullPageOverlay';
 import { MediaViewer, AutoplayVideo } from '@/components/MediaComponents';
 import { saveMediaToDevice } from '@/lib/saveMedia';
 import CubeSpinner from '@/components/CubeSpinner';
@@ -200,20 +204,39 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
   const [caption, setCaption] = useState('');
   const [captionOverlay, setCaptionOverlay] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
   // Defaults to just the poster themselves — "who was there" starts
   // pre-filled with an obvious true fact, not empty.
   const [taggedIds, setTaggedIds] = useState<string[]>(myId ? [myId] : []);
   const [occasion, setOccasion]   = useState<string | null>(null);
+  // "Custom" occasion chip — lets a moment be tagged outside the preset
+  // list (e.g. "Lost tooth") [live-requested: "give the custom memory type
+  // option"]. occasion itself stays a free-form string (family_memories.tag
+  // was already untyped), so no schema change is needed.
+  const [customOccasionActive, setCustomOccasionActive] = useState(false);
+  const [customOccasionText, setCustomOccasionText] = useState('');
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   // Starts muted — same default AutoplayVideo uses everywhere else in the
   // app (feed autoplay never opens with sound), tap the speaker to enable.
   const [heroMuted, setHeroMuted] = useState(true);
+  // Inline "add media" chooser (Take Photo / Record Video / Choose from
+  // Gallery) — replaces the old scattered add buttons (empty hero only
+  // offered gallery + a video-only camera shortcut; the filled-hero
+  // "Retake" button was photo-camera only; the prints-row "+" was gallery
+  // only — none of the three offered all three options) [live-requested:
+  // "we should have the video camera or gallary same way for the photo ..
+  // we should have an option user to choose inline options"]. One popover,
+  // opened from every add entry point.
+  const [showMediaOptions, setShowMediaOptions] = useState(false);
 
   const MAX_VIDEO_SECONDS = 120;
 
   const reset = () => {
+    setPostError(null);
     setMedia([]); setCaption(''); setCaptionOverlay(false);
     setTaggedIds(myId ? [myId] : []); setOccasion(null); setPreviewIdx(null);
+    setCustomOccasionActive(false); setCustomOccasionText('');
+    setShowMediaOptions(false);
   };
 
   const toggleTag = (id: string) =>
@@ -285,18 +308,33 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
     setMedia(prev => [...prev, { uri: res.assets[0].uri, type: 'photo' as const }].slice(0, 6));
   };
 
+  const openMediaOption = (opt: 'photo' | 'video' | 'library') => {
+    setShowMediaOptions(false);
+    if (opt === 'photo') takePhoto();
+    else if (opt === 'video') takeVideo();
+    else pickFromLibrary();
+  };
+
+  const friendlyPostError = (msg?: string) => {
+    const m = (msg ?? '').toLowerCase();
+    if (m.includes('row-level security') || m.includes('permission')) return 'You do not have permission to post this memory.';
+    if (m.includes('network') || m.includes('fetch') || m.includes('timed out')) return 'No connection. Check the internet and try again. Your photos are still here.';
+    if (m.includes('payload') || m.includes('too large') || m.includes('size')) return 'One of the files is too large to upload. Remove it or pick a smaller one.';
+    return `Could not post this memory. ${msg ?? 'Please try again.'}`;
+  };
   const handlePost = async () => {
-    if (media.length === 0) return;
+    setPostError(null);
+    if (media.length === 0) { setPostError('Add at least one photo or video to keep this memory.'); return; }
     console.log('[ComposeMemoryModal] handlePost tapped, media:', media, 'caption:', caption);
     setPosting(true);
     try {
       await onPost(media, caption.trim(), captionOverlay, taggedIds, occasion);
-      console.log('[ComposeMemoryModal] onPost resolved ok');
+      console.log('[ComposeMemoryModal] onPost resolved ok, closing composer. media was:', media);
       reset();
       onClose();
     } catch (e: any) {
       console.error('[ComposeMemoryModal] ❌ post failed:', e?.message, e);
-      Alert.alert('Couldn\'t post', e?.message ?? 'Please try again.');
+      setPostError(friendlyPostError(e?.message));
     } finally {
       setPosting(false);
     }
@@ -304,6 +342,7 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
 
   const dismiss = () => { Keyboard.dismiss(); reset(); onClose(); };
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(88);
+  const composerInsets = useSafeAreaInsets();
   const hero = media[0] ?? null;
   const rest = media.slice(1);
 
@@ -347,13 +386,16 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
       <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
               contentContainerStyle={{ padding: 20, paddingBottom: 8 }}>
 
-              {/* ── The keepsake card — hero photo + handwritten-style note,
-                  tucked into corner mounts like an album page, not a
-                  full-bleed feed hero competing for attention. ── */}
-              <View style={withAndroidShadowFix({ backgroundColor: isDark ? '#26222E' : '#F2ECE1', borderRadius: 4, padding: 14,
-                paddingBottom: 18, marginHorizontal: 8, marginBottom: rest.length ? 6 : 22,
-                transform: [{ rotate: '-0.6deg' }],
-                shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } })}>
+              {/* ── Hero photo field card — Gemini-rhythm straight-edge
+                  card (white bg, real border/shadow) instead of the old
+                  tilted amber "keepsake" card, matching
+                  CreateScheduleScreen.tsx's field-card language. ── */}
+              <View style={withAndroidShadowFix({
+                backgroundColor: isDark ? colors.card : GEMINI.cardBg,
+                borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+                borderRadius: RADIUS.lg, padding: 14,
+                paddingBottom: 18, marginBottom: rest.length ? 6 : 22,
+                ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) })}>
                 {hero ? (
                   <View style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 3, overflow: 'hidden',
                     backgroundColor: isDark ? '#2b2436' : colors.border + '40' }}>
@@ -365,17 +407,17 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                         <RNImage source={{ uri: hero.uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                       </TouchableOpacity>
                     )}
-                    <TouchableOpacity onPress={takePhoto}
+                    <TouchableOpacity onPress={() => setShowMediaOptions(true)}
                       style={{ position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(14,12,19,0.65)',
                         flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }}>
                       <Camera size={12} color="#fff" />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Retake</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Replace</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   <View style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 3, overflow: 'hidden',
                     backgroundColor: isDark ? '#2b2436' : colors.border + '40' }}>
-                    <TouchableOpacity onPress={pickFromLibrary}
+                    <TouchableOpacity onPress={() => setShowMediaOptions(true)}
                       style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10,
                         borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 3 }}>
                       <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: colors.primary + '20',
@@ -384,11 +426,36 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                       </View>
                       <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.textTertiary }}>Tap to add a photo or video</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={takeVideo}
-                      style={{ position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(14,12,19,0.55)',
-                        flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999 }}>
-                      <Text style={{ fontSize: 11 }}>🎥</Text>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Record video</Text>
+                  </View>
+                )}
+
+                {/* Inline add-media chooser — same three options (camera
+                    photo, camera video, gallery) no matter which entry
+                    point opened it. */}
+                {showMediaOptions && (
+                  <View style={{ marginTop: 12, borderRadius: RADIUS.md, borderWidth: 1,
+                    borderColor: isDark ? colors.border : GEMINI.border,
+                    backgroundColor: isDark ? colors.card : GEMINI.cardBg, overflow: 'hidden' }}>
+                    {([
+                      { key: 'photo', icon: <Camera size={16} color={colors.primary} />, label: 'Take a photo' },
+                      { key: 'video', icon: <Text style={{ fontSize: 15 }}>🎥</Text>, label: 'Record a video' },
+                      { key: 'library', icon: <ImagePlus size={16} color={colors.primary} />, label: 'Choose from gallery' },
+                    ] as const).map((opt, i) => (
+                      <TouchableOpacity key={opt.key} onPress={() => openMediaOption(opt.key)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                          paddingHorizontal: 14, paddingVertical: 13,
+                          borderTopWidth: i === 0 ? 0 : 1,
+                          borderTopColor: isDark ? colors.border : GEMINI.border }}>
+                        {opt.icon}
+                        <Text style={{ fontSize: 13.5, fontWeight: '600', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity onPress={() => setShowMediaOptions(false)}
+                      style={{ paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1,
+                        borderTopColor: isDark ? colors.border : GEMINI.border }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>Cancel</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -397,11 +464,10 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                   placeholder="Write what made this moment worth keeping…"
                   placeholderTextColor={colors.textTertiary}
                   multiline
-                  style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 16, fontWeight: '500',
-                    lineHeight: 22, color: colors.textPrimary, marginTop: 16, marginHorizontal: 4, minHeight: 26, padding: 0 }} />
-                <View style={{ height: 1, marginTop: 8, marginHorizontal: 4, backgroundColor: colors.border }} />
-                <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic',
-                  fontSize: 11, color: colors.textTertiary, marginTop: 10, marginHorizontal: 4 }}>
+                  style={{ fontSize: 15, fontWeight: '600',
+                    lineHeight: 21, color: isDark ? colors.textPrimary : GEMINI.titleColor, marginTop: 14, minHeight: 26, padding: 0 }} />
+                <View style={{ height: 1, marginTop: 8, backgroundColor: isDark ? colors.border : GEMINI.border }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginTop: 10 }}>
                   {fmtDateShort(todayLocal())}
                 </Text>
               </View>
@@ -414,8 +480,7 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                 <View style={{ marginHorizontal: 2, marginBottom: 22 }}>
                   {rest.length > 0 && (
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 6, marginBottom: 8 }}>
-                      <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic',
-                        fontSize: 12, color: colors.textTertiary }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>
                         {rest.length} more from the same {rest.length === 1 ? 'shot' : 'afternoon'}
                       </Text>
                     </View>
@@ -424,9 +489,9 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                     contentContainerStyle={{ gap: 14, paddingHorizontal: 6, paddingVertical: 8 }}>
                     {rest.map((m, i) => (
                       <TouchableOpacity key={m.uri + i} onPress={() => promoteToHero(i + 1)}
-                        style={{ width: 84, height: 84, borderRadius: 4, backgroundColor: isDark ? '#26222E' : '#F2ECE1',
-                          padding: 5, transform: [{ rotate: i % 2 === 0 ? '-3deg' : '2.5deg' }],
-                          shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } }}>
+                        style={{ width: 84, height: 84, borderRadius: RADIUS.sm, backgroundColor: isDark ? colors.card : GEMINI.surface,
+                          padding: 5, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+                          ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
                         {/* Filmstrip prints stay static (no autoplay) even
                             for a video slot — several muted autoplaying
                             videos in a tiny row at once is noisy, not
@@ -452,7 +517,7 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                       </TouchableOpacity>
                     ))}
                     {media.length < 6 && (
-                      <TouchableOpacity onPress={pickFromLibrary}
+                      <TouchableOpacity onPress={() => setShowMediaOptions(true)}
                         style={{ width: 84, height: 84, borderRadius: 4, alignItems: 'center', justifyContent: 'center',
                           borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border }}>
                         <Text style={{ fontSize: 22, fontWeight: '300', color: colors.textTertiary }}>＋</Text>
@@ -486,33 +551,23 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                 </TouchableOpacity>
               )}
 
-              {/* ── Who was there — wax-seal circles, not checkboxes.
-                  Unselected members stay visible, just dimmed, so presence
-                  reads as optional rather than a roll call. ── */}
+              {/* ── Who was there — name pills instead of avatar circles
+                  [live-requested: "change the ppl to the name pills instead
+                  of the avatars"]. Unselected members stay visible, just
+                  dimmed, so presence reads as optional rather than a roll
+                  call. ── */}
               <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase',
-                color: colors.textTertiary, marginBottom: 10 }}>Who was there</Text>
+                color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginBottom: 10 }}>Who was there</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 22 }}>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
                   {members.map(m => {
                     const sel = taggedIds.includes(m.id);
                     return (
                       <TouchableOpacity key={m.id} onPress={() => toggleTag(m.id)}
-                        style={{ alignItems: 'center', gap: 6, opacity: sel ? 1 : 0.5 }}>
-                        <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: sealColor(m.name),
-                          alignItems: 'center', justifyContent: 'center',
-                          borderWidth: sel ? 2 : 0, borderColor: colors.amber }}>
-                          <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff' }}>
-                            {m.name.charAt(0).toUpperCase()}
-                          </Text>
-                          {sel && (
-                            <View style={{ position: 'absolute', bottom: -3, right: -3, width: 16, height: 16, borderRadius: 8,
-                              backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center',
-                              borderWidth: 2, borderColor: colors.surface }}>
-                              <Text style={{ fontSize: 9, fontWeight: '900', color: colors.card }}>✓</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={{ fontSize: 10.5, fontWeight: '700', color: sel ? colors.amber : colors.textSecondary }}>
+                        style={{ paddingHorizontal: 13, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5,
+                          borderColor: sel ? colors.amber : (isDark ? colors.border : GEMINI.border),
+                          backgroundColor: sel ? colors.amber + '18' : 'transparent' }}>
+                        <Text style={{ fontSize: 12.5, fontWeight: '700', color: sel ? colors.amber : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                           {m.name.split(' ')[0]}
                         </Text>
                       </TouchableOpacity>
@@ -521,41 +576,78 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
                 </View>
               </ScrollView>
 
-              {/* ── Occasion — quiet categorization, not hashtags. ── */}
+              {/* ── Occasion — quiet categorization, not hashtags. A
+                  "Custom" chip reveals a free-text field so an occasion
+                  outside the presets (e.g. "Lost tooth") can still be
+                  tagged [live-requested: "give the custom memory type
+                  option"]. ── */}
               <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase',
-                color: colors.textTertiary, marginBottom: 10 }}>What kind of moment</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {OCCASIONS.map(o => {
-                  const sel = occasion === o.key;
-                  return (
-                    <TouchableOpacity key={o.key} onPress={() => setOccasion(sel ? null : o.key)}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8,
-                        borderRadius: 999, borderWidth: 1.5,
-                        borderColor: sel ? colors.pink : colors.border,
-                        backgroundColor: sel ? colors.pink + '18' : 'transparent' }}>
-                      <Text style={{ fontSize: 13 }}>{o.emoji}</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? colors.pink : colors.textSecondary }}>
-                        {o.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginBottom: 10 }}>What kind of moment</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {OCCASIONS.map(o => {
+                    const sel = occasion === o.key;
+                    return (
+                      <TouchableOpacity key={o.key} onPress={() => { setOccasion(sel ? null : o.key); setCustomOccasionActive(false); }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8,
+                          borderRadius: 999, borderWidth: 1.5,
+                          borderColor: sel ? colors.pink : (isDark ? colors.border : GEMINI.border),
+                          backgroundColor: sel ? colors.pink + '18' : 'transparent' }}>
+                        <Text style={{ fontSize: 13 }}>{o.emoji}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? colors.pink : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                          {o.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity onPress={() => { setCustomOccasionActive(true); setOccasion(customOccasionText.trim() || null); }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8,
+                      borderRadius: 999, borderWidth: 1.5,
+                      borderColor: customOccasionActive ? colors.pink : (isDark ? colors.border : GEMINI.border),
+                      backgroundColor: customOccasionActive ? colors.pink + '18' : 'transparent' }}>
+                    <Text style={{ fontSize: 13 }}>✏️</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: customOccasionActive ? colors.pink : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                      Custom
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+              {customOccasionActive && (
+                <TextInput
+                  value={customOccasionText}
+                  onChangeText={(t) => { setCustomOccasionText(t); setOccasion(t.trim() || null); }}
+                  placeholder="Name this kind of moment…"
+                  placeholderTextColor={isDark ? colors.textTertiary : GEMINI.bodyColorLight}
+                  maxLength={40}
+                  style={{ marginTop: 10, fontSize: 13, fontWeight: '600', borderRadius: 12, borderWidth: 1.5,
+                    borderColor: isDark ? colors.border : GEMINI.border,
+                    color: isDark ? colors.textPrimary : GEMINI.titleColor,
+                    paddingHorizontal: 13, paddingVertical: 10 }}
+                />
+              )}
             </ScrollView>
 
             {/* Sticky footer — was inside the ScrollView, could scroll out
                 of view once who-was-there/occasion pushed content taller. */}
+            {!!postError && (
+              <View accessibilityRole="alert" style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginHorizontal: 20, marginBottom: 4, borderRadius: 14, padding: 14,
+                backgroundColor: isDark ? colors.danger + '22' : '#FFE8E3', borderWidth: 1.5, borderColor: colors.danger }}>
+                <Text style={{ fontSize: 16 }}>⚠️</Text>
+                <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 20, color: colors.danger }}>{postError}</Text>
+              </View>
+            )}
             <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? colors.border : GEMINI.border,
+              backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
               <TouchableOpacity onPress={dismiss}
-                style={{ flex: 0.85, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
+                style={{ flex: 0.85, borderRadius: 16, borderWidth: 1.5, borderColor: isDark ? colors.border : GEMINI.border,
                   alignItems: 'center', justifyContent: 'center', paddingVertical: 15 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Not now</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>Not now</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handlePost}
                 style={{ flex: 2, borderRadius: 16, alignItems: 'center', justifyContent: 'center', paddingVertical: 15,
-                  backgroundColor: colors.primary, opacity: media.length === 0 ? 0.5 : 1 }}
-                disabled={posting || media.length === 0}>
+                  backgroundColor: GEMINI.blue, opacity: posting ? 0.5 : 1 }}
+                disabled={posting}>
                 {posting
                   ? <CubeSpinner size={18} />
                   : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Keep this memory</Text>}
@@ -578,20 +670,39 @@ export function ComposeMemoryModal({ visible, onClose, onPost, members, myId, co
     );
   }
 
+  // Mobile default shell — a dedicated full-page overlay in the Gemini
+  // rhythm (same FullPageOverlay + literal-hex shell as
+  // school/CreateScheduleScreen.tsx), replacing the old bottom-sheet
+  // Modal [live-requested: "open a dedicated overlay page to create the
+  // post... see the previous create post, and adapt to the figma
+  // rhythm"]. fieldsBody itself (every real field + the sticky footer) is
+  // untouched — only the chrome around it changed.
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={md.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={[md.sheet, { backgroundColor: colors.surface, maxHeight: keyboardAwareMaxHeight ?? '88%' }]}>
-            <View style={[md.handle, { backgroundColor: colors.border }]} />
-            {mobileHeader}
-            {fieldsBody}
+    <>
+      <FullPageOverlay visible={visible} onDismiss={dismiss} zIndex={60}>
+        {(requestAnimatedClose) => (
+          <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <View style={{ paddingTop: composerInsets.top + 8, paddingHorizontal: 20, paddingBottom: 6 }}>
+              <TouchableOpacity onPress={requestAnimatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                <Text style={{ fontSize: 29, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor, lineHeight: 36 }}>
+                  Tuck away a memory
+                </Text>
+              </TouchableOpacity>
+              <View style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
+                borderRadius: 8, backgroundColor: isDark ? colors.surface : GEMINI.surface }}>
+                <Text style={{ fontSize: 12, color: isDark ? colors.primary : GEMINI.linkBlue, fontWeight: '600' }}>
+                  for the family album
+                </Text>
+              </View>
+            </View>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+              {fieldsBody}
+            </KeyboardAvoidingView>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        )}
+      </FullPageOverlay>
       {previewer}
-    </Modal>
+    </>
   );
 }
 
@@ -629,6 +740,12 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
   if (!mem.photo_url && !hasMulti) return null;
   const allUrls = hasMulti ? mem.photo_urls! : [mem.photo_url!];
   const typeAtIdx = (i: number): 'photo' | 'video' => (mem.media_types?.[i] === 'video' ? 'video' : 'photo');
+  // Temporary diagnostic for the still-open "video playback is still not
+  // working" bug — confirms whether this card's own media_types actually
+  // came back from Supabase as a video, right before AutoplayVideo mounts.
+  if (mem.media_types?.some(t => t === 'video')) {
+    console.log('[MemoryPostCard] video memory render:', mem.id, 'allUrls:', allUrls, 'media_types:', mem.media_types);
+  }
 
   // Same suppression rule as the social feed's PostCard: when the caption
   // is shown as an overlay ON the photo, don't also repeat it below —
@@ -663,84 +780,81 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
     ? new Date(mem.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
     : null;
 
+  // Title line for the card — the occasion label when tagged ("A
+  // milestone"), falling back to a generic "A family moment" otherwise.
+  // Matches the mockup's bold non-serif title above the meta line, in
+  // place of the old italic-eyebrow+name-date header row.
+  const OCCASION_TITLE: Record<string, string> = {
+    milestone: 'A milestone', everyday: 'Just an everyday moment',
+    celebration: 'A celebration', just_because: 'Just because',
+  };
+  const cardTitle = mem.tag && OCCASION_TITLE[mem.tag] ? OCCASION_TITLE[mem.tag] : 'A family moment';
+  const metaParts = [
+    `Added by ${poster?.name?.split(' ')[0] ?? 'Family'}`,
+    `${allUrls.length} photo${allUrls.length === 1 ? '' : 's'}`,
+    'household only',
+  ];
+  // Gemini-rhythm card tokens (light mode only) — Memories joined
+  // School/Home Care/Rewards/member-profile's named exception to CLAUDE.md
+  // rule 6's pure-white default [live-requested: "make the rythem of the
+  // gemini and borders and etc", "shads too"]: bright white card against
+  // the warm-cream canvas with a real drop shadow (not a flat 1px border),
+  // deep forest-slate title/body text. Dark mode is untouched — normal
+  // colors.* theme object.
+  const cardBg = isDark ? colors.card : GEMINI.cardBg;
+  const cardBorder = isDark ? colors.border : GEMINI.border;
+  const titleClr = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyClr = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const metaClr = isDark ? colors.textTertiary : GEMINI.bodyColorLight;
+
   return (
-    // Keepsake card — matches the composer's own "photo in an album page,
-    // not a feed post" language instead of the generic Instagram-style
-    // header/media/actions/caption stack this used to be. Slight tilt +
-    // corner mounts on the media, note-style caption in a serif face,
-    // hearts read as "N loved this" rather than a raw like-button row.
-    <View style={{ marginHorizontal: 16, marginBottom: 30, marginTop: 6 }}>
-      <View style={withAndroidShadowFix({ backgroundColor: isDark ? '#26222E' : '#EBE2D2', borderRadius: 4, padding: 14, paddingBottom: 16,
-        transform: [{ rotate: '-1.1deg' }],
-        shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.22, shadowRadius: 20, shadowOffset: { width: 0, height: 12 },
-        elevation: 8,
+    // Clean-card style, matching the "Memories" mockup's rhythm: straight-
+    // edge card, pill-shaped date badge over the photo, bold title, a
+    // "Added by X · N photos · household only" meta line, and a plain
+    // (non-serif) caption — replacing the earlier tilted/corner-mounted
+    // scrapbook treatment [live-requested full visual redesign, "it is
+    // just moments so no tab is required"].
+    <View style={{ marginHorizontal: 2, marginBottom: 18 }}>
+      <View style={withAndroidShadowFix({ backgroundColor: cardBg, borderRadius: RADIUS.lg, overflow: 'hidden',
+        borderWidth: 1, borderColor: cardBorder,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
         // Momentary highlight ring when this is the memory a push
         // notification deep-linked to, so the auto-scroll lands somewhere
         // visibly confirmable rather than an unmarked card among many.
         ...(highlighted ? { borderWidth: 2, borderColor: colors.primary } : null) })}>
 
-        {/* Header — same eyebrow/title treatment as the composer's own
-            header ("for the family album" / "Tuck away a memory"): a small
-            italic serif eyebrow line above a bolder title, not just a
-            plain name+date row. Eyebrow reads the occasion when tagged,
-            falling back to a generic keepsake framing otherwise. */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <FamilyAvatar name={poster?.name ?? 'Family'} emoji={poster?.emoji} avatarUrl={poster?.avatarUrl}
-            siblings={siblings} size={34} ringColor={posterColor} ringWidth={1.5} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic',
-              fontSize: 12, fontWeight: '600', color: colors.primary, marginBottom: 1 }} numberOfLines={1}>
-              {mem.tag && OCCASION_LABEL[mem.tag] ? OCCASION_LABEL[mem.tag] : 'a kept moment'}
-            </Text>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-              {poster?.name?.split(' ')[0] ?? 'Family'} · {fmtDateShort(mem.date)}
-            </Text>
+        {/* Media — capped height, cropped to fill, pill date badge
+            floating over the top-left corner (mockup's "Sunday, 4
+            October" treatment) instead of a separate header row above
+            the photo. */}
+        <View style={{ position: 'relative' }}>
+          <MemoryMedia ref={mediaRef} urls={allUrls} mediaTypes={mem.media_types} captionOverlay={mem.caption_overlay} caption={mem.description}
+            width={SCREEN_W - 32} onIndexChange={setActiveSlide}
+            onPress={(index) => onOpenViewer(allUrls, index, allUrls.map((_, i) => typeAtIdx(i)))} />
+          <View pointerEvents="none" style={{ position: 'absolute', top: 12, left: 12,
+            backgroundColor: 'rgba(14,12,19,0.65)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>{dsDateLabel}</Text>
           </View>
           {canDelete && (
-            <TouchableOpacity onPress={onDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Trash2 size={14} color={colors.textTertiary} />
+            <TouchableOpacity onPress={onDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={{ position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(14,12,19,0.55)',
+                borderRadius: 999, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+              <Trash2 size={14} color="#fff" />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Media — capped height, cropped to fill, framed like a print
-            rather than a full-bleed feed hero. Width matches the card's
-            own available space (screen - 16px outer margin*2 - 14px inner
-            padding*2) so the photo stays CONTAINED inside the keepsake
-            frame instead of overflowing past it. */}
-        <View style={{ position: 'relative' }}>
-          <View style={{ borderRadius: 3, overflow: 'hidden', alignItems: 'center' }}>
-            <MemoryMedia ref={mediaRef} urls={allUrls} mediaTypes={mem.media_types} captionOverlay={mem.caption_overlay} caption={mem.description}
-              width={SCREEN_W - 60} onIndexChange={setActiveSlide}
-              onPress={(index) => onOpenViewer(allUrls, index, allUrls.map((_, i) => typeAtIdx(i)))} />
-          </View>
-          {/* Photo-corner mounts — the physical scrapbook detail (from the
-              approved mock) that makes this read as a page tucked into an
-              album rather than a cropped image tile: two triangular paper
-              tabs pinning opposite corners of the print, built with RN's
-              border-triangle trick (a zero-size box whose two adjoining
-              borders form the diagonal). */}
-          <View pointerEvents="none" style={{ position: 'absolute', top: -2, left: -2, width: 0, height: 0,
-            borderTopWidth: 32, borderRightWidth: 32, borderTopColor: colors.primary, borderRightColor: 'transparent' }} />
-          <View pointerEvents="none" style={{ position: 'absolute', bottom: -2, right: -2, width: 0, height: 0,
-            borderBottomWidth: 32, borderLeftWidth: 32, borderBottomColor: colors.primary, borderLeftColor: 'transparent' }} />
-        </View>
-
-        {/* Thumbnail row — same tilted "pile of prints" language as the
-            composer, so a posted memory with several photos/videos looks
-            like the same object the person built, not a different
-            component once it's live in the feed. Tapping one jumps the
-            main carousel above to that slide for a quick preview. */}
+        {/* Thumbnail row — only for multi-media memories. Tapping one
+            jumps the main carousel above to that slide for a quick
+            preview. */}
         {allUrls.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 10, paddingTop: 10, paddingHorizontal: 2 }}>
+            contentContainerStyle={{ gap: 8, paddingTop: 10, paddingHorizontal: 14 }}>
             {allUrls.map((u, i) => (
               <TouchableOpacity key={u + i} onPress={() => mediaRef.current?.scrollToIndex(i)}
-                style={withAndroidShadowFix({ width: 52, height: 52, borderRadius: 3, backgroundColor: isDark ? '#1c1924' : '#e8e0d2',
-                  padding: 3, transform: [{ rotate: i % 2 === 0 ? '-2.5deg' : '2deg' }],
-                  borderWidth: activeSlide === i ? 1.5 : 0, borderColor: colors.primary,
-                  shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } })}>
-                <ExpoImage source={{ uri: u }} style={{ width: '100%', height: '100%', borderRadius: 2 }} contentFit="cover" cachePolicy="memory-disk" />
+                style={{ width: 48, height: 48, borderRadius: RADIUS.sm, overflow: 'hidden',
+                  borderWidth: activeSlide === i ? 2 : 0, borderColor: colors.primary }}>
+                <ExpoImage source={{ uri: u }} style={{ width: '100%', height: '100%' }} contentFit="cover" cachePolicy="memory-disk" />
                 {typeAtIdx(i) === 'video' && (
                   <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                     alignItems: 'center', justifyContent: 'center' }}>
@@ -755,65 +869,75 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
           </ScrollView>
         )}
 
-        {/* Note — the caption, written like something under a photo in an
-            album, not an Instagram-style "name: text" line — followed by a
-            stitched dashed rule and an italic date-stamp, matching the
-            mock's "ledger entry" bottom-of-page treatment. */}
-        {showBelowCaption && (
-          <TouchableOpacity activeOpacity={1} onPress={() => setCaptionExpanded(v => !v)}
-            style={{ marginTop: 14 }}>
-            <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 15, fontWeight: '500',
-              lineHeight: 21, color: colors.textPrimary }} numberOfLines={captionExpanded ? 0 : 3}>
-              {mem.description}
-            </Text>
-            {!captionExpanded && (mem.description?.length ?? 0) > 90 && (
-              <Text style={{ fontSize: 12, color: posterColor, marginTop: 2, fontWeight: '700' }}>more</Text>
-            )}
-            <View style={{ borderBottomWidth: 1, borderStyle: 'dashed', borderColor: colors.textTertiary + '4D', marginTop: 12 }} />
-            <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic',
-              fontSize: 11, color: colors.textTertiary, marginTop: 8 }}>
-              {dsDateLabel}{dsTimeLabel ? ` · ${dsTimeLabel}` : ''}
-            </Text>
-          </TouchableOpacity>
-        )}
+        <View style={{ padding: 14 }}>
+          {/* Title + meta line — "A milestone" / "Added by Maya · 14
+              photos · household only", matching the mockup's bold title
+              + light meta-line pairing in place of the old avatar+name
+              header row. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+            <FamilyAvatar name={poster?.name ?? 'Family'} emoji={poster?.emoji} avatarUrl={poster?.avatarUrl}
+              siblings={siblings} size={28} ringColor={posterColor} ringWidth={1.5} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: titleClr, letterSpacing: -0.2 }} numberOfLines={1}>
+                {cardTitle}
+              </Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: metaClr, marginTop: 1 }} numberOfLines={1}>
+                {metaParts.join(' · ')}
+              </Text>
+            </View>
+          </View>
 
-        {/* Who was there — small overlapping avatars, only when tagged */}
-        {taggedMembers.length > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}>
-            <View style={{ flexDirection: 'row' }}>
-              {taggedMembers.slice(0, 4).map((m, i) => (
-                <View key={m.id} style={{ marginLeft: i > 0 ? -8 : 0, borderRadius: 12, borderWidth: 2, borderColor: isDark ? '#26222E' : '#F2ECE1' }}>
-                  <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
-                    siblings={siblings} size={20} ringColor={colors.amber} ringWidth={1} />
+          {/* Caption — plain (non-serif) body text, not a handwritten-
+              style note. */}
+          {showBelowCaption && (
+            <TouchableOpacity activeOpacity={1} onPress={() => setCaptionExpanded(v => !v)}
+              style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', lineHeight: 20, color: bodyClr }}
+                numberOfLines={captionExpanded ? 0 : 3}>
+                {mem.description}
+              </Text>
+              {!captionExpanded && (mem.description?.length ?? 0) > 90 && (
+                <Text style={{ fontSize: 12, color: posterColor, marginTop: 2, fontWeight: '700' }}>more</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Who was there — name chips instead of avatars [live-requested:
+              "the tags we can have the names instead of the avatars"] */}
+          {taggedMembers.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {taggedMembers.map(m => (
+                <View key={m.id} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+                  backgroundColor: isDark ? colors.amber + '22' : GEMINI.surface,
+                  borderWidth: 1, borderColor: isDark ? colors.amber + '44' : GEMINI.border }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.amber : GEMINI.bodyColor }}>
+                    {m.name.split(' ')[0]}
+                  </Text>
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary }}>
-              {taggedMembers.map(m => m.name.split(' ')[0]).join(', ')}
-            </Text>
-          </View>
-        )}
-
-        {/* Loved-by — a heart tap and a quiet "N loved this" instead of a
-            raw like-button row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
-          <TouchableOpacity onPress={onHeart} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Heart size={19} color={heartColor} fill={hearted ? colors.danger : 'transparent'} />
-          </TouchableOpacity>
-          {mem.hearts > 0 && (
-            <TouchableOpacity
-              onPress={() => {
-                const names = (mem.hearted_by ?? [])
-                  .map(id => allMembers.find(m => m.id === id)?.name?.split(' ')[0])
-                  .filter(Boolean);
-                Alert.alert('Loved by', names.length ? names.join(', ') : `${mem.hearts} ${mem.hearts === 1 ? 'person' : 'people'}`);
-              }}>
-              <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic',
-                fontSize: 12, color: colors.textTertiary }}>
-                {mem.hearts} loved this
-              </Text>
-            </TouchableOpacity>
           )}
+
+          {/* Loved-by — a heart tap and a quiet "N loved this" instead of
+              a raw like-button row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+            <TouchableOpacity onPress={onHeart} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Heart size={19} color={heartColor} fill={hearted ? colors.danger : 'transparent'} />
+            </TouchableOpacity>
+            {mem.hearts > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  const names = (mem.hearted_by ?? [])
+                    .map(id => allMembers.find(m => m.id === id)?.name?.split(' ')[0])
+                    .filter(Boolean);
+                  Alert.alert('Loved by', names.length ? names.join(', ') : `${mem.hearts} ${mem.hearts === 1 ? 'person' : 'people'}`);
+                }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: metaClr }}>
+                  {mem.hearts} loved this
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     </View>
@@ -822,7 +946,7 @@ function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDar
 
 // ─── MemoriesTab ────────────────────────────────────────────────────────────────
 
-export default function MemoriesTab({ colors, isDark, readOnly = false, focusMemoryId, onFocusMemoryLayout, onLoadMoreReady }: {
+export default function MemoriesTab({ colors, isDark, readOnly = false, focusMemoryId, onFocusMemoryLayout, onLoadMoreReady, onComposerPortal }: {
   colors: any; isDark: boolean; readOnly?: boolean;
   // Tapping a memory_posted/memory_liked push should land on this screen
   // scrolled straight to the memory the alert was about, not just the tab
@@ -839,6 +963,16 @@ export default function MemoriesTab({ colors, isDark, readOnly = false, focusMem
   // ScrollView's onScroll. Hands the loadMore function up once so the
   // screen can call it from its own scroll handler.
   onLoadMoreReady?: (fn: () => void) => void;
+  // ComposeMemoryModal's default (non-kiosk) shell is a FullPageOverlay,
+  // which is position:'absolute' filling its NEAREST parent — rendering it
+  // from here, inside the screen's own ScrollView, made it fill just the
+  // ScrollView's content area instead of the real screen, so it opened
+  // "inline" on the feed instead of as a full-page cover [live-reported:
+  // "the Tuckaway memory is opening inline to the Memories landing page"].
+  // Same "only the screen can own the right container" story as
+  // onFocusMemoryLayout/onLoadMoreReady above — hand the modal's JSX up so
+  // MemoriesScreen can render it as a sibling of its ScrollView instead.
+  onComposerPortal?: (node: React.ReactNode) => void;
 }) {
   const { members } = useFamilyStore();
   // Every piece of family_memories data and mutation this tab used to own
@@ -853,6 +987,17 @@ export default function MemoriesTab({ colors, isDark, readOnly = false, focusMem
   } = useFamilyMemories({ focusMemoryId });
 
   const [showModal, setShowModal] = useState(false);
+
+  // Hands the composer's JSX up to MemoriesScreen so it can be rendered as
+  // a sibling of the screen's own ScrollView instead of nested inside it —
+  // see onComposerPortal's own comment above for why that nesting broke
+  // FullPageOverlay's full-screen cover.
+  useEffect(() => {
+    onComposerPortal?.(
+      <ComposeMemoryModal visible={showModal} onClose={() => setShowModal(false)}
+        onPost={postMemory} members={members} myId={myId} colors={colors} isDark={isDark} />
+    );
+  }, [onComposerPortal, showModal, postMemory, members, myId, colors, isDark]);
 
   // Shared FAB's Memories-tab "+" face (app/(tabs)/_layout.tsx) fires this
   // one-shot flag instead of opening Ask Cube — same pattern
@@ -905,6 +1050,23 @@ export default function MemoriesTab({ colors, isDark, readOnly = false, focusMem
 
   return (
     <>
+      {/* Top-of-feed banner — the composer used to be reachable only
+          through the shared FAB's hidden "+" face (openMemoryComposerRequested),
+          which left no visible way to start a post from this screen itself
+          [live-requested: "where is the create post? ... banner at the top"]. */}
+      <TouchableOpacity onPress={() => setShowModal(true)} activeOpacity={0.85}
+        style={withAndroidShadowFix({
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg,
+          borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+          borderRadius: RADIUS.lg, paddingVertical: 14, marginBottom: 14,
+          ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) })}>
+        <Plus size={18} color={isDark ? colors.pink : GEMINI.titleColor} />
+        <Text style={{ fontSize: 14.5, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
+          Add a photo or a little story
+        </Text>
+      </TouchableOpacity>
+
       {memories.length === 0 ? (
         <View style={{ paddingHorizontal: 16 }}>
           <EmptyState Icon={ImageIcon} label="Post your first family memory" colors={colors} />
@@ -928,9 +1090,6 @@ export default function MemoriesTab({ colors, isDark, readOnly = false, focusMem
           )}
         </View>
       )}
-
-      <ComposeMemoryModal visible={showModal} onClose={() => setShowModal(false)}
-        onPost={postMemory} members={members} myId={myId} colors={colors} isDark={isDark} />
 
       {/* Fullscreen viewer with save-to-device */}
       {viewer && (

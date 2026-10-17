@@ -97,30 +97,44 @@ Return:
   }
 }
 
-Return ONLY valid JSON — no markdown fences, no explanation. If a field is unknown, use null.
+## Reading times and locations — do this BEFORE returning null
+
+Only use null for startTime/endTime/time/end_time/location/room if you have
+genuinely scanned the ENTIRE image and the information is not present
+anywhere, in any form. Do not default to null just because it isn't in an
+obvious dedicated column or field.
+
+Times and locations appear in many formats and places on a real flyer —
+actively look for ALL of these before giving up:
+- A dedicated "Time" or "When" column or row in a table/grid.
+- Inline within the subject/event text itself, e.g. "Soccer practice 3:00-4:30pm",
+  "Doors open 6pm", "Starts at 9", "9-10:15am Science".
+- A header or footer line separate from the main grid, e.g. "School hours: 8:20am–3:05pm",
+  "All classes 45 minutes unless noted".
+- Times written in 12h format with or without am/pm, with a dash, "to", "–", "-", or "until"
+  between start and end (e.g. "3-4", "3:00 to 4:00", "15:00-16:00") — convert ALL of these to 24h HH:MM.
+- A single time with an implied duration (e.g. "1 hour session at 4pm" → startTime "16:00", endTime "17:00").
+- Locations/rooms similarly: look for "Room 204", "Gym", "Cafeteria", "Main Hall", "Field B",
+  address lines, "@ <venue>", or a venue name near the title — not just a field literally labeled "Location".
+- If a time is only given as a start with no visible end (e.g. "doors 6pm"), set only startTime
+  and leave endTime null — do not invent an end time, but DO still report the start time you found.
+
+Re-read the image a second time specifically hunting for these patterns before
+settling on null for any time or location field — a flyer that mentions a
+time or place anywhere in its text should almost never produce a fully-null
+schedule.
+
+Return ONLY valid JSON — no markdown fences, no explanation. If a field is unknown after this careful search, use null.
 For timetable periods: always specify the exact days each period occurs. If a subject appears on different days in different weeks or terms, create a separate period entry per term and set the "term" field accordingly.
 For rotating/block schedules: each day-block (A/B/C etc.) gets separate period entries with the days array set to only the days that block runs.
-For calendar events: extract ALL visible events, even if there are 20+.`;
+For calendar events: extract ALL visible events, even if there are 20+ or 100+. Work through EVERY page and EVERY month/column, in order, and do not stop early or summarise.
+- A break or range of days ("Spring Break Mar 18-22", "Winter Break Dec 21 - Jan 3") must be returned as ONE event per school day, each with its own date, the same title, and the category Study. Never return only the first day or the range as a single row.
+- Every single marked day counts (holidays, staff days, early release, grading-period starts/ends, make-up days, testing days). If a day has two things, return two events.
+- Do not drop events because they repeat; each date is its own event.`;
 
 // ── Gemini vision call ────────────────────────────────────────────────────────
 async function callGemini(key: string, images: { data: string; mimeType: string }[]): Promise<string> {
   const imageParts = images.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }));
-
-  const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{
-      role: 'user',
-      parts: [
-        ...imageParts,
-        { text: 'Determine the document type and extract all details. Return compact JSON only (no pretty-printing, no extra whitespace).' },
-      ],
-    }],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 4096,
-      thinkingConfig: { thinkingBudget: 0 },
-    },
-  });
 
   // gemini-1.5-flash-8b and gemini-1.5-flash are both retired on the
   // current v1beta API surface (live-reported elsewhere in this app via
@@ -136,8 +150,17 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
   let lastErr = '';
   for (const m of MODELS) {
     try {
-      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384 };
-      if (m.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      // Bug fixed here: this was backwards — thinkingBudget: 0 DISABLES
+      // extended reasoning, but it was only ever set when m.thinking was
+      // true, so the "thinking" attempt actually had thinking OFF, and the
+      // "non-thinking" retries got Gemini's normal (non-zero) default
+      // budget instead. For a task that depends on carefully re-scanning
+      // an image for scattered times/locations rather than giving up with
+      // null [live-reported: "scanner is not decoding the start/end
+      // times and locations"], thinking genuinely enabled should be tried
+      // first, not accidentally suppressed.
+      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384, seed: 42 };
+      if (!m.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       const reqBody = JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{
@@ -165,7 +188,7 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
       console.error(`[parse-flyer] ${m.name} threw: ${lastErr}`);
     }
   }
-  throw new Error(`Gemini failed: ${lastErr}`);
+  throw new Error(`The reader could not process this right now. ${lastErr.slice(0, 120)}`);
 }
 
 // ── JSON extraction ───────────────────────────────────────────────────────────
@@ -204,9 +227,30 @@ serve(async (req) => {
       if (!img.data || !img.mimeType) return json({ error: 'Each image needs data and mimeType' }, 400);
     }
 
-    const raw    = await callGemini(geminiKey, images);
-    console.log(`[parse-flyer] gemini raw (first 300): ${raw.slice(0, 300)}`);
-    const parsed = extractJson(raw);
+    // Read the document twice in parallel and merge: one read can stop early or skip a month, so the union of two is
+    // steadier than either alone (the same flyer used to give 26, 50, 52 or 56 events).
+    const settled = await Promise.allSettled([callGemini(geminiKey, images), callGemini(geminiKey, images)]);
+    const parsedReads: Record<string, unknown>[] = [];
+    for (const r of settled) {
+      if (r.status !== 'fulfilled') { console.error('[parse-flyer] a read failed:', String(r.reason)); continue; }
+      try { parsedReads.push(extractJson(r.value)); } catch (e) { console.error('[parse-flyer] a read was not valid JSON:', String(e)); }
+    }
+    if (parsedReads.length === 0) throw new Error('Could not read the document. Try again.');
+    console.log(`[parse-flyer] ${parsedReads.length} read(s) ok`);
+    const parsed = parsedReads[0];
+    if (parsed.type === 'calendar' && parsedReads.length > 1) {
+      const key = (e: any) => `${String(e?.title ?? '').toLowerCase().replace(/\s+/g, ' ').trim()}|${e?.date ?? ''}`;
+      const base = ((parsed as any).calendar?.events ?? []) as any[];
+      const seen = new Set(base.map(key));
+      for (const other of parsedReads.slice(1)) {
+        if (other.type !== 'calendar') continue;
+        for (const e of ((other as any).calendar?.events ?? []) as any[]) {
+          if (!seen.has(key(e))) { seen.add(key(e)); base.push(e); }
+        }
+      }
+      (parsed as any).calendar.events = base.sort((a, b) => String(a?.date ?? '9').localeCompare(String(b?.date ?? '9')));
+      console.log(`[parse-flyer] merged calendar events: ${base.length}`);
+    }
 
     // Validate type field
     const type = parsed.type as string;

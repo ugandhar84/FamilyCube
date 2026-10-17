@@ -41,6 +41,7 @@
  * shell — was already kiosk-native and needed no change.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { KioskChoresBoard } from '../components/KioskChoresBoard';
 import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, Modal, useWindowDimensions } from 'react-native';
 import {
   Plus, PartyPopper, Check, Clock3, Sparkles, History, Target, TriangleAlert,
@@ -129,7 +130,7 @@ export function KioskTasksTab({ active, members, colors, isDark, onNavigate }: {
   if (active.role === 'senior') {
     return <KioskGpTasksView active={active} members={members} colors={colors} isDark={isDark} />;
   }
-  return <KioskBoardView active={active} members={members} colors={colors} isDark={isDark} onNavigate={onNavigate} />;
+  return <KioskChoresBoard active={active} members={members} />;
 }
 
 /**
@@ -212,9 +213,11 @@ function FilterPill({
 // including other kids', with no claim/submit action anywhere (live-
 // reported: "we need similar chore/event creation and claim like mobile
 // app... claim, submit, review all exact same mobile app functions").
-function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
+function KioskBoardView({ active, members, colors, isDark, onNavigate, initialComposer }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   onNavigate?: (tab: any) => void;
+  /** Open the new-chore composer immediately (the board's + button). */
+  initialComposer?: boolean;
 }) {
   const { k, isDark: kioskDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
@@ -309,7 +312,7 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
   // point there at all on mobile itself, see this port's own notes) —
   // kiosk's pre-existing `isParent &&` gate on the "New Chore" button
   // already matched that exactly, so it's left as-is here.
-  const [showComposer, setShowComposer] = useState(false);
+  const [showComposer, setShowComposer] = useState(!!initialComposer);
   const [manualQuestPrefill, setManualQuestPrefill] = useState<{
     title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
   } | undefined>(undefined);
@@ -2112,7 +2115,7 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate }: {
       {/* Full-screen photo-proof viewer [GAP — audit A13] — same real
           near-black-scrim, tap-anywhere-to-close shape
           SubmitQuestSheet.tsx's own proofPhotoViewerUri Modal uses. */}
-      <Modal
+      <Modal supportedOrientations={['portrait', 'landscape']}
         visible={!!proofPhotoViewerUri}
         transparent
         animationType="fade"

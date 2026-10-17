@@ -3,6 +3,7 @@ import { HeartHandshake, Car, BookOpen, PartyPopper, CheckCircle2 } from 'lucide
 import { TYPO } from '@/constants/theme';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWelcome }: {
   requests: any[]; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -35,11 +36,11 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
                 borderColor: isOpen ? colors.parent + '50' : colors.border }}>
                 <TypeIcon size={18} color={colors.parent} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
                     {kidName} — {req.detail}
                   </Text>
                   {req.scheduledDate || req.scheduledTime ? (
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }}>
+                    <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }}>
                       {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
                     </Text>
                   ) : null}
@@ -58,9 +59,9 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
                       : (isDark ? colors.surface2 : colors.surface),
                     borderWidth: 1,
                     borderColor: isOpen ? colors.parent : colors.border }}>
-                  {isOpen ? <CheckCircle2 size={12} color={colors.parent} /> : <HeartHandshake size={12} color={colors.textSecondary} />}
+                  {isOpen ? <CheckCircle2 size={12} color={colors.parent} /> : <HeartHandshake size={12} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />}
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800',
-                    color: isOpen ? colors.parent : colors.textSecondary }}>
+                    color: isOpen ? colors.parent : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                     {isOpen ? 'GP Open' : 'Offer GP'}
                   </Text>
                 </Pressable>

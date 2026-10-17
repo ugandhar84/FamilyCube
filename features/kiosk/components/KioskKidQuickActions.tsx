@@ -68,6 +68,7 @@
  * reach KioskScreen's root onTouchStart, so without it the idle lock would
  * fire on a kid mid-read and throw them back to the lock screen.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { useMemo, useState } from 'react';
 import {
   Modal, View, Text, ScrollView, Pressable, StyleSheet,
@@ -577,8 +578,7 @@ function KioskSheet({
   variant?: 'dialog' | 'drawer';
 }) {
   const isDrawer = variant === 'drawer';
-  return (
-    <Modal visible transparent animationType={isDrawer ? 'slide' : 'fade'} onRequestClose={onClose}>
+  const content = (
       <KioskModalHost style={s.overlay}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -623,7 +623,11 @@ function KioskSheet({
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+  );
+  return isDrawer ? (
+    <KioskSlideModal visible onRequestClose={onClose}>{content}</KioskSlideModal>
+  ) : (
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="fade" onRequestClose={onClose}>{content}</Modal>
   );
 }
 

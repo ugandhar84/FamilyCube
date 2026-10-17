@@ -43,6 +43,7 @@
  * but touches inside a Modal never reach KioskScreen's root onTouchStart,
  * so without the host each tap failed to restart the idle timer.
  */
+import { KioskSlideModal } from '../components/KioskSlideModal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet,
@@ -50,8 +51,9 @@ import {
   findNodeHandle, UIManager,
 } from 'react-native';
 import {
-  Send, Lock, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
+  Send, Lock, ShieldCheck, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
   MapPin, X, XCircle, CornerUpLeft, Pencil, Search, ChevronLeft, ChevronRight, type LucideIcon,
+  Trash2,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -65,7 +67,12 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
 import { showToast } from '@/components/AppToast';
-import { useChatStore, dmChannelId, type ChatMessage } from '@/store/chatStore';
+import { useChatStore, dmChannelId, coupleChannelId, type ChatMessage } from '@/store/chatStore';
+import { useCoupleChannelStore } from '@/store/coupleChannelStore';
+import { useFeatureFlag } from '@/lib/featureFlags';
+import CouplePinModal from '@/components/CouplePinModal';
+import { getActiveFamilyKey, setActiveFamilyKey } from '@/lib/chatCrypto';
+import { isFamilyKeyStale, markFamilyKeyGenerationCurrent } from '@/lib/familyKeyRotation';
 import {
   buildGroupChannels, formatDay, QUICK_REACTIONS, REPLY_KIND_LABEL,
 } from '@/features/chat/components/constants';
@@ -78,7 +85,8 @@ import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import { useGroceryStore } from '@/store/groceryStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskActivity, useKioskLockSuspended, KioskModalHost } from '../KioskActivityContext';
-import { useKioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels } from '../kioskPalette';
+import { useKioskNavStore } from '@/store/kioskNavStore';
 import { Chip } from '../components/KioskOS';
 import { KioskAvatar } from '../components/KioskAvatar';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
@@ -89,6 +97,8 @@ interface ChannelEntry {
   isDM: boolean;
   lock: boolean;
   otherMember?: FamilyMember;
+  /** The parents-only "Just Us" channel: PIN-gated, same rules as the phone. */
+  isCouple?: boolean;
 }
 
 type DayGroup = { type: 'day'; label: string } | { type: 'msg'; msg: ChatMessage };
@@ -142,6 +152,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // exact same buildGroupChannels() derivation (maternal/paternal/grand-
   // squad split) rather than re-deriving a second, possibly-drifting copy
   // of that logic here.
+  const coupleFlagOn = useFeatureFlag('couple_channel');
   const entries: ChannelEntry[] = useMemo(() => {
     const parents = members.filter(m => m.role === 'parent');
     const viewerGpSide: 'a' | 'b' | 'unlinked' | null = (() => {
@@ -166,6 +177,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       // parent who somehow still reaches it sees a full block screen
       // (ChatScreen.tsx:938, parentLocked). Match that exactly instead of
       // a parent-count heuristic.
+      // The Parents Vault is a phone-only channel; the shared wall display never lists it.
+      .filter(ch => ch.id !== 'parents')
       .filter(ch => !ch.lock || isParent)
       .filter(ch => !ch.seniorOnly || isSenior || isParent)
       .filter(ch => {
@@ -186,8 +199,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       otherMember: m,
     }));
 
-    return [...groupChannels, ...dmEntries];
-  }, [members, active, isParent, isSenior]);
+    // "Just Us": only for a parent with exactly one co-parent, and only while the admin flag is on (same as the phone).
+    const justUs: ChannelEntry[] = (coupleFlagOn && isParent && coParents.length === 1)
+      ? [{ id: coupleChannelId(active.id, coParents[0].id), label: 'Just Us', isDM: true, lock: false, otherMember: coParents[0], isCouple: true }]
+      : [];
+
+    return [...groupChannels, ...justUs, ...dmEntries];
+  }, [members, active, isParent, isSenior, coupleFlagOn]);
+
+  const unlockedCouple = useCoupleChannelStore(st => st.unlockedChannelIds);
+  const [couplePinOpen, setCouplePinOpen] = useState(false);
+  useKioskLockSuspended(couplePinOpen);
 
   const [activeChannel, setActiveChannel] = useState<string>(entries[0]?.id ?? 'all');
 
@@ -271,6 +293,35 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   const [threadOpen, setThreadOpen] = useState(false);
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  // This device may not hold the family's security code yet (or its code is out of date). Then messages
+  // can't be read or sent; show a persistent amber notice with a field to enter the code, not a crash.
+  const familyId = (members[0] as any)?.familyId as string | undefined;
+  const [keyLocked, setKeyLocked] = useState(false);
+  const [codeDraft, setCodeDraft] = useState('');
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  useEffect(() => {
+    if (!familyId) return;
+    let off = false;
+    (async () => {
+      const [key, stale] = await Promise.all([getActiveFamilyKey(familyId), isFamilyKeyStale(familyId)]);
+      if (!off) setKeyLocked(!key || stale);
+    })();
+    return () => { off = true; };
+  }, [familyId]);
+  const unlockWithCode = async () => {
+    if (!familyId || !codeDraft.trim() || codeBusy) return;
+    setCodeBusy(true); setCodeError('');
+    try {
+      await setActiveFamilyKey(familyId, codeDraft.trim());
+      await markFamilyKeyGenerationCurrent(familyId);
+      setCodeDraft(''); setKeyLocked(false);
+      await loadChannel(activeChannel);
+    } catch (e: any) {
+      setCodeError('That code was not accepted. Check it and try again.');
+    }
+    setCodeBusy(false);
+  };
   const [text, setText] = useState('');
 
   // Keyboard opening can leave the latest message behind it until the list
@@ -279,7 +330,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const show = Keyboard.addListener(showEvt, () => {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 50);
     });
     return () => show.remove();
   }, []);
@@ -349,7 +400,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // since a family's channel/DM count is small enough (a handful) that
   // this is a one-time, one-screen cost, not a per-navigation one.
   useEffect(() => {
-    entries.forEach(e => loadChannel(e.id));
+    entries.forEach(e => { if (!e.isCouple) loadChannel(e.id); });
     // Deliberately NOT re-run when `entries` identity changes on every
     // render (it's a useMemo, so this is really keyed on its own deps) —
     // only care about actual entry-list membership changes.
@@ -358,18 +409,22 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
   useEffect(() => {
     if (!activeChannel) return;
+    // Just Us stays unloaded and unread-marked until its PIN has been entered.
+    if (activeChannel.startsWith('couple_') && !unlockedCouple.has(activeChannel)) return;
     loadChannel(activeChannel);
     markChannelRead(activeChannel, active.id);
     setOpenChannelId(activeChannel);
     return () => setOpenChannelId(null);
-  }, [activeChannel, active.id, loadChannel, markChannelRead, setOpenChannelId]);
+  }, [activeChannel, active.id, loadChannel, markChannelRead, setOpenChannelId, unlockedCouple]);
 
   // Switching channels clears in-progress compose state — same reasoning as
   // ChatScreen.tsx's switchChannel: an in-flight reply/attachment/draft must
   // never leak into whichever channel is opened next.
   const switchChannel = (id: string) => {
+    // Leaving Just Us locks it again; entering it asks for the PIN unless this session already unlocked it.
+    if (activeChannel.startsWith('couple_') && id !== activeChannel) useCoupleChannelStore.getState().lock(activeChannel);
+    if (id.startsWith('couple_') && !useCoupleChannelStore.getState().isUnlocked(id)) setCouplePinOpen(true);
     setActiveChannel(id);
-    setThreadOpen(true);
     setReplyingTo(null);
     setAttachUri(null);
     setModerationWarning(false);
@@ -377,6 +432,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     setShowAttachMenu(false);
     setSearchOpen(false);
   };
+
+  // "Message" from the Find page opens that person's direct chat once.
+  const pendingDm = useKioskNavStore(st => st.pendingDmMemberId);
+  const setPendingDm = useKioskNavStore(st => st.setPendingDm);
+  useEffect(() => {
+    if (!pendingDm) return;
+    const id = dmChannelId(active.id, pendingDm);
+    if (entries.some(e => e.id === id)) switchChannel(id);
+    setPendingDm(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingDm, entries]);
 
   const rawMsgs = channels[activeChannel]?.messages ?? [];
   const currentEntry = entries.find(e => e.id === activeChannel);
@@ -408,8 +474,12 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     return items;
   }, [msgs]);
 
+  // The list is inverted (newest message at the bottom, index 0), the same way the phone's chat works, so a
+  // thread opens at its newest message without ever scrolling. The data is the day groups, newest first.
+  const listData = useMemo(() => [...dayItems].reverse(), [dayItems]);
+
   const scrollToQuotedMsg = (replyToId: string) => {
-    const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
+    const idx = listData.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
     if (idx < 0) return;
     listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
     setHighlightedMsgId(replyToId);
@@ -447,7 +517,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
 
     const sentMsgId = await sendMessage(activeChannel, active.id, finalText, localAttachUri ?? undefined, localAttachUri ? localAttachType : undefined, replyingTo ?? undefined);
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
 
     if (localAttachUri && sentMsgId) {
       try {
@@ -619,111 +689,87 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // Modal too — reading a longer thread with few taps must not silently
   // count as inactivity and lock the kiosk mid-read.
   useKioskLockSuspended(
-    threadOpen || !!quickEmojiFor || !!actionMsg || !!lightboxUri || !!videoLightboxUri ||
+    !!quickEmojiFor || !!actionMsg || !!lightboxUri || !!videoLightboxUri ||
     !!groceryMsg || !!sharedCardPayload || recording || reviewing,
   );
 
   return (
     <View style={s.root}>
-      {/* ── Channel/DM grid — replaces the old sidebar list. Each card is a
-          preview: name, lock/unread badges, and up to 5 most recent
-          messages (sender + truncated text), so a glance at the grid tells
-          you what's being discussed without opening anything. Tapping a
-          card opens the full conversation as an overlay sheet, same
-          pattern as Ask Fam/Ask Cube. */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
-      >
-        <ScrollView
-          ref={gridScrollRef}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.grid}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* One flowing grid, 2 cards per row throughout — reverted from
-              a Channels/DM two-column split [live-requested: "dont
-              separate anything just try to adjust grids with available
-              previews"]. Radius/sizing still match Overview's own card
-              convention (KIOSK_RADIUS.sm, 2-per-row). */}
-          <Text style={[s.gridSectionLabel, { color: k.textFaint }]}>CHANNELS</Text>
-          <View style={s.gridRow}>
-            {entries.filter(e => !e.isDM).map(e => (
-              <ChatPreviewCard
-                key={e.id}
-                entry={e}
-                unread={unreadCounts[e.id] ?? 0}
-                messages={channels[e.id]?.messages ?? []}
-                memberMap={memberMap}
-                selfId={active.id}
-                k={k}
-                onPress={() => switchChannel(e.id)}
-                onQuickSend={(text) => sendMessage(e.id, active.id, text)}
-                scrollRef={gridScrollRef}
-              />
-            ))}
-          </View>
-
-          {entries.some(e => e.isDM) && (
-            <Text style={[s.gridSectionLabel, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
-          )}
-          <View style={s.gridRow}>
-            {entries.filter(e => e.isDM).map(e => (
-              <ChatPreviewCard
-                key={e.id}
-                entry={e}
-                unread={unreadCounts[e.id] ?? 0}
-                messages={channels[e.id]?.messages ?? []}
-                memberMap={memberMap}
-                selfId={active.id}
-                k={k}
-                onPress={() => switchChannel(e.id)}
-                onQuickSend={(text) => sendMessage(e.id, active.id, text)}
-                scrollRef={gridScrollRef}
-              />
-            ))}
-          </View>
+      {/* ── Left pane: conversations as pastel cards with the last message,
+          time and unread count. Tapping one opens its thread on the right. */}
+      <View style={[s.listPane, { borderRightColor: k.cardBorder }]}>
+        <View style={s.listHead}>
+          <Text style={[s.listTitle, { color: k.text }]}>Chat</Text>
+        </View>
+        <View style={[s.encBanner, { backgroundColor: k.pastelSage }]}>
+          <ShieldCheck size={15} color={k.sage} />
+          <Text style={[s.encText, { color: k.sage }]} numberOfLines={1}>Messages encrypted with your family key</Text>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.convs} keyboardShouldPersistTaps="handled">
+          {entries.map((e, i) => {
+            const tone = kioskPastels(k)[i % 4];
+            const coupleLocked = !!e.isCouple && !unlockedCouple.has(e.id);
+            const list = coupleLocked ? [] : (channels[e.id]?.messages ?? []);
+            const last = list[list.length - 1];
+            const unread = unreadCounts[e.id] ?? 0;
+            const on = e.id === activeChannel;
+            return (
+              <Pressable key={e.id} onPress={() => switchChannel(e.id)} accessibilityRole="button" accessibilityState={{ selected: on }}
+                accessibilityLabel={`${e.label}${unread ? `, ${unread} unread` : ''}`}
+                style={({ pressed }) => [s.conv, { backgroundColor: on ? tone.card : tone.col, borderColor: on ? tone.fg : 'transparent' }, pressed && { opacity: 0.8 }]}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={s.convName}>
+                    <Text style={[s.convLabel, { color: k.text }]} numberOfLines={1}>{e.label}</Text>
+                    {e.lock && <Lock size={13} color={k.textMuted} />}
+                  </View>
+                  <Text style={[s.convPreview, { color: k.textMuted }]} numberOfLines={1}>
+                    {coupleLocked ? '🔒 PIN required to view' : last ? `${last.senderId === active.id ? 'You: ' : ''}${messagePreviewText(last)}` : 'No messages yet'}
+                  </Text>
+                </View>
+                <View style={s.convMeta}>
+                  {!!last && <Text style={[s.convTime, { color: k.textFaint }]}>{shortTime(last.timestamp)}</Text>}
+                  {unread > 0 && <View style={[s.unread, { backgroundColor: k.primary }]}><Text style={[s.unreadText, { color: k.onPrimary }]}>{unread > 9 ? '9+' : unread}</Text></View>}
+                </View>
+              </Pressable>
+            );
+          })}
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
 
-      {/* ── Message thread — opens as a narrow right-anchored Modal drawer,
-          the exact same shell KioskAskFamDrawer already uses successfully:
-          a dimming scrim over the grid, a fixed-width panel pinned to the
-          right edge, full height. Tap a card in the grid, its conversation
-          slides in from the right, same as tapping the header's Ask Fam
-          button. This also carries over that drawer's Android keyboard fix
-          for free — KeyboardAvoidingView's 'height' behavior can shrink the
-          panel because it's height:'100% of the KeyboardAvoidingView', not
-          a fixed pixel box computed from a pre-keyboard measurement (an
-          earlier version tried sizing this drawer to the grid's own
-          measured rect, which left no room for the panel to shrink into
-          and broke the keyboard fix again). */}
-      <Modal visible={threadOpen} transparent animationType="slide" onRequestClose={() => setThreadOpen(false)}>
-        <KioskModalHost style={s.threadHost}>
-          <Pressable
-            style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
-            onPress={() => setThreadOpen(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Close chat"
-          />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={s.threadRight}
-            pointerEvents="box-none"
-          >
-            <View style={withAndroidShadowFix(s.threadShadowWrap)}>
-            <View style={[s.threadPanel, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
-              <View style={s.threadHead}>
-                <Pressable
-                  onPress={() => setThreadOpen(false)}
-                  hitSlop={12}
-                  style={[s.threadCloseBtn, { backgroundColor: k.well }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close chat"
-                >
-                  <X size={20} color={k.textMuted} />
+      {/* ── Right pane: the open conversation, inline (a tablet has the room). */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={s.threadPane}
+      >
+            {activeChannel.startsWith('couple_') && !unlockedCouple.has(activeChannel) && (
+              <View style={[StyleSheet.absoluteFill, { zIndex: 5, backgroundColor: k.card, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }]}>
+                <Lock size={34} color={k.textMuted} />
+                <Text style={[s.title, { color: k.text }]}>Just Us</Text>
+                <Text style={{ color: k.textMuted, fontSize: 15, textAlign: 'center' }}>Enter the PIN to open this private channel.</Text>
+                <Pressable onPress={() => setCouplePinOpen(true)} accessibilityRole="button"
+                  style={{ backgroundColor: k.primary, borderRadius: 14, paddingHorizontal: 26, paddingVertical: 14, minHeight: 48, justifyContent: 'center' }}>
+                  <Text style={{ color: k.onPrimary, fontSize: 16, fontWeight: '800' }}>Enter PIN</Text>
                 </Pressable>
+              </View>
+            )}
+            {couplePinOpen && (
+              <CouplePinModal
+                visible
+                mode="verify"
+                channelId={activeChannel}
+                onCancel={() => { setCouplePinOpen(false); setActiveChannel(entries[0]?.id ?? 'all'); }}
+                onSuccess={() => { useCoupleChannelStore.getState().markUnlocked(activeChannel); setCouplePinOpen(false); }}
+              />
+            )}
+            <View style={[s.threadPanel, { backgroundColor: k.card }]}>
+              <View style={s.threadHead}>
+                <View style={{ flexDirection: 'row' }}>
+                  {(currentEntry?.isDM && currentEntry.otherMember ? [currentEntry.otherMember] : members.filter(m => !(m as any).deletedAt && m.role !== 'senior').slice(0, 3)).map((m, fi) => (
+                    <View key={m.id} style={{ marginLeft: fi === 0 ? 0 : -10, borderRadius: 24, borderWidth: 2, borderColor: k.card }}>
+                      <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={42} bgColor={k.well} k={k} />
+                    </View>
+                  ))}
+                </View>
                 <Text style={[s.title, { color: k.text, flex: 1 }]} numberOfLines={1}>
               {currentEntry?.label ?? 'Chat'}
             </Text>
@@ -744,6 +790,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
               accessibilityLabel={searchOpen ? 'Close search' : 'Search messages'}
             >
               {searchOpen ? <X size={16} color={k.primary} /> : <Search size={16} color={k.textMuted} />}
+            </Pressable>
+            <Pressable
+              onPress={() => Alert.alert('Clear this chat?', 'This only clears your view. Everyone else in the chat keeps their messages.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Clear for me', style: 'destructive', onPress: () => useChatStore.getState().clearChannelForMe(activeChannel, active.id).catch(() => showToast('Could not clear the chat')) },
+              ])}
+              hitSlop={10}
+              style={[s.threadSearchBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]}
+              accessibilityRole="button" accessibilityLabel="Clear chat for me"
+            >
+              <Trash2 size={16} color={k.danger} />
             </Pressable>
           </View>
 
@@ -767,7 +824,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     onPress={() => {
                       const next = (searchMatchIdx - 1 + msgs.length) % msgs.length;
                       setSearchMatchIdx(next);
-                      const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                      const idx = listData.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                       if (idx >= 0) {
                         listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
                         setHighlightedMsgId(msgs[next].id);
@@ -784,7 +841,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     onPress={() => {
                       const next = (searchMatchIdx + 1) % msgs.length;
                       setSearchMatchIdx(next);
-                      const idx = dayItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                      const idx = listData.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                       if (idx >= 0) {
                         listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
                         setHighlightedMsgId(msgs[next].id);
@@ -807,13 +864,29 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
 
+          {keyLocked && (
+            <View style={s.amber} accessibilityRole="alert">
+              <Text style={s.amberT}>🔒 This iPad doesn’t have your family security code yet</Text>
+              <Text style={s.amberS}>Messages can’t be read or sent until you enter it. Ask the family admin (a parent) for the code, then type it here.</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <TextInput value={codeDraft} onChangeText={setCodeDraft} placeholder="Family security code" placeholderTextColor="#A8803A" autoCapitalize="characters" autoCorrect={false}
+                  style={s.amberInput} accessibilityLabel="Family security code" onSubmitEditing={unlockWithCode} />
+                <Pressable onPress={unlockWithCode} disabled={codeBusy || !codeDraft.trim()} accessibilityRole="button" style={[s.amberBtn, { opacity: codeBusy || !codeDraft.trim() ? 0.5 : 1 }]}>
+                  <Text style={s.amberBtnT}>{codeBusy ? 'Checking…' : 'Unlock'}</Text>
+                </Pressable>
+              </View>
+              {!!codeError && <Text style={[s.amberS, { color: '#9A3412', marginTop: 4 }]}>{codeError}</Text>}
+            </View>
+          )}
+
           <View style={{ flex: 1 }}>
             <FlatList
               ref={listRef}
-              data={dayItems}
+              data={listData}
+              inverted
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
               contentContainerStyle={s.list}
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+              windowSize={11}
               onScrollToIndexFailed={({ index, averageItemLength }) => {
                 listRef.current?.scrollToOffset({ offset: index * (averageItemLength || 80), animated: false });
                 setTimeout(() => listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 200);
@@ -831,9 +904,9 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                 const msg = item.msg;
                 const isMe = msg.senderId === active.id;
                 const sender = memberMap[msg.senderId];
-                // Non-inverted, chronological list: older item is at index-1, newer at index+1.
-                const olderItem = index > 0 ? dayItems[index - 1] : null;
-                const newerItem = index < dayItems.length - 1 ? dayItems[index + 1] : null;
+                // Inverted list, newest first: the older item is at index+1, the newer one at index-1.
+                const olderItem = index < listData.length - 1 ? listData[index + 1] : null;
+                const newerItem = index > 0 ? listData[index - 1] : null;
                 const olderMsg = olderItem?.type === 'msg' ? olderItem.msg : null;
                 const newerMsg = newerItem?.type === 'msg' ? newerItem.msg : null;
                 const isGroupFirst = !olderMsg || olderMsg.senderId !== msg.senderId;
@@ -1022,6 +1095,18 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
 
+          {/* Quick replies — one tap, no keyboard on a wall display. */}
+          {!reviewing && !recording && !replyingTo && !editingMsg && !text && (
+            <View style={s.quickRow}>
+              {['On my way', 'Be right there', 'Yes please', 'Love you ❤️'].map(q => (
+                <Pressable key={q} onPress={() => { registerActivity(); sendMessage(activeChannel, active.id, q); }} accessibilityRole="button" accessibilityLabel={`Send: ${q}`}
+                  style={[s.quickChip, { backgroundColor: k.pastelLavCard }]}>
+                  <Text style={[s.quickText, { color: k.purple }]}>{q}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
             <View style={[s.inputRow, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
@@ -1059,13 +1144,10 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
             </View>
-            </View>
-          </KeyboardAvoidingView>
-        </KioskModalHost>
-      </Modal>
+      </KeyboardAvoidingView>
 
       {/* ── Quick emoji (double-tap) ── */}
-      <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
         {/* KioskModalHost, not just the useKioskLockSuspended above: a
             native Modal renders in its own window, so touches inside it
             never reach KioskScreen's root onTouchStart. The suspension
@@ -1139,7 +1221,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       />
 
       {/* ── Image lightbox ── */}
-      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={s.lightbox} onPress={() => setLightboxUri(null)}>
           {lightboxUri && (
             <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
@@ -1167,7 +1249,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 function VideoLightbox({ uri, onClose }: { uri: string | null; onClose: () => void }) {
   const player = useVideoPlayer(uri, pl => { pl.loop = false; pl.play(); });
   return (
-    <Modal visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.videoLightbox}>
         <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls />
         <Pressable onPress={onClose} style={s.lightboxClose}>
@@ -1182,6 +1264,18 @@ function VideoLightbox({ uri, onClose }: { uri: string | null; onClose: () => vo
 // REPLY_KIND_LABEL already gives the reply-quote banner, so a photo/voice/
 // document/location message previews consistently everywhere in this tab
 // rather than showing raw empty text.
+/** "4:16 PM" today, "Yest." yesterday, else "Oct 12". */
+function shortTime(ts: string | number | Date): string {
+  const d = new Date(ts as any);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  if (same) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'Yest.';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function messagePreviewText(msg: ChatMessage): string {
   if (msg.systemEvent) return '📎 Shared card';
   if (msg.imageUri) return REPLY_KIND_LABEL[msg.mediaType === 'video' ? 'video' : 'image'];
@@ -1370,7 +1464,31 @@ function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPres
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  amber: { backgroundColor: '#FFF4D6', borderColor: '#D97706', borderWidth: 1.5, borderRadius: 18, padding: 14, marginHorizontal: 4, marginBottom: 8 },
+  amberT: { color: '#7A4A00', fontSize: 16, fontWeight: '800' },
+  amberS: { color: '#7A4A00', fontSize: 13, fontWeight: '600', marginTop: 2, lineHeight: 18 },
+  amberInput: { flex: 1, minHeight: 46, borderRadius: 14, borderWidth: 1, borderColor: '#E0B060', backgroundColor: '#FFFFFF', paddingHorizontal: 14, fontSize: 15, fontWeight: '700', color: '#2C2722' },
+  amberBtn: { minHeight: 46, borderRadius: 14, paddingHorizontal: 18, backgroundColor: '#D97706', alignItems: 'center', justifyContent: 'center' },
+  amberBtnT: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  root: { flex: 1, flexDirection: 'row' },
+  listPane: { width: 352, borderRightWidth: StyleSheet.hairlineWidth },
+  listHead: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8 },
+  listTitle: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
+  encBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginBottom: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  encText: { fontSize: KIOSK_TYPO.label, fontWeight: '700', flex: 1 },
+  convs: { paddingHorizontal: 14, paddingBottom: 16, gap: 9 },
+  conv: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 22, borderWidth: 2, paddingHorizontal: 14, paddingVertical: 12 },
+  convName: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  convLabel: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', flexShrink: 1 },
+  convPreview: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  convMeta: { alignItems: 'flex-end', gap: 6 },
+  convTime: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  unread: { minWidth: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  unreadText: { fontSize: 12, fontWeight: '800' },
+  threadPane: { flex: 1, minWidth: 0 },
+  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 8 },
+  quickChip: { minHeight: 42, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  quickText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   grid: { padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm },
   gridSectionLabel: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.xs, marginLeft: 4 },
   // 2 per row, always — a percentage flexBasis instead of the old fixed
@@ -1468,9 +1586,8 @@ const s = StyleSheet.create({
     elevation: 12,
   },
   threadPanel: {
-    flex: 1,
-    borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden',
-    paddingHorizontal: 20, paddingTop: 20,
+    flex: 1, overflow: 'hidden',
+    paddingHorizontal: 24, paddingTop: 14,
   },
 
   threadHead: {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
-import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect, router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { View, Text, ScrollView, Pressable, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -12,7 +13,10 @@ import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTripStore } from '@/store/tripStore';
+import { useUIStore } from '@/store/uiStore';
+import { hideTabBar, showTabBar, forceShowTabBar } from '@/lib/tabBarVisibility';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
@@ -21,25 +25,55 @@ import FlyerScannerModal from '@/components/FlyerScannerModal';
 import PinEntryModal from '@/components/PinEntryModal';
 import type { FamilyMember } from '@/store/familyStore';
 import { ParentView } from './ParentView';
+import { HubStickyNotes } from './HubStickyNotes';
+import { HubMyList } from './HubMyList';
+import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
+import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { OverlayPage } from '@/components/OverlayPage';
+import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
+import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
+import { RewardsReviewQueueScreen } from './parent/RewardsReviewQueueScreen';
+import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
+import { DisputesInboxScreen, type DisputeKind } from './parent/DisputesInboxScreen';
+import { RidesControlRoomScreen } from './parent/RidesControlRoomScreen';
+import { ActiveTripDetailScreen } from './parent/ActiveTripDetailScreen';
+import { RedoDisputeReviewScreen } from './parent/RedoDisputeReviewScreen';
+import { ApprovalDetailScreen } from './parent/ApprovalDetailScreen';
+import { RewardReviewScreen } from './parent/RewardReviewScreen';
+import HelpDispatchQueue from './HelpDispatchQueue';
+import { KidRequestDetailScreen } from '@/features/hub/parent/KidRequestDetailScreen';
+import RequestHelpModal from './RequestHelpModal';
+import GroceryScreen from '@/features/grocery/GroceryScreen';
+import MealsScreen from '@/features/vault/tabs/MealsScreen';
+import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
+import MemoriesScreen from '@/features/vault/tabs/MemoriesScreen';
 import { KidView } from './KidView';
+import { KidOverlays } from './kid/KidOverlays';
 import { SeniorView } from './SeniorView';
 import { TeenView } from './TeenView';
 import { EnRouteModal } from './hubComponents';
-import { fmtClock } from './hubUtils';
+import { fmtClock, localToday } from './hubUtils';
 import GlobalCelebration from '@/components/GlobalCelebration';
 import { AppsQuickAccessPills } from './AppsQuickAccessPills';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 export default function HubScreen() {
   const { colors, isDark } = useTheme();
   const { deviceClass } = useDeviceClass();
   const { members, activeMemberId, setActiveMember, loaded, loadFromStorage } = useFamilyStore();
-  const { loadFromStorage: loadQuests }  = useQuestStore();
+  const { loadFromStorage: loadQuests, quests } = useQuestStore();
   const { loadFromStorage: loadEvents }  = useEventStore();
   const { loadFromStorage: loadRewards } = useRewardStore();
+  // Reactive subscription for the Rewards review queue screen below — was
   const { activeTrips: trips, loadFromStorage: loadTrip, dispatch: dispatchTrip,
           updateEta: updateTripEta, markOverdueAlertSent, complete: completeTrip } = useTripStore();
 
   const [refreshing, setRefreshing]        = useState(false);
+  // Parent Hub only — hides the system status bar once the user starts
+  // scrolling down, shows it again back at the top. 12px threshold so a
+  // tiny rubber-band bounce at rest doesn't flicker it.
+  const [statusBarHidden, setStatusBarHidden] = useState(false);
   const [pinTarget, setPinTarget]          = useState<FamilyMember | null>(null);
   const [clock, setClock]                  = useState(fmtClock());
   const [helpModalVisible, setHelpModal]   = useState(false);
@@ -55,13 +89,216 @@ export default function HubScreen() {
   // which still owns all the routing/import specifics) can share one flag.
   const [composerVisible, setComposerVisible] = useState(false);
   const insetsBottomForFab = useSafeAreaInsets().bottom;
+  // Kid Hub's three FullPageOverlay screens (My Chores, Piggy Bank, Ask
+  // Parent) — same "must render outside this screen's own ScrollView"
+  // reasoning as composerVisible above. Rendered via KidOverlays
+  // (features/hub/kid/KidOverlays.tsx) as a top-level sibling below,
+  // matching Parent Hub's Meals/Rides Room position exactly. Previously
+  // these lived inside KidView (itself scrolled content), so opening one
+  // while the Hub was scrolled down opened the new page already scrolled
+  // to match [live-reported, screenshot: My Chores opening on "Completed"
+  // instead of the top; "All new pages opened with some pre scroll"].
+  const [showMyChores, setShowMyChores] = useState(false);
+  // Which tab My Chores opens on — set by the Needs You card so tapping it
+  // lands directly on the most-urgent item's own tab (e.g. 'review' for a
+  // submitted chore awaiting approval) instead of always defaulting to
+  // 'todo'. Reset to undefined on close so the next plain-tile open starts
+  // fresh on 'todo' again.
+  const [myChoresInitialTab, setMyChoresInitialTab] = useState<'todo' | 'review' | 'done' | 'bounty' | undefined>(undefined);
+  const [piggyBankModal, setPiggyBankModal] = useState(false);
+  // Teen-only — Tutor/Cash-Out full-page overlays (KidOverlays renders
+  // them for isTeen too). State lives here, same as My Chores/Piggy Bank
+  // above, so the overlay itself stays a top-level sibling outside the
+  // ScrollView per KidOverlays' own placement rule. (The handlers that
+  // need `active` are declared further below, right after `active` itself
+  // is defined — this block only declares the boolean state, which has no
+  // such dependency.)
+  const [teenTutorOpen, setTeenTutorOpen] = useState(false);
+  const [teenCashOutOpen, setTeenCashOutOpen] = useState(false);
+  const [teenGasVehicleOpen, setTeenGasVehicleOpen] = useState(false);
+  // Hook calls themselves must sit above the `if (!active) return null;`
+  // guard further below (Rules of Hooks) — only the values that actually
+  // read `active` are derived after that guard.
+  const { sendRequest: sendTeenRequest, requests: teenRequests, cancelRequest: cancelTeenRequest } = useKidRequestStore();
+  const sendTeenChatMessage = useChatStore(s => s.sendMessage);
+  const [askParentHubFromTile, setAskParentHubFromTile] = useState(false);
+  const showAskParentHub = composerVisible || askParentHubFromTile;
+  const closeAskParentHub = () => { setComposerVisible(false); setAskParentHubFromTile(false); };
+  const [askParentDestination, setAskParentDestination] = useState<null | import('./kid/AskParentHubScreen').AskParentDestination>(null);
+  // Parent Hub's TodayActionGrid "Add a task"/"Schedule" tiles — same
+  // reasoning as composerVisible just above: the Describe It screens must
+  // render OUTSIDE this screen's own ScrollView (below) to be a true
+  // full-page replacement, not nested content that inherits this screen's
+  // own avatar header and scroll position (live-reported bug). State lives
+  // here; ParentView gets plain callbacks plus a ref for the "open full
+  // form" handoff back into its own AddQuestModal/AddEventModal pair.
+  const [showDescribeTask, setShowDescribeTask] = useState(false);
+  const [showDescribeEvent, setShowDescribeEvent] = useState(false);
+  // Same fullBleedScreenActive gate TasksScreen/CalendarScreen already use
+  // for their own JustDescribeIt*Screen instances — hides the shared Ask
+  // Cube FAB (app/(tabs)/_layout.tsx) while either full-page screen is open
+  // here, so it doesn't float on top of them too.
+  // Review inbox + its sub-screens — same lift-up pattern, same reasoning:
+  // "review inbox should be same like full page view similar to the
+  // describe it pages" (slide/fade entrance, edge-swipe-to-dismiss,
+  // stacked outside the ScrollView), AND "we shouldn't be closing the
+  // page when open the sub page/details page ... consider this is real
+  // page handling" — opening a detail item no longer closes the inbox
+  // first; the inbox stays mounted underneath (visible={showReviewInbox}
+  // never flips false when a detail screen opens) and the detail screen
+  // stacks on top of it at a higher zIndex, so swiping back out of the
+  // detail screen reveals the still-open inbox, not the Hub.
+  const [showReviewInbox, setShowReviewInbox] = useState(false);
+  // Rides — same full-page treatment, same reason: "why didn't we make
+  // that page similar to the review inbox ... all swipers and full screen
+  // and figma rhythm." RidesControlRoomScreen stays mounted underneath
+  // ActiveTripDetailScreen (real push/pop), not closed first.
+  const [showRidesRoom, setShowRidesRoom] = useState(false);
+  const [activeTripDetailId, setActiveTripDetailId] = useState<string | null>(null);
+  const [showGrocery, setShowGrocery] = useState(false);
+  const [showMeals, setShowMeals] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
+  const [showMemories, setShowMemories] = useState(false);
+  // Category landing cards (ReviewInboxScreen) open one of these queue
+  // screens, which in turn open the actual per-item detail screen below —
+  // three levels deep (inbox → queue → detail), not inbox → detail
+  // directly, per live direction: "review inbox should contain the high
+  // level cards ... land then open those chore box, schedule box."
+  const [showChoresQueue, setShowChoresQueue] = useState(false);
+  const [showRedemptionsQueue, setShowRedemptionsQueue] = useState(false);
+  const [showHelpQueue, setShowHelpQueue] = useState(false);
+  const [activeKidRequestId, setActiveKidRequestId] = useState<string | null>(null);
+  // Live direction: "we are going to have 2 duplicate cards ... better to
+  // consolidate and use all richer elements ... make this the rich feature
+  // screen" — ChoreProofReviewScreen/QuestReviewScreen (thinner, newer,
+  // Figma-mock-driven) and QuestDetailModal (the full command-center used
+  // everywhere else: claim/submit/approve/reassign/edit/call-reminder/
+  // dispute/history) were two separate screens solving the same "review
+  // this submission" problem. QuestDetailModal already had everything
+  // ChoreProofReviewScreen had (Approve +N/balance-impact copy, redo-with-
+  // reason presets, decline) PLUS all its other functionality — the only
+  // real gap was its "Earlier submission" block reading the single, stale
+  // declineReason field instead of the real chore_submissions history
+  // table (ported in below). One id now covers both chores and quests,
+  // since QuestDetailModal already handles both via the same Quest type.
+  const [reviewQuestDetailId, setReviewQuestDetailId] = useState<string | null>(null);
+  const [reviewRedemptionId, setReviewRedemptionId] = useState<string | null>(null);
+  const [showRequestHelp, setShowRequestHelp] = useState(false);
+  // "Disputes" category — two mechanisms, both previously unreachable from
+  // anywhere on the Hub: 'kid_disputed_redo' (RedoDisputeReviewScreen) and
+  // disputeStatus: 'reversal_requested' (ReversalCoSignReviewScreen), both
+  // listed on DisputesInboxScreen.
+  const [showDisputesInbox, setShowDisputesInbox] = useState(false);
+  const [redoDisputeChoreId, setRedoDisputeChoreId] = useState<string | null>(null);
+  const [reversalChoreId, setReversalChoreId] = useState<string | null>(null);
+  const approvalDetailRequest = useUIStore(st => st.openApprovalDetailChoreId);
+  useEffect(() => {
+    if (!approvalDetailRequest) return;
+    useUIStore.getState().setOpenApprovalDetailChoreId(null);
+    setReversalChoreId(approvalDetailRequest);
+  }, [approvalDetailRequest]);
+  const groceryRequest = useUIStore(st => st.openGroceryScreenRequested);
+  useEffect(() => {
+    if (!groceryRequest) return;
+    useUIStore.getState().setOpenGroceryScreenRequested(false);
+    setShowGrocery(true);
+  }, [groceryRequest]);
+  const mealsRequest = useUIStore(st => st.openMealsScreenRequested);
+  useEffect(() => {
+    if (!mealsRequest) return;
+    useUIStore.getState().setOpenMealsScreenRequested(false);
+    setShowMeals(true);
+  }, [mealsRequest]);
+  const rewardsRequest = useUIStore(st => st.openRewardsScreenRequested);
+  useEffect(() => {
+    if (!rewardsRequest) return;
+    useUIStore.getState().setOpenRewardsScreenRequested(false);
+    setShowRewards(true);
+  }, [rewardsRequest]);
+  const memoriesRequest = useUIStore(st => st.openMemoriesScreenRequested);
+  useEffect(() => {
+    if (!memoriesRequest) return;
+    useUIStore.getState().setOpenMemoriesScreenRequested(false);
+    setShowMemories(true);
+  }, [memoriesRequest]);
+  useEffect(() => {
+    const anyFullBleedOpen = showDescribeTask || showDescribeEvent || showReviewInbox || showRidesRoom || showGrocery || showMeals || showRewards || showMemories
+      || showMyChores || piggyBankModal || showAskParentHub || !!askParentDestination
+      || teenTutorOpen || teenCashOutOpen || teenGasVehicleOpen;
+    useUIStore.getState().setFullBleedScreenActive(anyFullBleedOpen);
+    // Live direction: "remove the bottom nav on the sub pages" — the
+    // Figma mocks for every one of these full-page screens
+    // (JustDescribeIt*, Review inbox + its whole category/detail stack)
+    // show no tab bar at all. fullBleedScreenActive already hid the
+    // shared Ask Cube FAB for these screens but never actually hid the
+    // tab bar itself — hideTabBar/showTabBar (lib/tabBarVisibility.ts)
+    // existed but had no caller anywhere in the app. showReviewInbox
+    // alone covers the WHOLE stack underneath it too (Chores/Rewards/
+    // Disputes queues, every detail screen) since the inbox never closes
+    // while a child screen is open — see FullPageOverlay's own doc.
+    if (anyFullBleedOpen) hideTabBar();
+    else {
+      showTabBar();
+      // No Hub overlay is open: once the closing screens have run their own cleanups, make sure the bar is back even
+      // if a hide request leaked somewhere (a missing pair left the bottom nav gone on the Hub).
+      const heal = setTimeout(() => forceShowTabBar(), 400);
+      return () => { clearTimeout(heal); useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
+    }
+    return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
+  }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals, showRewards, showMemories,
+      showMyChores, piggyBankModal, showAskParentHub, askParentDestination, teenTutorOpen, teenCashOutOpen, teenGasVehicleOpen]);
+  const describeFullFormRef = useRef<((kind: 'quest' | 'event', prefill: Record<string, any>) => void) | null>(null);
+
+  // Drive ParentView's entrance animation from HubScreen's focus events —
+  // ParentView is a child inside HubScreen's ScrollView so useFocusEffect
+  // never fires there. HubScreen is at the tab level (no real stack pushes
+  // on its own navigator — full-page overlays are position:absolute Views,
+  // not router pushes), so we always play the animation on every tab focus.
+  const [hubFocusKey, setHubFocusKey] = useState(0);
+  // Play the entrance once, the first time the Hub is shown. Replaying it on every tab focus re-rendered the whole
+  // Hub tree and reset every card to faded-out, which read as a stutter on every switch back to Hub.
+  useFocusEffect(useCallback(() => {
+    setHubFocusKey(k => (k === 0 ? 1 : k));
+  }, []));
 
   useEffect(() => {
     if (!loaded) loadFromStorage();
+  }, [loaded]);
+
+  // Was a plain `useEffect` keyed on `[loaded]` (useFamilyStore's own flag)
+  // — fired exactly once, on the first loaded:false→true transition, and
+  // never again. HubScreen stays mounted across tab switches (see the
+  // FreeBusy useFocusEffect comment above), so if any of these three loads
+  // raced a not-yet-ready familyId/auth session on that one cold-start
+  // fire and came back empty, nothing ever retried — the only thing that
+  // visibly "fixed" it was switching tabs away and back, which happened to
+  // re-trigger each store's realtime resubscribe, not these loaders
+  // [live-reported: Hub cards across all 3 roles sometimes missing on
+  // first load, fixed by navigating away and back]. useFocusEffect reruns
+  // on every Hub focus — cheap, since each loadX already no-ops/caches
+  // internally — so a failed/empty first fetch gets a real retry instead
+  // of depending on an unrelated realtime reconnect to paper over it.
+  useFocusEffect(useCallback(() => {
     loadQuests();
     loadEvents();
     loadRewards();
-  }, [loaded]);
+  }, []));
+
+  // A PIN-switch to a different member happens WITHOUT any navigation —
+  // the user stays on the Hub tab the whole time — so useFocusEffect above
+  // never fires for it at all; it only fires on a real screen-focus event
+  // (switching tabs away and back). That's exactly why "navigate away/back
+  // fixes it" was the only known workaround [live-reported via screenshots:
+  // switching to a kid via PIN leaves the Hub entirely blank until the user
+  // leaves and returns to the tab]. Re-run the same three loaders directly
+  // off activeMemberId changing, independent of focus, so a PIN-switch
+  // alone retriggers them.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    loadQuests();
+    loadEvents();
+    loadRewards();
+  }, [activeMemberId]);
 
   const familyId = (members[0] as any)?.familyId as string | undefined;
   useEffect(() => {
@@ -257,7 +494,41 @@ export default function HubScreen() {
   const isTeen   = active?.role === 'teen';
   const isKid    = !isParent && !isSenior && !isTeen;
 
-  if (!active) return null;
+  if (!active) {
+    return null;
+  }
+
+  // Derived Teen Tutor/Cash-Out data — same logic TeenView.tsx already has,
+  // duplicated here (cheap) so KidOverlays (rendered outside the
+  // ScrollView, see its own doc comment) can own these overlays without
+  // TeenView needing to render FullPageOverlay content from inside the
+  // scrolled content box. Placed after the `if (!active) return null;`
+  // guard above since every one of these reads `active`.
+  const teenSiblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== active.id);
+  const teenPendingOffers = teenRequests.filter(r =>
+    r.fromMemberId === active.id && r.status === 'pending' && (r.type === 'tutor' || r.type === 'cheer'));
+  const sendTeenTutorOffer = (kid: FamilyMember, subject: string, note: string) => {
+    const detail = `${active.name.split(' ')[0]} can help ${kid.name.split(' ')[0]} with ${subject}${note ? ` — ${note}` : ''}`;
+    sendTeenRequest({ type: 'tutor', fromMemberId: active.id, detail, urgency: 'normal' });
+    sendTeenChatMessage('all', active.id, `🎒 ${detail}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+  };
+  const requestTeenCashOut = (amount: string, method: string) => {
+    const coins = (active as any).mainCoins ?? (active as any).coins ?? 0;
+    const detail = `💵 Cash-out request: $${amount} via ${method} (balance: ${coins} coins)`;
+    sendTeenRequest({ type: 'delegation', fromMemberId: active.id, detail, urgency: 'normal' });
+    sendTeenChatMessage('all', active.id, `${active.name.split(' ')[0]} requested cash-out: $${amount} via ${method}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+  };
+  // Cash-out request history — same requests list, filtered to this teen's
+  // own delegation-type (cash-out) requests, newest first. Feeds
+  // TeenCashOutPage's Pending/Settled/Rejected/All tabs.
+  const teenCashOuts = teenRequests
+    .filter(r => r.fromMemberId === active.id && r.type === 'delegation')
+    .sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''));
+  const reportTeenVehicleIssue = (issue: string) => {
+    const detail = `🚗 Vehicle issue reported by ${active.name.split(' ')[0]}: ${issue}`;
+    sendTeenRequest({ type: 'emergency', fromMemberId: active.id, detail, urgency: 'soon' });
+    sendTeenChatMessage('all', active.id, detail, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+  };
 
   // Wall-mounted kitchen tablet — a fully separate dashboard/nav-rail UI,
   // not the phone Hub resized. See features/kiosk/ for the whole feature;
@@ -280,9 +551,18 @@ export default function HubScreen() {
       kidName: pickup?.name.split(' ')[0] ?? 'Family', kidEmoji: pickup?.emoji,
       driverName: driver?.name.split(' ')[0] ?? 'Someone', driverEmoji: driver?.emoji,
       driverMemberId: t.driverMemberId,
+      eventId: t.eventId,
       etaMinutes: t.etaMinutes,
       startedAtMs: new Date(t.startedAt).getTime(),
       overdueAlertSent: t.overdueAlertSent,
+      // Real trip phase (assigned/en_route/picked_up/arrived) — was
+      // dropped from this view shape entirely; RidesStatusCard (Hub home)
+      // and RidesControlRoomScreen's own TripCard both need it to show the
+      // same progress stages instead of RidesStatusCard guessing a phase
+      // from elapsed time, which invented its own stage names that didn't
+      // match tripStore's real TripPhase values or RidesControlRoomScreen's
+      // own PHASE_STAGES labels.
+      phase: t.phase,
     };
   });
 
@@ -297,22 +577,94 @@ export default function HubScreen() {
   const primaryTripView = myTripView ?? tripViews[0] ?? null;
   const otherTripViews = tripViews.filter(v => v.tripId !== primaryTripView?.tripId);
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={active.name.split(' ')[0]}
-        memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
-        memberEmoji={active.emoji}
-        memberAvatarUrl={active.avatarUrl}
-        notifCount={unreadNotifCount}
-        onBellPress={() => setNotifPanelOpen(true)}
-        // Header gear icon removed — the new Profile pill in
-        // AppsQuickAccessPills (leads the default row) is the sole entry
-        // point to /profile-settings for every role now.
-      />
-      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+  // Figma Make reskin's .page is ONE scrollable container, header included
+  // (src/index.css — .topbar carries no sticky/fixed positioning, it's just
+  // the first child of .page) — per explicit direction ("keep everything
+  // under a scrollable view including the page header"), AppHeader moves
+  // INSIDE the ScrollView for parent specifically, scrolling away with the
+  // rest of the content instead of staying pinned above it. kid/teen/senior
+  // keep the existing fixed-header layout (this work hasn't touched those
+  // views) — same header component/props either way, just where it renders.
+  const headerEl = (
+    <AppHeader
+      memberName={active.name.split(' ')[0]}
+      memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
+      memberEmoji={active.emoji}
+      memberAvatarUrl={active.avatarUrl}
+      notifCount={unreadNotifCount}
+      onBellPress={() => setNotifPanelOpen(true)}
+      // Header gear icon removed — the new Profile pill in
+      // AppsQuickAccessPills (leads the default row) is the sole entry
+      // point to /profile-settings for every role now.
+      //
+      // Parent role gets the Figma Make reskin's compact TopBar (avatar +
+      // family/name + "+" button, no role badge/Switch-Profile text row) —
+      // per explicit direction, follow the mock for the parent Hub
+      // specifically. Kid and Teen now share the same compact header
+      // ["hub page header is still not matched with the parent/kids
+      // headers" — Teen was left on the old full header/role-mode pill
+      // after the rest of the Teen Hub rebuild]; senior keeps the existing
+      // full header unchanged (out of scope here).
+      compact={isParent || active.role === 'kid' || isTeen}
+      // ParentView owns its own Smart Task Composer internally (its own
+      // showTaskComposer state via useParentModals) — not reachable from
+      // here across the component boundary, unlike composerVisible (which
+      // only Kid/Teen/Senior views are wired to). Routes to the Tasks tab
+      // instead, same destination TodayActionGrid's own "Add a task" tile
+      // already offers.
+      onAddPress={isParent ? () => router.push('/(tabs)/tasks' as any) : undefined}
+    />
+  );
 
-      <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />
+  // Figma Make reskin's .page has no top safe-area inset at all — content
+  // (including .topbar) starts flush at the very top of the viewport, no
+  // status-bar clearance (src/index.css — .page's only padding is
+  // "22px 20px 116px", no env(safe-area-inset-top) anywhere). Per explicit
+  // direction ("remove that as well just it should flow the page"), the top
+  // SafeAreaView edge is dropped for parent specifically — the header now
+  // scrolls up under the status bar/notch area on a real device instead of
+  // staying clear of it. kid/teen/senior keep the existing SafeAreaView
+  // top inset unchanged (this work hasn't touched those views).
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care's own identical comment for the full
+  // rationale) [live-requested: "how about tasks and home, chat, family"
+  // -> "proceed"]. Applies to every role (parent/kid/teen/senior) — the
+  // Figma Make parent reskin's own exact spec didn't specify a canvas
+  // color beyond the app's own background token, so this doesn't conflict
+  // with its pixel-faithful layout/spacing values, only the base fill.
+  const hubCanvas = isDark ? colors.background : GEMINI.canvas;
+  const RootContainer = isParent ? View : SafeAreaView;
+  const rootProps = isParent
+    ? { style: { flex: 1, backgroundColor: hubCanvas } }
+    : { style: { flex: 1, backgroundColor: hubCanvas }, edges: ['top'] as const };
+
+  return (
+    <RootContainer {...rootProps}>
+      {/* Scroll-driven status bar — visible at rest/near the top (same
+          app-wide config as every other screen), hides once the user
+          starts scrolling down (statusBarHidden, set by the ScrollView's
+          onScroll below), reappears back near the top. An earlier flat
+          "always hidden" pass was reverted (the real notch/Dynamic Island
+          still physically covers content either way — the 59px top
+          padding on the ScrollView is what actually clears the hardware
+          cutout); this only hides the icons themselves, and only while
+          actively scrolled away from the top. Parent Hub only. */}
+      {isParent && <StatusBar hidden={statusBarHidden} animated />}
+      {/* kid/teen now share parent's inside-ScrollView header placement
+          (see below) so their FullPageOverlay screens can cover it,
+          matching "parent hub rhythm" ["Align the kids hub header similar
+          to the parent"; "hub page header is still not matched with the
+          parent/kids headers" for teen]. senior unchanged — still the
+          original fixed sibling here, outside the ScrollView.
+          AppsQuickAccessPills (Profile/Store/School/Health/... pill row)
+          also removed for teen here — teen no longer wants that row
+          ["remove the header pill option from here teens"] — Rides now
+          lives under the member's own profile per a toggle instead of a
+          Hub quick action, so it isn't part of this row's purpose either;
+          senior keeps it unchanged. */}
+      {!isParent && active.role !== 'kid' && !isTeen && headerEl}
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+      {!isParent && active.role !== 'kid' && !isTeen && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -321,7 +673,7 @@ export default function HubScreen() {
         // chip's onPress never fires. (CalendarScreen avoids it by rendering its
         // modals outside the ScrollView.)
         keyboardShouldPersistTaps="handled"
-        style={{ backgroundColor: colors.background }}
+        style={{ backgroundColor: hubCanvas }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         // The shared Ask Cube FAB (app/(tabs)/_layout.tsx) floats at
         // bottom: insets.bottom + 74, is 52px tall, and sits ABOVE this
@@ -331,12 +683,41 @@ export default function HubScreen() {
         // line of Household Backlog) end up directly underneath and
         // obscured by it (flagged in UI review). 140 clears the FAB's full
         // span with room to spare regardless of device inset.
-        contentContainerStyle={{ paddingTop: 2, paddingBottom: 140 }}
+        // Figma's own .page padding-top is 22px (src/index.css:71), but
+        // that's a browser mock with no notch/Dynamic Island to clear — at
+        // 22px real content was covered by the hardware cutout on a real
+        // device (live-reported: "the notch is covering"). Per explicit
+        // direction, fixed at 59px (iPhone Pro-class notch/Dynamic Island
+        // height) rather than reading the device's own real inset — clears
+        // the cutout on current Pro-class devices; won't be pixel-exact on
+        // older/non-notch iPhones (undershoots are impossible here since
+        // this is now MORE than Figma's 22px, never less). kid/teen/senior
+        // keep the original 2px (unaffected — their SafeAreaView top inset
+        // still sits above their ScrollView).
+        contentContainerStyle={{ paddingTop: isParent ? 59 : 2, paddingBottom: 140 }}
+        onScroll={isParent ? (e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          setStatusBarHidden(prev => {
+            if (!prev && y > 12) return true;
+            if (prev && y <= 12) return false;
+            return prev;
+          });
+        } : undefined}
+        scrollEventThrottle={isParent ? 100 : undefined}
       >
+        {(isParent || active.role === 'kid' || isTeen) && headerEl}
+        {!isParent && !isKid && !isTeen && <HubMyList active={active} colors={colors} isDark={isDark} />}
+        <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (
           <ParentView
+            focusKey={hubFocusKey}
             active={active} members={members} colors={colors} isDark={isDark}
             onScanFlyer={() => setFlyerVisible(true)}
+            onDescribeTask={() => setShowDescribeTask(true)}
+            onDescribeEvent={() => setShowDescribeEvent(true)}
+            describeFullFormRef={describeFullFormRef}
+            onReviewOpen={() => setShowReviewInbox(true)}
+            onRidesOpen={() => setShowRidesRoom(true)}
             onDispatchDirect={(memberId, etaMinutes, eventId) => {
               if (!familyId) return;
               dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: memberId, etaMinutes, eventId });
@@ -356,16 +737,33 @@ export default function HubScreen() {
         )}
         {isKid && (
           <KidView
+            focusKey={hubFocusKey}
             active={active} members={members} colors={colors} isDark={isDark}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
+            onMyChores={() => setShowMyChores(true)}
+            onOpenMyChoresTab={(tab) => { setMyChoresInitialTab(tab); setShowMyChores(true); }}
+            onPiggyBank={() => setPiggyBankModal(true)}
+            onAskParentTile={() => setAskParentDestination('permission')}
+            onAskForRide={() => setAskParentDestination('ride')}
+            onRideStatusOpen={() => setShowRidesRoom(true)}
           />
         )}
         {isTeen && (
           <TeenView
+            focusKey={hubFocusKey}
             active={active} members={members} colors={colors} isDark={isDark}
-            activeTrips={tripViews}
+            activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
+            onMyChores={() => setShowMyChores(true)}
+            onOpenMyChoresTab={(tab) => { setMyChoresInitialTab(tab); setShowMyChores(true); }}
+            onPiggyBank={() => setPiggyBankModal(true)}
+            onAskParentTile={() => setAskParentDestination('permission')}
+            onAskForRide={() => setAskParentDestination('ride')}
+            onRideStatusOpen={() => setShowRidesRoom(true)}
+            onOpenTutor={() => setTeenTutorOpen(true)}
+            onOpenCashOut={() => setTeenCashOutOpen(true)}
+            onOpenGasVehicle={() => setTeenGasVehicleOpen(true)}
           />
         )}
         {isSenior && (
@@ -406,6 +804,206 @@ export default function HubScreen() {
           dead/unused for the same reason). */}
       <AddEventModal visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />
+
+      {/* Parent Hub's "Add a task"/"Schedule" quick actions — rendered here,
+          not inside ParentView, so each is a true full-page replacement
+          instead of nesting inside this screen's own ScrollView/avatar
+          header (live-reported: stray header + wrong scroll position).
+          BOTH screens are written as `flex: 1` root views meant to be the
+          ENTIRE return value of their real call sites (TasksScreen/
+          CalendarScreen early-return them in place of their whole screen
+          tree) — mounted as a plain sibling here inside RootContainer's
+          View, a `flex: 1` child competing for space among several other
+          siblings (ScrollView, TripEffects, GlobalCelebration, modals…)
+          rendered with no visible height and no stacking priority, so the
+          state flip happened (confirmed via a tap-log) but nothing ever
+          appeared on screen. `position: absolute` + full-bounds + zIndex
+          pulls it out of that flex flow so it actually covers the screen,
+          same effect an early return gives TasksScreen/CalendarScreen. */}
+      {showDescribeTask && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 }}>
+          <JustDescribeItScreen
+            visible
+            backLabel="Hub"
+            onClose={() => setShowDescribeTask(false)}
+            onOpenFullForm={(kind, prefill) => {
+              setShowDescribeTask(false);
+              describeFullFormRef.current?.(kind, prefill);
+            }}
+          />
+        </View>
+      )}
+      {showDescribeEvent && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 }}>
+          <JustDescribeItEventScreen
+            visible
+            backLabel="Hub"
+            activeMemberId={activeMemberId ?? ''}
+            onClose={() => setShowDescribeEvent(false)}
+          />
+        </View>
+      )}
+
+      {/* ── Review inbox + its sub-screens ──────────────────────────────
+          Same full-page treatment as Add a task/Schedule above (via
+          FullPageOverlay, which bundles the slide/fade + SwipeBackWrapper
+          boilerplate those two hand-roll). The inbox (zIndex 50) stays
+          mounted — visible stays true — the whole time a detail screen is
+          open; each detail screen renders at zIndex 51 so it paints above
+          the inbox instead of requiring the inbox to close first. Closing
+          a detail screen (via its own X, Approve/Decline action, or an
+          edge-swipe) reveals the still-open, now-updated inbox underneath
+          — a real push/pop, not a close-then-reopen. */}
+      <OverlayPage visible={showReviewInbox} onDismiss={() => setShowReviewInbox(false)} zIndex={50} backgroundColor={hubCanvas}>
+        <ReviewInboxScreen
+          onClose={() => setShowReviewInbox(false)}
+          onSelectCategory={(category: ReviewCategory) => {
+            if (category === 'chores') setShowChoresQueue(true);
+            else if (category === 'redemptions') setShowRedemptionsQueue(true);
+            else if (category === 'disputes') setShowDisputesInbox(true);
+            else setShowHelpQueue(true);
+          }}
+        />
+      </OverlayPage>
+
+      {/* ── Category queue screens (zIndex 51 — stack above the inbox, below
+          the per-item detail screens at 52) ── */}
+      {/* Chores & Quests gets its own richer queue (photo thumbnail/missing-
+          photo flag, waiting time with 24h+ escalation, note preview,
+          per-category icon) instead of the generic title+detail row every
+          other category uses — live direction: "more sensible, more
+          intelligent, more descriptive ... especially chores." */}
+      <OverlayPage visible={showChoresQueue} onDismiss={() => setShowChoresQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+        <ChoresReviewQueueScreen
+          onClose={() => setShowChoresQueue(false)}
+          onSelectRow={(id) => setReviewQuestDetailId(id)}
+        />
+      </OverlayPage>
+      <OverlayPage visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+        <RewardsReviewQueueScreen
+          onClose={() => setShowRedemptionsQueue(false)}
+          onSelectRow={(id) => setReviewRedemptionId(id)}
+        />
+      </OverlayPage>
+
+      <OverlayPage visible={!!reviewQuestDetailId} onDismiss={() => setReviewQuestDetailId(null)} zIndex={52} backgroundColor={hubCanvas}>
+        {reviewQuestDetailId ? (() => {
+          const q = quests.find(qq => qq.id === reviewQuestDetailId);
+          return q ? (
+            <QuestDetailModal
+              quest={q}
+              onClose={() => setReviewQuestDetailId(null)}
+              canEdit
+              isParent
+            />
+          ) : (
+            // Never leave a blank page: say why there is nothing to show and offer the way back.
+            <View style={{ flex: 1, backgroundColor: hubCanvas, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>This task is not available</Text>
+              <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
+                It may have been removed, or it is a private to-do on someone's own list.
+              </Text>
+              <TouchableOpacity onPress={() => setReviewQuestDetailId(null)} style={{ borderRadius: 14, backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 13 }}>
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Back</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })() : null}
+      </OverlayPage>
+      <OverlayPage visible={!!reviewRedemptionId} onDismiss={() => setReviewRedemptionId(null)} zIndex={52} backgroundColor={hubCanvas}>
+        {reviewRedemptionId ? <RewardReviewScreen redemptionId={reviewRedemptionId} onClose={() => setReviewRedemptionId(null)} /> : null}
+      </OverlayPage>
+      <OverlayPage visible={showHelpQueue} onDismiss={() => setShowHelpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+        <HelpDispatchQueue
+          onRequestHelpOpen={() => setShowRequestHelp(true)}
+          onClose={() => setShowHelpQueue(false)}
+          onOpenDetail={(id) => setActiveKidRequestId(id)}
+        />
+      </OverlayPage>
+      <OverlayPage visible={!!activeKidRequestId} onDismiss={() => setActiveKidRequestId(null)} zIndex={52} backgroundColor={hubCanvas}>
+        <KidRequestDetailScreen requestId={activeKidRequestId ?? ''} onClose={() => setActiveKidRequestId(null)} />
+      </OverlayPage>
+      <RequestHelpModal
+        visible={showRequestHelp}
+        onClose={() => setShowRequestHelp(false)}
+        activeMemberId={activeMemberId ?? ''}
+      />
+
+      {/* ── Disputes category — DisputesInboxScreen (zIndex 51) lists both
+          dispute types; each opens its own resolution screen at 52. ── */}
+      <OverlayPage visible={showDisputesInbox} onDismiss={() => setShowDisputesInbox(false)} zIndex={51} backgroundColor={hubCanvas}>
+        <DisputesInboxScreen
+          onClose={() => setShowDisputesInbox(false)}
+          onSelectDispute={(choreId, kind: DisputeKind) => {
+            if (kind === 'redo') setRedoDisputeChoreId(choreId);
+            else setReversalChoreId(choreId);
+          }}
+        />
+      </OverlayPage>
+      <OverlayPage visible={!!redoDisputeChoreId} onDismiss={() => setRedoDisputeChoreId(null)} zIndex={52} backgroundColor={hubCanvas}>
+        {redoDisputeChoreId ? <RedoDisputeReviewScreen choreId={redoDisputeChoreId} onClose={() => setRedoDisputeChoreId(null)} /> : null}
+      </OverlayPage>
+      <OverlayPage visible={!!reversalChoreId} onDismiss={() => setReversalChoreId(null)} zIndex={52} backgroundColor={hubCanvas}>
+        {reversalChoreId ? <ApprovalDetailScreen choreId={reversalChoreId} onClose={() => setReversalChoreId(null)} /> : null}
+      </OverlayPage>
+
+      {/* ── Rides — same full-page overlay treatment as Review inbox.
+          RidesControlRoomScreen (zIndex 50) stays mounted while
+          ActiveTripDetailScreen (zIndex 51) is open on top — real
+          push/pop, not close-then-reopen (the old Modal version closed
+          the control room first, then opened the trip detail after a
+          300ms timeout). ── */}
+      <OverlayPage visible={showRidesRoom} onDismiss={() => setShowRidesRoom(false)} zIndex={50} backgroundColor={hubCanvas}>
+        <RidesControlRoomScreen
+          onClose={() => setShowRidesRoom(false)}
+          onSelectTrip={(tripId) => setActiveTripDetailId(tripId)}
+        />
+      </OverlayPage>
+      <OverlayPage visible={!!activeTripDetailId} onDismiss={() => setActiveTripDetailId(null)} zIndex={51} backgroundColor={hubCanvas}>
+        {activeTripDetailId ? <ActiveTripDetailScreen tripId={activeTripDetailId} onClose={() => setActiveTripDetailId(null)} /> : null}
+      </OverlayPage>
+
+      <FullPageOverlay visible={showGrocery} onDismiss={() => setShowGrocery(false)} zIndex={50} backgroundColor={hubCanvas}>
+        {(requestAnimatedClose) => <GroceryScreen onClose={requestAnimatedClose} />}
+      </FullPageOverlay>
+
+      <OverlayPage visible={showMeals} onDismiss={() => setShowMeals(false)} zIndex={50} backgroundColor={hubCanvas}>
+        <MealsScreen onClose={() => setShowMeals(false)} />
+      </OverlayPage>
+
+      <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50} backgroundColor={hubCanvas}>
+        {(requestAnimatedClose) => (
+          <RewardsDashboardScreen onClose={requestAnimatedClose} />
+        )}
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={showMemories} onDismiss={() => setShowMemories(false)} zIndex={50} backgroundColor={hubCanvas}>
+        {(requestAnimatedClose) => <MemoriesScreen onClose={requestAnimatedClose} />}
+      </FullPageOverlay>
+
+      {/* Kid Hub's My Chores / Piggy Bank / Ask Parent — top-level sibling,
+          same position as Meals/Rides Room above, so it's never affected by
+          the ScrollView's scroll offset or covered by the header/pills. */}
+      {(isKid || isTeen) && (
+        <KidOverlays
+          active={active} members={members} familyId={familyId}
+          showMyChores={showMyChores} setShowMyChores={setShowMyChores}
+          myChoresInitialTab={myChoresInitialTab} setMyChoresInitialTab={setMyChoresInitialTab}
+          piggyBankModal={piggyBankModal} setPiggyBankModal={setPiggyBankModal}
+          showAskParentHub={showAskParentHub} closeAskParentHub={closeAskParentHub}
+          askParentDestination={askParentDestination} setAskParentDestination={setAskParentDestination}
+          teenTutorOpen={teenTutorOpen} closeTeenTutor={() => setTeenTutorOpen(false)}
+          teenSiblings={teenSiblings} teenPendingOffers={teenPendingOffers}
+          onSendTutorOffer={sendTeenTutorOffer} onCancelTutorOffer={cancelTeenRequest}
+          teenCashOutOpen={teenCashOutOpen} closeTeenCashOut={() => setTeenCashOutOpen(false)}
+          teenBalance={(active as any).mainCoins ?? (active as any).coins ?? 0}
+          onRequestCashOut={requestTeenCashOut}
+          teenCashOuts={teenCashOuts}
+          teenGasVehicleOpen={teenGasVehicleOpen} closeTeenGasVehicle={() => setTeenGasVehicleOpen(false)}
+          teenToday={localToday()} onReportVehicleIssue={reportTeenVehicleIssue}
+        />
+      )}
+
       {/* Senior Hub's own En Route flow still uses the picker modal — it has
           no linked-ride concept like Parent Hub's Pick-up Radar does. */}
       <EnRouteModal
@@ -424,7 +1022,7 @@ export default function HubScreen() {
         onSuccess={() => { if (pinTarget) setActiveMember(pinTarget.id); setPinTarget(null); }}
         onCancel={() => setPinTarget(null)}
       />
-    </SafeAreaView>
+    </RootContainer>
   );
 }
 

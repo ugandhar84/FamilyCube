@@ -1,16 +1,21 @@
 /**
- * DataRecoveryScreen — Profile's "Data Recovery" section. Lets a parent
- * set up, change, or (on a device that needs it) recover the family
- * security passcode that protects chat/location/medical-records
- * encryption from permanent loss when a device is lost, wiped, or
- * reinstalled. See lib/chatCrypto.ts's "Family recovery key" section for
- * the full design, and lib/deviceRegistry.ts for the setup/change/recover
- * functions this screen calls.
+ * DataRecoveryScreen — Profile's "Data Recovery" section. Manages the
+ * family's shared security code that encrypts chat and medical records
+ * (lib/chatCrypto.ts's shared-key section, lib/familyKeyRotation.ts for
+ * rotation). The code itself is NEVER sent to the server — only a
+ * non-secret rotation generation counter + who/when ever reach Supabase
+ * (families.key_generation/key_rotated_at/key_rotated_by). There is no
+ * "forgot the code" recovery flow by design: if every copy of a code is
+ * lost, content encrypted under it is permanently unreadable on a device
+ * that never had it. This screen lets a parent rotate to a new code
+ * (rate-limited to once per 30 days) and lets any device — new or behind —
+ * enter the current code, plus any older codes still known, to unlock as
+ * much history as possible.
  *
  * Same entry point covers the optional onboarding step
- * (features/onboarding/screens/SecurityPasscodeScreen.tsx) skipped —
- * a family that skipped it, or wants to change/verify it later, lands
- * here from Profile > Security > Data Recovery.
+ * (features/onboarding/screens/SecurityPasscodeScreen.tsx) skipped — a
+ * family that skipped it, or wants to rotate/enter it later, lands here
+ * from Profile > Security > Data Recovery.
  */
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Share, Alert } from 'react-native';
@@ -23,370 +28,245 @@ import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
 import { fmtDateTime } from '@/lib/dates';
 import { showAlert } from '@/components/AppAlert';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as Clipboard from 'expo-clipboard';
 import {
-  familyHasRecoveryKey, setUpFamilyRecoveryKey,
-  changeFamilyRecoveryPasscode, recoverWithFamilyPasscode,
-  backfillRecoveryWraps,
-} from '@/lib/deviceRegistry';
+  generateFamilyKeyCode, normalizeFamilyKeyCode,
+  getActiveFamilyKey, setActiveFamilyKey, addPreviousFamilyKeyFromCode, getStoredFamilyCode,
+} from '@/lib/chatCrypto';
+import { rotateFamilyKey, RotationTooSoonError, isFamilyKeyStale, markFamilyKeyGenerationCurrent, ROTATION_COOLDOWN_DAYS } from '@/lib/familyKeyRotation';
 
-type Mode = 'loading' | 'setup' | 'change' | 'recover';
+type Mode = 'loading' | 'setup' | 'manage';
 
-// The passcode KDF (deriveRecoveryWrappingKey, lib/chatCrypto.ts) runs
-// 600,000 PBKDF2 iterations — genuinely heavy, and on this RN/Expo runtime's
-// crypto.subtle implementation it can run synchronously on the JS thread
-// despite being awaited. setSaving(true) alone doesn't guarantee the spinner
-// actually PAINTS before that heavy call starts — React batches the state
-// update, and if the next thing that runs is a thread-blocking computation
-// with no yield in between, the update never gets a chance to flush to the
-// screen at all, so the button just silently hangs with no spinner visible
-// [live-reported: "when i set my recovery password then it click on submit
-// the UI is frozen.."]. One requestAnimationFrame tick is enough to let RN
-// commit the pending re-render before the heavy work begins — same fix
-// shape as InteractionManager.runAfterInteractions elsewhere in this file
-// family (EditMyProfileSheet), just a lighter one-frame version since this
-// only needs the spinner to show, not a full interaction-queue drain.
 function yieldToUI(): Promise<void> {
   return new Promise(resolve => requestAnimationFrame(() => resolve()));
 }
 
-// Offered exactly once, right after a passcode is successfully set or
-// changed — same "shown once at the moment it's created, never re-shown"
-// principle the OS itself uses for a newly generated password. The
-// passcode is NEVER stored anywhere in plaintext (see chatCrypto.ts's
-// recovery-key design) precisely so a lost/stolen device or a database
-// breach can't recover the family's chat/location/medical history without
-// actually knowing the passcode — this share prompt is the one deliberate,
-// user-initiated moment that plaintext ever leaves the device, and only
-// because the user themselves chose to share it just now.
-function offerToSharePasscode(newPasscode: string) {
+function offerToShareCode(code: string) {
   Alert.alert(
     'Share with your family?',
-    'Anyone who has this passcode can recover your family’s chat, location, and medical record history on a new device. Share it now with the other parent so it isn’t forgotten — it won’t be shown again after this.',
+    'Anyone who has this code can see your family’s encrypted chat and medical records on their own device. Share it now with the other adults so it isn’t forgotten — it won’t be shown again after this.',
     [
       { text: 'Not now', style: 'cancel' },
       { text: 'Share', onPress: () => {
-        Share.share({ message: `Our Family Cube security passcode is: ${newPasscode}\n\nKeep this somewhere safe — anyone with it can recover our family's chat, location, and medical records on a new device.` }).catch(() => {});
+        Share.share({ message: `Our Family Cube security code is: ${code}\n\nEnter this on your device to see our encrypted chat and medical records.` }).catch(() => {});
       }},
     ],
-  );
-}
-
-// Multi-family membership — a grandparent belonging to more than one
-// family (see familyStore.ts's myFamilies) needs to see AND recover each
-// of their OTHER families' passcodes too, not just whichever is currently
-// active (the card above already covers the active one). Per the same
-// live product decision restricting setup/change to parents, this is
-// deliberately VIEW + RECOVER only — no setup/change section, regardless
-// of which family. Self-contained (its own status/passcode/saving state)
-// so each family's card is fully independent of the others and of the
-// active-family card above.
-function OtherFamilyRecoveryCard({ family, memberId, colors, s }: {
-  family: { id: string; name: string; memberId: string };
-  memberId: string;
-  colors: any;
-  s: ReturnType<typeof styles>;
-}) {
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
-  const [passcode, setPasscode] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    familyHasRecoveryKey(family.id).then(setHasKey);
-  }, [family.id]);
-
-  const handleRecover = async () => {
-    if (!passcode) { showAlert('Enter the family passcode', `Ask a parent in ${family.name} for their security passcode.`); return; }
-    setSaving(true);
-    await yieldToUI();
-    const result = await recoverWithFamilyPasscode(family.id, memberId, passcode);
-    setSaving(false);
-    if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
-    setPasscode('');
-    // Same re-decrypt-in-place fix as the other recovery flow below.
-    try {
-      const { useChatStore } = await import('@/store/chatStore');
-      const openChannelIds = Object.keys(useChatStore.getState().channels);
-      await Promise.all(openChannelIds.map(id => useChatStore.getState().loadChannel(id)));
-    } catch (e) {
-      console.warn('[DataRecoveryScreen] chat re-decrypt after recovery failed:', e);
-    }
-    showAlert('Recovered', `This device can now access ${family.name}'s chat, location, and medical records history.`);
-  };
-
-  return (
-    <View style={s.card}>
-      <View style={s.rowBetween}>
-        <Text style={s.cardTitle}>{family.name}</Text>
-        {hasKey != null && (
-          <View style={[s.badge, !hasKey && { backgroundColor: colors.border }]}>
-            {hasKey && <Ionicons name="checkmark-circle" size={14} color={colors.success} />}
-            <Text style={[s.badgeText, { color: hasKey ? colors.success : colors.textTertiary }]}>
-              {hasKey ? 'Set up' : 'Not set up'}
-            </Text>
-          </View>
-        )}
-      </View>
-      <Text style={s.cardSub}>
-        {hasKey
-          ? "If this device isn't seeing old history for this family, enter its passcode to recover it."
-          : `${family.name} hasn't set up a recovery passcode yet — ask a parent there to set one up from their own device.`}
-      </Text>
-      {hasKey && (
-        <>
-          <TextInput
-            style={s.input}
-            value={passcode}
-            onChangeText={setPasscode}
-            placeholder={`${family.name} passcode`}
-            placeholderTextColor={colors.textTertiary}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, opacity: saving ? 0.7 : 1 }]} onPress={handleRecover} disabled={saving}>
-            {saving ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.btnText, { color: colors.primary }]}>Recover This Device</Text>}
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
   );
 }
 
 export default function DataRecoveryScreen({ hideChrome = false }: {
   /** Kiosk-only — suppresses this screen's own SafeAreaView/back-header
    * chrome so it can be mounted as the body of a KioskFormDrawer side
-   * sheet instead of a pushed full-screen route (this screen has no
-   * `hideHeader` prop the way SchoolScreen/HealthRecordsScreen do, since
-   * it was never previously reachable except via router.push from Profile
-   * — kiosk's own Profile tab hid this row entirely for a while over the
-   * device's 30-min idle-lock exposure window, then was asked to bring it
-   * back as a proper side-sheet form instead of leaving it gone
-   * [live-requested: "i need all these to be side bar forms" / "it is for
-   * kiosk only"]). The phone's own route (app/profile-settings/
-   * data-recovery.tsx) never passes this, so its behavior is unchanged. */
+   * sheet instead of a pushed full-screen route. */
   hideChrome?: boolean;
 } = {}) {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, myFamilies, activeFamilyId } = useFamilyStore();
+  const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId ?? '';
   const isParent = activeMember?.role === 'parent';
-  // Multi-family membership — every OTHER family this grandparent belongs
-  // to (myFamilies is already scoped to grandparent-role, real-login-only
-  // sessions — see familyStore.ts). Excludes whichever family is currently
-  // active since that one is already fully covered by the cards above.
-  const otherFamilies = myFamilies.filter(f => f.id !== (activeFamilyId ?? familyId));
-  // Live-requested: who besides the viewer can manage this passcode —
-  // every parent in the CURRENTLY ACTIVE family (matches this screen's
-  // own !hasKey/hasKey && isParent gates, which permit any parent, not
-  // just whoever set it up originally).
   const managingParentNames = members.filter(m => m.role === 'parent').map(m => m.name);
 
   const [mode, setMode] = useState<Mode>('loading');
   const [hasKey, setHasKey] = useState(false);
-  // "Change passcode" and "Recover this device" render as two SEPARATE
-  // cards simultaneously once a key exists — they need their own current-
-  // passcode field each. Sharing one `current` state between them meant
-  // typing in one card silently populated the other's field too, and
-  // submitting either handler could send whichever card's value happened
-  // to be typed last, regardless of which button was actually tapped.
-  const [currentForChange, setCurrentForChange] = useState('');
-  const [currentForRecover, setCurrentForRecover] = useState('');
-  const [passcode, setPasscode] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [stale, setStale] = useState(false);
+
+  // Setup (no key on this device yet)
+  const [setupCode, setSetupCode] = useState('');
+  const [customMode, setCustomMode] = useState(false);
   const [saving, setSaving] = useState(false);
-  // "Forgot the current passcode entirely" escape hatch — resets are a
-  // separate flow from Change (which requires the current passcode to
-  // prove you actually know it). Own passcode/confirm fields so switching
-  // into reset mode doesn't inherit whatever was half-typed into Change's
-  // fields, and vice versa.
-  const [resetMode, setResetMode] = useState(false);
-  const [resetPasscode, setResetPasscode] = useState('');
-  const [resetConfirm, setResetConfirm] = useState('');
 
-  // Live-requested: show who set up/last changed the passcode and when —
-  // plain readable metadata, never the passcode itself (see
-  // recovery_key_set_by/recovery_key_set_at's own migration comment).
-  // setByName resolved from `members` (already loaded for this family) by
-  // id — falls back to null gracefully if that member was later removed.
-  const [setByMemberId, setSetByMemberId] = useState<string | null>(null);
-  const [setAt, setSetAt] = useState<string | null>(null);
-  const setByName = members.find(m => m.id === setByMemberId)?.name ?? null;
+  // Enter code (new/behind device already has the family's key generation)
+  const [entryCode, setEntryCode] = useState('');
+  const [olderCode, setOlderCode] = useState('');
+  const [showOlderField, setShowOlderField] = useState(false);
+  const [savingEntry, setSavingEntry] = useState(false);
+  const [savingOlder, setSavingOlder] = useState(false);
 
-  // Manual "Secure older history" button state — see its own comment above
-  // for why this exists alongside the automatic background pass.
-  const [backfillRunning, setBackfillRunning] = useState(false);
-  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  // Rotate (parent-only)
+  const [rotateMode, setRotateMode] = useState(false);
+  const [rotateCode, setRotateCode] = useState('');
+  const [rotating, setRotating] = useState(false);
+  const [rotateBlockedUntil, setRotateBlockedUntil] = useState<Date | null>(null);
 
-  useEffect(() => {
-    if (!familyId) { setMode('setup'); return; }
-    familyHasRecoveryKey(familyId).then(exists => {
-      setHasKey(exists);
-      setMode(exists ? 'change' : 'setup');
-    });
-    supabase.from('families').select('recovery_key_set_by, recovery_key_set_at').eq('id', familyId).maybeSingle()
-      .then(({ data }) => {
-        setSetByMemberId(data?.recovery_key_set_by ?? null);
-        setSetAt(data?.recovery_key_set_at ?? null);
-      });
-  }, [familyId]);
+  const [keyGeneration, setKeyGeneration] = useState<number | null>(null);
+  const [rotatedByMemberId, setRotatedByMemberId] = useState<string | null>(null);
+  const [rotatedAt, setRotatedAt] = useState<string | null>(null);
+  const rotatedByName = members.find(m => m.id === rotatedByMemberId)?.name ?? null;
 
   const s = styles(colors, isDark);
 
+  const refreshFamilyMeta = async (fid: string) => {
+    const { data } = await supabase.from('families').select('key_generation, key_rotated_at, key_rotated_by').eq('id', fid).maybeSingle();
+    setKeyGeneration(data?.key_generation ?? 0);
+    setRotatedByMemberId(data?.key_rotated_by ?? null);
+    setRotatedAt(data?.key_rotated_at ?? null);
+  };
+
+  useEffect(() => {
+    if (!familyId) { setMode('setup'); return; }
+    (async () => {
+      const [key, isStale] = await Promise.all([getActiveFamilyKey(familyId), isFamilyKeyStale(familyId)]);
+      setHasKey(!!key);
+      setStale(isStale);
+      setMode(key ? 'manage' : 'setup');
+      setSetupCode(generateFamilyKeyCode());
+      await refreshFamilyMeta(familyId);
+    })();
+  }, [familyId]);
+
+  const handleShareSetup = () => {
+    Share.share({ message: `Family Cube security code for our family: ${setupCode}\n\nEnter this on your device to see our encrypted chat and medical records.` }).catch(() => {});
+  };
+
   const handleSetUp = async () => {
-    if (passcode.length < 6) { showAlert('Make it longer', 'Use at least 6 characters so it’s hard to guess.'); return; }
-    if (passcode !== confirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
+    let normalized: string;
+    try {
+      normalized = normalizeFamilyKeyCode(setupCode);
+    } catch (e: any) {
+      showAlert('Invalid code', e?.message ?? 'Enter a valid 16-character code.');
+      return;
+    }
     if (!familyId || !activeMemberId) return;
     setSaving(true);
     await yieldToUI();
-    const result = await setUpFamilyRecoveryKey(familyId, activeMemberId, passcode);
+    try {
+      await setActiveFamilyKey(familyId, normalized);
+      await supabase.from('families').update({
+        key_generation: 1, key_rotated_at: new Date().toISOString(), key_rotated_by: activeMemberId,
+      }).eq('id', familyId);
+      await markFamilyKeyGenerationCurrent(familyId).catch(() => {});
+      const justSet = normalized;
+      setHasKey(true);
+      setStale(false);
+      setMode('manage');
+      await refreshFamilyMeta(familyId);
+      offerToShareCode(justSet);
+    } catch (e: any) {
+      showAlert("Couldn't set this up", e?.message ?? 'Something went wrong. Try again.');
+    }
     setSaving(false);
-    if (!result.ok) { showAlert("Couldn't set this up", result.error); return; }
-    const justSet = passcode;
-    setPasscode(''); setConfirm('');
-    setHasKey(true);
-    setMode('change');
-    setSetByMemberId(activeMemberId);
-    setSetAt(new Date().toISOString());
-    offerToSharePasscode(justSet);
-    // Live-reported: recovering a device only saw messages sent AFTER the
-    // passcode was set up — setUpFamilyRecoveryKey only makes the recovery
-    // key a wrap recipient for FUTURE writes. This backfills EXISTING chat/
-    // location/records this device can already decrypt, from this device,
-    // so the family's actual past history becomes recoverable too. Fire-
-    // and-forget: best-effort, doesn't block the success flow the user
-    // already sees above. backfillRecoveryWraps only does a first quick
-    // batch of chat (~300 messages, for fast feedback); if the family has
-    // more history than that, runChatRecoveryBackfillInBackground picks up
-    // the rest with a visible RecoveryBackfillBanner while it works.
-    backfillRecoveryWraps(familyId, members).then(r => {
-      if (!r.chatDone) import('@/lib/deviceRegistry').then(m => m.runChatRecoveryBackfillInBackground(familyId));
-    }).catch(() => {});
   };
 
-  const handleChange = async () => {
-    if (!currentForChange) { showAlert('Enter your current passcode', 'You need the current passcode to set a new one.'); return; }
-    if (passcode.length < 6) { showAlert('Make it longer', 'Use at least 6 characters so it’s hard to guess.'); return; }
-    if (passcode !== confirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
+  const handleEnterCode = async () => {
+    let normalized: string;
+    try {
+      normalized = normalizeFamilyKeyCode(entryCode);
+    } catch (e: any) {
+      showAlert('Invalid code', e?.message ?? 'Enter a valid 16-character code.');
+      return;
+    }
     if (!familyId) return;
-    setSaving(true);
+    setSavingEntry(true);
     await yieldToUI();
-    const result = await changeFamilyRecoveryPasscode(familyId, currentForChange, passcode, activeMemberId ?? undefined);
-    setSaving(false);
-    if (!result.ok) { showAlert("Couldn't change the passcode", result.error); return; }
-    const justSet = passcode;
-    setCurrentForChange(''); setPasscode(''); setConfirm('');
-    setSetByMemberId(activeMemberId);
-    setSetAt(new Date().toISOString());
-    offerToSharePasscode(justSet);
-    // Was skipped here on the reasoning that Change keeps the same
-    // recovery key pair, so there's nothing NEW to backfill — true, but it
-    // meant Change was a dead end for anyone whose FIRST backfill attempt
-    // (right after initial Setup) had failed or never actually run,
-    // leaving no easy way to retry without a full Reset (which invalidates
-    // the passcode everyone already has). Cheap/idempotent either way:
-    // backfillRecoveryWraps skips anything already covered, so re-running
-    // it here on every Change costs nothing extra when there's genuinely
-    // nothing new to do.
-    backfillRecoveryWraps(familyId, members).then(r => {
-      if (!r.chatDone) import('@/lib/deviceRegistry').then(m => m.runChatRecoveryBackfillInBackground(familyId));
-    }).catch(() => {});
+    try {
+      await setActiveFamilyKey(familyId, normalized);
+      // Record that this device now holds the family's current code, or it keeps reporting "out of date".
+      await markFamilyKeyGenerationCurrent(familyId).catch(() => {});
+      setEntryCode('');
+      setHasKey(true);
+      setStale(false);
+      setMode('manage');
+      await refreshFamilyMeta(familyId);
+      // Re-decrypt anything already loaded in memory with the newly-entered key.
+      try {
+        const { useChatStore } = await import('@/store/chatStore');
+        const openChannelIds = Object.keys(useChatStore.getState().channels);
+        await Promise.all(openChannelIds.map(id => useChatStore.getState().loadChannel(id)));
+      } catch (e) {
+        console.warn('[DataRecoveryScreen] chat re-decrypt after key entry failed:', e);
+      }
+      showAlert('Saved', 'This device can now see your family’s encrypted chat and medical records.');
+    } catch (e: any) {
+      showAlert("Couldn't save this code", e?.message ?? 'Something went wrong. Try again.');
+    }
+    setSavingEntry(false);
   };
 
-  // For when nobody remembers the current passcode at all — setUpFamilyRecoveryKey
-  // generates a brand-new recovery key pair + passcode from scratch and
-  // overwrites the family's existing one (it doesn't require or check the
-  // old passcode), so calling it again IS the reset. Confirmed via a
-  // native Alert (not the lighter showAlert) specifically because of what
-  // it costs: any device that's lost/wiped/never-registered-again from
-  // this point forward can only be recovered with the NEW passcode — the
-  // old one stops working immediately. Devices currently active and in use
-  // are unaffected (their own local keys still work fine); this only
-  // resets the RECOVERY path for a future lost device.
-  const handleReset = () => {
-    if (resetPasscode.length < 6) { showAlert('Make it longer', 'Use at least 6 characters so it’s hard to guess.'); return; }
-    if (resetPasscode !== resetConfirm) { showAlert('Passcodes don’t match', 'Enter the same passcode both times.'); return; }
+  const handleAddOlderCode = async () => {
+    let normalized: string;
+    try {
+      normalized = normalizeFamilyKeyCode(olderCode);
+    } catch (e: any) {
+      showAlert('Invalid code', e?.message ?? 'Enter a valid 16-character code.');
+      return;
+    }
+    if (!familyId) return;
+    setSavingOlder(true);
+    await yieldToUI();
+    try {
+      await addPreviousFamilyKeyFromCode(familyId, normalized);
+      setOlderCode('');
+      setShowOlderField(false);
+      try {
+        const { useChatStore } = await import('@/store/chatStore');
+        const openChannelIds = Object.keys(useChatStore.getState().channels);
+        await Promise.all(openChannelIds.map(id => useChatStore.getState().loadChannel(id)));
+      } catch (e) {
+        console.warn('[DataRecoveryScreen] chat re-decrypt after older-code entry failed:', e);
+      }
+      showAlert('Added', 'This device will now try that code too when it can’t read older history.');
+    } catch (e: any) {
+      showAlert("Couldn't save this code", e?.message ?? 'Something went wrong. Try again.');
+    }
+    setSavingOlder(false);
+  };
+
+  // View the code again later (admin only). It is kept in this device's secure storage; showing it asks for
+  // Face ID / Touch ID / the device passcode first.
+  const [shownCode, setShownCode] = useState<string | null>(null);
+  const [codeSaved, setCodeSaved] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!familyId || !hasKey) return;
+    getStoredFamilyCode(familyId).then(c => setCodeSaved(!!c));
+  }, [familyId, hasKey, stale]);
+  const revealCode = async () => {
+    if (!familyId) return;
+    try {
+      const auth = await LocalAuthentication.authenticateAsync({ promptMessage: 'Show the family security code', fallbackLabel: 'Use passcode' });
+      if (!auth.success) return;
+    } catch { /* no biometrics available: fall through to showing it */ }
+    setShownCode(await getStoredFamilyCode(familyId));
+  };
+
+  const handleRotate = async () => {
+    let normalized: string;
+    try {
+      normalized = normalizeFamilyKeyCode(rotateCode);
+    } catch (e: any) {
+      showAlert('Invalid code', e?.message ?? 'Enter a valid 16-character code.');
+      return;
+    }
     if (!familyId || !activeMemberId) return;
     Alert.alert(
-      'Reset the family passcode?',
-      'The old passcode will stop working right away. Any device that\'s currently lost, wiped, or hasn\'t opened the app since this reset will only be recoverable with the NEW passcode — devices in active use today are not affected.',
+      'Rotate the family security code?',
+      'Every other device will be blocked from chat and medical records until someone enters the new code there. This device will re-encrypt your family’s existing history in the background — don’t force-quit the app until that finishes. If anyone loses the old code afterward, anything encrypted under it stays unreadable on a device that never had it.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: async () => {
-          setSaving(true);
+        { text: 'Rotate', style: 'destructive', onPress: async () => {
+          setRotating(true);
           await yieldToUI();
-          const result = await setUpFamilyRecoveryKey(familyId, activeMemberId, resetPasscode);
-          setSaving(false);
-          if (!result.ok) { showAlert("Couldn't reset", result.error); return; }
-          const justSet = resetPasscode;
-          setResetPasscode(''); setResetConfirm(''); setResetMode(false);
-          setSetByMemberId(activeMemberId);
-          setSetAt(new Date().toISOString());
-          offerToSharePasscode(justSet);
-          // A reset generates a brand-new recovery key pair — every
-          // previously-wrapped recovery copy (even from a prior backfill)
-          // is now for the OLD key and useless. Re-backfill from this
-          // device against the NEW key so reset doesn't silently regress
-          // recovery coverage back to "only future writes." Same two-tier
-          // quick-batch-then-background-continuation shape as handleSetUp.
-          backfillRecoveryWraps(familyId, members).then(r => {
-            if (!r.chatDone) import('@/lib/deviceRegistry').then(m => m.runChatRecoveryBackfillInBackground(familyId));
-          }).catch(() => {});
+          try {
+            await rotateFamilyKey(familyId, normalized, activeMemberId);
+            setRotateCode('');
+            setRotateMode(false);
+            setStale(false);
+            await refreshFamilyMeta(familyId);
+            offerToShareCode(normalized);
+            showAlert('Rotating', 'The new code is active on this device. Existing history is being re-encrypted in the background — share the new code with the rest of your family now.');
+          } catch (e: any) {
+            if (e instanceof RotationTooSoonError) {
+              setRotateBlockedUntil(e.nextEligibleDate);
+              showAlert('Too soon', `You can rotate again on ${fmtDateTime(e.nextEligibleDate.toISOString())}.`);
+            } else {
+              showAlert("Couldn't rotate", e?.message ?? 'Something went wrong. Try again.');
+            }
+          }
+          setRotating(false);
         }},
       ],
     );
-  };
-
-  const runManualBackfill = async () => {
-    if (!familyId) return;
-    setBackfillRunning(true);
-    setBackfillResult(null);
-    try {
-      const r = await backfillRecoveryWraps(familyId, members);
-      if (r.skippedReason) {
-        setBackfillResult(r.skippedReason);
-        return;
-      }
-      if (!r.chatDone) {
-        const { runChatRecoveryBackfillInBackground } = await import('@/lib/deviceRegistry');
-        runChatRecoveryBackfillInBackground(familyId).catch(() => {});
-      }
-      setBackfillResult(
-        `Secured ${r.locationMembers} member${r.locationMembers === 1 ? '' : 's'}' location, ` +
-        `${r.recordsBackfilled ? 'records, ' : ''}and ${r.chatMessages} message${r.chatMessages === 1 ? '' : 's'} on this device` +
-        (r.chatDone ? '.' : ' — continuing in the background.'),
-      );
-    } catch (e: any) {
-      setBackfillResult(`Couldn't finish: ${e?.message ?? 'unknown error'}. Try again in a moment.`);
-    } finally {
-      setBackfillRunning(false);
-    }
-  };
-
-  const handleRecover = async () => {
-    if (!currentForRecover) { showAlert('Enter the family passcode', 'Ask a parent for the family security passcode.'); return; }
-    if (!familyId || !activeMemberId) return;
-    setSaving(true);
-    await yieldToUI();
-    const result = await recoverWithFamilyPasscode(familyId, activeMemberId, currentForRecover);
-    setSaving(false);
-    if (!result.ok) { showAlert("Couldn't recover", result.error); return; }
-    setCurrentForRecover('');
-    // Re-decrypt anything already loaded in memory with the newly-installed
-    // recovered key — without this, a chat screen left open from before
-    // recovery kept showing "wrong key or corrupted" until the user force-
-    // quit and relaunched, since resolveMessageText only ever runs once per
-    // message on load, not automatically after a key becomes available.
-    // [live-requested: "as soon as user enters the Revoverykey and save we
-    // should refetch all the messages with the key decrypt"]
-    try {
-      const { useChatStore } = await import('@/store/chatStore');
-      const openChannelIds = Object.keys(useChatStore.getState().channels);
-      await Promise.all(openChannelIds.map(id => useChatStore.getState().loadChannel(id)));
-    } catch (e) {
-      console.warn('[DataRecoveryScreen] chat re-decrypt after recovery failed:', e);
-    }
-    showAlert('Recovered', 'This device can now access your family’s chat, location, and medical records history.');
   };
 
   if (mode === 'loading') {
@@ -414,253 +294,241 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
         <View style={s.infoCard}>
           <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
           <Text style={s.infoText}>
-            Chat messages, location, and medical records are encrypted on your devices. A family security
-            passcode lets anyone with it recover that data on a new device if one is ever lost, broken, or
-            replaced — otherwise that history is gone for good on that device.
+            Chat messages, medical documents, visit recordings and AI summaries are encrypted with one security code
+            shared by your whole family. The code lives only on your devices, not on our servers, so there is no
+            "forgot code" reset. Titles, dates, notes and medication or vaccine details stay readable on our servers so
+            reminders and search work, and AI scans send the document or recording to our AI provider to read it.
           </Text>
         </View>
+        <View style={[s.infoCard, { borderColor: colors.danger }]}>
+          <Ionicons name="warning-outline" size={20} color={colors.danger} />
+          <Text style={[s.infoText, { color: colors.danger, fontWeight: '800' }]}>
+            If you lose the family data recovery key, everything will be lost. Chats, documents and summaries
+            cannot be recovered by us or by anyone else. Keep a copy of the code somewhere safe.
+          </Text>
+        </View>
+
+        {!hasKey && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Set up this device</Text>
+            <Text style={s.cardSub}>
+              Enter your family's security code, or set a new one if this is the first device in your family
+              to set this up.
+            </Text>
+            <TextInput
+              style={s.codeInput}
+              value={entryCode}
+              onChangeText={setEntryCode}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            <TouchableOpacity style={[s.btn, { opacity: savingEntry ? 0.7 : 1 }]} onPress={handleEnterCode} disabled={savingEntry}>
+              {savingEntry ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Save Code</Text>}
+            </TouchableOpacity>
+
+            {isParent && (
+              <>
+                <View style={[s.warnCard, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '40', marginTop: 4 }]}>
+                  <Ionicons name="warning-outline" size={16} color={colors.danger} />
+                  <Text style={[s.cardSub, { color: colors.danger, flex: 1 }]}>
+                    If this is the first device setting this up, generate a brand-new code below instead.
+                    Write it down somewhere safe — if everyone loses it, this history can never be read
+                    again, not even by us.
+                  </Text>
+                </View>
+                <Text style={[s.label, { marginTop: 4 }]}>{customMode ? 'Enter your own code' : 'New family security code'}</Text>
+                <TextInput
+                  style={s.codeInput}
+                  value={setupCode}
+                  onChangeText={setSetupCode}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  editable={customMode}
+                />
+                {!customMode ? (
+                  <TouchableOpacity onPress={() => { setCustomMode(true); setSetupCode(''); }} style={{ alignSelf: 'center', marginTop: 2 }}>
+                    <Text style={s.linkText}>Use my own code instead</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={() => { setCustomMode(false); setSetupCode(generateFamilyKeyCode()); }} style={{ alignSelf: 'center', marginTop: 2 }}>
+                    <Text style={s.linkText}>Generate one for me instead</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, opacity: saving ? 0.7 : 1 }]} onPress={handleShareSetup}>
+                  <Text style={[s.btnText, { color: colors.primary }]}>Share This Code</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.btn, { opacity: saving ? 0.7 : 1 }]} onPress={handleSetUp} disabled={saving}>
+                  {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Create & Set Up This Code</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
 
         {hasKey && (
           <View style={s.card}>
             <View style={s.rowBetween}>
               <Text style={s.cardTitle}>Status</Text>
-              <View style={s.badge}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                <Text style={[s.badgeText, { color: colors.success }]}>Set up</Text>
+              <View style={[s.badge, stale && { backgroundColor: colors.danger + '18' }]}>
+                <Ionicons name={stale ? 'alert-circle' : 'checkmark-circle'} size={14} color={stale ? colors.danger : colors.success} />
+                <Text style={[s.badgeText, { color: stale ? colors.danger : colors.success }]}>
+                  {stale ? 'Out of date' : 'Up to date'}
+                </Text>
               </View>
             </View>
             <Text style={s.cardSub}>
-              Your family has a recovery passcode. Anyone who knows it can recover data on a new device.
+              {stale
+                ? 'Your family’s code was rotated and this device hasn’t gotten the new one yet. Ask a parent for the current code below.'
+                : 'This device has the current family security code.'}
             </Text>
-            {/* Live-requested: plain-text metadata (never the passcode
-                itself) showing who set/last changed it and when. Silently
-                omitted when either piece is missing — e.g. a passcode set
-                up before this metadata existed, or the setter was later
-                removed from the family. */}
-            {(setByName || setAt) && (
+            {(rotatedByName || rotatedAt) && (
               <Text style={[s.cardSub, { color: colors.textTertiary }]}>
-                {setByName ? `Set up by ${setByName}` : 'Set up'}
-                {setAt ? ` on ${fmtDateTime(setAt)}` : ''}
+                {rotatedByName ? `Last rotated by ${rotatedByName}` : 'Last rotated'}
+                {rotatedAt ? ` on ${fmtDateTime(rotatedAt)}` : ''}
+                {keyGeneration != null ? ` · generation ${keyGeneration}` : ''}
               </Text>
             )}
-            {/* Live-requested: who ELSE can manage this — every parent in
-                the family can set up/change/reset the passcode (see
-                DataRecoveryScreen's own !hasKey/hasKey && isParent gates
-                above), not just whoever happens to be viewing this screen
-                right now. Plain informational text, not a permissions
-                editor. */}
             {managingParentNames.length > 0 && (
               <Text style={[s.cardSub, { color: colors.textTertiary }]}>
                 Can be managed by: {managingParentNames.join(', ')}
               </Text>
             )}
-            {/* Live-reported gap: the backfill that protects OLDER chat/
-                location/records history with the recovery key only ever
-                fired automatically (app foreground/cold-start) or as a
-                side effect of Setup/Reset — Change Passcode deliberately
-                skipped it (same key pair, nothing new to backfill), and
-                there was no way to tell whether the automatic background
-                pass had actually run or silently failed on a given device.
-                This button calls the exact same backfillRecoveryWraps this
-                device would otherwise run silently, but with real visible
-                results — tap it on whichever device has always had the
-                real chat/location/records history, if a newly-recovered
-                device still isn't showing old messages. */}
-            <TouchableOpacity
-              style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, marginTop: 4, opacity: backfillRunning ? 0.7 : 1 }]}
-              onPress={runManualBackfill}
-              disabled={backfillRunning || !familyId}
-            >
-              {backfillRunning
-                ? <ActivityIndicator color={colors.primary} />
-                : <Text style={[s.btnText, { color: colors.primary }]}>Secure older history on this device</Text>}
-            </TouchableOpacity>
-            {backfillResult && (
-              <Text style={[s.cardSub, { color: colors.textTertiary }]}>{backfillResult}</Text>
-            )}
           </View>
         )}
 
-        {!hasKey && isParent && (
+        {hasKey && stale && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>Set up a recovery passcode</Text>
-            <Text style={s.cardSub}>
-              Kids, teens, and grandparents don't need their own — a parent shares this same passcode with
-              them if they ever need to recover a device.
-            </Text>
-            {/* The one sentence this screen most needs and previously
-                didn't have anywhere: what happens if the passcode is BOTH
-                forgotten AND never reset. The info card above and the
-                Reset flow's own copy both explain what the passcode does
-                and what resetting costs, but neither states the actual
-                permanent-loss case in plain terms — someone who forgets it
-                and doesn't know Reset exists (or can't reach whoever knows
-                it) has no way to learn their data is gone for good short of
-                reading this component's source. No password reset exists
-                for this by design (see chatCrypto.ts's recovery-key design
-                doc) — the server never holds anything that alone unlocks
-                the data, so there's genuinely nothing "forgot password" can
-                fall back to here the way it can for a normal account login. */}
-            <View style={[s.warnCard, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '40' }]}>
-              <Ionicons name="warning-outline" size={16} color={colors.danger} />
-              <Text style={[s.cardSub, { color: colors.danger, flex: 1 }]}>
-                If everyone forgets this passcode, this history can never be recovered on a lost or new
-                device — not even by us. Write it down somewhere safe.
-              </Text>
-            </View>
+            <Text style={s.cardTitle}>Enter the current code</Text>
+            <Text style={s.cardSub}>Ask a parent for the family's current security code.</Text>
             <TextInput
-              style={s.input}
-              value={passcode}
-              onChangeText={setPasscode}
-              placeholder="At least 6 characters"
+              style={s.codeInput}
+              value={entryCode}
+              onChangeText={setEntryCode}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
               placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
+              autoCapitalize="characters"
               autoCorrect={false}
             />
-            <TextInput
-              style={s.input}
-              value={confirm}
-              onChangeText={setConfirm}
-              placeholder="Confirm passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity style={[s.btn, { opacity: saving ? 0.7 : 1 }]} onPress={handleSetUp} disabled={saving}>
-              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Set Up Passcode</Text>}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {!hasKey && !isParent && (
-          <View style={s.card}>
-            <Text style={s.cardSub}>Ask a parent to set up a family recovery passcode from their own Profile.</Text>
-          </View>
-        )}
-
-        {hasKey && isParent && !resetMode && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Change passcode</Text>
-            <Text style={s.cardSub}>Requires the current passcode. Existing chat, location, and record history is unaffected.</Text>
-            <TextInput
-              style={s.input}
-              value={currentForChange}
-              onChangeText={setCurrentForChange}
-              placeholder="Current passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TextInput
-              style={s.input}
-              value={passcode}
-              onChangeText={setPasscode}
-              placeholder="New passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TextInput
-              style={s.input}
-              value={confirm}
-              onChangeText={setConfirm}
-              placeholder="Confirm new passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity style={[s.btn, { opacity: saving ? 0.7 : 1 }]} onPress={handleChange} disabled={saving}>
-              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Change Passcode</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setCurrentForChange(''); setPasscode(''); setConfirm(''); setResetMode(true); }} style={{ alignSelf: 'center', marginTop: 2 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, textDecorationLine: 'underline' }}>
-                Forgot the current passcode?
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {hasKey && isParent && resetMode && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Reset passcode</Text>
-            <Text style={s.cardSub}>
-              For when nobody remembers the current passcode. The old one stops working right away — any device
-              that's lost, wiped, or hasn't opened the app since this reset can only be recovered with the new
-              one. Devices in active use today aren't affected.
-            </Text>
-            <TextInput
-              style={s.input}
-              value={resetPasscode}
-              onChangeText={setResetPasscode}
-              placeholder="New passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TextInput
-              style={s.input}
-              value={resetConfirm}
-              onChangeText={setResetConfirm}
-              placeholder="Confirm new passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity style={[s.btn, { backgroundColor: colors.danger, opacity: saving ? 0.7 : 1 }]} onPress={handleReset} disabled={saving}>
-              {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Reset Passcode</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setResetPasscode(''); setResetConfirm(''); setResetMode(false); }} style={{ alignSelf: 'center', marginTop: 2 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, textDecorationLine: 'underline' }}>
-                Actually, I remember it
-              </Text>
+            <TouchableOpacity style={[s.btn, { opacity: savingEntry ? 0.7 : 1 }]} onPress={handleEnterCode} disabled={savingEntry}>
+              {savingEntry ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Save Code</Text>}
             </TouchableOpacity>
           </View>
         )}
 
         {hasKey && (
           <View style={s.card}>
-            <Text style={s.cardTitle}>Recover this device</Text>
+            <Text style={s.cardTitle}>Have an older code too?</Text>
             <Text style={s.cardSub}>
-              If this device just got a fresh install, or you're not seeing old chat/location/record history,
-              enter the family passcode to recover it.
+              If this device is missing history from before a rotation, enter any older code you still
+              have — this is additive and won't affect sending new messages. Skip a code and lose it later,
+              and anything encrypted under it stays unreadable on this device for good.
             </Text>
-            <TextInput
-              style={s.input}
-              value={currentForRecover}
-              onChangeText={setCurrentForRecover}
-              placeholder="Family passcode"
-              placeholderTextColor={colors.textTertiary}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, opacity: saving ? 0.7 : 1 }]} onPress={handleRecover} disabled={saving}>
-              {saving ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.btnText, { color: colors.primary }]}>Recover This Device</Text>}
-            </TouchableOpacity>
+            {showOlderField ? (
+              <>
+                <TextInput
+                  style={s.codeInput}
+                  value={olderCode}
+                  onChangeText={setOlderCode}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary, opacity: savingOlder ? 0.7 : 1 }]} onPress={handleAddOlderCode} disabled={savingOlder}>
+                  {savingOlder ? <ActivityIndicator color={colors.primary} /> : <Text style={[s.btnText, { color: colors.primary }]}>Add Older Code</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setShowOlderField(false); setOlderCode(''); }} style={{ alignSelf: 'center', marginTop: 2 }}>
+                  <Text style={s.linkText}>Never mind</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => setShowOlderField(true)}>
+                <Text style={[s.btnText, { color: colors.primary }]}>I Also Have an Older Code</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
-        {/* Multi-family membership — a grandparent's OTHER families, each
-            with their own independent passcode status + recover action.
-            View + recover only, no setup/change (see OtherFamilyRecoveryCard's
-            own comment) — matches the live product decision that setup/
-            change stays parent-only even in this multi-family view. */}
-        {otherFamilies.length > 0 && (
-          <>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>
-              Your other families
+        {hasKey && isParent && !rotateMode && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Your security code</Text>
+            {codeSaved === false ? (
+              <Text style={s.cardSub}>
+                This device doesn’t have the code saved to show (it was set before saving was added). Rotate the code below to set a
+                new one that you can view here later, or ask the family admin who set it.
+              </Text>
+            ) : shownCode ? (
+              <>
+                <Text selectable style={[s.cardTitle, { letterSpacing: 2, textAlign: 'center', fontSize: 20 }]}>{shownCode}</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => { Clipboard.setStringAsync(shownCode); showAlert('Copied', 'The code is on your clipboard.'); }}>
+                    <Text style={[s.btnText, { color: colors.primary }]}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => setShownCode(null)}>
+                    <Text style={[s.btnText, { color: colors.primary }]}>Hide</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={s.cardSub}>Look at the code again whenever a family member or a new device needs it. You’ll be asked to confirm it’s you first.</Text>
+                <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={revealCode}>
+                  <Text style={[s.btnText, { color: colors.primary }]}>Show my code</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
+        {hasKey && isParent && !rotateMode && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Rotate security code</Text>
+            <Text style={s.cardSub}>
+              Replaces the family's code with a new one. Can only be done once every {ROTATION_COOLDOWN_DAYS} days.
+              Every other device is blocked from chat and medical records until the new code is entered
+              there — this device re-encrypts existing history in the background.
             </Text>
-            {otherFamilies.map(f => (
-              <OtherFamilyRecoveryCard key={f.id} family={f} memberId={f.memberId} colors={colors} s={s} />
-            ))}
-          </>
+            <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => { setRotateCode(generateFamilyKeyCode()); setRotateMode(true); }}>
+              <Text style={[s.btnText, { color: colors.primary }]}>Rotate Code</Text>
+            </TouchableOpacity>
+            {rotateBlockedUntil && (
+              <Text style={[s.cardSub, { color: colors.textTertiary }]}>
+                You can rotate again on {fmtDateTime(rotateBlockedUntil.toISOString())}.
+              </Text>
+            )}
+          </View>
+        )}
+
+        {hasKey && isParent && rotateMode && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>New security code</Text>
+            <View style={[s.warnCard, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '40' }]}>
+              <Ionicons name="warning-outline" size={16} color={colors.danger} />
+              <Text style={[s.cardSub, { color: colors.danger, flex: 1 }]}>
+                Anyone who loses the OLD code after this can no longer read anything encrypted under it on a
+                device that never had it. Share the new code with your family right away.
+              </Text>
+            </View>
+            <TextInput
+              style={s.codeInput}
+              value={rotateCode}
+              onChangeText={setRotateCode}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            <TouchableOpacity style={[s.btn, { backgroundColor: colors.danger, opacity: rotating ? 0.7 : 1 }]} onPress={handleRotate} disabled={rotating}>
+              {rotating ? <ActivityIndicator color={colors.textInverse} /> : <Text style={s.btnText}>Rotate Now</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setRotateCode(''); setRotateMode(false); }} style={{ alignSelf: 'center', marginTop: 2 }} disabled={rotating}>
+              <Text style={s.linkText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </ScrollView>
     </>
@@ -687,12 +555,15 @@ function styles(colors: any, isDark: boolean) {
     rowBetween: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const },
     badge: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.success + '18' },
     badgeText: { fontSize: TYPO.micro, fontWeight: '800' as const },
-    input: {
+    label: { fontSize: TYPO.caption, fontWeight: '700' as const, color: colors.textSecondary },
+    codeInput: {
       borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-      paddingHorizontal: 14, paddingVertical: 12, fontSize: TYPO.body,
+      paddingHorizontal: 14, paddingVertical: 12, fontSize: TYPO.body, fontWeight: '800' as const,
+      letterSpacing: 1.5, textAlign: 'center' as const,
       color: colors.textPrimary, backgroundColor: colors.surface,
     },
     btn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' as const, backgroundColor: colors.primary, marginTop: 4 },
     btnText: { color: colors.textInverse, fontSize: TYPO.body, fontWeight: '800' as const },
+    linkText: { fontSize: TYPO.caption, fontWeight: '700' as const, color: colors.textSecondary, textDecorationLine: 'underline' as const },
   };
 }

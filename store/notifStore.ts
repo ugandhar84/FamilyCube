@@ -29,6 +29,8 @@ function rowToNotificationLog(r: any): NotificationLog {
 
 interface NotifState {
   unreadCount: number;
+  /** True when the last fetch filled a whole page, so more notifications exist beyond what is cached. */
+  hasMore: boolean;
   /** Cached alert notifications (non-social). Null = not yet fetched. */
   notifications: NotificationLog[] | null;
   setUnreadCount: (n: number) => void;
@@ -48,6 +50,7 @@ interface NotifState {
 
 export const useNotifStore = create<NotifState>((set, get) => ({
   unreadCount: 0,
+  hasMore: false,
   notifications: null,
 
   setUnreadCount: (n) => set({ unreadCount: Math.max(0, n) }),
@@ -96,6 +99,7 @@ export const useNotifStore = create<NotifState>((set, get) => ({
     const unreadCount = countRes.count ?? 0;
     set({
       unreadCount,
+      hasMore: (dataRes.data ?? []).length >= 100,
       notifications: (dataRes.data ?? []).map(rowToNotificationLog),
     });
     Notifications.setBadgeCountAsync(unreadCount).catch(() => {});

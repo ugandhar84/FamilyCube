@@ -42,6 +42,7 @@
  * image exists), same as the phone's own 2-page flow collapses redact into
  * an implicit sub-state of page 1.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Camera, Image as ImageIcon, FileText, ScanLine, Syringe, X } from 'lucide-react-native';
@@ -85,10 +86,20 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
   const {
     scanning, scanResult, scanError,
     pendingImages, maxPhotos,
-    pickImage, scan, pickAndScan,
+    pickImage: rawPickImage, scan, pickAndScan: rawPickAndScan,
     clearPending, clearScan,
     aiConsent,
   } = usePrescriptionScanner(activeMemberId, members.find(m => m.id === activeMemberId)?.familyId);
+
+  // iOS cannot present a camera/picker over an open Modal (it freezes), so this panel steps aside.
+  const [picking, setPicking] = useState(false);
+  const aside = async <T,>(run: () => Promise<T>) => {
+    setPicking(true);
+    await new Promise(r => setTimeout(r, 450));
+    try { return await run(); } finally { setPicking(false); }
+  };
+  const pickImage = ((...a: Parameters<typeof rawPickImage>) => aside(() => rawPickImage(...a))) as typeof rawPickImage;
+  const pickAndScan = ((...a: Parameters<typeof rawPickAndScan>) => aside(() => rawPickAndScan(...a))) as typeof rawPickAndScan;
 
   // One entry per medication/vaccine the scan found — was a single object
   // each (only the first item on a multi-item document). Same fix as
@@ -170,7 +181,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
   const canSubmit = !!reviewMemberId;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <KioskSlideModal visible={visible && !picking} onRequestClose={handleClose}>
       <AiConsentSheet {...aiConsent} colors={{ card: k.card, textPrimary: k.text, textSecondary: k.textFaint, border: k.cardBorder, accent: k.gold }} />
       <KioskModalHost style={s.host}>
         <Pressable
@@ -456,7 +467,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+    </KioskSlideModal>
   );
 }
 

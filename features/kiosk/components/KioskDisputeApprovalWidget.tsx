@@ -117,10 +117,10 @@ export function KioskDisputeApprovalWidget({ active, members, k, isDark }: {
  */
 function DisputeApprovalRow({ c, members, active, k, isDark, isFirst, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal, acknowledgeRecentApproval }: {
   c: ChoreTask; members: FamilyMember[]; active: FamilyMember; k: KioskColors; isDark: boolean; isFirst: boolean;
-  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => Promise<void>;
-  standByApproval: (choreId: string, byParentId: string) => Promise<void>;
-  requestApprovalReversal: (choreId: string, byParentId: string, reason: string) => Promise<void>;
-  coSignReversal: (choreId: string, coSigningParentId: string) => Promise<void>;
+  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => Promise<unknown>;
+  standByApproval: (choreId: string, byParentId: string) => Promise<unknown>;
+  requestApprovalReversal: (choreId: string, byParentId: string, reason: string) => Promise<unknown>;
+  coSignReversal: (choreId: string, coSigningParentId: string) => Promise<unknown>;
   acknowledgeRecentApproval: (choreId: string, byParentId: string) => Promise<void>;
 }) {
   const kid = members.find(m => m.id === c.assignedToId);
@@ -266,7 +266,7 @@ function DisputeApprovalRow({ c, members, active, k, isDark, isFirst, flagApprov
         required
         k={k}
         onClose={() => setReversalOpen(false)}
-        onSubmit={reason => { setReversalOpen(false); requestApprovalReversal(c.id, active.id, reason || 'No reason given'); }}
+        onSubmit={reason => { setReversalOpen(false); requestApprovalReversal(c.id, active.id, (reason ?? '').trim()); }}
       />
     </>
   );

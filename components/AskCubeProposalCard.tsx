@@ -37,16 +37,16 @@ export function MealHero({ imageUrl, emoji, accent, height }: { imageUrl?: strin
 }
 
 const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; accent: string }> = {
-  event:        { label: 'Event draft',      icon: Calendar,      accent: 'primary' },
-  quest:        { label: 'Chore draft',      icon: ClipboardList, accent: 'kid' },
-  grocery:      { label: 'Grocery draft',    icon: ShoppingCart,  accent: 'teal' },
-  meal:         { label: 'Meal draft',       icon: ChefHat,       accent: 'danger' },
-  update_event: { label: 'Update draft',     icon: Clock,         accent: 'primary' },
-  update_chore: { label: 'Update draft',     icon: Clock,         accent: 'kid' },
-  redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'amber' },
-  chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'kid' },
-  cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'danger' },
-  kid_request_action: { label: 'Request draft', icon: HandHeart, accent: 'teal' },
+  event:        { label: 'Event draft',      icon: Calendar,      accent: 'pink' },
+  quest:        { label: 'Chore draft',      icon: ClipboardList, accent: 'pink' },
+  grocery:      { label: 'Grocery draft',    icon: ShoppingCart,  accent: 'pink' },
+  meal:         { label: 'Meal draft',       icon: ChefHat,       accent: 'pink' },
+  update_event: { label: 'Update draft',     icon: Clock,         accent: 'pink' },
+  update_chore: { label: 'Update draft',     icon: Clock,         accent: 'pink' },
+  redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'pink' },
+  chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'pink' },
+  cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'pink' },
+  kid_request_action: { label: 'Request draft', icon: HandHeart, accent: 'pink' },
 };
 
 // Plain-English label per action kind — shown as the card's main line
@@ -194,13 +194,21 @@ export function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onCh
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
 
-  if (!onChange) {
-    // Read-only fallback (e.g. an already-decided/discarded card) — plain
+  // Disable picker if the date is already in the past
+  const isPast = !!dateStr && (() => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [hh, mm] = (timeStr ?? '00:00').split(':').map(Number);
+    const dt = new Date(y, m - 1, d, hh, mm);
+    return dt < new Date();
+  })();
+
+  if (!onChange || isPast) {
+    // Read-only fallback (e.g. an already-decided/discarded card, or past date) — plain
     // text, no picker affordance.
     if (!dateStr) return null;
     return (
-      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-        {fmtDate(dateStr, dateStr)}{timeStr ? ` · ${fmtTime(timeStr, timeStr)}` : ''}
+      <Text style={{ fontSize: TYPO.label, color: isPast ? colors.textTertiary : colors.textSecondary }}>
+        {fmtDate(dateStr, dateStr)}{timeStr ? ` · ${fmtTime(timeStr, timeStr)}` : ''}{isPast ? ' · past' : ''}
       </Text>
     );
   }
@@ -421,48 +429,40 @@ export default function AskCubeProposalCard({
     </View>
   );
 
+  const createLabel = proposal.kind === 'grocery'
+    ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
+    : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update'
+    : proposal.kind === 'redemption' ? 'Redeem'
+    : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
+    : proposal.kind === 'cancel_event' ? 'Cancel event'
+    : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
+    : 'Create';
+
   const Actions = added ? (
-    <View style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.successLight, marginTop: 4 }}>
-      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.success }}>✓ Added</Text>
+    <View style={{ borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+      backgroundColor: colors.success + '18', marginTop: 2 }}>
+      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.success }}>✓ Done</Text>
     </View>
   ) : discarded ? (
-    <View style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.surface, marginTop: 4 }}>
-      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary }}>{discardedLabel ?? 'Discarded'}</Text>
+    <View style={{ borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+      backgroundColor: colors.border + '60', marginTop: 2 }}>
+      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{discardedLabel ?? 'Discarded'}</Text>
     </View>
   ) : (
-    // Live-reported: this card could flip to "created" (toast fired, real
-    // DB write happened) and then visually revert to showing Discard/
-    // Confirm again "randomly after some time" — the parent card's own
-    // pointerEvents:'none' lock (set once added/discarded is true) is a
-    // known-inconsistent guard on its own across RN/iOS versions for
-    // already-mounted nested Pressables. Belt-and-suspenders: these two
-    // buttons now also carry their own explicit `disabled` derived from the
-    // same added/discarded flags, and onPress no-ops defensively even if a
-    // stray tap somehow lands after a decision was already recorded — a
-    // duplicate create/discard can never fire twice regardless of whether
-    // the wrapper-level pointerEvents lock held in a given render.
-    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+    <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
       <Pressable
         onPress={() => { if (!added && !discarded) onDiscard(); }}
         disabled={added || discarded}
-        style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: colors.border,
-          opacity: (added || discarded) ? 0.5 : 1 }}>
+        style={{ flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+          backgroundColor: isDark ? colors.surface : '#FFFFFF',
+          borderWidth: 1, borderColor: colors.border }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
       </Pressable>
       <Pressable
         onPress={() => { if (!added && !discarded) onCreate(); }}
         disabled={added || discarded}
-        style={{ flex: 2, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: accent,
-          opacity: (added || discarded) ? 0.5 : 1 }}>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
-          {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
-            : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update'
-            : proposal.kind === 'redemption' ? 'Redeem'
-            : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
-            : proposal.kind === 'cancel_event' ? 'Cancel event'
-            : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
-            : 'Create'}
-        </Text>
+        style={{ flex: 2, borderRadius: 12, paddingVertical: 11, alignItems: 'center', backgroundColor: accent }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>{createLabel}</Text>
       </Pressable>
     </View>
   );
@@ -473,9 +473,12 @@ export default function AskCubeProposalCard({
   // detail the user was just reviewing and read as the item vanishing
   // outright rather than a recorded decision.
   const cardBase = {
-    marginTop: 8, maxWidth: '90%' as const, backgroundColor: colors.card,
-    borderRadius: 14, borderWidth: 1.5, borderColor: (discarded ? colors.border : accent + '40'), padding: 14, gap: 8,
-    opacity: discarded ? 0.55 : 1,
+    marginTop: 8, maxWidth: '90%' as const,
+    backgroundColor: isDark ? colors.surface : '#F4F3FA',
+    borderRadius: 16, borderWidth: 1.5,
+    borderColor: discarded ? colors.border : (isDark ? accent + '40' : accent + '30'),
+    padding: 16, gap: 10,
+    opacity: discarded ? 0.5 : 1,
   };
   // Was discarded-only — an ADDED card's date/time picker and lead-time
   // chips stayed fully interactive after confirmation, letting the user
@@ -494,8 +497,11 @@ export default function AskCubeProposalCard({
     // compact grid card above — a no-op fallback instead of `disabled`.
     const handleExpand = onExpand ?? (() => {});
     return (
-      <View style={{ marginTop: 8, maxWidth: '90%', backgroundColor: colors.card,
-        borderRadius: 16, borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
+      <View style={{ marginTop: 8, maxWidth: '90%',
+        backgroundColor: isDark ? colors.surface : '#F4F3FA',
+        borderRadius: 16, borderWidth: 1.5,
+        borderColor: (discarded ? colors.border : accent + '30'),
+        overflow: 'hidden', opacity: discarded ? 0.5 : 1 }}>
         {/* Real dish photo when the model supplied one, else the emoji hero.
             The whole card (not just the hero band) opens the recipe detail
             sheet — a bigger, more obvious tap target than the image alone. */}

@@ -6,17 +6,16 @@
  *  - Supabase Realtime subscription per channel
  *  - AsyncStorage write-ahead cache for offline compose queue
  */
+import { showToast } from '@/components/AppToast';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import {
   encryptMessage, decryptMessage,
   buildBlindIndex, hashQuery,
-  getDeviceId, encryptForDevices, decryptFromDevice,
-  RECOVERY_DEVICE_ID,
+  encryptWithFamilyKey, decryptWithFamilyKey,
 } from '@/lib/chatCrypto';
-import { ensureDeviceRegistered, getUniqueWrapTargets } from '@/lib/deviceRegistry';
-import { isFeatureEnabled } from '@/lib/featureFlags';
+import { isFamilyKeyStale } from '@/lib/familyKeyRotation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,10 +98,20 @@ interface DBRow {
 const PAGE_SIZE    = 100;
 const OLDER_SIZE   = 50;
 const OFFLINE_KEY  = '@familycube_chat_offline_v1';
+// Cache the last 50 messages per channel so the inbox preview and thread
+// open instantly from device storage, then refresh from server in the background.
+const CHANNEL_CACHE_PREFIX = '@familycube_chat_channel_v1:';
+const CHANNEL_CACHE_LIMIT  = 50;
 
 // Global unread-badge subscription state — see ensureGlobalUnreadSubscription.
 let _globalUnreadSub: ReturnType<typeof supabase.channel> | null = null;
 let _globalUnreadMemberId: string | null = null;
+/** True when this channel's thread is on screen right now (a push/toast for it would just be noise). */
+export function isChatChannelOpen(channelId: string | undefined | null): boolean {
+  return !!channelId && !!_openChannelId && (channelId === _openChannelId || toBareChannelId(channelId) === _openChannelId);
+}
+let _clearsFor: string | null = null;
+let _dmPollTimer: ReturnType<typeof setInterval> | null = null;
 let _openChannelId: string | null = null;
 
 // ─── DM channel-id fix (critical privacy bug) ──────────────────────────────
@@ -287,7 +296,7 @@ const GROUP_CHANNEL_NAMES: Record<string, string> = {
   parents: '#parents-vault',
   seniors_a: 'Grandparents',
   seniors_b: 'Grandparents',
-  seniors_all: '#the-grand-squad',
+  seniors_all: 'Grandparent squad',
 };
 const _ensuredGroupChannels = new Set<string>();
 async function ensureGroupChannelRow(channelId: string, senderId: string): Promise<void> {
@@ -328,75 +337,26 @@ async function ensureGroupChannelRow(channelId: string, senderId: string): Promi
   }
 }
 
-// Device registration/directory lookup moved to lib/deviceRegistry.ts so
-// lib/locationTracking.ts (location's own per-device envelope) can reuse
-// the exact same logic instead of duplicating it. Entirely inert while
-// per_device_e2e is off.
-
 /**
- * Resolve the plaintext for one message. When per_device_e2e is on and this
- * device has its own chat_message_keys row for the message, decrypt via the
- * multi-device envelope (looking up the sender's public key to re-derive
- * the ECDH shared secret). Otherwise falls back to the legacy single
- * shared-key decrypt — covers both "flag is off" and "this is an older
- * message sent before the flag was enabled" without a separate migration.
+ * Resolve the plaintext for one message using the shared family key
+ * (lib/chatCrypto.ts's decryptWithFamilyKey, which itself falls back
+ * through any older codes this device has been given). Falls back to the
+ * legacy single shared-key decrypt only for messages written before this
+ * scheme existed, or if this device has no family key at all yet.
  */
 async function resolveMessageText(row: DBRow): Promise<string> {
   const cipher = row.ciphertext ?? row.text ?? '';
-  if (!isFeatureEnabled('per_device_e2e')) return decryptMessage(cipher);
+  const { useFamilyStore } = require('./familyStore');
+  const familyId = (useFamilyStore.getState().members as any[]).find((m: any) => m.id === row.sender_id)?.familyId
+    ?? useFamilyStore.getState().activeFamilyId;
+  if (!familyId) return decryptMessage(cipher);
   try {
-    const deviceId = await getDeviceId();
-    let { data: keyRow } = await supabase
-      .from('chat_message_keys')
-      .select('wrapped_key')
-      .eq('message_id', row.id)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-    // A brand-new device has its OWN real identity registered (only new
-    // messages sent after that get wrapped for it), but a message from
-    // BEFORE this device existed was only ever wrapped for the sentinel
-    // 'recovery' device_id (backfillChatRecoveryWraps) — never for this
-    // device's own real device_id, since that id didn't exist yet when
-    // the backfill ran. decryptFromDevice already tries the recovered
-    // keypair before falling back to the real identity, but that's moot
-    // if the envelope lookup above never finds a row to decrypt in the
-    // first place. [live-reported: fresh Android install, entered the
-    // family recovery code, chat still "wrong key or corrupted" — traced
-    // to exactly this: 154 messages wrapped for 'recovery', 0 of them
-    // ever looked up because the query only checked this device's own id]
-    if (!keyRow) {
-      const { data: recoveryKeyRow } = await supabase
-        .from('chat_message_keys')
-        .select('wrapped_key')
-        .eq('message_id', row.id)
-        .eq('device_id', RECOVERY_DEVICE_ID)
-        .maybeSingle();
-      keyRow = recoveryKeyRow;
-    }
-    if (!keyRow || !row.sender_device_id) return decryptMessage(cipher); // legacy message, no envelope for this device
-    // device_keys is one row per (family, device, member) — a shared
-    // device (parent's phone also used by PIN-switched kids) has one row
-    // per member who's used it, all with the same device_id. Scope by the
-    // message's actual sender too, not just device_id, or this can match
-    // more than one row and .maybeSingle() throws.
-    const { data: senderDevice } = await supabase
-      .from('device_keys')
-      .select('public_key')
-      .eq('device_id', row.sender_device_id)
-      .eq('member_id', row.sender_id)
-      .maybeSingle();
-    if (!senderDevice) return decryptMessage(cipher);
-    // familyId matters here so a device that recovered THIS family's
-    // passcode (a family-scoped key, see chatCrypto.ts's installRecoveredKeyPair
-    // doc) tries that recovered key rather than only ever trying this
-    // device's own real identity — without it, a recovered device could
-    // never actually read what it just recovered.
-    const { useFamilyStore } = require('./familyStore');
-    const familyId = (useFamilyStore.getState().members as any[]).find(m => m.id === row.sender_id)?.familyId
-      ?? useFamilyStore.getState().activeFamilyId;
-    return decryptFromDevice(cipher, keyRow.wrapped_key, senderDevice.public_key, familyId);
-  } catch (e: any) {
-    console.warn('[chatStore] resolveMessageText envelope decrypt failed, falling back', e?.message ?? e);
+    return await decryptWithFamilyKey(familyId, cipher);
+  } catch {
+    // No family key set on this device yet — fall back to the legacy
+    // decrypt rather than throwing out of a message-list render; the
+    // top-level chat lock screen (isFamilyKeyStale) is what actually
+    // prompts the user to enter a code, not this per-message call site.
     return decryptMessage(cipher);
   }
 }
@@ -453,6 +413,8 @@ interface ChatState {
   channelState: (id: string) => ChannelState;
 
   loadChannel:  (channelId: string) => Promise<void>;
+  /** Cheap inbox preview: fetches and decrypts only the newest message, no subscription, no full history. */
+  loadChannelPreview: (channelId: string) => Promise<void>;
   loadOlder:    (channelId: string) => Promise<void>;
   unsubscribe:  (channelId: string) => void;
   loadLastActivity: (channelIds: string[]) => Promise<void>;
@@ -485,6 +447,11 @@ interface ChatState {
   ) => Promise<string | undefined>;
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
+  // Marks a couple_proposal card as answered in place (system_event.payload.response),
+  // so its Confirm/Can't-tonight buttons disappear for good — without this the card
+  // stayed answerable forever and a double-tap (or two taps across a slow network
+  // round-trip) posted two separate "Confirmed: ..." reply messages for one proposal.
+  respondToProposal: (channelId: string, messageId: string, response: 'confirmed' | 'declined') => Promise<boolean>;
   deleteMessage: (channelId: string, messageId: string) => Promise<void>;
   // Bulk-clears every message in one channel — RLS-safe as-is (any
   // participant of the channel may already delete any message in it, per
@@ -492,6 +459,10 @@ interface ChatState {
   // policy needed). Currently only exposed in the UI for the Just Us
   // channel, per explicit request.
   clearChannel:  (channelId: string) => Promise<void>;
+  /** Hides this conversation's history up to now for the signed-in member only; nobody else's history changes. */
+  clearChannelForMe: (channelId: string, memberId: string) => Promise<void>;
+  loadClears: (memberId: string) => Promise<void>;
+  clearedAt: Record<string, string>;
   // Re-sends a failed message (status: 'failed') using the args captured
   // at failure time — the tap-to-retry counterpart to the automatic
   // background retry flushOfflineQueue already does.
@@ -539,6 +510,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastActivity: {},
   readReceipts: {},
   unreadCounts: {},
+  clearedAt: {},
 
   channelState: (id) => get().channels[id] ?? emptyChannel(),
 
@@ -674,7 +646,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // Lets ChatScreen tell the global unread listener which channel is
   // currently open/visible, so a message arriving on it doesn't flash the
   // badge on before markChannelRead's own zero-out lands a moment later.
-  setOpenChannelId: (channelId) => { _openChannelId = channelId; },
+  setOpenChannelId: (channelId) => {
+    _openChannelId = channelId;
+    // Realtime evaluates row-level security with no per-request identity, so on a shared device (kiosk, or a
+    // phone where people PIN-switch) it can silently drop DM inserts for the person actually using it. While a DM
+    // is open, also pull the latest page every few seconds and merge anything new; harmless when realtime works.
+    if (_dmPollTimer) { clearInterval(_dmPollTimer); _dmPollTimer = null; }
+    if (channelId && (channelId.startsWith('dm_') || channelId.startsWith('couple_'))) {
+      const poll = async () => {
+        try {
+          const { data } = await supabase.from('chat_messages').select('*').eq('channel_id', channelId)
+            .order('created_at', { ascending: false }).limit(20);
+          const known = new Set((get().channels[channelId]?.messages ?? []).map(m => m.id));
+          const fresh = ((data ?? []) as DBRow[]).filter(r => !known.has(r.id)).reverse();
+          for (const r of fresh) get()._upsertMessage(channelId, await rowToMessage(r));
+        } catch { /* next tick retries */ }
+      };
+      _dmPollTimer = setInterval(poll, 4000);
+    }
+  },
 
   // Per-message read-receipt rows for the messages currently on screen —
   // drives the avatar stack under a group message. Also inserts a receipt
@@ -717,11 +707,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Load latest page + subscribe ──────────────────────────────────────────
 
+  loadChannelPreview: async (channelId) => {
+    // Already have messages (opened before, or full-loaded): nothing to preview.
+    if ((get().channels[channelId]?.messages.length ?? 0) > 0) return;
+    try {
+      const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
+      const { data } = await supabase.from('chat_messages').select('*').eq('channel_id', dbChannelId)
+        .order('created_at', { ascending: false }).limit(1);
+      const row = (data ?? [])[0] as DBRow | undefined;
+      if (!row) return;
+      get()._upsertMessage(channelId, await rowToMessage(row));
+    } catch { /* the inbox row just shows no preview */ }
+  },
+
   loadChannel: async (channelId) => {
+    const meNow = (() => { try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().activeMemberId as string | null; } catch { return null; } })();
+    if (meNow && _clearsFor !== meNow) {
+      _clearsFor = meNow;
+      await get().loadClears(meNow).catch(() => { _clearsFor = null; });
+    }
     const current = get().channels[channelId];
     // Already subscribed — skip entirely (re-renders must not re-subscribe)
     if (get()._subs[channelId]) return;
     if (current?.loading) return;
+
+    // Seed from device cache immediately so inbox previews + thread are
+    // instant, then fetch server in the background and replace.
+    const cacheKey = CHANNEL_CACHE_PREFIX + channelId;
+    try {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const cachedMsgs: ChatMessage[] = JSON.parse(cached);
+        set(s => ({
+          channels: {
+            ...s.channels,
+            [channelId]: { ...(s.channels[channelId] ?? emptyChannel()), messages: cachedMsgs, loading: true },
+          },
+        }));
+      }
+    } catch { /* cache miss is fine */ }
 
     // UI state (channels, _subs) stays keyed by the bare channelId
     // throughout this function — only the actual DB read/write/realtime-
@@ -742,7 +766,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (error) throw error;
 
       const rows   = (data ?? []) as DBRow[];
-      const msgs   = await Promise.all(rows.map(rowToMessage));
+      const cutAt = get().clearedAt[channelId];
+      const msgs   = (await Promise.all(rows.map(rowToMessage))).filter(m => !cutAt || m.timestamp > cutAt);
       msgs.reverse(); // oldest first for display
 
       const hasMore   = rows.length === PAGE_SIZE;
@@ -754,6 +779,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [channelId]: { ...(s.channels[channelId] ?? emptyChannel()), messages: msgs, hasMore, oldestTs, loading: false },
         },
       }));
+
+      // Persist latest CHANNEL_CACHE_LIMIT messages to device storage for
+      // next-open instant preview. Async, non-blocking, failures are silent.
+      AsyncStorage.setItem(cacheKey, JSON.stringify(msgs.slice(-CHANNEL_CACHE_LIMIT))).catch(() => {});
 
       // Subscribe to new messages on this channel
       if (!get()._subs[channelId]) {
@@ -897,6 +926,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   reset: () => {
+    _clearsFor = null;
     for (const sub of Object.values(get()._subs)) {
       if (sub) supabase.removeChannel(sub as any);
     }
@@ -966,46 +996,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     const blind_index  = await buildBlindIndex(text);
 
-    // Per-device envelope (feature-flagged, see lib/chatCrypto.ts's design
-    // doc) — encrypt once with a fresh session key, wrap that key once per
-    // recipient device. Falls back to the legacy single shared-key encrypt
-    // when the flag is off, so this is fully inert until explicitly enabled.
+    // Shared family key (lib/chatCrypto.ts's encryptWithFamilyKey) —
+    // throws if this device has never been given the current family code,
+    // which the caller must treat as "blocked, show the key-entry lock
+    // screen" rather than silently falling back (falling back to the
+    // legacy single-key scheme here would produce ciphertext no other
+    // device could read, the exact bug this replacement exists to fix).
+    const { useFamilyStore } = require('./familyStore');
+    const members: any[] = useFamilyStore.getState().members;
+    const sender = members.find(m => m.id === senderId);
+    const familyId = sender?.familyId;
+    if (!familyId) throw new Error('Could not determine family for this message.');
+    // A device without the current family code can't encrypt. That is an expected state, not a crash:
+    // show a visible alert and send nothing (the chat tab also shows a persistent banner for it).
     let ciphertext: string;
-    let senderDeviceId: string | undefined;
-    let wrappedKeysToInsert: { deviceId: string; wrappedKey: string }[] = [];
-    if (isFeatureEnabled('per_device_e2e')) {
-      try {
-        const { useFamilyStore } = require('./familyStore');
-        const members: any[] = useFamilyStore.getState().members;
-        const sender = members.find(m => m.id === senderId);
-        const familyId = sender?.familyId;
-        if (familyId) {
-          await ensureDeviceRegistered(familyId, senderId);
-          // One entry per physical device, not per (device, profile) pair —
-          // chat_message_keys is keyed (message_id, device_id) with no
-          // column for "which profile," so a device shared across more
-          // than one member profile produced multiple wrapped-key rows
-          // sharing one device_id for the SAME message, and the insert
-          // below hit Postgres' "ON CONFLICT DO UPDATE command cannot
-          // affect row a second time" — confirmed live as chat_message_keys
-          // sitting at zero rows despite real messages being sent, for any
-          // family with even one shared device (see getUniqueWrapTargets'
-          // own doc for the full history).
-          const directory = await getUniqueWrapTargets(familyId);
-          const myDeviceId = await getDeviceId();
-          senderDeviceId = myDeviceId;
-          const envelope = await encryptForDevices(text, directory, familyId);
-          ciphertext = envelope.ciphertext;
-          wrappedKeysToInsert = envelope.wrappedKeys;
-        } else {
-          ciphertext = await encryptMessage(text);
-        }
-      } catch (e: any) {
-        console.warn('[chatStore] per-device envelope encrypt failed, falling back to legacy', e?.message ?? e);
-        ciphertext = await encryptMessage(text);
+    try {
+      if (await isFamilyKeyStale(familyId)) {
+        throw new Error('Your family security code is out of date. Enter the new code to send messages.');
       }
-    } else {
-      ciphertext = await encryptMessage(text);
+      ciphertext = await encryptWithFamilyKey(familyId, text);
+    } catch (e: any) {
+      const noKey = /No family key|security code/i.test(e?.message ?? '');
+      showToast(noKey ? 'This device needs the family security code before it can send messages. Ask the family admin for it.' : (e?.message ?? 'Could not send the message.'), noKey ? 'warning' : 'error');
+      return undefined;
     }
 
     // Generate UUID client-side — don't rely on DB default in case column was added later
@@ -1038,7 +1051,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id:          msgId,
         channel_id:  dbChannelId,
         sender_id:   senderId,
-        sender_device_id: senderDeviceId ?? null,
         text:        ciphertext,
         blind_index,
         timestamp:   now,
@@ -1070,12 +1082,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       const { error } = await supabase.from('chat_messages').insert(row);
       if (error) throw error;
-      if (wrappedKeysToInsert.length > 0) {
-        const { error: keysError } = await supabase.from('chat_message_keys').insert(
-          wrappedKeysToInsert.map(k => ({ message_id: msgId, device_id: k.deviceId, wrapped_key: k.wrappedKey })),
-        );
-        if (keysError) console.warn('[chatStore] chat_message_keys insert failed', keysError.message);
-      }
       // Fire mention-notify if message contains @mentions.
       //
       // Real, pre-existing bug found here: this used to match /@(\w+)/g —
@@ -1233,6 +1239,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get()._upsertMessage(channelId, { ...msg, reactions });
   },
 
+  respondToProposal: async (channelId, messageId, response) => {
+    const ch  = get().channels[channelId];
+    const msg = ch?.messages.find(m => m.id === messageId);
+    if (!msg?.systemEvent || msg.systemEvent.type !== 'couple_proposal') return false;
+    // Already answered (e.g. a second tap that landed before the first
+    // write's optimistic update re-rendered) — refuse instead of
+    // overwriting the first response or posting a second reply.
+    if (msg.systemEvent.payload?.response) return false;
+
+    const systemEvent = { ...msg.systemEvent, payload: { ...msg.systemEvent.payload, response } };
+    const { error } = await supabase
+      .from('chat_messages')
+      .update({ system_event: systemEvent })
+      .eq('id', messageId);
+    if (error) {
+      console.warn('[chatStore] respondToProposal error', error);
+      return false;
+    }
+    get()._upsertMessage(channelId, { ...msg, systemEvent });
+    return true;
+  },
+
   // ── Delete ────────────────────────────────────────────────────────────────
 
   deleteMessage: async (channelId, messageId) => {
@@ -1244,6 +1272,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
     get()._removeMessage(channelId, messageId);
+  },
+
+  loadClears: async (memberId) => {
+    const { data } = await supabase.from('member_chat_clears').select('channel_id, cleared_at').eq('member_id', memberId);
+    const map: Record<string, string> = {};
+    for (const r of (data ?? []) as any[]) map[toBareChannelId(r.channel_id)] = r.cleared_at;
+    set({ clearedAt: map });
+  },
+
+  clearChannelForMe: async (channelId, memberId) => {
+    const now = new Date().toISOString();
+    const dbChannelId = toDbChannelId(channelId, currentFamilyIdForChat());
+    const { error } = await supabase.from('member_chat_clears')
+      .upsert({ member_id: memberId, channel_id: dbChannelId, cleared_at: now }, { onConflict: 'member_id,channel_id' });
+    if (error) throw error;
+    set(s => {
+      const ch = s.channels[channelId];
+      return {
+        clearedAt: { ...s.clearedAt, [channelId]: now },
+        unreadCounts: { ...s.unreadCounts, [channelId]: 0 },
+        channels: ch ? { ...s.channels, [channelId]: { ...ch, messages: [] } } : s.channels,
+      };
+    });
+    get().markChannelRead(channelId, memberId).catch(() => {});
+    AsyncStorage.removeItem(CHANNEL_CACHE_PREFIX + channelId).catch(() => {});
   },
 
   clearChannel: async (channelId) => {
@@ -1374,6 +1427,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Internal helpers ──────────────────────────────────────────────────────
 
   _upsertMessage: (channelId, msg) => {
+    const cut = get().clearedAt[channelId];
+    if (cut && msg.timestamp <= cut) return; // hidden by this member's "clear chat for me"
     set(s => {
       const ch   = s.channels[channelId] ?? emptyChannel();
       const msgs = ch.messages.filter(m => m.id !== msg.id);

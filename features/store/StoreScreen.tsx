@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, Pressable, StyleSheet, Animated,
   TextInput, Alert, Platform, Modal, KeyboardAvoidingView, Keyboard, TouchableOpacity,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
@@ -15,14 +13,40 @@ import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
-import { Flame } from 'lucide-react-native';
+import { Flame, Coins, Gift } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { showToast } from '@/components/AppToast';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import { fmtDateShort } from '@/lib/dates';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import FullPageOverlay from '@/components/FullPageOverlay';
+
+// ─── "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) ──────────
+// See features/vault/tabs/SchoolHomeScreen.tsx's own comment for the full
+// rationale. PAGE_BG/FORM_CARD_BG etc. used to differ slightly between the
+// browse grid and the field-card forms below — unified to one set now that
+// both follow the same warm-cream-canvas rhythm.
+const PAGE_BG   = '#ECE6DE';
+const TITLE_CLR = '#0D1210';
+const BODY_CLR  = '#3D4D47';
+const BODY_CLR_LIGHT = '#4E5C56';
+const BORDER    = '#DDD6CC';
+const AMBER_TXT = '#B5720A';
+const BLUE_BTN  = '#3B5FE4';
+// Muted blue — same CTA_BLUE used on Kid Hub's quest CTAs and the Rewards
+// Dashboard's Redeem button, kept local here for the same no-brand-token
+// reason [live-requested: "muted blue color"].
+const CTA_BLUE  = '#5B7FA6';
+const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 } as const;
+
+const FORM_TITLE_CLR = TITLE_CLR;
+const FORM_BODY_CLR  = BODY_CLR;
+const FORM_BLUE      = BLUE_BTN;
+const FORM_BORDER    = BORDER;
+const FORM_CARD_BG   = '#FFFFFF';
+const FORM_SURFACE   = '#F0EDE6';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 // Each category maps to a brand token (not raw hex) so the badge always
@@ -44,7 +68,11 @@ const CAT_LABELS: Record<string, string> = {
 // unmapped) instead cycles through the brand palette by grid position —
 // real categories (Treats/Experiences/Screen Time/Privileges) stay fixed
 // since those already carry distinct meaning.
-const SPECIAL_CYCLE = ['danger', 'accent', 'teal', 'amber'] as const;
+// Only one warm/terracotta slot (amber) — was 'danger' + 'amber' (half the
+// cycle), which painted most Special-category perks (the most common
+// category) in orange/terracotta tones [live-reported: "perk store text
+// and icons are terracotta"].
+const SPECIAL_CYCLE = ['accent', 'teal', 'amber', 'info'] as const;
 
 function categoryAccent(category: string | undefined, colors: any, index = 0): string {
   const map: Record<string, string> = {
@@ -231,99 +259,159 @@ function PerkCard({ reward, index = 0, myCoins, myMaxAffordable, isKid, isParent
   );
 }
 
-// ─── Perk detail sheet — read-only, Edit opens the real form ──────────────────
+// ─── Perk detail screen — read-only, Edit opens the real form ─────────────────
 // Live-requested: a plain tap on a perk should show its details (including
 // who last changed it and when) without immediately dropping the viewer
 // into edit mode — Edit is a deliberate second step, not the only option.
-function PerkDetailSheet({ reward, allMembers, colors, isDark, isParent, onClose, onEdit }: {
-  reward: Reward | null; allMembers: FamilyMember[]; colors: any; isDark: boolean; isParent: boolean;
-  onClose: () => void; onEdit: (r: Reward) => void;
+// Full-page (FullPageOverlay), not a bottom sheet — same detail-then-edit
+// rhythm as features/vault/tabs/homeowner/NoteDetailSheet.tsx
+// [live-requested: "Add edit details forms should be full pages"]. Rebuilt
+// onto School's flat FieldCard rhythm — was pill badges + a loose text
+// block, now grouped bordered field cards matching PerkModal/School's own
+// detail screens [live-requested: "Detail page not in the rhythm of figma"].
+function DetailField({ label, value, colors, isDark }: {
+  label: string; value: string; colors: any; isDark: boolean;
 }) {
-  const updater = reward?.updatedById ? allMembers.find(m => m.id === reward.updatedById) : undefined;
-  const creator = reward?.createdById ? allMembers.find(m => m.id === reward.createdById) : undefined;
   return (
-    <AppBottomSheet visible={!!reward} onClose={onClose} title={reward?.title ?? 'Perk'}
-      subtitle={reward?.category} minHeight="40%" maxHeight="70%"
-      footer={isParent && reward ? (
-        <Pressable onPress={() => onEdit(reward)}
-          style={{ backgroundColor: colors.teal, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Edit Perk</Text>
-        </Pressable>
-      ) : undefined}>
-      {reward && (
-        <View style={{ gap: 14 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: colors.amberLight,
-              alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 26 }}>{reward.emoji ?? '🎁'}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>{reward.title}</Text>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.amber, marginTop: 2 }}>{reward.cost} Coins 🪙</Text>
-            </View>
-          </View>
-
-          {reward.description ? (
-            <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>{reward.description}</Text>
-          ) : null}
-
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: reward.available ? colors.success : colors.textTertiary }}>
-                {reward.available ? 'Available' : 'Unavailable'}
-              </Text>
-            </View>
-            {typeof reward.stock === 'number' && (
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>{reward.stock} in stock</Text>
-              </View>
-            )}
-            {reward.requiresApproval && (
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.surface }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Needs approval</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Last-updated tracking — the actual ask: "when parent changes
-              the perk, we should have the last updated by and date/time on
-              that card." Falls back to created info when never edited. */}
-          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>
-            {reward.updatedAt ? (
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                Last updated by {updater?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.updatedAt.slice(0, 10))} at{' '}
-                {new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-              </Text>
-            ) : (
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>Not edited since it was created</Text>
-            )}
-            {reward.createdAt && (
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-                Added by {creator?.name?.split(' ')[0] ?? 'a parent'} · {fmtDateShort(reward.createdAt.slice(0, 10))}
-              </Text>
-            )}
-          </View>
-        </View>
-      )}
-    </AppBottomSheet>
+    <View style={{ borderWidth: isDark ? 1 : 0, borderColor: colors.border, borderRadius: 16,
+      backgroundColor: isDark ? colors.card : FORM_CARD_BG, paddingHorizontal: 16, paddingVertical: 14,
+      ...(!isDark ? CARD_SHADOW : {}) }}>
+      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : FORM_BODY_CLR, marginBottom: 3 }}>{label}</Text>
+      <Text style={{ fontSize: 15, color: isDark ? colors.textPrimary : FORM_TITLE_CLR, lineHeight: 20 }}>{value}</Text>
+    </View>
   );
 }
 
-// ─── Create / Edit Perk Modal ─────────────────────────────────────────────────
+function PerkDetailScreen({ reward, allMembers, colors, isDark, isParent, onClose, onEdit }: {
+  reward: Reward | null; allMembers: FamilyMember[]; colors: any; isDark: boolean; isParent: boolean;
+  onClose: () => void; onEdit: (r: Reward) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const updater = reward?.updatedById ? allMembers.find(m => m.id === reward.updatedById) : undefined;
+  const creator = reward?.createdById ? allMembers.find(m => m.id === reward.createdById) : undefined;
+  const canvas = isDark ? colors.background : PAGE_BG;
+  const titleC = isDark ? colors.textPrimary : FORM_TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : FORM_BODY_CLR;
+  const border = isDark ? colors.border : FORM_BORDER;
+
+  return (
+    <FullPageOverlay visible={!!reward} onDismiss={onClose} zIndex={65}>
+      {(requestAnimatedClose) => (
+      <View style={{ flex: 1, backgroundColor: canvas }}>
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 12 }}>
+          {reward && (
+            <TouchableOpacity onPress={requestAnimatedClose} activeOpacity={0.7}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+                alignItems: 'center', justifyContent: 'center', ...(!isDark ? CARD_SHADOW : {}) }}>
+                <Text style={{ fontSize: 20 }}>{reward.emoji ?? '🎁'}</Text>
+              </View>
+              <Text style={{ fontSize: 26, fontWeight: '700', color: titleC, flex: 1, lineHeight: 32 }}>{reward.title}</Text>
+            </TouchableOpacity>
+          )}
+
+          {reward && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              {reward.category ? (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.pinkLight : '#EDE4F7' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.pink : '#6A4FBF' }}>{reward.category}</Text>
+                </View>
+              ) : null}
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: reward.available ? (isDark ? colors.tealLight : '#DCF0E6') : (isDark ? colors.surface : FORM_SURFACE) }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: reward.available ? (isDark ? colors.teal : '#1B7A54') : bodyC }}>
+                  {reward.available ? 'Available' : 'Unavailable'}
+                </Text>
+              </View>
+              {reward.requiresApproval && (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isDark ? colors.amberLight : '#FDF3D8' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.amber : AMBER_TXT }}>Needs approval</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {reward && (
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 48, gap: 12 }}>
+
+            <DetailField label="Coin cost" value={`${reward.cost} coins 🪙`} colors={colors} isDark={isDark} />
+
+            {reward.description ? (
+              <DetailField label="Description" value={reward.description} colors={colors} isDark={isDark} />
+            ) : null}
+
+            {typeof reward.stock === 'number' ? (
+              <DetailField label="Stock" value={`${reward.stock} in stock`} colors={colors} isDark={isDark} />
+            ) : null}
+
+            <DetailField
+              label="Last updated"
+              value={reward.updatedAt
+                ? `${updater?.name?.split(' ')[0] ?? 'a parent'} · ${fmtDateShort(reward.updatedAt.slice(0, 10))} at ${new Date(reward.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                : 'Not edited since it was created'}
+              colors={colors} isDark={isDark}
+            />
+
+            {reward.createdAt && (
+              <DetailField
+                label="Added"
+                value={`${creator?.name?.split(' ')[0] ?? 'a parent'} · ${fmtDateShort(reward.createdAt.slice(0, 10))}`}
+                colors={colors} isDark={isDark}
+              />
+            )}
+
+            {isParent && (
+              <TouchableOpacity onPress={() => onEdit(reward)}
+                style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: CTA_BLUE, marginTop: 4 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Edit perk</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        )}
+      </View>
+      )}
+    </FullPageOverlay>
+  );
+}
+
+// ─── Create / Edit Perk form — School's flat field-card rhythm ────────────────
+// (SchoolHomeScreen.tsx/CreateScheduleScreen.tsx): bordered flat cards, no
+// shadows, labeled rows, blue fill action button [live-requested: "make
+// rewards module similar to school ... also forms too"].
 
 const CATEGORIES = ['Treats', 'Experiences', 'Screen Time', 'Privileges', 'Special'];
 const EMOJIS = ['🎮','🎬','🍕','🎂','🏖️','🎪','📱','🛍️','🎁','⭐','🏆','🎵','🎨','🎯','🚀'];
 
-function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
-  visible: boolean; editing?: Reward | null; colors: any;
+function FieldCard({ label, children, colors, isDark }: {
+  label: string; children: React.ReactNode; colors: any; isDark: boolean;
+}) {
+  return (
+    <View style={{ borderWidth: 1, borderColor: isDark ? colors.border : FORM_BORDER, borderRadius: 14,
+      backgroundColor: isDark ? colors.card : FORM_CARD_BG, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : FORM_BODY_CLR, marginBottom: 3 }}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function PerkModal({ visible, editing, colors, isDark, onClose, onSave, onDelete }: {
+  visible: boolean; editing?: Reward | null; colors: any; isDark: boolean;
   onClose: () => void; onSave: (data: any) => void; onDelete?: (r: Reward) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [name,  setName]  = useState('');
   const [desc,  setDesc]  = useState('');
   const [cost,  setCost]  = useState('50');
   const [emoji, setEmoji] = useState('🎁');
   const [cat,   setCat]   = useState('Special');
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
+
+  const canvas = isDark ? colors.background : FORM_CARD_BG;
+  const titleC = isDark ? colors.textPrimary : FORM_TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : FORM_BODY_CLR;
+  const border = isDark ? colors.border : FORM_BORDER;
+  const cardBg = isDark ? colors.card : FORM_CARD_BG;
 
   useEffect(() => {
     if (visible) {
@@ -335,117 +423,128 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
     }
   }, [visible, editing]);
 
-  const submit = () => {
-    if (!name.trim()) return;
-    onSave({ title: name.trim(), description: desc.trim() || undefined,
-      cost: parseInt(cost) || 50, emoji, category: cat });
-    onClose();
-  };
-
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <FullPageOverlay visible={visible} onDismiss={onClose} zIndex={70}>
+      {(requestAnimatedClose) => {
+        const submit = () => {
+          if (!name.trim()) { showToast('Perk title is required'); return; }
+          onSave({ title: name.trim(), description: desc.trim() || undefined,
+            cost: parseInt(cost) || 50, emoji, category: cat });
+          requestAnimatedClose();
+        };
+        return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={withAndroidShadowFix({ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card,
-            borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 })}>
-
-            {/* Drag handle */}
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
-
-            {/* Fixed header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <Text style={{ flex: 1, fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-                {editing ? 'Edit Perk' : 'Create Custom Perk'}
-              </Text>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-            <Text style={[s.label, { color: colors.textSecondary }]}>PERK TITLE</Text>
-            <TextInput value={name} onChangeText={setName}
-              placeholder="e.g. Movie Night Choice"
-              placeholderTextColor={colors.textTertiary}
-              style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                backgroundColor: colors.surface }]} />
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.label, { color: colors.textSecondary }]}>COIN COST</Text>
-                <TextInput value={cost} onChangeText={setCost} keyboardType="number-pad"
-                  style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                    backgroundColor: colors.surface, marginBottom: 0 }]} />
-              </View>
-            </View>
-
-            <Text style={[s.label, { color: colors.textSecondary, marginTop: 10 }]}>CATEGORY</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {CATEGORIES.map(c => (
-                  <Pressable key={c} onPress={() => setCat(c)}
-                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1.5,
-                      backgroundColor: cat === c ? colors.primary + '20' : colors.surface,
-                      borderColor: cat === c ? colors.primary : colors.border }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700',
-                      color: cat === c ? colors.primary : colors.textSecondary }}>{c}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-
-            <Text style={[s.label, { color: colors.textSecondary }]}>DESCRIPTION (optional)</Text>
-            <TextInput value={desc} onChangeText={setDesc} placeholder="Brief description…"
-              placeholderTextColor={colors.textTertiary}
-              style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                backgroundColor: colors.surface }]} />
-
-            <Text style={[s.label, { color: colors.textSecondary }]}>EMOJI ICON</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {EMOJIS.map(e => (
-                  <Pressable key={e} onPress={() => setEmoji(e)}
-                    style={[s.emojiBtn, {
-                      backgroundColor: emoji === e ? colors.primary + '25' : colors.surface,
-                      borderColor: emoji === e ? colors.primary : colors.border,
-                    }]}>
-                    <Text style={{ fontSize: 20 }}>{e}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-            </ScrollView>
-
-            {/* Fixed footer */}
-            <View style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: 10 }}>
-              <Pressable onPress={submit}
-                style={[s.submitBtn, { backgroundColor: name.trim() ? colors.teal : colors.border }]}>
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
-                  {editing ? 'Save Changes' : 'Publish Perk to Family Store'}
-                </Text>
-              </Pressable>
-              {editing && onDelete && (
-                <Pressable onPress={() => onDelete(editing)}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>
-                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                  <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '700' }}>Delete Perk</Text>
-                </Pressable>
-              )}
-            </View>
+        <View style={{ flex: 1, backgroundColor: canvas }}>
+          {/* Header */}
+          <View style={{ backgroundColor: canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · REWARDS" title={editing ? 'Edit Perk' : 'New Perk'}
+              subtitle={editing ? 'Update perk details below.' : 'Build a new reward for your family.'}
+              accent="amber" Icon={Gift} onTitlePress={requestAnimatedClose} topInset={insets.top} />
           </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="always"
+            onScrollBeginDrag={Keyboard.dismiss}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 48, gap: 12 }}
+            style={{ flex: 1, backgroundColor: canvas }}>
+
+            <FieldCard label="Perk title" colors={colors} isDark={isDark}>
+              <TextInput value={name} onChangeText={setName}
+                placeholder="e.g. Movie Night Choice"
+                placeholderTextColor="#C0C7D4"
+                style={{ fontSize: 15, color: titleC, padding: 0 }} />
+            </FieldCard>
+
+            <FieldCard label="Coin cost" colors={colors} isDark={isDark}>
+              <TextInput value={cost} onChangeText={setCost} keyboardType="number-pad"
+                placeholderTextColor="#C0C7D4"
+                style={{ fontSize: 15, color: titleC, padding: 0 }} />
+            </FieldCard>
+
+            <FieldCard label="Description (optional)" colors={colors} isDark={isDark}>
+              <TextInput value={desc} onChangeText={setDesc} placeholder="Brief description…"
+                placeholderTextColor="#C0C7D4" multiline numberOfLines={2}
+                style={{ fontSize: 15, color: titleC, padding: 0, minHeight: 50, textAlignVertical: 'top' }} />
+            </FieldCard>
+
+            {/* Category */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 8 }}>Category</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {CATEGORIES.map(c => {
+                  const active = cat === c;
+                  return (
+                    <TouchableOpacity key={c} onPress={() => setCat(c)}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
+                        borderColor: active ? FORM_BLUE : border,
+                        backgroundColor: active ? (isDark ? colors.surface : '#EEF3FB') : cardBg }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: active ? FORM_BLUE : bodyC }}>
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Icon */}
+            <View style={{ borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: cardBg,
+              paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 12, color: bodyC, marginBottom: 8 }}>Icon</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {EMOJIS.map(e => {
+                  const active = emoji === e;
+                  return (
+                    <TouchableOpacity key={e} onPress={() => setEmoji(e)}
+                      style={{ width: 44, height: 44, borderRadius: 12, borderWidth: 1.5,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderColor: active ? FORM_BLUE : border,
+                        backgroundColor: active ? (isDark ? colors.surface : '#EEF3FB') : cardBg }}>
+                      <Text style={{ fontSize: 20 }}>{e}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Save */}
+            <TouchableOpacity onPress={submit} disabled={!name.trim()}
+              style={{ height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: name.trim() ? FORM_BLUE : (isDark ? colors.surface : FORM_SURFACE) }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: name.trim() ? '#FFFFFF' : bodyC }}>
+                {editing ? 'Save changes' : 'Publish to family store'}
+              </Text>
+            </TouchableOpacity>
+
+            {editing && onDelete && (
+              <TouchableOpacity onPress={() => onDelete(editing)}
+                style={{ height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                <Text style={{ color: colors.danger, fontSize: 14, fontWeight: '700' }}>Remove perk</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+        );
+      }}
+    </FullPageOverlay>
   );
 }
 
 // ─── StoreScreen ──────────────────────────────────────────────────────────────
 
-export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
+export default function StoreScreen({
+  hideHeader = false,
+  onClose,
+}: {
+  hideHeader?: boolean;
+  onClose?: () => void;
+}) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { members, activeMemberId, loaded, loadFromStorage, awardCoins } = useFamilyStore();
   const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
@@ -468,6 +567,14 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadRewards(); }, []);
+  // No hideTabBar()/showTabBar() here — StoreScreen only ever renders
+  // nested inside RewardsDashboardScreen's own FullPageOverlay, which
+  // already owns tab-bar visibility for the whole Rewards flow. This
+  // screen's own cleanup calling showTabBar() on unmount was firing the
+  // moment the user closed Store and returned to Rewards (which was still
+  // mounted, still wanting the bar hidden), popping the tab bar back up
+  // [live-reported: "When I went to perk store and came back bottom nav
+  // popping up back"].
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
@@ -531,46 +638,35 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const redeemFrom = async (r: Reward, wallet: 'mainCoins' | 'gpCoins') => {
     if (!activeMember) return;
     const ok = await redeemReward(r.id, activeMember.id, wallet);
-    if (!ok) { Alert.alert('Unable to Redeem', 'This perk is no longer available.'); return; }
+    if (!ok) { showToast('This perk is no longer available'); return; }
     useFamilyStore.setState(s => ({
       members: s.members.map(m => m.id === activeMember.id ? { ...m, [wallet]: Math.max(0, (m[wallet] ?? 0) - r.cost) } : m),
     }));
-    Alert.alert('🎉 Redeemed!', `"${r.title}" redeemed for ${r.cost} 🪙 from your ${wallet === 'gpCoins' ? 'Grandparent Bonus jar' : 'Main Coins'}! Ask a parent for your reward.`);
+    showToast(r.requiresApproval
+      ? `${r.emoji} Requested — waiting for parent approval`
+      : `🎉 ${r.title} redeemed!`);
   };
 
   const handleRedeem = (r: Reward) => {
     if (myCoins < r.cost) {
-      Alert.alert('Insufficient Coins', `You need ${r.cost} 🪙 but only have ${myCoins} 🪙`);
+      showToast(`Need ${r.cost - myCoins} more coins for this perk`);
       return;
     }
-    // No real choice to make — redeem straight from whichever single jar
-    // covers it (prefer Main Coins first, matching how coins already read
-    // as "the" balance everywhere else in the app).
     if (myGpCoins === 0 || myMainCoins >= r.cost) {
-      Alert.alert('Redeem Perk?', `Redeem "${r.title}" for ${r.cost} 🪙?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redeem', onPress: () => redeemFrom(r, 'mainCoins') },
-      ]);
+      redeemFrom(r, 'mainCoins');
       return;
     }
     if (myMainCoins === 0) {
-      Alert.alert('Redeem Perk?', `Redeem "${r.title}" for ${r.cost} 🪙 from your Grandparent Bonus jar?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redeem', onPress: () => redeemFrom(r, 'gpCoins') },
-      ]);
+      redeemFrom(r, 'gpCoins');
       return;
     }
-    // Genuine choice — neither jar alone covers it OR both could, let the
-    // kid pick which one to spend from instead of silently pooling them.
+    // Genuine choice — show jar picker
     setJarPickerTarget(r);
   };
 
   const handleDelete = (r: Reward) => {
-    Alert.alert('Delete Perk?', `Remove "${r.title}" from the store?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive',
-        onPress: () => { deleteReward?.(r.id); showToast('Reward deleted'); } },
-    ]);
+    deleteReward?.(r.id);
+    showToast(`"${r.title}" removed from store`);
   };
 
   const handleAddAiSuggestion = (s: { title: string; category: string; cost: number; emoji: string; reason: string }) => {
@@ -600,407 +696,394 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
+  const canvas = isDark ? colors.background : PAGE_BG;
+
+  // Pulsing dot for AI banner
+  const pulseScale   = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.8)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 2.4, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0,   duration: 900, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
+      ]),
+      Animated.delay(400),
+    ])).start();
+  }, []);
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
-      {!hideHeader && (
-        <AppHeader
-          memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-          memberRole={activeMember?.role ?? 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={() => setSwitcherOpen(true)}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
-      )}
+    <View style={{ flex: 1, backgroundColor: canvas }}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-      <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}>
-
-        {/* ── Page title row ── AI Perks/Add Perk moved down next to the
-            perks grid itself (below), so this top row stays a plain title +
-            balance and doesn't compete with Redemptions/Approvals/Piggy
-            Banks for attention right under the header. */}
-        <View style={[s.header, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
-            Family Perks Store
-          </Text>
-          {canRedeemSelf && (
-            <View style={[s.coinBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
-                Balance: <Text style={{ color: colors.amber, fontWeight: '900' }}>{myCoins} 🪙</Text>
-              </Text>
+      {!hideHeader && (
+        <PageHeading
+          eyebrow="FAMILY CUBE · PERKS STORE"
+          title="Perks Store"
+          subtitle={isParent ? 'Manage your family perks catalog.' : 'Browse and redeem perks with your coins.'}
+          accent="amber"
+          Icon={Coins}
+          topInset={insets.top}
+          onTitlePress={onClose}
+          right={canRedeemSelf ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+              paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99,
+              backgroundColor: isDark ? colors.card : '#FDF3D8' }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? colors.amber : AMBER_TXT }}>{myCoins}</Text>
+              <Text style={{ fontSize: 13 }}>🪙</Text>
             </View>
-          )}
-        </View>
+          ) : undefined}
+        />
+      )}
 
-        {/* ── My Redemptions ── redeeming was fire-and-forget (a one-time
-            Alert, then nothing) — a kid/teen/senior who redeemed a perk had
-            no way to check whether it was still pending or already
-            fulfilled anywhere in the app (QA sweep, full-app per-role
-            audit, High). The parent-only "Kids' Piggy Banks" glance below
-            never substituted for this — that's a parent's view of OTHERS'
-            balances, not a self-view of one's own redemption history. */}
-        {canRedeemSelf && activeMember && (() => {
-          const mine = redemptions
-            .filter(r => r.memberId === activeMember.id)
-            .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt))
-            .slice(0, 5);
-          if (mine.length === 0) return null;
-          const statusMeta: Record<string, { label: string; color: string }> = {
-            pending:   { label: 'Pending',   color: colors.warning },
-            approved:  { label: 'Fulfilled', color: colors.success },
-            rejected:  { label: 'Declined',  color: colors.danger },
-            cancelled: { label: 'Cancelled', color: colors.textTertiary },
-          };
-          return (
-            <View style={{ paddingHorizontal: 12, marginBottom: 10 }}>
-              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 8 }}>
-                My Redemptions
-              </Text>
-              <View style={{ gap: 6 }}>
-                {mine.map(r => {
-                  const reward = rewards.find(rw => rw.id === r.rewardId);
-                  const meta = statusMeta[r.status] ?? statusMeta.pending;
-                  return (
-                    <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                      backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-                      paddingHorizontal: 10, paddingVertical: 8 }}>
-                      <Text style={{ fontSize: 16 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
-                        {reward?.title ?? 'Perk'}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1, backgroundColor: canvas }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}>
+
+        {/* ── AI Perks banner (parent) ── */}
+        {isParent && (
+          <TouchableOpacity onPress={() => setShowAiPanel(v => !v)}
+            style={{ borderRadius: 18, overflow: 'hidden',
+              backgroundColor: isDark ? colors.card : '#fff',
+              ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, android: { elevation: isDark ? 0 : 2 } }) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center',
+              paddingHorizontal: 18, paddingVertical: 16, gap: 14 }}>
+              {/* Animated sparkle icon */}
+              <View style={{ width: 48, height: 48 }}>
+                <View style={{ width: 48, height: 48, borderRadius: 14,
+                  backgroundColor: colors.accent + '18',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="sparkles" size={24} color={colors.accent} />
+                </View>
+                <View style={{ position: 'absolute', top: 0, right: 0, width: 14, height: 14,
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Animated.View style={{ position: 'absolute', width: 10, height: 10, borderRadius: 5,
+                    backgroundColor: colors.success, opacity: pulseOpacity,
+                    transform: [{ scale: pulseScale }] }} />
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success }} />
+                </View>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                  CubeAI Perk Ideas
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                  AI-suggested perks tailored for your family
+                </Text>
+              </View>
+              <Ionicons
+                name={showAiPanel ? 'chevron-up' : 'chevron-down'}
+                size={18} color={colors.textTertiary} />
+            </View>
+            {/* Expanded suggestion cards */}
+            {showAiPanel && (
+              <View style={{ borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: isDark ? colors.border : BORDER }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ padding: 14, gap: 10 }}>
+                  {MOCK_SUGGESTIONS.map((s, i) => (
+                    <View key={i} style={{ width: 160, borderRadius: 16,
+                      backgroundColor: isDark ? colors.surface : '#F6F8FC',
+                      borderWidth: 1, borderColor: isDark ? colors.border : BORDER,
+                      padding: 14 }}>
+                      <Text style={{ fontSize: 26, marginBottom: 6 }}>{s.emoji}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>
+                        {s.title}
                       </Text>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary }}>{r.deductedCoins} 🪙</Text>
-                      <View style={{ backgroundColor: meta.color + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-                        <Text style={{ fontSize: 9, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
-                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.amber : AMBER_TXT, marginBottom: 4 }}>
+                        {s.cost} 🪙
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginBottom: 10 }}>
+                        {s.reason}
+                      </Text>
+                      <TouchableOpacity onPress={() => { handleAddAiSuggestion(s); }}
+                        style={{ backgroundColor: BLUE_BTN, borderRadius: 10,
+                          paddingVertical: 8, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>+ Add</Text>
+                      </TouchableOpacity>
                     </View>
-                  );
-                })}
+                  ))}
+                </ScrollView>
               </View>
-            </View>
-          );
-        })()}
+            )}
+          </TouchableOpacity>
+        )}
 
-        {/* ── Pending Approvals ── a reward with requiresApproval:true
-            created a real, fully-implemented Redemption record (pending →
-            approved/rejected, with coin refund on reject) — approveRedemption/
-            rejectRedemption were both correct and DB-synced, but NO call site
-            anywhere in the app ever invoked either: a kid's "requires
-            approval" redemption was permanently stuck in Pending forever,
-            with zero UI for a parent, on either device, to actually decide
-            it (QA sweep, parent-role audit, Critical C1). */}
-        {isParent && (() => {
-          const pending = redemptions.filter(r => r.status === 'pending');
-          if (pending.length === 0) return null;
-          return (
-            <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-                Pending Approvals ({pending.length})
-              </Text>
-              <View style={{ gap: 8 }}>
-                {pending.map(rd => {
-                  const reward = rewards.find(r => r.id === rd.rewardId);
-                  const kid = members.find(m => m.id === rd.memberId);
-                  return (
-                    <View key={rd.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                      backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-                      paddingHorizontal: 12, paddingVertical: 10 }}>
-                      <Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-                          {reward?.title ?? 'Perk'}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
-                          {kid?.name.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
-                        </Text>
-                      </View>
-                      <Pressable onPress={() => { rejectRedemption(rd.id, activeMemberId ?? ''); showToast('Redemption rejected'); }}
-                        style={{ padding: 8, borderRadius: 10, backgroundColor: colors.danger + '18' }}>
-                        <Ionicons name="close" size={16} color={colors.danger} />
-                      </Pressable>
-                      <Pressable onPress={() => { approveRedemption(rd.id, activeMemberId ?? ''); showToast('Redemption approved'); }}
-                        style={{ padding: 8, borderRadius: 10, backgroundColor: colors.teal + '18' }}>
-                        <Ionicons name="checkmark" size={16} color={colors.teal} />
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })()}
+        {/* ── Add Perk button (parent) ── */}
+        {isParent && (
+          <TouchableOpacity onPress={() => { setEditing(null); setShowCreate(true); }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 8, paddingVertical: 15, borderRadius: 14,
+              backgroundColor: BLUE_BTN,
+              ...Platform.select({ ios: { shadowColor: BLUE_BTN, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }, android: { elevation: 4 } }) }}>
+            <Ionicons name="add-circle-outline" size={20} color="#fff" />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Add New Perk</Text>
+          </TouchableOpacity>
+        )}
 
-        {/* ── Redemption History ── logged QA gap: parents had no way to
-            see past redemptions at all once they left the pending queue —
-            only a transient list of what's still awaiting a decision.
-            Approved/rejected/cancelled redemptions vanished from view the
-            instant they were resolved, with no record. Newest first,
-            capped at 20 so this doesn't grow unbounded on a long-running
-            family. */}
-        {isParent && (() => {
-          const history = redemptions
-            .filter(r => r.status !== 'pending')
-            .sort((a, b) => (b.respondedAt ?? b.redeemedAt ?? '').localeCompare(a.respondedAt ?? a.redeemedAt ?? ''))
-            .slice(0, 20);
-          if (history.length === 0) return null;
-          const statusMeta: Record<string, { label: string; color: string }> = {
-            approved:  { label: 'Approved',  color: colors.teal },
-            rejected:  { label: 'Declined',  color: colors.danger },
-            cancelled: { label: 'Cancelled', color: colors.textTertiary },
-          };
-          return (
-            <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-                Redemption History
-              </Text>
-              <View style={{ gap: 8 }}>
-                {history.map(rd => {
-                  const reward = rewards.find(r => r.id === rd.rewardId);
-                  const kid = members.find(m => m.id === rd.memberId);
-                  const meta = statusMeta[rd.status] ?? { label: rd.status, color: colors.textTertiary };
-                  return (
-                    <View key={rd.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                      backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-                      paddingHorizontal: 12, paddingVertical: 10 }}>
-                      <Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-                          {reward?.title ?? rd.rewardTitle ?? 'Perk (removed)'}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
-                          {/* Logged QA gap, fixed: falls back to the DB's
-                              own member_name snapshot (taken at redemption
-                              time) once the redeemer is no longer in the
-                              live member list, instead of just showing
-                              "A kid" for a since-removed member's history. */}
-                          {kid?.name.split(' ')[0] ?? rd.memberName?.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
-                        </Text>
-                      </View>
-                      <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: meta.color + '18' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })()}
-
-        {/* ── Kids' Piggy Banks & Wishlists ── parent-only at-a-glance view
-            of every kid/teen's balance and their closest wishlist goal —
-            replaces the old standalone Ledger tab, which is now removed;
-            this is the one place a parent checks kids' coin balances. */}
+        {/* ── Kids' Piggy Banks (parent) ── */}
         {isParent && kids.length > 0 && (
-          <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-            <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-              textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-              Kids' Piggy Banks & Wishlists
-            </Text>
-            {/* Fixed 3-column grid (was 2-up via minWidth:'46%') — card
-                Fixed 2-column grid (was full-width single column via
-                minWidth:'46%' with only 1 fitting per row at larger sizes;
-                also tried a denser 3-up pass, landed on 2x2 as the better
-                balance of legibility vs. density). */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-              {kids.map(kid => {
-                const kidMainCoins = (kid as any).mainCoins ?? 0;
-                const kidGpCoins = (kid as any).gpCoins ?? 0;
-                const kidCoins = kidMainCoins + kidGpCoins;
-                const dollars = (kidCoins * pointsToFiatRatio).toFixed(2);
-                const goal = goalForKid(kid.id, kidCoins);
-                // Logged QA gap, fixed: this used the pooled sum, so a
-                // parent could see a kid's goal shown as 100%+ funded even
-                // when neither jar alone actually covers the goal's cost —
-                // the one thing that matters for real redeemability, since
-                // a single redemption only ever spends from one jar.
-                const kidMaxAffordable = Math.max(kidMainCoins, kidGpCoins);
-                const pct = goal ? Math.min(kidMaxAffordable / goal.cost, 1) : 0;
-                const streak = (kid as any).streak ?? 0;
-                return (
-                  <View key={kid.id} style={withAndroidShadowFix({
-                    width: '48%', borderRadius: 18, padding: 14, alignItems: 'center',
-                    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.teal + (isDark ? '55' : '40'),
-                    shadowColor: colors.teal, shadowOpacity: 0.1, shadowRadius: 10,
-                    shadowOffset: { width: 0, height: 4 }, elevation: 3, overflow: 'hidden',
-                  })}>
-                    <LinearGradient
-                      colors={[colors.teal + '20', colors.teal + '00']}
-                      start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                      pointerEvents="none"
-                    />
-                    {Platform.OS === 'ios' ? (
-                      <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
-                    ) : (
-                      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
-                    )}
-                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
-                    <View style={{ width: 48, height: 48, borderRadius: 14, marginBottom: 8,
-                      backgroundColor: colors.teal + '25', borderWidth: 1, borderColor: colors.teal + '45',
-                      alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 24 }}>{kid.emoji ?? '🙂'}</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 5 }} numberOfLines={1}>
-                      {kid.name.split(' ')[0]}
-                    </Text>
-                    <Text style={{ fontSize: 20, fontWeight: '900', color: BRAND.teal, marginBottom: 7 }}>
-                      {currencySymbol}{dollars}
-                    </Text>
-                    {streak > 0 && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 11,
-                        paddingHorizontal: 9, paddingVertical: 4, marginBottom: 8,
-                        backgroundColor: colors.amberLight }}>
-                        <Flame size={11} color={colors.amber} />
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>
-                          {streak}-day streak
-                        </Text>
-                      </View>
-                    )}
-                    {goal && (
-                      <View style={{ width: '100%', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary, marginBottom: 5 }} numberOfLines={1}>
-                          Goal: {goal.title}
-                        </Text>
-                        <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surface, overflow: 'hidden' }}>
-                          <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 3, backgroundColor: BRAND.teal }} />
-                        </View>
-                        {/* % moved below the bar, right-aligned — was
-                            crammed into the same row as the goal title with
-                            no truncation guard on the title, so a longer
-                            goal name could crowd or push the percentage. */}
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary, textAlign: 'right', marginTop: 4 }}>
-                          {Math.round(pct * 100)}%
-                        </Text>
-                      </View>
-                    )}
-                    <Pressable onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10,
-                        borderRadius: 10, borderWidth: 1, borderColor: colors.amber + '60',
-                        backgroundColor: colors.amberLight, paddingHorizontal: 10, paddingVertical: 6 }}>
-                      <Ionicons name="gift-outline" size={12} color={colors.amber} />
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>Grant Coins</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
+          <View style={{ borderRadius: 22, overflow: 'hidden',
+            backgroundColor: isDark ? colors.card : '#fff',
+            ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+            <View style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
+                Kids' Piggy Banks
+              </Text>
             </View>
+            {kids.map((kid, i) => {
+              const kidMainCoins = (kid as any).mainCoins ?? 0;
+              const kidGpCoins   = (kid as any).gpCoins   ?? 0;
+              const kidCoins     = kidMainCoins + kidGpCoins;
+              const dollars      = (kidCoins * pointsToFiatRatio).toFixed(2);
+              const goal         = goalForKid(kid.id, kidCoins);
+              const kidMaxAffordable = Math.max(kidMainCoins, kidGpCoins);
+              const pct          = goal ? Math.min(kidMaxAffordable / goal.cost, 1) : 0;
+              const streak       = (kid as any).streak ?? 0;
+              return (
+                <View key={kid.id}>
+                  {i > 0 && <View style={{ height: StyleSheet.hairlineWidth,
+                    backgroundColor: isDark ? colors.border : BORDER, marginHorizontal: 18 }} />}
+                  <View style={{ flexDirection: 'row', alignItems: 'center',
+                    paddingHorizontal: 18, paddingVertical: 14, gap: 14 }}>
+                    <View style={{ width: 50, height: 50, borderRadius: 15,
+                      backgroundColor: isDark ? colors.tealLight : '#D5EFE4',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 26 }}>{kid.emoji ?? '🙂'}</Text>
+                    </View>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textPrimary }}>
+                          {kid.name.split(' ')[0]}
+                        </Text>
+                        {streak > 0 && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
+                            borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
+                            backgroundColor: colors.amberLight }}>
+                            <Flame size={10} color={colors.amber} />
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>
+                              {streak}-day
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      {goal ? (
+                        <>
+                          <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>
+                            Goal: {goal.title}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <View style={{ flex: 1, height: 5, borderRadius: 3,
+                              backgroundColor: isDark ? colors.surface : '#DCF0E8', overflow: 'hidden' }}>
+                              <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 3,
+                                backgroundColor: colors.teal }} />
+                            </View>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.teal, minWidth: 32 }}>
+                              {Math.round(pct * 100)}%
+                            </Text>
+                          </View>
+                        </>
+                      ) : (
+                        <Text style={{ fontSize: 12, color: colors.textTertiary }}>No goal set</Text>
+                      )}
+                    </View>
+                    {/* Coin total + Grant */}
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
+                        <Text style={{ fontSize: 20, fontWeight: '900',
+                          color: isDark ? colors.amber : AMBER_TXT }}>
+                          {kidCoins}
+                        </Text>
+                        <Text style={{ fontSize: 13 }}>🪙</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (grantTarget?.id === kid.id) { setGrantTarget(null); setGrantAmount(''); return; }
+                          setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name });
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                          paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9,
+                          backgroundColor: grantTarget?.id === kid.id ? colors.teal : colors.tealLight }}>
+                        <Ionicons name="gift-outline" size={12} color={grantTarget?.id === kid.id ? '#fff' : colors.teal} />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: grantTarget?.id === kid.id ? '#fff' : colors.teal }}>Grant</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* ── Inline Grant Coins row — expands directly under this
+                      kid's own row when tapped, not a sheet/overlay panel
+                      [live-requested: "Grant coins should be inline edits
+                      not a bottom sheet"]. ── */}
+                  {grantTarget?.id === kid.id && (
+                    <View style={{ paddingHorizontal: 18, paddingBottom: 14, gap: 8 }}>
+                      <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR }}>
+                        Give {kid.name.split(' ')[0]} a bonus, no chore required.
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TextInput
+                          value={grantAmount}
+                          onChangeText={setGrantAmount}
+                          keyboardType="numeric"
+                          placeholder="Coins to grant…"
+                          placeholderTextColor={colors.textTertiary}
+                          autoFocus
+                          style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+                            color: colors.textPrimary, backgroundColor: colors.surface,
+                            paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, fontWeight: '700' }}
+                        />
+                        <TouchableOpacity
+                          onPress={() => {
+                            const n = parseInt(grantAmount, 10);
+                            if (!n || n <= 0) { showToast('Enter a valid coin amount'); return; }
+                            awardCoins(kid.id, n, 'mainCoins');
+                            showToast(`🪙 ${n} coins granted to ${kid.name.split(' ')[0]}`);
+                            setGrantTarget(null);
+                            setGrantAmount('');
+                          }}
+                          style={{ paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: colors.teal }}>
+                          <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Grant</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+            <View style={{ height: 8 }} />
           </View>
         )}
 
-        {/* Live-reported follow-up: "padding to the grid should be same to
-            the frame" — this section used a flat padding:12 while the
-            page's own title row above (s.header) uses paddingHorizontal:
-            16, so the perks grid sat narrower than the rest of the
-            screen's content instead of lining up with it. Matched to 16
-            (vertical padding kept at its own value via paddingVertical
-            instead of the removed padding:12 shorthand, since nothing
-            here needed that value tied to horizontal). */}
-        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-          {/* This row (AI Perks/Add Perk) and everything below it is the
-              actual perks catalog — previously had no heading at all, so
-              the buttons floated with no context for what section they
-              belonged to. */}
-          <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
-            textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
-            Available Perks
-          </Text>
-          {isParent && (
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-              <Pressable onPress={() => setShowAiPanel(v => !v)}
-                style={[s.createBtn, { backgroundColor: showAiPanel ? colors.accent : colors.accent + 'CC' }]}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ AI Perks</Text>
-              </Pressable>
-              <Pressable onPress={() => { setEditing(null); setShowCreate(true); }}
-                style={[s.createBtn, { backgroundColor: colors.teal }]}>
-                <Ionicons name="add" size={14} color="#fff" />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginLeft: 3 }}>Add Perk</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {isParent && showAiPanel && (
-            <AiPerksPanel
-              onAdd={handleAddAiSuggestion}
-              onClose={() => setShowAiPanel(false)}
-              colors={colors}
-              isDark={isDark}
-            />
-          )}
-
-          <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 16 }}>
-            Perks are redeemed from your Main Wallet. Grandparent Bonus coins are cashed out via parents.
-          </Text>
-
-          {rewards.length === 0 ? (
-            <View style={[s.emptyBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
-              <Text style={{ fontSize: 32, marginBottom: 8 }}>🎁</Text>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textTertiary }}>No perks yet</Text>
-              {isParent && (
-                <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4, textAlign: 'center' }}>
-                  Tap "+ Add Perk" or try "✨ AI Perks" for suggestions
+        {/* ── Perks catalog — full-width rows ── */}
+        {rewards.length === 0 ? (
+          <View style={{ borderRadius: 22, padding: 40, alignItems: 'center',
+            backgroundColor: isDark ? colors.card : '#fff',
+            ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 2 } }) }}>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>🎁</Text>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>
+              No perks yet
+            </Text>
+            {isParent && (
+              <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                Tap "+ Add Perk" above or try "✨ AI Perks" for ideas
+              </Text>
+            )}
+          </View>
+        ) : (
+          <View style={{ borderRadius: 22, overflow: 'hidden',
+            backgroundColor: isDark ? colors.card : '#fff',
+            ...Platform.select({ ios: { shadowColor: '#102347', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }, android: { elevation: isDark ? 0 : 3 } }) }}>
+            {/* Section heading inside card — plain School-style heading,
+                not the old uppercase/accent-bar dashboard treatment
+                [live-requested: "Why section heading not Figma styles"]. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
+                Available Perks · {rewards.filter(r => r.available).length}
+              </Text>
+              {!isParent && (
+                <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR }}>
+                  Balance: <Text style={{ fontWeight: '800', color: isDark ? colors.amber : AMBER_TXT }}>{myCoins} 🪙</Text>
                 </Text>
               )}
             </View>
-          ) : (
-            // Live-reported: "i could see right side padding with panel for
-            // the cards are it high" — cards in the same row should match
-            // height, but flexWrap:'wrap' doesn't group wrapped items into
-            // per-row flex containers the way CSS Grid would, so React
-            // Native's own cross-axis stretch never applied between two
-            // side-by-side cards — a card with a "My Goal" line (extra
-            // content) just rendered taller than its shorter neighbor,
-            // leaving uneven space in the row instead of both stretching to
-            // match. Pairing rewards into explicit two-up rows (each a real
-            // flexDirection:'row' + alignItems:'stretch' container) fixes
-            // this the way flexWrap fundamentally can't.
-            <View style={{ gap: 10 }}>
-              {Array.from({ length: Math.ceil(rewards.length / 2) }, (_, rowIdx) => {
-                const pair = rewards.slice(rowIdx * 2, rowIdx * 2 + 2);
-                return (
-                  <View key={rowIdx} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 10 }}>
-                    {pair.map((r, colIdx) => {
-                      const i = rowIdx * 2 + colIdx;
-                      return (
-                        <PerkCard key={r.id} reward={r} index={i} myCoins={myCoins} myMaxAffordable={myMaxAffordable}
-                          isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
-                          onRedeem={handleRedeem}
-                          onEdit={r => { setEditing(r); setShowCreate(true); }}
-                          onOpenDetail={r => setDetailPerk(r)}
-                          isGoal={isKid && activeMember?.goalRewardId === r.id}
-                          onToggleGoal={isKid ? (target) => {
-                            if (!activeMember) return;
-                            const nextGoalId = activeMember.goalRewardId === target.id ? undefined : target.id;
-                            useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId })
-                              .catch(e => console.warn('[StoreScreen] toggle goal failed', e));
-                          } : undefined}
-                        />
-                      );
-                    })}
-                    {/* Odd count on the final row — a lone card is now
-                        flex:1 (see s.perkCard), so without a same-flex
-                        sibling it would stretch to fill the whole row
-                        width instead of staying at its normal single-column
-                        share. */}
-                    {pair.length === 1 && <View style={{ flex: 1 }} />}
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
+
+            {rewards.map((r, i) => {
+              const accent = categoryAccent(r.category, colors, i);
+              const canAfford = canRedeemSelf && myMaxAffordable >= r.cost;
+              const isGoalReward = isKid && activeMember?.goalRewardId === r.id;
+
+              return (
+                <View key={r.id}>
+                  {i > 0 && <View style={{ height: StyleSheet.hairlineWidth,
+                    backgroundColor: isDark ? colors.border : BORDER,
+                    marginHorizontal: 18 }} />}
+                  <TouchableOpacity
+                    onPress={() => setDetailPerk(r)}
+                    onLongPress={isParent ? () => { setEditing(r); setShowCreate(true); } : undefined}
+                    delayLongPress={350}
+                    style={{ flexDirection: 'row', alignItems: 'center',
+                      paddingHorizontal: 18, paddingVertical: 14, gap: 14 }}>
+                    {/* Emoji chip */}
+                    <View style={{ width: 48, height: 48, borderRadius: 14,
+                      backgroundColor: accent + (isDark ? '30' : '22'),
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 24 }}>{r.emoji ?? '🎁'}</Text>
+                    </View>
+                    {/* Text */}
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700',
+                          color: colors.textPrimary, flex: 1 }} numberOfLines={1}>
+                          {r.title}
+                        </Text>
+                        {isGoalReward && (
+                          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+                            backgroundColor: colors.amberLight }}>
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>⭐ Goal</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800',
+                          color: isDark ? colors.amber : AMBER_TXT }}>
+                          {r.cost} 🪙
+                        </Text>
+                        {r.requiresApproval && (
+                          <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : BODY_CLR }}>
+                            · parent approval
+                          </Text>
+                        )}
+                        {typeof r.stock === 'number' && (
+                          <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : BODY_CLR }}>
+                            · {r.stock} left
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    {/* Right action — parents get no separate pencil/edit
+                        button here: the row itself already does single tap
+                        → details (setDetailPerk above) / long-press → edit,
+                        same as every other role [live-requested: "Remove
+                        pencil icons long press edit single tap details"].
+                        A bare pencil button bypassed that distinction and
+                        jumped straight to edit on a single tap. */}
+                    {canRedeemSelf ? (
+                      <TouchableOpacity onPress={() => handleRedeem(r)}
+                        disabled={!canAfford}
+                        style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 11,
+                          backgroundColor: canAfford ? BLUE_BTN : (isDark ? colors.surface : '#EAEDF4'),
+                          opacity: canAfford ? 1 : 0.7 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800',
+                          color: canAfford ? '#fff' : (isDark ? colors.textTertiary : BODY_CLR) }}>
+                          {canAfford ? 'Redeem' : `−${r.cost - myMaxAffordable}`}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+            <View style={{ height: 8 }} />
+          </View>
+        )}
+
+        {/* Coin wallet info */}
+        <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', lineHeight: 18 }}>
+          Perks are redeemed from your Main Wallet.{'\n'}Grandparent Bonus coins are cashed out via parents.
+        </Text>
+
       </ScrollView>
 
       <PerkModal
         visible={showCreate}
         editing={editing}
         colors={colors}
+        isDark={isDark}
         onClose={() => { setShowCreate(false); setEditing(null); }}
         onSave={data => {
           if (editing) { updateReward?.(editing.id, data, activeMemberId ?? undefined); showToast('Reward updated'); }
@@ -1010,7 +1093,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         onDelete={r => { setShowCreate(false); setEditing(null); handleDelete(r); }}
       />
 
-      <PerkDetailSheet
+      <PerkDetailScreen
         reward={detailPerk}
         allMembers={members}
         colors={colors}
@@ -1033,44 +1116,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         }}
       />
 
-      {/* Grant Coins — relocated from the removed standalone Ledger tab. */}
-      <Modal visible={!!grantTarget} transparent animationType="fade" onRequestClose={() => setGrantTarget(null)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
-          <View style={withAndroidShadowFix({ borderRadius: 18, padding: 20, backgroundColor: colors.card,
-            borderWidth: 1, borderColor: colors.border,
-            shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 })}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>
-              Grant Coins
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 14 }}>
-              Give {grantTarget?.name?.split(' ')[0]} a bonus, no chore required.
-            </Text>
-            <TextInput
-              value={grantAmount} onChangeText={setGrantAmount} keyboardType="numeric"
-              placeholder="e.g. 25" placeholderTextColor={colors.textTertiary}
-              style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, color: colors.textPrimary,
-                backgroundColor: colors.surface, paddingHorizontal: 13, paddingVertical: 10, fontSize: 15, fontWeight: '700', marginBottom: 16 }}
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={() => setGrantTarget(null)}
-                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  const n = parseInt(grantAmount, 10);
-                  if (!n || n <= 0 || !grantTarget) return;
-                  awardCoins(grantTarget.id, n, 'mainCoins');
-                  setGrantTarget(null);
-                }}
-                style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: colors.amber }}>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Grant</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1089,7 +1135,7 @@ function JarPickerModal({ reward, mainCoins, gpCoins, colors, isDark, onClose, o
     { key: 'gpCoins', label: 'Grandparent Bonus', balance: gpCoins, emoji: '⭐', color: BRAND.purple },
   ];
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}
         activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} onPress={() => {}}

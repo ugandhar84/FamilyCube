@@ -1,36 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput, ScrollView, Modal,
+  View, Text, TouchableOpacity, TextInput, ScrollView,
   KeyboardAvoidingView, Platform, Keyboard, StyleSheet, ActivityIndicator,
+  Animated, Easing, FlatList,
 } from 'react-native';
-import { X, ChevronLeft } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronLeft, Mic, MicOff, X, ChefHat } from 'lucide-react-native';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { PageHeading } from '@/components/PageHeading';
 import { Meal, MEAL_TYPES, MEAL_EMOJIS, DIETARY_OPTIONS, MEAL_TYPE_COLOR } from './types';
+import { supabase } from '@/lib/supabase';
 import { em } from './styles';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 import { fmtTimeLabel } from '@/features/quests/components/questFormShared';
-import StepProgressBar from '@/components/StepProgressBar';
-import StepTransition from '@/components/StepTransition';
+import { useFamilyStore } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
-// ─── Meal Form Sheet — shared Add/Edit stepper ─────────────────────────────────
-//
-// Was two separate components (AddMealSheet.tsx with 11 fields lifted up
-// into MealsTab.tsx's own state, EditMealModal.tsx with its own internal
-// state seeded from a `meal` prop) hand-maintaining the same 8-field form
-// twice. One component now, self-contained state either way — `day`
-// (add mode) or `editingMeal` (edit mode) decides which; MealsTab.tsx only
-// ever sees a single onSave(patch) callback, matching EditMealModal's
-// original, simpler contract.
-//
-// Stepper — was one long scroll cramming all 8 fields into a single pass.
-// Broken into steps matching AddMedModal's own "only the first step is
-// required, the rest are skippable via Next" pattern: Basics is the only
-// step that blocks Save (name required); Details and Recipe are optional.
-const STEPS = ['basics', 'details', 'recipe'] as const;
-type Step = typeof STEPS[number];
-const STEP_TITLES: Record<Step, string> = {
-  basics: 'Name & Type', details: 'Who & Diet', recipe: 'Ingredients & Steps',
-};
+// Voice import — soft: the lib may not be linked in all build variants
+let Voice: any = null;
+try { Voice = require('@react-native-voice/voice').default; } catch {}
 
 function parseTimeLabel(label: string | null | undefined): Date | null {
   if (!label) return null;
@@ -44,30 +32,66 @@ function parseTimeLabel(label: string | null | undefined): Date | null {
   return d;
 }
 
+// FieldCard — same pattern as JustDescribeItScreen / grocery AddItemSheet
+function FieldCard({ label, accent, children, colors, isDark }: {
+  label: string; accent?: string; children: React.ReactNode; colors: any; isDark: boolean;
+}) {
+  return (
+    <View style={{
+      backgroundColor: colors.card, borderRadius: 14,
+      borderWidth: 1, borderColor: colors.border,
+      padding: 14, marginBottom: 12,
+    }}>
+      <Text style={{ fontSize: 12, fontWeight: '700', color: accent ?? (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 8, letterSpacing: 0.3 }}>
+        {label.toUpperCase()}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
 export interface MealFormPatch {
   title: string; type: string; emoji: string;
   chef_id: string | null; prep_minutes: number | null;
   dietary_tags: string[]; ingredients: string[]; prep_steps: string[];
+  recipe_text: string | null;
   start_time: string | null; timezone: string | null;
+  createReminder: boolean;
 }
 
+type SuggestionItem = {
+  id: string; title: string; emoji?: string | null;
+  ingredients?: string[]; prep_steps?: string[];
+  dietary_tags?: string[]; prep_minutes?: number | null;
+  source: 'recipe' | 'history';
+};
+
 export default function MealFormSheet({
-  visible, day, editingMeal, members, colors, isDark, onClose, onSave, saving,
+  visible, day, editingMeal, familyId, colors, isDark, onClose, onSave, saving,
 }: {
   visible: boolean;
-  day: string | null;              // add mode: which day this meal is for
-  editingMeal: Meal | null;        // edit mode: the meal being edited
-  members: any[]; colors: any; isDark: boolean;
+  day: string | null;
+  editingMeal: Meal | null;
+  familyId?: string;
+  colors: any; isDark: boolean;
   onClose: () => void;
-  onSave: (patch: MealFormPatch) => void | Promise<void>;
+  /** Resolves to an error message when the save is refused (the form stays open and shows it), or nothing on success. */
+  onSave: (patch: MealFormPatch) => void | string | Promise<void | string>;
   saving?: boolean;
 }) {
+  const insets = useSafeAreaInsets();
+  const { members } = useFamilyStore();
   const isEdit = !!editingMeal;
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(90);
+
+  // Auto-grow heights for multiline fields
+  const [ingredientsH, setIngredientsH] = useState(110);
+  const [stepsH, setStepsH]             = useState(110);
+  const [recipeH, setRecipeH]           = useState(130);
+  const [noteH, setNoteH]               = useState(70);
+
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [stepIndex, setStepIndex] = useState(0);
-  const step = STEPS[stepIndex];
-  const [touched, setTouched] = useState(false);
+  const [touched, setTouched]               = useState(false);
+  const [formError, setFormError]           = useState<string | null>(null);
 
   const [title, setTitle]           = useState('');
   const [type, setType]             = useState('dinner');
@@ -75,175 +99,295 @@ export default function MealFormSheet({
   const [showEmoji, setShowEmoji]   = useState(false);
   const [chefId, setChefId]         = useState('');
   const [prepMins, setPrepMins]     = useState('');
+  const [servings, setServings]     = useState('');
   const [dietTags, setDietTags]     = useState<string[]>([]);
   const [ingredients, setIngredients] = useState('');
   const [prepSteps, setPrepSteps]     = useState('');
+  const [recipeText, setRecipeText]   = useState('');
+  const [note, setNote]               = useState('');
   const [startTime, setStartTime]     = useState<Date | null>(null);
+  const [createReminder, setCreateReminder] = useState(false);
 
-  // Fresh state (pre-filled for edit, blank for add) every time the sheet
-  // opens — same reset-on-open pattern AddMedModal uses for stepIndex.
+  // Recipe suggestions from recipe book + history
+  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  useEffect(() => {
+    if (!visible || !familyId || editingMeal) { setSuggestions([]); return; }
+    Promise.all([
+      supabase.from('family_recipes').select('id,title,emoji,ingredients,prep_steps,dietary_tags,prep_minutes')
+        .eq('family_id', familyId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('family_meals').select('id,title,emoji,ingredients,prep_steps,dietary_tags,prep_minutes')
+        .eq('family_id', familyId).order('created_at', { ascending: false }).limit(20),
+    ]).then(([recipeRes, histRes]) => {
+      const recipeItems: SuggestionItem[] = (recipeRes.data ?? []).map((r: any) => ({ ...r, source: 'recipe' as const }));
+      const seen = new Set(recipeItems.map(r => r.title.toLowerCase().trim()));
+      const histItems: SuggestionItem[] = (histRes.data ?? [])
+        .filter((m: any) => {
+          const k = m.title?.toLowerCase().trim();
+          if (!k || seen.has(k)) return false;
+          seen.add(k); return true;
+        })
+        .map((m: any) => ({ ...m, source: 'history' as const }));
+      setSuggestions([...recipeItems, ...histItems].slice(0, 12));
+    });
+  }, [visible, familyId, editingMeal]);
+
+  const applySuggestion = (s: SuggestionItem) => {
+    setTitle(s.title);
+    if (s.emoji) setEmoji(s.emoji);
+    if (s.ingredients?.length) setIngredients(s.ingredients.join('\n'));
+    if (s.prep_steps?.length) setPrepSteps(s.prep_steps.join('\n'));
+    if (s.dietary_tags?.length) setDietTags(s.dietary_tags);
+    if (s.prep_minutes) setPrepMins(String(s.prep_minutes));
+  };
+
+  // Voice recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceError, setVoiceError]   = useState<string | null>(null);
+
   useEffect(() => {
     if (!visible) return;
-    setStepIndex(0);
     setTouched(false);
+    setShowEmoji(false);
+    setVoiceError(null);
     if (editingMeal) {
       setTitle(editingMeal.title ?? '');
       setType(editingMeal.type ?? 'dinner');
       setEmoji(editingMeal.emoji ?? '🍽️');
       setChefId(editingMeal.chef_id ?? '');
       setPrepMins(editingMeal.prep_minutes ? String(editingMeal.prep_minutes) : '');
+      setServings('');
       setDietTags(editingMeal.dietary_tags ?? []);
       setIngredients((editingMeal.ingredients ?? []).join('\n'));
       setPrepSteps((editingMeal.prep_steps ?? []).join('\n'));
+      setRecipeText((editingMeal as any).recipe_text ?? '');
+      setNote('');
       setStartTime(parseTimeLabel(editingMeal.start_time));
     } else {
       setTitle(''); setType('dinner'); setEmoji('🍽️'); setChefId('');
-      setPrepMins(''); setDietTags([]); setIngredients(''); setPrepSteps('');
-      setStartTime(null);
+      setPrepMins(''); setServings(''); setDietTags([]); setIngredients('');
+      setPrepSteps(''); setRecipeText(''); setNote('');
+      setStartTime(null); setCreateReminder(false);
     }
   }, [visible, editingMeal]);
 
+  // Wire up voice handlers
+  useEffect(() => {
+    if (!Voice) return;
+    Voice.onSpeechResults = (e: any) => {
+      const text = e?.value?.[0] ?? '';
+      setRecipeText(prev => prev ? prev + ' ' + text : text);
+    };
+    Voice.onSpeechError = () => {
+      setVoiceError('Could not recognise speech. Try again.');
+      setIsRecording(false);
+    };
+    Voice.onSpeechEnd = () => setIsRecording(false);
+    return () => { Voice?.destroy?.().catch?.(() => {}); };
+  }, []);
+
+  const toggleVoice = async () => {
+    if (!Voice) { setVoiceError('Voice not available'); return; }
+    if (isRecording) {
+      await Voice.stop();
+      setIsRecording(false);
+    } else {
+      setVoiceError(null);
+      try {
+        await Voice.start('en-US');
+        setIsRecording(true);
+      } catch {
+        setVoiceError('Microphone permission needed.');
+      }
+    }
+  };
+
   const typeColor = MEAL_TYPE_COLOR[type] ?? colors.amber;
 
-  const goNext = () => {
-    if (step === 'basics' && !title.trim()) { setTouched(true); return; }
-    if (stepIndex < STEPS.length - 1) setStepIndex(i => i + 1);
-  };
-  const goBack = () => { if (stepIndex > 0) setStepIndex(i => i - 1); };
-
-  const handleSave = () => {
-    if (!title.trim()) { setStepIndex(0); setTouched(true); return; }
-    onSave({
+  const handleSave = async () => {
+    setFormError(null);
+    if (!title.trim()) { setTouched(true); setFormError('Give the meal a name.'); return; }
+    const err = await onSave({
       title: title.trim(), type, emoji,
       chef_id: chefId || null,
       prep_minutes: prepMins ? parseInt(prepMins) : null,
       dietary_tags: dietTags,
       ingredients: ingredients.split('\n').map(s => s.trim()).filter(Boolean),
       prep_steps: prepSteps.split('\n').map(s => s.trim()).filter(Boolean),
+      recipe_text: recipeText.trim() || null,
       start_time: startTime ? fmtTimeLabel(startTime) : null,
       timezone: startTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
+      createReminder: createReminder && !!chefId,
     });
+    if (typeof err === 'string' && err) setFormError(err);
   };
 
+  if (!visible) return null;
+
+  const P = colors.primary;
+  const familyName = (members[0] as any)?.familyName ?? 'Family';
+  const activeMember = members.find(m => (m as any).active) ?? members[0];
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    // Full-page overlay like every other form page: slides in from the right, edge-swipe goes back, and the X / the
+    // title use the same animated exit.
+    <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={isDark ? colors.background : GEMINI.canvas}>
+    {(requestClose) => (
+    <>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden',
-            paddingHorizontal: 20, paddingTop: 12, maxHeight: keyboardAwareMaxHeight ?? '90%',
-            backgroundColor: isDark ? colors.card : '#FAFAFA' }}>
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
 
-            {/* Drag handle */}
-            <View style={{ width: 44, height: 4, borderRadius: 2, backgroundColor: colors.border,
-              alignSelf: 'center', marginBottom: 14 }} />
-
-            {/* Fixed header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                {stepIndex > 0 && (
-                  <TouchableOpacity onPress={goBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                    <ChevronLeft size={22} color={colors.textSecondary} />
+              <PageHeading
+                eyebrow="FAMILY CUBE · MEALS"
+                title={isEdit ? `Edit ${type}` : 'Add a meal'}
+                subtitle={day ? `${day} · new draft` : 'Editing this meal'}
+                accent="amber"
+                Icon={ChefHat}
+                topInset={insets.top}
+                onTitlePress={requestClose}
+                right={
+                  <TouchableOpacity onPress={requestClose} accessibilityRole="button" accessibilityLabel="Close"
+                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                      alignItems: 'center', justifyContent: 'center', ...(isDark ? null : GEMINI.cardShadow) }}>
+                    <X size={18} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
                   </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => setShowEmoji(v => !v)}
-                  style={{ width: 46, height: 46, borderRadius: 14,
-                    backgroundColor: typeColor + '20',
-                    alignItems: 'center', justifyContent: 'center',
-                    borderWidth: 1.5, borderColor: typeColor + '40' }}>
-                  <Text style={{ fontSize: 26 }}>{emoji}</Text>
-                </TouchableOpacity>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary }}>
-                    {stepIndex === 0 ? (isEdit ? 'Edit Meal' : `Add Meal — ${day}`) : STEP_TITLES[step]}
-                  </Text>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: typeColor, marginTop: 1 }}>
-                    Step {stepIndex + 1} of {STEPS.length}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={onClose}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <X size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
+                }
+              />
 
-            {/* Step progress */}
-            <View style={{ marginBottom: 12 }}>
-              <StepProgressBar stepCount={STEPS.length} activeIndex={stepIndex} accentColor={typeColor} trackColor={colors.border} />
-            </View>
+              {/* ── Scrollable form body ── */}
+              <ScrollView
+                keyboardShouldPersistTaps="always"
+                onScrollBeginDrag={Keyboard.dismiss}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}>
 
-            {/* Scrollable body */}
-            {/* No automaticallyAdjustKeyboardInsets — double-compensates
-                alongside this sheet's own KeyboardAvoidingView for the same
-                keyboard event, producing a blank gap above the real content
-                (see AppBottomSheet.tsx's fix for the full writeup). */}
-            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 40 }}>
-              <StepTransition stepKey={step}>
-
-              {step === 'basics' && (
-                <>
-                  {/* Emoji picker */}
-                  {showEmoji && (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 12, borderRadius: 16,
-                      backgroundColor: isDark ? colors.surface : '#F0EEFF',
-                      borderWidth: 1, borderColor: colors.accent + '30', marginBottom: 12 }}>
-                      {MEAL_EMOJIS.map(e => (
-                        <TouchableOpacity key={e} onPress={() => { setEmoji(e); setShowEmoji(false); }}
-                          style={{ width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-                            backgroundColor: emoji === e ? colors.accent + '25' : 'transparent' }}>
-                          <Text style={{ fontSize: 24 }}>{e}</Text>
+                {/* ── Recipe suggestions — from book + history ── */}
+                {!editingMeal && suggestions.length > 0 && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.7,
+                      color: colors.teal, marginBottom: 10 }}>
+                      FROM YOUR RECIPE BOOK & HISTORY
+                    </Text>
+                    <FlatList
+                      data={suggestions}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      keyExtractor={item => item.id}
+                      contentContainerStyle={{ gap: 10, paddingRight: 4 }}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          onPress={() => applySuggestion(item)}
+                          style={{
+                            width: 140, borderRadius: 14,
+                            backgroundColor: item.source === 'recipe' ? colors.amberLight : colors.tealLight,
+                            padding: 12, gap: 4,
+                            borderWidth: 1,
+                            borderColor: item.source === 'recipe'
+                              ? (colors.amber + '30') : (colors.teal + '30'),
+                          }}>
+                          <Text style={{ fontSize: 24, marginBottom: 2 }}>
+                            {item.emoji || '🍽️'}
+                          </Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700',
+                            color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 17 }} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600',
+                            color: item.source === 'recipe' ? colors.amber : colors.teal }}>
+                            {item.source === 'recipe' ? '📖 Recipe book' : '🕐 History'}
+                          </Text>
+                          {item.prep_minutes ? (
+                            <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                              {item.prep_minutes} min
+                            </Text>
+                          ) : null}
                         </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
+                      )}
+                    />
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 8 }}>
+                      Tap any card to pre-fill this meal
+                    </Text>
+                  </View>
+                )}
 
-                  {/* Meal name */}
-                  <Text style={em.label}>Meal Name</Text>
-                  <TextInput value={title} onChangeText={setTitle}
-                    placeholder="e.g. Grilled Chicken & Veggies"
-                    placeholderTextColor={colors.textTertiary} autoFocus={!isEdit}
-                    style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, fontWeight: '600',
-                      marginBottom: touched && !title.trim() ? 4 : 10,
-                      backgroundColor: isDark ? colors.surface : colors.background,
-                      borderColor: touched && !title.trim() ? colors.danger : colors.border,
-                      color: colors.textPrimary }} />
-                  {touched && !title.trim() && (
-                    <Text style={{ fontSize: 11, color: colors.danger, marginBottom: 10 }}>Meal name is required</Text>
-                  )}
+                {/* DATE — read-only display */}
+                <FieldCard label="Date" colors={colors} isDark={isDark}>
+                  <Text style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                    {(() => {
+                      const dayName = day ?? editingMeal?.day;
+                      const idx = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].indexOf(dayName ?? '');
+                      if (idx < 0) return '—';
+                      const now = new Date();
+                      const target = new Date(now);
+                      target.setDate(now.getDate() - ((now.getDay() + 6) % 7) + idx);
+                      return target.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                    })()}
+                  </Text>
+                </FieldCard>
 
-                  {/* Meal type */}
-                  <Text style={em.label}>Meal Type</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                {/* MEAL TYPE */}
+                <FieldCard label="Meal type" colors={colors} isDark={isDark}>
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {MEAL_TYPES.map(t => {
                       const tc = MEAL_TYPE_COLOR[t.toLowerCase()] ?? colors.amber;
                       const sel = type === t.toLowerCase();
                       return (
                         <TouchableOpacity key={t} onPress={() => setType(t.toLowerCase())}
-                          style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, paddingVertical: 9,
-                            alignItems: 'center', gap: 2,
+                          style={{ borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7,
                             backgroundColor: sel ? tc + '18' : 'transparent',
                             borderColor: sel ? tc : colors.border }}>
-                          <Text style={{ fontSize: 14 }}>
-                            {t === 'Breakfast' ? '🌅' : t === 'Lunch' ? '☀️' : t === 'Dinner' ? '🌙' : '🍎'}
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? tc : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                            {t === 'Breakfast' ? '🌅 ' : t === 'Lunch' ? '☀️ ' : t === 'Dinner' ? '🌙 ' : '🍎 '}{t}
                           </Text>
-                          <Text style={{ fontSize: 10, fontWeight: '800', color: sel ? tc : colors.textSecondary }}>{t}</Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
+                </FieldCard>
 
-                  {/* Meal time (optional — powers the 1hr-before reminder) */}
-                  <Text style={em.label}>Meal Time (optional — for a reminder)</Text>
+                {/* TITLE */}
+                <FieldCard label="Title" accent={P} colors={colors} isDark={isDark}>
+                  {/* Emoji picker trigger */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <TouchableOpacity onPress={() => setShowEmoji(v => !v)}
+                      style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: typeColor + '18',
+                        alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: typeColor + '40' }}>
+                      <Text style={{ fontSize: 24 }}>{emoji}</Text>
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 12, color: colors.textTertiary }}>Tap to change emoji</Text>
+                  </View>
+                  {showEmoji && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10,
+                      padding: 10, borderRadius: 12, backgroundColor: colors.surface }}>
+                      {MEAL_EMOJIS.map(e => (
+                        <TouchableOpacity key={e} onPress={() => { setEmoji(e); setShowEmoji(false); }}
+                          style={{ width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: emoji === e ? colors.accent + '25' : 'transparent' }}>
+                          <Text style={{ fontSize: 22 }}>{e}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                  <TextInput
+                    value={title} onChangeText={setTitle}
+                    placeholder="e.g. Lemon chicken bowls"
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="words"
+                    style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
+                      borderWidth: touched && !title.trim() ? 1.5 : 0,
+                      borderColor: colors.danger, borderRadius: 8, padding: touched && !title.trim() ? 8 : 0 }}
+                  />
+                  {touched && !title.trim() && (
+                    <Text style={{ fontSize: 11, color: colors.danger, marginTop: 4 }}>Meal name is required</Text>
+                  )}
+                </FieldCard>
+
+                {/* TIME */}
+                <FieldCard label="Time" colors={colors} isDark={isDark}>
                   <TouchableOpacity onPress={() => setShowTimePicker(true)}
-                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
-                      marginBottom: 10, backgroundColor: isDark ? colors.surface : colors.background,
-                      borderColor: colors.border }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600',
-                      color: startTime ? colors.textPrimary : colors.textTertiary }}>
-                      🕐 {startTime ? fmtTimeLabel(startTime) : 'No reminder set'}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ fontSize: 16, fontWeight: '500',
+                      color: startTime ? (isDark ? colors.textPrimary : GEMINI.titleColor) : colors.textTertiary }}>
+                      {startTime ? fmtTimeLabel(startTime) : 'No time set'}
                     </Text>
                     {startTime && (
                       <TouchableOpacity onPress={() => setStartTime(null)} hitSlop={8}>
@@ -251,65 +395,117 @@ export default function MealFormSheet({
                       </TouchableOpacity>
                     )}
                   </TouchableOpacity>
-                </>
-              )}
+                </FieldCard>
 
-              {step === 'details' && (
-                <>
-                  {/* Chef + prep time */}
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <View style={{ flex: 2 }}>
-                      <Text style={em.label}>Who's Cooking</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                          <TouchableOpacity onPress={() => setChefId('')}
-                            style={{ borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                              backgroundColor: !chefId ? colors.teal + '20' : 'transparent',
-                              borderColor: !chefId ? colors.teal : colors.border }}>
-                            <Text style={{ fontSize: 12, fontWeight: '800',
-                              color: !chefId ? colors.teal : colors.textSecondary }}>Anyone</Text>
-                          </TouchableOpacity>
-                          {members.map(m => {
-                            const sel = chefId === m.id;
-                            const initials = (m.name as string).split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-                            const hue = (m.name as string).charCodeAt(0) % 360;
-                            const avatarBg = `hsl(${hue},60%,55%)`;
-                            return (
-                              <TouchableOpacity key={m.id} onPress={() => setChefId(m.id)}
-                                style={{ alignItems: 'center', gap: 3 }}>
-                                <View style={{ width: 36, height: 36, borderRadius: 18,
-                                  backgroundColor: avatarBg,
-                                  borderWidth: 2.5, borderColor: sel ? colors.teal : 'transparent',
-                                  alignItems: 'center', justifyContent: 'center' }}>
-                                  <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{initials}</Text>
-                                </View>
-                                <Text style={{ fontSize: 9, fontWeight: '700',
-                                  color: sel ? colors.teal : colors.textTertiary }}>
-                                  {(m.name as string).split(' ')[0]}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </ScrollView>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={em.label}>Prep Time</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-                        borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 11, paddingVertical: 9,
-                        backgroundColor: isDark ? colors.surface : colors.background,
-                        borderColor: colors.border, marginBottom: 10 }}>
-                        <TextInput value={prepMins} onChangeText={setPrepMins} placeholder="30"
-                          placeholderTextColor={colors.textTertiary} keyboardType="numeric"
-                          style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }} />
-                        <Text style={{ fontSize: 11, color: colors.textTertiary, fontWeight: '700' }}>min</Text>
+                {/* CHEF */}
+                <FieldCard label="Chef" colors={colors} isDark={isDark}>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 12 }}>
+                    Who's cooking?
+                  </Text>
+                  <View style={{ gap: 8 }}>
+                    <TouchableOpacity onPress={() => setChefId('')}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+                        borderRadius: 12, backgroundColor: !chefId ? colors.tealLight : 'transparent',
+                        borderWidth: !chefId ? 0 : 0 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.border,
+                        alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 16 }}>👨‍👩‍👧</Text>
                       </View>
-                    </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>Anyone</Text>
+                        <Text style={{ fontSize: 12, color: colors.textTertiary }}>No chef assigned</Text>
+                      </View>
+                      {!chefId && (
+                        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: P,
+                          alignItems: 'center', justifyContent: 'center' }}>
+                          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: P }} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                    {members.map(m => {
+                      const sel = chefId === (m as any).id;
+                      const name = (m as any).name as string;
+                      const role = (m as any).role as string;
+                      const initials = name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                      const hue = name.charCodeAt(0) % 360;
+                      return (
+                        <TouchableOpacity key={(m as any).id} onPress={() => setChefId((m as any).id)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+                            borderRadius: 12, backgroundColor: sel ? colors.tealLight : 'transparent' }}>
+                          <View style={{ width: 36, height: 36, borderRadius: 18,
+                            backgroundColor: `hsl(${hue},60%,55%)`,
+                            alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>{initials}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{name}</Text>
+                            <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                              {role === 'kid' ? 'With a parent\'s help' : 'Family member'}
+                            </Text>
+                          </View>
+                          {sel && (
+                            <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: P,
+                              alignItems: 'center', justifyContent: 'center' }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: P }} />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
 
-                  {/* Dietary tags */}
-                  <Text style={em.label}>Dietary Tags</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
+                  {/* Cooking reminder toggle — only shown when a chef is picked */}
+                  {!!chefId && (
+                    <TouchableOpacity
+                      onPress={() => setCreateReminder(v => !v)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10,
+                        paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+                      <View style={{ width: 24, height: 24, borderRadius: 6, borderWidth: 2,
+                        borderColor: createReminder ? colors.teal : colors.border,
+                        backgroundColor: createReminder ? colors.teal : 'transparent',
+                        alignItems: 'center', justifyContent: 'center' }}>
+                        {createReminder && <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✓</Text>}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                          Add a cooking reminder
+                        </Text>
+                        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 1 }}>
+                          Creates a task for {members.find(m => m.id === chefId)?.name?.split(' ')[0] ?? 'them'} to cook this meal
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </FieldCard>
+
+                {/* SERVINGS */}
+                <FieldCard label="Servings" colors={colors} isDark={isDark}>
+                  <TextInput
+                    value={servings} onChangeText={setServings}
+                    placeholder={String(members.length || 4)}
+                    placeholderTextColor={colors.textTertiary}
+                    keyboardType="numeric"
+                    style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
+                  />
+                </FieldCard>
+
+                {/* PREP TIME */}
+                <FieldCard label="Prep time" colors={colors} isDark={isDark}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TextInput
+                      value={prepMins} onChangeText={setPrepMins}
+                      placeholder="35"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="numeric"
+                      style={{ fontSize: 16, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor), flex: 1 }}
+                    />
+                    <Text style={{ fontSize: 14, color: colors.textTertiary, fontWeight: '600' }}>minutes</Text>
+                  </View>
+                </FieldCard>
+
+                {/* DIETARY TAGS */}
+                <FieldCard label="Dietary tags · optional" colors={colors} isDark={isDark}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                     {DIETARY_OPTIONS.map(tag => {
                       const sel = dietTags.includes(tag);
                       return (
@@ -318,78 +514,139 @@ export default function MealFormSheet({
                           style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1.5,
                             backgroundColor: sel ? colors.teal + '22' : 'transparent',
                             borderColor: sel ? colors.teal : colors.border }}>
-                          <Text style={{ fontSize: 11, fontWeight: '800', color: sel ? colors.teal : colors.textSecondary }}>{tag}</Text>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{tag}</Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
-                </>
-              )}
+                </FieldCard>
 
-              {step === 'recipe' && (
-                <>
-                  {/* Ingredients */}
-                  <Text style={em.label}>Ingredients (one per line)</Text>
-                  <TextInput value={ingredients} onChangeText={setIngredients}
-                    placeholder={'chicken breast\nquinoa\nlemon\nolive oil'}
-                    placeholderTextColor={colors.textTertiary} multiline numberOfLines={4}
-                    style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13,
-                      marginBottom: 10, height: 100, textAlignVertical: 'top',
-                      backgroundColor: isDark ? colors.surface : colors.background,
-                      borderColor: colors.border, color: colors.textPrimary }} />
+                {/* INGREDIENTS */}
+                <FieldCard label="Ingredients" accent={colors.teal} colors={colors} isDark={isDark}>
+                  <TextInput
+                    value={ingredients} onChangeText={setIngredients}
+                    placeholder={'500g chicken breast\n300g rice\n2 lemons\n1 cucumber'}
+                    placeholderTextColor={colors.textTertiary}
+                    multiline
+                    onContentSizeChange={e => setIngredientsH(Math.max(110, e.nativeEvent.contentSize.height + 8))}
+                    style={{ fontSize: 14, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
+                      height: ingredientsH, textAlignVertical: 'top', lineHeight: 22 }}
+                  />
+                </FieldCard>
 
-                  {/* Steps */}
-                  <Text style={em.label}>Steps (one per line)</Text>
-                  <TextInput value={prepSteps} onChangeText={setPrepSteps}
+                {/* STEPS */}
+                <FieldCard label="Steps · one per line" accent={colors.teal} colors={colors} isDark={isDark}>
+                  <TextInput
+                    value={prepSteps} onChangeText={setPrepSteps}
                     placeholder={'Season chicken\nBoil quinoa 15 min\nGrill 6 min each side'}
-                    placeholderTextColor={colors.textTertiary} multiline numberOfLines={5}
-                    style={{ borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13,
-                      marginBottom: 10, height: 120, textAlignVertical: 'top',
-                      backgroundColor: isDark ? colors.surface : colors.background,
-                      borderColor: colors.border, color: colors.textPrimary }} />
-                </>
-              )}
+                    placeholderTextColor={colors.textTertiary}
+                    multiline
+                    onContentSizeChange={e => setStepsH(Math.max(110, e.nativeEvent.contentSize.height + 8))}
+                    style={{ fontSize: 14, fontWeight: '500', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
+                      height: stepsH, textAlignVertical: 'top', lineHeight: 22 }}
+                  />
+                </FieldCard>
 
-              </StepTransition>
-            </ScrollView>
+                {/* RECIPE TEXT + MIC */}
+                <FieldCard label="Recipe · type or speak" accent={colors.pink} colors={colors} isDark={isDark}>
+                  <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 10, lineHeight: 18 }}>
+                    Add a full recipe description — or tap the mic to speak it aloud and it'll be transcribed here.
+                  </Text>
+                  <TextInput
+                    value={recipeText} onChangeText={setRecipeText}
+                    placeholder="Describe the full recipe, cooking tips, serving suggestions…"
+                    placeholderTextColor={colors.textTertiary}
+                    multiline
+                    onContentSizeChange={e => setRecipeH(Math.max(130, e.nativeEvent.contentSize.height + 8))}
+                    style={{ fontSize: 14, fontWeight: '400', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
+                      height: recipeH, textAlignVertical: 'top', lineHeight: 22 }}
+                  />
 
-            {/* Footer — Back/Next through steps, Save on the last */}
-            <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 16,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-              <TouchableOpacity onPress={stepIndex === 0 ? onClose : goBack}
-                style={{ flex: 1, borderRadius: 16, borderWidth: 1.5, paddingVertical: 14,
-                  alignItems: 'center', borderColor: colors.border }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>
-                  {stepIndex === 0 ? 'Cancel' : 'Back'}
-                </Text>
-              </TouchableOpacity>
-              {stepIndex < STEPS.length - 1 ? (
-                <TouchableOpacity onPress={goNext}
-                  style={{ flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-                    backgroundColor: colors.accent }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Next</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity onPress={handleSave} disabled={!title.trim() || saving}
-                  style={{ flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-                    backgroundColor: colors.accent, opacity: title.trim() ? 1 : 0.4,
-                    flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                  {/* Voice mic row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12,
+                    paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+                    <TouchableOpacity onPress={toggleVoice}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1,
+                        borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+                        backgroundColor: isRecording ? colors.danger + '15' : colors.pinkLight,
+                        borderWidth: 1.5, borderColor: isRecording ? colors.danger : colors.pink + '60' }}>
+                      {isRecording
+                        ? <MicOff size={18} color={colors.danger} />
+                        : <Mic size={18} color={colors.pink} />}
+                      <Text style={{ fontSize: 14, fontWeight: '700',
+                        color: isRecording ? colors.danger : colors.pink }}>
+                        {isRecording ? 'Tap to stop recording' : 'Speak recipe aloud'}
+                      </Text>
+                      {isRecording && <ActivityIndicator size="small" color={colors.danger} style={{ marginLeft: 'auto' }} />}
+                    </TouchableOpacity>
+                    {recipeText.length > 0 && (
+                      <TouchableOpacity onPress={() => setRecipeText('')}
+                        style={{ paddingHorizontal: 12, paddingVertical: 11,
+                          borderRadius: 12, borderWidth: 1.5, borderColor: colors.border }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Clear</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {voiceError && (
+                    <Text style={{ fontSize: 12, color: colors.danger, marginTop: 6 }}>{voiceError}</Text>
+                  )}
+                </FieldCard>
+
+                {/* NOTE */}
+                <FieldCard label="Note · optional" colors={colors} isDark={isDark}>
+                  <TextInput
+                    value={note} onChangeText={setNote}
+                    placeholder="e.g. Ava can help assemble bowls after study group."
+                    placeholderTextColor={colors.textTertiary}
+                    multiline
+                    onContentSizeChange={e => setNoteH(Math.max(70, e.nativeEvent.contentSize.height + 8))}
+                    style={{ fontSize: 14, fontWeight: '400', color: (isDark ? colors.textPrimary : GEMINI.titleColor),
+                      height: noteH, textAlignVertical: 'top', lineHeight: 22 }}
+                  />
+                </FieldCard>
+
+                {/* Keep plan connected tip */}
+                <View style={{ borderRadius: 16, backgroundColor: colors.tealLight, padding: 18, marginBottom: 20 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), marginBottom: 6 }}>
+                    Keep the plan connected
+                  </Text>
+                  <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
+                    The recipe and grocery link stay attached. Date, meal time and chef assignment stay unchanged in this draft.
+                  </Text>
+                </View>
+
+                {/* ── Buttons scroll with content — shared Gemini BLUE CTA,
+                    same as every other converted module's Save button
+                    [live-reported: "i still see toreekotta CTA button
+                    instead of gemini blue"]. ── */}
+                {!!formError && (
+                  <View accessibilityRole="alert" style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start', borderRadius: 14, padding: 14, marginBottom: 12,
+                    backgroundColor: isDark ? colors.danger + '22' : '#FFE8E3', borderWidth: 1.5, borderColor: colors.danger }}>
+                    <Text style={{ fontSize: 16 }}>⚠️</Text>
+                    <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 20, color: colors.danger }}>{formError}</Text>
+                  </View>
+                )}
+                <TouchableOpacity onPress={handleSave} disabled={saving}
+                  style={{ borderRadius: 16, paddingVertical: 17, alignItems: 'center',
+                    backgroundColor: isDark ? colors.primary : (saving ? GEMINI.blue + '80' : GEMINI.blue) }}>
                   {saving
                     ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>
-                        {isEdit ? '✅ Save Changes' : '+ Add Meal'}
+                    : <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                        {isEdit ? 'Save changes' : 'Add meal'}
                       </Text>}
                 </TouchableOpacity>
-              )}
-            </View>
+                <TouchableOpacity onPress={requestClose} style={{ alignItems: 'center', paddingVertical: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>
+                    Cancel · back to week
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
 
-          </View>
         </View>
       </KeyboardAvoidingView>
 
       <PickerOverlay
-        showDate={false}
-        showTime={showTimePicker}
+        showDate={false} showTime={showTimePicker}
         value={startTime ?? new Date()}
         onChangeDate={() => {}}
         onChangeTime={(d) => setStartTime(d)}
@@ -398,6 +655,8 @@ export default function MealFormSheet({
         colors={colors}
         timeLabel="🕐 What time is this meal?"
       />
-    </Modal>
+    </>
+    )}
+    </FullPageOverlay>
   );
 }

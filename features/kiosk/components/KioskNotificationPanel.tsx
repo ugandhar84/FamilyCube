@@ -80,11 +80,18 @@ export function KioskNotificationPanel({ visible, onClose, onNavigate, k }: Prop
     onNavigate(tab);
   };
 
+  // The cache holds one page. When there were more on the server and the cached rows run low after clearing,
+  // fetch the next batch so the sheet does not sit empty (or short) while older notifications still exist.
+  const refillIfMore = () => {
+    const st = useNotifStore.getState();
+    if (userId && st.hasMore && (st.notifications?.length ?? 0) < 40) fetchAll(userId);
+  };
+
   const handleDeleteOne = (n: NotificationLog) => {
     removeCachedNotifs([n.id]);
     if (!n.read) decrement(1);
     import('@/lib/db/notifications').then(({ deleteNotifications }) => {
-      deleteNotifications([n.id]).catch(() => {});
+      deleteNotifications([n.id]).then(refillIfMore).catch(() => {});
     }).catch(() => {});
   };
 
@@ -94,7 +101,7 @@ export function KioskNotificationPanel({ visible, onClose, onNavigate, k }: Prop
     removeCachedNotifs(ids);
     setUnreadCount(0);
     import('@/lib/db/notifications').then(({ deleteNotifications }) => {
-      deleteNotifications(ids).catch((e: any) => {
+      deleteNotifications(ids).then(refillIfMore).catch((e: any) => {
         console.error('[KioskNotificationPanel] Clear all failed:', e?.message, e);
       });
     }).catch(() => {});

@@ -32,7 +32,7 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
   }, []);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <View style={[dm.backdrop, { paddingBottom: keyboardHeight }]}>
         <View style={[dm.sheet, { backgroundColor: colors.card, maxHeight: keyboardAwareMaxHeight ?? '75%' }]}>
           <View style={[dm.handle, { backgroundColor: colors.border }]} />
@@ -44,7 +44,7 @@ export function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors,
             <TouchableOpacity
               key={r}
               style={[dm.preset, { borderColor: selected === r ? '#EF4444' : colors.border, backgroundColor: selected === r ? '#FEE2E230' : 'transparent' }]}
-              onPress={() => { setSelected(r); setCustom(''); }}
+              onPress={() => { setSelected(r); setCustom(''); onConfirm(r); }}
             >
               <Text style={[dm.presetText, { color: selected === r ? '#EF4444' : colors.textSecondary }]}>{r}</Text>
             </TouchableOpacity>

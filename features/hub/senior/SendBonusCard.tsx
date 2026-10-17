@@ -54,7 +54,7 @@ export function SendBonusCard({
               {kids.map(kid => (
                 <Pressable key={kid.id} onPress={() => { setGpKid(gpKid?.id === kid.id ? null : kid); }}
                   style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: gpKid?.id === kid.id ? BRAND.purple : (isDark ? colors.surface : '#F5F0FF'), borderWidth: 1.5, borderColor: gpKid?.id === kid.id ? BRAND.purple : BRAND.purple + '30' }}>
-                  <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={gpKid?.id === kid.id ? '#fff' : BRAND.purple} ringWidth={1} />
+                  <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={gpKid?.id === kid.id ? '#fff' : BRAND.amber} ringWidth={1} />
                   <Text style={{ fontSize: GP.body, fontWeight: '700', color: gpKid?.id === kid.id ? '#fff' : BRAND.purple }}>
                     {kid.name.split(' ')[0]}
                   </Text>

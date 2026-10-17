@@ -36,7 +36,7 @@ const { colors, isDark } = useTheme();
 
 ### Brand palette (defined in `constants/colors.ts`) — "Kinfolk" palette
 
-Warm editorial terracotta/sage/lavender/amber on cashmere neutrals. Token
+Muted blue with sage/lavender/amber on cashmere neutrals. **Terracotta is retired**: buttons and tab selectors use only the muted blue; terracotta may appear ONLY as a soft peach pastel tint (kiosk `pastelPrimary`, Medical event chips), never as a button, tab, border or text color. Amber, lavender and sage pastels are also fine for tiles and tints. Token
 *names* still map to the original brand roles (primary/teal/amber/pink/
 parent/kid/accent) — only the hex values changed when the palette moved
 from the original cool purple/teal/pink cube colors to this warmer set.
@@ -46,7 +46,7 @@ functions, no hooks) — keep both in sync if this table changes.
 
 | Token | Light | Dark | Meaning |
 |-------|-------|------|---------|
-| `colors.primary` | `#DF613C` | `#EE8058` | Terracotta — main brand, primary actions |
+| `colors.primary` | `#5872C4` | `#8EA3DD` | Muted blue (the health-records CTA blue) — main brand, buttons, active tab selectors |
 | `colors.teal` | `#3D7A5A` | `#5FA37D` | Sage — CONNECT (parent role accent) |
 | `colors.amber` | `#D97706` | `#F5A85A` | Amber — ORGANIZE (kid role accent) |
 | `colors.pink` | `#7B5EA7` | `#A78BC9` | Lavender — CARE (third accent) |
@@ -59,19 +59,19 @@ functions, no hooks) — keep both in sync if this table changes.
 | `colors.textTertiary` | `#A69A8A` | `#7A6E60` | Timestamps, captions |
 | `colors.card` | `#FFFFFF` | `#1D1A24` | Card backgrounds |
 | `colors.surface` | `#F2ECE1` | `#17151D` | Surface / input backgrounds |
-| `colors.background` | `#FAF8F4` | `#0E0C13` | Screen background (warm cashmere) |
-| `colors.border` | terracotta/15% | terracotta/15% | Dividers, card borders |
-| `colors.danger` | `#C54A27` | `#EE8058` | Errors, destructive |
+| `colors.background` | `#FFFFFF` | `#0E0C13` | Screen background (pure white canvas app-wide) |
+| `colors.border` | blue/15% | blue/15% | Dividers, card borders |
+| `colors.danger` | `#C23B3B` | `#EF7B7B` | Errors, destructive (a clear red, never terracotta) |
 | `colors.success` | `#3D7A5A` | `#5FA37D` | Success states |
-| `colors.primaryLight` | `#FBEADF` | rgba terracotta | Light tint of primary |
-| `colors.tealLight` | `#E1EFE7` | rgba sage | Light tint of teal |
-| `colors.amberLight` | `#FDF1D6` | rgba amber | Light tint of amber |
-| `colors.pinkLight` | `#EFE8F8` | rgba lavender | Light tint of pink/accent |
+| `colors.primaryLight` | `#D5DCF1` | rgba blue | Light tint of primary |
+| `colors.tealLight` | `#D1E3D9` | rgba sage | Light tint of teal |
+| `colors.amberLight` | `#F9E5C1` | rgba amber | Light tint of amber |
+| `colors.pinkLight` | `#E3DAF0` | rgba lavender | Light tint of pink/accent |
 
 ### Role color mapping:
 - **Parent** → `colors.parent` (sage) / `colors.parentLight`
 - **Kid** → `colors.kid` (amber) / `colors.kidLight`
-- **Active member highlight** → `colors.primary` (terracotta)
+- **Active member highlight** → `colors.primary` (muted blue)
 
 ---
 
@@ -158,7 +158,58 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 If UI change: start dev server, verify, share screenshot.
 If type/logic only: run `npx tsc --noEmit`.
 
+### 6. Screen canvas — pure white in light mode, no warm tints (default rule)
+Every screen's root background (ScrollView, SafeAreaView, modal container) in light mode uses **`#FFFFFF`** (clean white — user hates warm-tinted backgrounds). Dark mode uses `#0E0C13`. `colors.background` is now itself pure white in light mode, so it is safe to use for screen roots. Cards and form fields use `colors.card` to lift off the white canvas.
+
+**Exception — the "Gemini rhythm" screens (2026-10-10, extended 2026-10-10):** School, Home Care, Rewards/Store, member-profile, and Memories screens (the ones rebuilt to the Figma field-card rhythm: `features/vault/tabs/SchoolHomeScreen.tsx` + `features/vault/tabs/school/*`, `features/vault/tabs/HomeownerNotesScreen.tsx` + `features/vault/tabs/homeowner/*`, `features/store/StoreScreen.tsx`, `features/store/RewardsDashboardScreen.tsx`, `features/vault/tabs/member/*`, `features/vault/tabs/MemoriesScreen.tsx` + `features/vault/tabs/MemoriesTab.tsx`'s `MemoryPostCard`) intentionally deviate: canvas is `#ECE6DE` (warm cream paper), cards are bright `#FFFFFF` with a real shadow (not flat 1px borders), body/label text uses deep forest-slate (`#3D4D47`/`#4E5C56`) instead of gray, and supporting text uses semibold/extrabold weights, not regular — explicitly requested after comparing against a Gemini-generated mockup, overriding the "no warm tints" default for THESE screens only. Every other screen in the app (Hub, Tasks, Chat, GPS/Find Fam's own chrome outside these files, etc.) keeps the pure-white default above — do not propagate the warm-cream treatment past this named set without a fresh explicit instruction.
+
+### 7. Cards float on the canvas — use `colors.card` for elevated surfaces
+TextInput fields, picker pills, coin buttons, and preview cards use `colors.card` (white/dark) so they pop off the cashmere `colors.background`. Surface-level groupings (tip areas, info callouts) use `colors.surface` or `colors.tealLight`/`colors.pinkLight`/`colors.amberLight`/`colors.primaryLight` for section pastel tints.
+
+### 8. Section headings in forms use role-matching brand accent colors
+- **Quest form WHAT heading** → `colors.pink` (lavender — CARE)
+- **Quest form WHEN heading** → `colors.teal` (sage — CONNECT)
+- **Quest form WHO heading** → `colors.amber` (amber — ORGANIZE / kid)
+- **Quest form REWARD heading** → `colors.pink`
+- Parent-role avatar chips → `colors.teal` / `colors.tealLight`
+- Kid-role avatar chips → `colors.amber` / `colors.amberLight`
+- Pool chip → `colors.amber` / `colors.amberLight` (open/first-come)
+- Do NOT use raw Figma purple (`#7350c0`) — use `colors.pink` instead.
+
+### 9. ⛔ Date/time labels — 12h human format is NON-NEGOTIABLE
+**NEVER** show ISO dates (`2026-10-12`) or 24h times (`17:00`) anywhere in the UI — not in chips, pills, labels, cards, or previews. This is a hard rule; violations must be fixed before claiming done.
+- Dates → `"Oct 12, 2026"` format (Month name, day, full year)
+- Times → `"5:00 PM"` format (12h + AM/PM, no leading zero on hour)
+- Combined → `"Oct 12 · 5:00 PM"` (interpunct separator, not comma)
+Use the module-level helpers in `JustDescribeItScreen.tsx` as the canonical pattern: `fmtQuestDate(iso)` and `fmtQuest12h(hhmm)`. Replicate these helpers in any new screen that formats dates/times.
+
+### 10. Introduce lighter pastel tokens when needed
+The brand palette already has `*Light` variants: `colors.primaryLight`, `colors.tealLight`, `colors.amberLight`, `colors.pinkLight`. Use these for card backgrounds, section tints, and unselected chip fills rather than hardcoding softer shades. If a new lightest tint is needed (e.g. a very subtle hover state), use `colors.surface` or add `opacity` to an existing light token — never hardcode a new hex.
+
 ---
+
+## Spacing rhythm — uniform on every page
+
+Use `RHYTHM` from `constants/theme.ts` (or `PageBody` / `Section` from `components/PageLayout.tsx`), never ad-hoc numbers:
+- **Page edges** `RHYTHM.page` = 20.
+- **Between sections** (a heading plus its block) `RHYTHM.section` = 24.
+- **Between components inside a section** (cards, rows, banners, buttons) `RHYTHM.item` = 12.
+- **Inside a card or banner** `RHYTHM.card` = 16 padding.
+- Spacing comes from the container's `gap`. Children do **not** add their own `marginTop`/`marginBottom` for outer spacing (that double-spaces).
+- A page heading is `PageHeading` (it supplies its own top/bottom padding). Do not wrap it in a View that adds padding or a divider line.
+- Buttons are at least 48 high (`paddingVertical` 13–14, radius 14); banners are radius 18 with a 44 icon tile.
+
+## Full-Page Detail/Overlay Screens — render as a sibling, not an early-return
+
+**Reference implementation: `features/quests/QuestsScreen.tsx` → `QuestDetailModal.tsx`.** Any new full-page detail/overlay screen (event detail, member detail, etc.) must follow this exact shape:
+
+1. **Render as a conditional sibling inside the parent's JSX**, alongside the parent's own content — e.g. `{detailTarget && <QuestDetailModal ... />}` sitting next to the rest of `QuestsScreen`'s tree. **Never early-return** (`if (detailX) return <Screen .../>`) from a parent that owns real tab content — an early-return fully unmounts everything behind it, so a swipe-back/slide-out gesture has nothing real to reveal underneath, just a flat painted color. `features/tasks/TasksScreen.tsx`'s `detailEvent` → `EventDetailScreen` used to be exactly this early-return mistake (fixed 2026-10-11) — confirm any new full-page screen doesn't repeat it.
+2. **Wrap the screen's content in `FullPageOverlay`** (`components/FullPageOverlay.tsx`), not a raw `SwipeBackWrapper` and never a real RN `<Modal>`. `FullPageOverlay` owns the slide-in-from-right entrance, the swipe-to-dismiss gesture (via `SwipeBackWrapper` internally), and `requestAnimatedClose()` for in-screen buttons that want the same animated exit. A real `<Modal>`'s native backing window has no color of its own and causes a white flash on open/close; `FullPageOverlay` paints its own backdrop instead.
+3. **Pass `backgroundColor={canvas}`** to `FullPageOverlay`, where `canvas` is `isDark ? colors.background : GEMINI.canvas` (or the plain `colors.background` white canvas for non-Gemini-rhythm screens per rule 6 above) — this is the backdrop painted behind the sliding content, preventing any white flash during the gesture.
+4. **Hide the tab bar via `hideTabBar()`/`showTabBar()`** (`lib/tabBarVisibility.ts`) in a mount/unmount `useEffect`, alongside `useUIStore.getState().setFullBleedScreenActive(true/false)` — both together, not just one. `fullBleedScreenActive` alone only hides the floating FAB; `hideTabBar`/`showTabBar` is what actually animates the real tab bar away.
+5. The screen's own explicit Back button calls `onClose` directly — it does **not** need to call `requestAnimatedClose()`. `QuestDetailModal.tsx` itself doesn't animate its own Back tap, only the swipe gesture and the initial mount are animated; match that, don't add extra entrance/exit machinery.
+
+**`components/SwipeBackWrapper.tsx` is shared infrastructure** — every `FullPageOverlay` consumer app-wide (Quest detail, Event detail, Grocery sub-pages, FamilyTree, ConnectCalendar, SchoolHome, Memories, etc.) depends on it. A change here affects every one of them simultaneously. If chasing a swipe/slide visual bug on ONE screen, check whether the actual fix belongs in that screen's own usage (missing `FullPageOverlay` wrap, wrong `canvas` value, early-return architecture) before touching this file — a "fix" here that looks correct in isolation can still regress every other screen's back-swipe at once, since there's no way to test them all from reading the code alone. If a fix here really is required, re-verify Quest detail's swipe-back specifically afterward, since it's the most load-bearing consumer.
 
 ## Dark Mode
 

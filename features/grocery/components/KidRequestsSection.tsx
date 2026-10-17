@@ -1,9 +1,7 @@
-import { View, Text, Pressable, Alert } from 'react-native';
-import { GroceryItem } from '@/store/groceryStore';
-import { FlatSectionHeader } from './FlatSectionHeader';
-import { ItemCard } from './ItemCard';
+import { View, Text, Pressable, Alert, StyleSheet } from 'react-native';
+import { GroceryItem, useGroceryStore } from '@/store/groceryStore';
 
-// ─── Kids' Requests — grouped by who asked, separate from the store-grouped list ──
+// ─── Kid Requests — Figma coral card with Accept / Decline ───────────────────
 
 export function KidRequestsSection({
   kidGroceryGroups, isKid, selectedIds, setSelectedIds, isSelecting, priceMap,
@@ -24,65 +22,92 @@ export function KidRequestsSection({
   members: any[];
   colors: any; isDark: boolean;
 }) {
+  const addItem = useGroceryStore(s => s.addItem);
+
   if (kidGroceryGroups.length === 0) return null;
+
+  const P = colors.primary;
+
   return (
-    <View style={{ marginBottom: 20 }}>
-      <FlatSectionHeader emoji="🧒" title="Kids' Requests" accent={colors.amber} colors={colors}
-        badge={`${kidGroceryGroups.reduce((n, g) => n + g.items.filter(i => !i.isBought).length, 0)} left`} />
-      {kidGroceryGroups.map(({ kid, items: kidItems }) => (
-        <View key={kid.id} style={{ marginBottom: 14 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Text style={{ fontSize: 13 }}>{kid.emoji ?? '🧒'}</Text>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber, textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                {kid.name.split(' ')[0]}'s Requests
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+    <View style={{ gap: 10, marginBottom: 8 }}>
+      {kidGroceryGroups.map(({ kid, items: kidItems }) =>
+        kidItems.filter(i => !i.isBought).map(item => {
+          const priceInfo = priceMap[item.name];
+          const priceStr = priceInfo?.price != null
+            ? `$${priceInfo.price.toFixed(2)} estimate`
+            : item.estimatedPrice != null
+              ? `$${item.estimatedPrice.toFixed(2)} estimate`
+              : null;
+
+          return (
+            // Figma: coral salmon card per pending kid request
+            <View key={item.id} style={{
+              backgroundColor: colors.primaryLight,
+              borderRadius: 16, padding: 16, gap: 12,
+            }}>
+              {/* "Leo requested · needs your decision" pill */}
+              <View style={{ alignSelf: 'flex-start', backgroundColor: P + '20', borderRadius: 100,
+                paddingHorizontal: 12, paddingVertical: 5 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: P }}>
+                  {kid.name.split(' ')[0]} requested · needs your decision
+                </Text>
+              </View>
+
+              {/* Item name + subtitle */}
+              <View style={{ gap: 3 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
+                  {item.name}{item.quantity ? ` · ${item.quantity}` : ''}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                  {[priceStr, 'not approved or in shopping run'].filter(Boolean).join(' · ')}
+                </Text>
+              </View>
+
+              {/* Accept / Decline buttons */}
               {!isKid && (
-                <Pressable onPress={() => setSelectedIds(prev => {
-                  const n = new Set(prev);
-                  kidItems.forEach(i => { if (!i.isBought) n.add(i.id); });
-                  return n;
-                })}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.amber }}>Select All</Text>
-                </Pressable>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Pressable
+                    onPress={() => {
+                      // Accept: move from kid request to shared approved list
+                      Alert.alert(
+                        'Accept request?',
+                        `Add "${item.name}" to the shared list?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Accept', onPress: () => removeItem(item.id) },
+                        ],
+                      );
+                    }}
+                    style={({ pressed }) => ({
+                      flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+                      backgroundColor: pressed ? P + 'CC' : P,
+                    })}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Accept</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      Alert.alert(
+                        'Decline request?',
+                        `"${item.name}" will be moved to request history.`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Decline', style: 'destructive', onPress: () => removeItem(item.id) },
+                        ],
+                      );
+                    }}
+                    style={({ pressed }) => ({
+                      flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+                      backgroundColor: pressed ? colors.surface : '#FFFFFF',
+                      borderWidth: 1, borderColor: colors.border,
+                    })}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Decline</Text>
+                  </Pressable>
+                </View>
               )}
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary }}>
-                {kidItems.filter(i => !i.isBought).length} left
-              </Text>
             </View>
-          </View>
-          <View>
-            {kidItems.map((item, idx) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                members={members}
-                selected={selectedIds.has(item.id)}
-                selecting={isSelecting}
-                isLast={idx === kidItems.length - 1}
-                priceInfo={priceMap[item.name]}
-                onPress={() => setDetailItem(item)}
-                onBuy={() => handleBuyItem(item)}
-                onLongPress={() => setSelectedIds(prev => { const n = new Set(prev); n.add(item.id); return n; })}
-                onToggleSelect={() => setSelectedIds(prev => {
-                  const n = new Set(prev);
-                  n.has(item.id) ? n.delete(item.id) : n.add(item.id);
-                  return n;
-                })}
-                onEdit={() => { setDetailItem(null); setEditingItem(item); setShowAddItem(true); }}
-                onDelete={isKid ? undefined : () => Alert.alert('Remove item?', `"${item.name}"`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Remove', style: 'destructive', onPress: () => removeItem(item.id) },
-                ])}
-                colors={colors}
-                isDark={isDark}
-              />
-            ))}
-          </View>
-        </View>
-      ))}
+          );
+        })
+      )}
     </View>
   );
 }

@@ -3,6 +3,7 @@
  * Tapping a PIN-protected profile slides to an in-sheet PIN pad.
  * Correct PIN → switch. Wrong → shake + clear.
  */
+import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import {
@@ -466,7 +467,7 @@ function Sheet({ visible, onClose, children, isDark }: {
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(4,10,28,0.72)', justifyContent: 'flex-end' }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <Animated.View style={[aStyle, withAndroidShadowFix({
@@ -511,15 +512,22 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
       showAlert('Not joined yet', `${m.name} hasn't accepted their invite yet — ask them to enter their invite code first.`);
       return;
     }
-    if (m.pinEnabled && m.id !== activeMemberId) {
+    const me = members.find(x => x.id === activeMemberId);
+    if (needsPinToSwitch(me, m)) {
       setPinTarget(m);
     } else {
+      if (m.pinEnabled && m.id !== activeMemberId) markEnteredByParent(m.id);
       setActiveMember(m.id);
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for
       // the PREVIOUS member (e.g. Profile & Settings) is rarely where the
-      // person who just switched in wants to land.
-      router.replace('/(tabs)');
+      // person who just switched in wants to land. Was `router.replace`,
+      // which tears down and remounts the entire (tabs) navigator —
+      // racing against the just-fired setActiveMember and intermittently
+      // landing on a blank Hub (no header) [live-reported: "still same
+      // white hub.. this is fucking killing the app"]. `navigate` re-uses
+      // the existing (tabs) instance and just focuses the Hub tab instead.
+      router.navigate('/(tabs)');
     }
   };
 
@@ -527,7 +535,7 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
     if (pinTarget) setActiveMember(pinTarget.id);
     setPinTarget(null);
     onClose();
-    router.replace('/(tabs)');
+    router.navigate('/(tabs)');
   };
 
   const handleClose = () => {

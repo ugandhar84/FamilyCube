@@ -64,7 +64,19 @@ export default function ProfilePickerScreen() {
       <PinEntryModal
         visible={pinTarget !== null}
         member={pinTarget}
-        onSuccess={(member) => { setActiveMember(member.id); router.replace('/(tabs)'); }}
+        onSuccess={(member) => {
+          // Must close this native <Modal> (visible=false) BEFORE
+          // navigating away — router.replace was firing while the modal's
+          // own native window was still presented (onSuccess never
+          // cleared pinTarget), so (auth)/profile-picker got torn down and
+          // (tabs) mounted underneath a still-live modal window, which on
+          // iOS left the new screen mounted but never actually painted —
+          // a blank Hub with no header at all [live-reported: "in family
+          // tab lock and swich card" / "this is fucking killing the app"].
+          setPinTarget(null);
+          setActiveMember(member.id);
+          router.replace('/(tabs)');
+        }}
         onCancel={() => setPinTarget(null)}
       />
     </SafeAreaView>

@@ -394,7 +394,10 @@ export default function SmartTaskComposer({
       confidence: 90,
       title: task.title,
       when: task.startAt ? { date: task.startAt.slice(0, 10), time: task.startAt.length > 10 ? task.startAt.slice(11, 16) : null, returnTime: null } : { date: null, time: null, returnTime: null },
-      locations: { pickup: null, dropoff: null },
+      // AI-extracted pickup/dropoff only populate for category: 'transport'
+      // (see family-ai edge function's extract_responsibility prompt) — null
+      // for every other category, same as before.
+      locations: { pickup: task.pickupLocation ?? null, dropoff: task.dropoffLocation ?? null },
       memberNames: names,
       amount: null,
       // Older cached responses (before recurrence/urgency were added to the
@@ -409,6 +412,7 @@ export default function SmartTaskComposer({
       driverName: null,
       driverId: null,
       alertCall: task.alertCall ?? false,
+      rideDirection: task.rideDirection ?? null,
     });
     // family-ai's `requirements` is exactly "what the AI inferred beyond
     // the structured fields" — surface it into Notes and open the toggle
@@ -1119,7 +1123,7 @@ export default function SmartTaskComposer({
                     </Text>
                   </View>
                   <View style={{ width: 44, height: 26, borderRadius: 13,
-                    backgroundColor: openToGrandparents ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
+                    backgroundColor: openToGrandparents ? colors.warning : (colors.surface),
                     justifyContent: 'center', paddingHorizontal: 3 }}>
                     <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
                       alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
@@ -1131,7 +1135,7 @@ export default function SmartTaskComposer({
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: RADIUS.md,
                       borderWidth: 1.5,
-                      borderColor: openToTeens ? '#6366F1' : colors.border,
+                      borderColor: openToTeens ? colors.sky : colors.border,
                       backgroundColor: openToTeens ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : colors.inputBg) }}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? '#3730A3' : colors.textPrimary }}>
@@ -1142,7 +1146,7 @@ export default function SmartTaskComposer({
                       </Text>
                     </View>
                     <View style={{ width: 44, height: 26, borderRadius: 13,
-                      backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                      backgroundColor: openToTeens ? colors.sky : colors.surface,
                       justifyContent: 'center', paddingHorizontal: 3 }}>
                       <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
                         alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
@@ -1155,7 +1159,7 @@ export default function SmartTaskComposer({
                     <TextInput
                       style={{ width: 80, textAlign: 'center', fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
                         backgroundColor: isDark ? colors.surface : colors.inputBg, borderRadius: RADIUS.md,
-                        paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#6366F1' }}
+                        paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: colors.sky }}
                       keyboardType="numeric" maxLength={4}
                       placeholder="0" placeholderTextColor={colors.textTertiary}
                       value={rideCoinsTeen} onChangeText={setRideCoinsTeen}
@@ -1433,34 +1437,41 @@ export default function SmartTaskComposer({
 
                 {/* Call reminder — VoIP-style ringing alert (call-reminder-
                     sweeper cron), distinct from ordinary push notifications.
-                    Off by default; turning it on defaults to 10 min before,
-                    same default AskCubeProposalCard's ReminderPicker uses
-                    when a reminder is first added. */}
-                <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
-                    borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,
-                    borderWidth: 1, borderColor: alertCall ? colors.primary + '50' : colors.border, marginTop: 4 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCall ? colors.primary : colors.textPrimary }}>
-                    📞 Call reminder {alertCall ? `— ${alertCallLeadMinutes} min before` : 'off'}
-                  </Text>
-                </Pressable>
-                {alertCall && (
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {[0, 10, 15, 30].map(mins => {
-                      const active = alertCallLeadMinutes === mins;
-                      return (
-                        <Pressable key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
-                          style={{ flex: 1, borderRadius: RADIUS.sm, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center',
-                            borderColor: active ? colors.primary : colors.border,
-                            backgroundColor: active ? colors.primaryLight : 'transparent' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? colors.primary : colors.textSecondary }}>
-                            {mins === 0 ? 'On time' : `${mins}m`}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                    Restricted to events only now [live-requested: "we
+                    should only alert the meaningful - dont use the
+                    annolying calls"] — a chore has no equivalent of an
+                    event's Medical/Ride urgency, so it's no longer offered
+                    for chores at all. Off by default; turning it on
+                    defaults to 10 min before. */}
+                {isEvent && (
+                  <>
+                    <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
+                        borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,
+                        borderWidth: 1, borderColor: alertCall ? colors.primary + '50' : colors.border, marginTop: 4 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCall ? colors.primary : colors.textPrimary }}>
+                        📞 Call reminder {alertCall ? `— ${alertCallLeadMinutes} min before` : 'off'}
+                      </Text>
+                    </Pressable>
+                    {alertCall && (
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {[0, 10, 15, 30].map(mins => {
+                          const active = alertCallLeadMinutes === mins;
+                          return (
+                            <Pressable key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                              style={{ flex: 1, borderRadius: RADIUS.sm, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center',
+                                borderColor: active ? colors.primary : colors.border,
+                                backgroundColor: active ? colors.primaryLight : 'transparent' }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? colors.primary : colors.textSecondary }}>
+                                {mins === 0 ? 'On time' : `${mins}m`}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
                 )}
             </View>
 

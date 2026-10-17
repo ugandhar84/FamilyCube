@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { logActivity, type ActivityAction } from '@/lib/activityLog';
-import { localDateStr } from '@/lib/dates';
+import { localDateStr, parseLocalDate } from '@/lib/dates';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -125,6 +125,23 @@ export interface FamilyEvent {
   // is assigned.
   driverId?: string;
   driverStatus?: HelperStatus;
+  // A kid's free-text requested driver on the Ask-for-a-ride form (e.g.
+  // "Mom preferred") — a preference stated when asking, not the actual
+  // assignment. Distinct from driverName above, which is the real
+  // assigned driver once a parent picks one; this is never cleared when
+  // driverName is set, so the original ask stays visible for context.
+  driverPreference?: string;
+  // The ride form's recurrence model, matching the parent "Describe It"
+  // composer's own once/daily/weekly/monthly + day-of-week + end-date shape
+  // (JustDescribeItScreen.tsx) — distinct from the full recurrenceRule/
+  // seriesId materialized-rows engine below, which is a much heavier
+  // general-purpose recurrence system this simple kid-facing ask doesn't
+  // need. Undefined/'once' means a one-off ask.
+  rideRecurrence?: 'once' | 'daily' | 'weekly' | 'monthly';
+  // 0=Sun..6=Sat, only meaningful when rideRecurrence === 'weekly'.
+  rideRecurrenceDays?: number[];
+  // 'YYYY-MM-DD', optional, only meaningful when rideRecurrence !== 'once'.
+  rideRecurrenceEndDate?: string;
 
   // A both-ways ride request forks into 2 fully independent rows (Drop-off
   // leg + Pickup leg, see rideLegs.ts's forkRideLegs) — this points each
@@ -312,6 +329,21 @@ export function eventAssignee(e: Pick<FamilyEvent, 'helper' | 'helperId' | 'help
   return { name: undefined, id: undefined, status: undefined };
 }
 
+// A ride leg (drop-off or pick-up) carries its address in
+// pickupLocation/dropLocation, not the plain `location` field, so any
+// card reading only `ev.location` silently showed no street link at all
+// for a pick-up leg even though the address was saved [live-reported: "on
+// the pickup card why there is no pickup street link"]. Shared so every
+// calendar surface (DaySlotView, EventCard, CalendarScreen's compact
+// list) resolves the same way instead of three cards drifting on which
+// field to fall back to. dropLocation (where the driver is headed to
+// pick someone up) takes priority over pickupLocation (where the rider
+// currently is) since the destination is the more actionable address to
+// show for "where am I going."
+export function eventDisplayLocation(e: Pick<FamilyEvent, 'location' | 'pickupLocation' | 'dropLocation'>): string | undefined {
+  return e.location || e.dropLocation || e.pickupLocation || undefined;
+}
+
 // Scenario 2.6/5.4/5.5 — the single shared visibility predicate every
 // calendar/hub surface should call for a sensitive event, instead of each
 // screen re-deriving its own version of "am I allowed to see this."
@@ -425,6 +457,8 @@ interface EventState {
 
   // Mutations (optimistic)
   addEvent:    (e: Omit<FamilyEvent, 'id'>) => Promise<string>;
+  /** Save many events in one request (chunked). Returns how many were saved; a chunk the database refuses falls back to one-by-one. */
+  addEventsBulk: (events: Omit<FamilyEvent, 'id'>[], onProgress?: (done: number) => void) => Promise<{ saved: number; failed: number }>;
   updateEvent: (id: string, updates: Partial<FamilyEvent>) => Promise<void>;
   deleteEvent: (id: string) => void;
   // Removes events from local state ONLY — for callers (calendar-sync-
@@ -511,7 +545,7 @@ interface EventState {
   // three could drift from the others (exactly the "why does the Hub
   // still show the old assignee after I reassigned from Schedule" class
   // of report). One function, one re-fetch, used everywhere.
-  reassignEvent: (eventId: string, newMemberId: string, role: 'driver' | 'helper', actorId: string) => Promise<boolean>;
+  reassignEvent: (eventId: string, newMemberId: string, role: 'driver' | 'helper', actorId: string, scope?: 'this' | 'all_future') => Promise<boolean>;
 
   // Same consolidation as reassignEvent, for the OTHER two duplicated
   // event-assignment actions — confirmEventAssignment was independently
@@ -524,7 +558,7 @@ interface EventState {
   // consistently, based on whether the event actually has a seriesId —
   // every caller gets the same behavior automatically.
   confirmEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper') => Promise<boolean>;
-  declineEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper', reason?: string) => Promise<boolean>;
+  declineEventAssignment: (eventId: string, memberId: string, role: 'driver' | 'helper', reason?: string, scope?: 'this' | 'all_future') => Promise<boolean>;
 
   // Live-caught: the "Remind" button (both HelperEventCard.tsx and
   // EventDetailSheet) only ever showed a "Reminder sent ✓" toast — no
@@ -611,7 +645,7 @@ function otherParentIds(excludeIds: (string | null | undefined)[]): string[] {
 }
 
 function notifyRideAssignment(
-  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened',
+  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened' | 'ride_driver_needed',
   memberIds: string[],
   excludeMemberId: string | null,
   payload: Record<string, unknown>,
@@ -788,6 +822,10 @@ export function fromRow(row: any): FamilyEvent {
     driverName:             row.driver_name ?? undefined,
     driverId:               row.driver_id ?? undefined,
     driverStatus:           row.driver_status ?? undefined,
+    driverPreference:       row.driver_preference ?? undefined,
+    rideRecurrence:         row.ride_recurrence ?? undefined,
+    rideRecurrenceDays:     row.ride_recurrence_days ?? undefined,
+    rideRecurrenceEndDate:  row.ride_recurrence_end_date ?? undefined,
     pickupConfirmedAt:      row.pickup_confirmed_at ?? undefined,
     pickupConfirmedBy:      row.pickup_confirmed_by ?? undefined,
     createdBy:              row.created_by ?? undefined,
@@ -864,6 +902,10 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     driver_name:                ev.driverName ?? null,
     driver_id:                  ev.driverId ?? null,
     driver_status:              ev.driverStatus ?? null,
+    driver_preference:          ev.driverPreference ?? null,
+    ride_recurrence:            ev.rideRecurrence ?? null,
+    ride_recurrence_days:       ev.rideRecurrenceDays ?? null,
+    ride_recurrence_end_date:   ev.rideRecurrenceEndDate ?? null,
     pickup_confirmed_at:        ev.pickupConfirmedAt ?? null,
     pickup_confirmed_by:        ev.pickupConfirmedBy ?? null,
     created_by:                 ev.createdBy ?? null,
@@ -1102,6 +1144,19 @@ function updateEventNotifications(
         imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
       });
     }
+    // Same driverless-escalation fix as declineEventAssignment's own RPC
+    // path above — this is the general updateEvent path's equivalent
+    // decline transition, and had the identical gap: only
+    // prevEvent.updatedBy (one prior actor) ever heard about it, never
+    // every parent, when the decline left nobody driving at all.
+    if (justDeclinedDriver && !updated.driverId) {
+      const allParents = otherParentIds([actorId]);
+      if (allParents.length) {
+        notifyRideAssignment('ride_driver_needed', allParents, actorId, {
+          eventTitle: updated.title, eventId: updated.id, byName: declinerName,
+        });
+      }
+    }
   }
 
   // 4. Final confirmation to the kid — exactly once, only on the actual
@@ -1181,6 +1236,8 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids', teenPassedIds: 'teen_passed_ids',
   isOpenToTeens: 'is_open_to_teens', rideCoins: 'ride_coins', rideRequired: 'ride_required',
   driverName: 'driver_name', driverId: 'driver_id', driverStatus: 'driver_status',
+  driverPreference: 'driver_preference', rideRecurrence: 'ride_recurrence',
+  rideRecurrenceDays: 'ride_recurrence_days', rideRecurrenceEndDate: 'ride_recurrence_end_date',
   pickupConfirmedAt: 'pickup_confirmed_at', pickupConfirmedBy: 'pickup_confirmed_by',
   createdBy: 'created_by', createdAt: 'created_at', updatedBy: 'updated_by', updatedAt: 'updated_at',
   deletedBy: 'deleted_by', alertCall: 'alert_call', alertCallLeadMinutes: 'alert_call_lead_minutes',
@@ -1222,6 +1279,15 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
 // undefined through the partial-update path.
 const NOT_NULL_EMPTY_DEFAULT: Partial<Record<keyof FamilyEvent, unknown>> = {
   memberIds: [], grandparentPassedIds: [], rsvps: {},
+  // Same class of bug as memberIds above, newly confirmed live: all_day is
+  // NOT NULL on calendar_events with no DB-side default. A partial update
+  // sending allDay: undefined (e.g. JustDescribeItEventScreen's edit save
+  // using `evAllDay || undefined`) previously fell through to toRowPartial's
+  // bare `null` fallback and hard-failed the whole update —
+  // 'null value in column "all_day" ... violates not-null constraint' —
+  // silently discarding every other field in the same patch (title, notes,
+  // pickupLocation/dropLocation included), not just allDay itself.
+  allDay: false,
 };
 
 function toRowPartial(ev: FamilyEvent, keys: Iterable<keyof FamilyEvent>): Record<string, unknown> {
@@ -1542,6 +1608,40 @@ async function fetchDayPage(
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// `events` is a legacy alias that `selectDate` only ever keeps in sync for
+// the single CURRENTLY SELECTED day (get().currentDate) — Hub/Quests read
+// it safely because they only ever look at "today." A screen that can be
+// opened for an event on any date (Week/Month view, a paged range) may
+// find that event was never loaded into `events` at all, so reassign/
+// confirm/decline's own `.map` patch over it is a no-op for that row —
+// confirmed live: "Who's involved" showed a reassigned-away driver as
+// still confirmed while the activity log (a separate DB fetch) already
+// showed the correct state. `dayEvents` and `rangeEvents` are the arrays
+// actually paged in for arbitrary dates, so merge those first (deduped by
+// id) and only fall back to `events` for an id neither currently holds.
+//
+// Returns a brand-new array every call — wrap with zustand/react/shallow's
+// `useShallow` at the call site (`useEventStore(useShallow(selectAllKnownEvents))`)
+// or it'll produce a new reference every render, which can retrigger any
+// effect/memo keyed on the result (confirmed live: caused an infinite
+// render loop in DispatchRideSheet.tsx before that call site was switched
+// to selectKnownEventById for its single-row lookup instead). Prefer
+// selectKnownEventById when you only need one row by id.
+export function selectAllKnownEvents(s: EventState): FamilyEvent[] {
+  const byId = new Map<string, FamilyEvent>();
+  for (const e of s.events) byId.set(e.id, e);
+  for (const e of s.rangeEvents) byId.set(e.id, e);
+  for (const e of s.dayEvents) byId.set(e.id, e);
+  return Array.from(byId.values());
+}
+
+export function selectKnownEventById(s: EventState, id: string | undefined | null): FamilyEvent | undefined {
+  if (!id) return undefined;
+  return s.dayEvents.find(e => e.id === id)
+    ?? s.rangeEvents.find(e => e.id === id)
+    ?? s.events.find(e => e.id === id);
+}
+
 export const useEventStore = create<EventState>((set, get) => ({
   currentDate: '',
   dayEvents:   [],
@@ -1906,6 +2006,35 @@ export const useEventStore = create<EventState>((set, get) => ({
   },
 
   // ── Mutations ─────────────────────────────────────────────────────────────
+  addEventsBulk: async (events, onProgress) => {
+    const CHUNK = 25;
+    let saved = 0, failed = 0;
+    const createdBy = getActiveMemberId() ?? undefined;
+    for (let i = 0; i < events.length; i += CHUNK) {
+      const slice = events.slice(i, i + CHUNK);
+      const rows = slice.map((e, j) => toRow({
+        ...e, id: 'ev' + Date.now() + '-' + i + '-' + j,
+        title: e.title?.trim() ?? e.title,
+        createdBy: e.createdBy ?? createdBy,
+        createdAt: e.createdAt ?? new Date().toISOString(),
+      } as FamilyEvent));
+      const { error } = await supabase.from('calendar_events').insert(rows);
+      if (!error) {
+        saved += slice.length;
+      } else {
+        // One row (e.g. a duplicate) sank the whole chunk: save that chunk one by one so the rest still go in.
+        for (const e of slice) {
+          const id = await get().addEvent(e);
+          if (id) saved++; else failed++;
+        }
+      }
+      onProgress?.(saved + failed);
+    }
+    // One refresh instead of per-row cache patching.
+    await get().syncFromDB();
+    return { saved, failed };
+  },
+
   addEvent: async (e) => {
     const draft: FamilyEvent = {
       ...e, id: 'ev' + Date.now(),
@@ -1925,6 +2054,17 @@ export const useEventStore = create<EventState>((set, get) => ({
     // exists only to build the outgoing row; the server's returned row is
     // what every list/cache below is populated from.
     const { data: row, error } = await supabase.from('calendar_events').insert([toRow(draft)]).select().maybeSingle();
+    if (error && /calendar_events_single_dedup_uniq|duplicate key/i.test(error.message ?? '')) {
+      // The same event (same day, title, start time and person) is already on the calendar, usually from an earlier tap of
+      // Add. That is not a failure: tell the person, and hand back the existing event so the caller can finish normally.
+      const d: any = toRow(draft);
+      let q = supabase.from('calendar_events').select('id').eq('family_id', d.family_id).eq('date', d.date).eq('title', d.title);
+      q = d.start_time ? q.eq('start_time', d.start_time) : q.is('start_time', null);
+      q = d.member_id ? q.eq('member_id', d.member_id) : q.is('member_id', null);
+      const { data: existing } = await q.limit(1).maybeSingle();
+      showToast('That event is already on the calendar', 'warning');
+      return (existing as any)?.id ?? '';
+    }
     if (error || !row) {
       console.warn('[eventStore] insert failed', error?.message);
       showToast("Couldn't save — check your connection and try again", 'error');
@@ -2277,7 +2417,7 @@ export const useEventStore = create<EventState>((set, get) => ({
   // construction; this collapses them into one function every surface
   // calls, so a reassignment made from Schedule and one made from the Hub
   // behave — and render — identically, always.
-  reassignEvent: async (eventId, newMemberId, role, actorId) => {
+  reassignEvent: async (eventId, newMemberId, role, actorId, scope = 'this') => {
     // Live QA finding (docs/qa_reassign_takeover_audit.html, Medium):
     // Overriding someone else's already-CONFIRMED assignment silently
     // replaced them with zero notification — captured BEFORE the RPC runs,
@@ -2286,24 +2426,39 @@ export const useEventStore = create<EventState>((set, get) => ({
     const prevAssignee = prevEvent ? eventAssignee(prevEvent) : undefined;
     const wasOverridingConfirmed = prevAssignee?.status === 'confirmed' && !!prevAssignee.id && prevAssignee.id !== newMemberId;
 
-    const { error } = await supabase.rpc('reassign_event', {
-      p_event_id: eventId, p_new_member_id: newMemberId, p_role: role, p_actor_id: actorId,
-    });
+    // scope 'all_future' sweeps every later occurrence in the same series
+    // still held by the member being replaced (or unassigned/pending) to
+    // the new assignee too — one reassign instead of one per occurrence.
+    const { data: rows, error }: { data: any[] | null; error: any } = scope === 'all_future'
+      ? await supabase.rpc('reassign_event_series_forward', {
+          p_event_id: eventId, p_new_member_id: newMemberId, p_role: role, p_actor_id: actorId, p_scope: scope,
+        })
+      : await supabase.rpc('reassign_event', {
+          p_event_id: eventId, p_new_member_id: newMemberId, p_role: role, p_actor_id: actorId,
+        }).then(r => ({ data: null, error: r.error }));
     if (error) {
       console.warn('[eventStore] reassignEvent failed', eventId, error.message);
       showToast("Couldn't reassign — please try again", 'error');
       return false;
     }
-    // DB-is-truth: re-fetch the real row instead of guessing what the RPC
-    // just wrote (its exact status rule — 'confirmed' only when assigning
-    // to yourself, 'pending' otherwise — lives server-side; duplicating
-    // that rule client-side is exactly how the three old copies drifted).
-    const { data: row } = await supabase.from('calendar_events').select('*').eq('id', eventId).single();
-    if (row) {
-      const fresh = fromRow(row);
-      const nextDay = sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh : e));
-      set({ dayEvents: nextDay, events: nextDay });
-      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh : e)) });
+    // DB-is-truth: re-fetch the real row(s) instead of guessing what the
+    // RPC just wrote (its exact status rule — 'confirmed' only when
+    // assigning to yourself, 'pending' otherwise — lives server-side;
+    // duplicating that rule client-side is exactly how the three old
+    // copies drifted). scope 'all_future' already got every touched row
+    // back from the RPC itself; scope 'this' re-fetches the single row.
+    const freshRows: FamilyEvent[] | null = rows && rows.length ? rows.map(fromRow) : null;
+    const { data: row } = freshRows ? { data: null } : await supabase.from('calendar_events').select('*').eq('id', eventId).single();
+    if (row || freshRows) {
+      const fresh = freshRows ? freshRows.find((e: FamilyEvent) => e.id === eventId)! : fromRow(row);
+      const patchMany = (list: FamilyEvent[]) => {
+        if (!freshRows) return list.map(e => e.id === eventId ? fresh : e);
+        const byId = new Map(freshRows.map((e: FamilyEvent) => [e.id, e]));
+        return list.map(e => byId.get(e.id) ?? e);
+      };
+      set({ dayEvents: sortByTime(patchMany(get().dayEvents)) });
+      set({ events: sortByTime(patchMany(get().events)) });
+      set({ rangeEvents: sortByTime(patchMany(get().rangeEvents)) });
       // Live-reported gap: Praveena reassigned this ride to Ugandhar, it
       // showed up correctly on Ugandhar's Hub, but he got no push/bell at
       // all — updateEvent's own updateEventNotifications only fires for
@@ -2415,23 +2570,36 @@ export const useEventStore = create<EventState>((set, get) => ({
   // ── declineEventAssignment — the ONE place "I can't do this" happens ─────
   // Same consolidation — was independently hand-copied in the same 4
   // files as confirmEventAssignment above.
-  declineEventAssignment: async (eventId, memberId, role, reason) => {
+  declineEventAssignment: async (eventId, memberId, role, reason, scope = 'this') => {
     const prevEvent = get().dayEvents.find(e => e.id === eventId) ?? get().rangeEvents.find(e => e.id === eventId);
-    const { error } = await supabase.rpc('decline_event_assignment', {
-      p_event_id: eventId, p_member_id: memberId, p_role: role, p_reason: reason ?? null,
-    });
+    // scope 'all_future' sweeps every later occurrence in the same series
+    // still held by this member/role too — declining "every Wednesday"
+    // going forward shouldn't need one tap per future row.
+    const { data: rows, error }: { data: any[] | null; error: any } = scope === 'all_future'
+      ? await supabase.rpc('decline_event_assignment_series_forward', {
+          p_event_id: eventId, p_member_id: memberId, p_role: role, p_reason: reason ?? null, p_scope: scope,
+        })
+      : await supabase.rpc('decline_event_assignment', {
+          p_event_id: eventId, p_member_id: memberId, p_role: role, p_reason: reason ?? null,
+        }).then(r => ({ data: null, error: r.error }));
     if (error) {
       console.warn('[eventStore] declineEventAssignment failed', eventId, error.message);
       showToast("Couldn't do that — please try again", 'error');
       return false;
     }
-    const { data: row } = await supabase.from('calendar_events').select('*').eq('id', eventId).single();
+    const freshRows: FamilyEvent[] | null = rows && rows.length ? rows.map(fromRow) : null;
+    const { data: row } = freshRows ? { data: null } : await supabase.from('calendar_events').select('*').eq('id', eventId).single();
     let fresh: FamilyEvent | undefined;
-    if (row) {
-      fresh = fromRow(row);
-      set({ dayEvents: sortByTime(get().dayEvents.map(e => e.id === eventId ? fresh! : e)) });
-      set({ events: sortByTime(get().events.map(e => e.id === eventId ? fresh! : e)) });
-      set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === eventId ? fresh! : e)) });
+    if (row || freshRows) {
+      fresh = freshRows ? freshRows.find((e: FamilyEvent) => e.id === eventId) : fromRow(row);
+      const patchMany = (list: FamilyEvent[]) => {
+        if (!freshRows) return list.map(e => e.id === eventId ? fresh! : e);
+        const byId = new Map(freshRows.map((e: FamilyEvent) => [e.id, e]));
+        return list.map(e => byId.get(e.id) ?? e);
+      };
+      set({ dayEvents: sortByTime(patchMany(get().dayEvents)) });
+      set({ events: sortByTime(patchMany(get().events)) });
+      set({ rangeEvents: sortByTime(patchMany(get().rangeEvents)) });
     }
     // Same notification gap as reassignEvent/confirmEventAssignment above —
     // this RPC path never went through updateEvent's own
@@ -2456,6 +2624,22 @@ export const useEventStore = create<EventState>((set, get) => ({
           eventTitle: fresh.title, eventId: fresh.id, byName: declinerName,
           imminent: minutesUntil !== undefined && minutesUntil >= 0 && minutesUntil <= 60,
         });
+      }
+      // Live-reported gap: when a DRIVER decline leaves the ride with no
+      // replacement at all, only prevEvent.updatedBy (whoever last touched
+      // it — often just one parent) heard anything. A co-parent who never
+      // touched the event had no way to find out the ride was now
+      // unassigned until they happened to open it. Driverless rides are a
+      // household-wide problem, not a one-person problem — escalate to
+      // EVERY parent, not just the single prior actor, the moment decline
+      // leaves nobody driving.
+      if (role === 'driver' && !fresh.driverId) {
+        const allParents = otherParentIds([memberId]);
+        if (allParents.length) {
+          notifyRideAssignment('ride_driver_needed', allParents, memberId, {
+            eventTitle: fresh.title, eventId: fresh.id, byName: declinerName,
+          });
+        }
       }
     }
     return true;
@@ -3141,6 +3325,32 @@ export const useEventStore = create<EventState>((set, get) => ({
     const nextRange = get().rangeEvents.filter(e => !confirmedIds.has(e.id));
     set({ dayEvents: nextDay, events: nextDay, rangeEvents: nextRange });
 
+    // Live-reported: deleting an entire recurring series (or "this and
+    // future") left its linked pickup/drop-off leg series dangling —
+    // deleteEvent's own single-row path already unlinks (not deletes) a
+    // surviving leg when ONE occurrence goes, same reasoning applies here
+    // per-row across the whole batch: a leg pointing at a now-deleted
+    // event id is worse than a leg standing alone. Only unlink rows that
+    // actually have a linkedLegId AND whose target isn't also being
+    // deleted in this same batch (that pair's link is simply gone, no
+    // write needed on either side).
+    const legsToUnlink = deletedEvents
+      .filter(e => e.id && confirmedIds.has(e.id) && e.linkedLegId && !confirmedIds.has(e.linkedLegId))
+      .map(e => e.linkedLegId!);
+    if (legsToUnlink.length > 0) {
+      const unlinkResults = await Promise.all(legsToUnlink.map(otherLegId =>
+        supabase.from('calendar_events').update({ linked_leg_id: null }).eq('id', otherLegId)
+      ));
+      const unlinkedSet = new Set(legsToUnlink.filter((_, i) => !unlinkResults[i].error));
+      if (unlinkedSet.size > 0) {
+        const clearLink = (e: FamilyEvent) => unlinkedSet.has(e.id) ? { ...e, linkedLegId: undefined } : e;
+        set(s => ({
+          dayEvents: s.dayEvents.map(clearLink), events: s.events.map(clearLink),
+          rangeEvents: s.rangeEvents.map(clearLink),
+        }));
+      }
+    }
+
     const familyId = getFamilyId();
     for (const deletedEvent of deletedEvents) {
       if (!confirmedIds.has(deletedEvent.id)) continue;
@@ -3210,9 +3420,9 @@ export const useEventStore = create<EventState>((set, get) => ({
 
 // ── Util ──────────────────────────────────────────────────────────────────────
 function offsetDate(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(y, m - 1, d + days);
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  const dt = parseLocalDate(dateStr);
+  dt.setDate(dt.getDate() + days);
+  return localDateStr(dt);
 }
 
 // How far ahead to materialize occurrence rows for an open-ended (or
@@ -3263,10 +3473,10 @@ function generateOccurrenceDates(fromDate: string, rule: EventRecurrenceRule, ex
       cursor = offsetDate(cursor, 1);
     }
   } else if (rule.frequency === 'weekly') {
-    const days = rule.days?.length ? rule.days : [new Date(`${fromDate}T00:00:00`).getDay()];
+    const days = rule.days?.length ? rule.days : [parseLocalDate(fromDate).getDay()];
     let cursor = offsetDate(fromDate, 1);
     while (cursor <= hardEnd && dates.length < remaining) {
-      const dow = new Date(`${cursor}T00:00:00`).getDay();
+      const dow = parseLocalDate(cursor).getDay();
       if (days.includes(dow) && !isExcluded(cursor)) dates.push(cursor);
       cursor = offsetDate(cursor, 1);
     }

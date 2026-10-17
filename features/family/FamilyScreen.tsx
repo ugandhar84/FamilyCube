@@ -1,0 +1,571 @@
+import { showToast } from '@/components/AppToast';
+import { supabase } from '@/lib/supabase';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View, Text, ScrollView, Pressable, Image,
+  Animated, Easing,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { AnimatedPressable } from '@/components/AnimatedPressable';
+import {
+  Users, MapPin, Heart, GraduationCap, Home, Image as ImageIcon,
+  Gift, Gamepad2, ChevronRight, CalendarDays,
+} from 'lucide-react-native';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { ConnectCalendarPage } from './ConnectCalendarPage';
+import { FamilyTreePage } from './FamilyTreePage';
+import { InvitePage } from '@/features/vault/tabs/InvitePage';
+import HomeownerNotesScreen from '@/features/vault/tabs/HomeownerNotesScreen';
+import HealthRecordsScreen from '@/features/vault/tabs/HealthRecordsScreen';
+import HealthPeoplePage from '@/features/vault/tabs/health/HealthPeoplePage';
+import SchoolScreen from '@/features/vault/tabs/SchoolScreen';
+import FindFamScreen from '@/features/gps/FindFamScreen';
+import RewardsDashboardScreen from '@/features/store/RewardsDashboardScreen';
+import MemoriesScreen from '@/features/vault/tabs/MemoriesScreen';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { AccountSection } from '@/features/profile/AccountSection';
+import { useTheme } from '@/lib/ThemeContext';
+import { useFamilyStore } from '@/store/familyStore';
+import { PageHeading } from '@/components/PageHeading';
+import Reanimated, { Keyframe, Easing as REasing } from 'react-native-reanimated';
+import { useUIStore } from '@/store/uiStore';
+import { GEMINI } from '@/constants/geminiRhythm';
+
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, extended per
+// explicit request — see Home Care's own identical comment for the full
+// rationale) [live-requested: "how about tasks and home, chat, family"].
+const PAGE_BG   = GEMINI.canvas;
+const TITLE_CLR = GEMINI.titleColor;
+const BODY_CLR  = GEMINI.bodyColor;
+
+// Tool card definition
+interface Tool {
+  key: string;
+  label: string;
+  subtitle: string;
+  icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
+  accent: string;        // bg tint token name
+  route: string;
+}
+
+function FamilyMemberAvatar({ member, size = 52 }: { member: any; size?: number }) {
+  const name: string = member?.name ?? '?';
+  const initials = name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+  const hue = name.charCodeAt(0) % 360;
+  const avatarBg = `hsl(${hue},50%,55%)`;
+
+  if (member?.avatarUrl) {
+    return (
+      <Image
+        source={{ uri: member.avatarUrl }}
+        style={{ width: size, height: size, borderRadius: size / 2,
+          borderWidth: 2.5, borderColor: '#fff' }}
+      />
+    );
+  }
+
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2,
+      backgroundColor: avatarBg, alignItems: 'center', justifyContent: 'center',
+      borderWidth: 2.5, borderColor: '#fff' }}>
+      <Text style={{ fontSize: size * 0.34, fontWeight: '700', color: '#fff' }}>{initials}</Text>
+    </View>
+  );
+}
+
+// One-time entrance on the UI thread (10px rise + fade, 240ms, 40ms stagger) for the
+// first four cards only. The view's final style is committed from the start, so a
+// stalled animation can never leave a card invisible, and nothing replays on focus.
+const familyCardRise = (index: number) =>
+  new Keyframe({
+    from: { opacity: 0, transform: [{ translateY: 10 }] },
+    to:   { opacity: 1, transform: [{ translateY: 0 }], easing: REasing.out(REasing.cubic) },
+  }).delay(index * 40).duration(240);
+
+// Module-level, not component state — survives FamilyScreen remounting
+// underneath a swipe-dismissed overlay (School/Home care/GPS/etc. all sit
+// on top of this screen via FullPageOverlay). Without this, swiping back
+// re-mounted the Reanimated tree and replayed the rise/fade on the first
+// four cards every single time, reported as "few cards are
+// animation/flickering" when returning from another page.
+let familyEntranceShown = false;
+
+function AnimatedCard({ index, children, style }: {
+  index: number; children: React.ReactNode; style?: any;
+}) {
+  const playEntrance = index < 4 && !familyEntranceShown;
+  return (
+    <Reanimated.View style={style} entering={playEntrance ? familyCardRise(index) : undefined}>
+      {children}
+    </Reanimated.View>
+  );
+}
+
+export default function FamilyScreen() {
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { members, activeMemberId } = useFamilyStore();
+  const parentCount = members.filter(m => m.role === 'parent').length;
+  const kidCount = members.filter(m => m.role === 'kid' || m.role === 'teen').length;
+  const [showCalendarPage, setShowCalendarPage] = useState(false);
+  const [showFamilyTree, setShowFamilyTree] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [showHomeCare, setShowHomeCare] = useState(false);
+  const [showHealth, setShowHealth] = useState(false);
+  const [showSchool, setShowSchool] = useState(false);
+  const [showLocations, setShowLocations] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
+  const [showMemories, setShowMemories] = useState(false);
+  const familySubtitle = `${members.length} ${members.length === 1 ? 'person' : 'people'} · ${parentCount} parent${parentCount === 1 ? '' : 's'}${kidCount > 0 ? `, ${kidCount} kid${kidCount === 1 ? '' : 's'}` : ''}. Everyone in one place.`;
+  const activeMember = members.find(m => (m as any).id === activeMemberId) ?? members[0];
+  const familyName = (members[0] as any)?.familyName ?? 'Family';
+  const P = colors.primary;
+
+  useEffect(() => {
+    familyEntranceShown = true;
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => { useUIStore.getState().setFullBleedScreenActive(false); };
+  }, []);
+
+  // Pastel accents cycle: primary → teal → amber → pink (repeating)
+  const PASTELS = [colors.primaryLight, colors.tealLight, colors.amberLight, colors.pinkLight];
+
+  // Family Invite is an admin action (adding/removing members, sharing
+  // join codes) — hidden for non-parent members [live-requested: "we can
+  // remove family invite for non admin"]. Calendar connect is likewise
+  // hidden for kid/teen/senior — it's account-linking (Google/Apple/
+  // Outlook calendar OAuth), not something a non-parent should be doing
+  // [live-requested: "remove calender connect for the kids/teens" /
+  // "said cander connect hide for Grads"]. TOOLS itself always keeps
+  // both entries — byKey() below looks them up unconditionally — so the
+  // gating happens only at the two render call sites further down.
+  const isParent = activeMember?.role === 'parent';
+  // Members an admin removed in the last 60 days: their old profile is kept hidden, and a parent can bring it back.
+  const [removed, setRemoved] = useState<{ id: string; name: string; role: string; removed_at: string }[]>([]);
+  const loadRemoved = useCallback(async () => {
+    if (!isParent) { setRemoved([]); return; }
+    const { data } = await supabase.rpc('list_removed_members');
+    setRemoved(((data ?? []) as any[]).filter(r => !!r.id));
+  }, [isParent]);
+  useEffect(() => { loadRemoved(); }, [loadRemoved, members.length]);
+  const restoreRemoved = async (id: string) => {
+    const { error } = await supabase.rpc('restore_removed_member', { p_member_id: id });
+    if (error) { showToast('Could not restore: ' + error.message); return; }
+    showToast('Member restored');
+    loadRemoved();
+    useFamilyStore.getState().syncFromDB?.().catch?.(() => {});
+  };
+  const TOOLS: Tool[] = [
+    {
+      key: 'people',
+      label: 'Family Invite',
+      subtitle: 'Add members and share codes',
+      icon: Users,
+      accent: PASTELS[0],
+      route: '__overlay:invite',
+    },
+    {
+      key: 'calendars',
+      label: 'Calendars',
+      subtitle: 'Connect and sync',
+      icon: CalendarDays,
+      accent: PASTELS[1],
+      route: '__overlay:calendar',
+    },
+    {
+      key: 'locations',
+      label: 'Locations',
+      subtitle: 'Privacy-aware sharing',
+      icon: MapPin,
+      accent: PASTELS[2],
+      route: '__overlay:locations',
+    },
+    {
+      key: 'health',
+      label: 'Health',
+      subtitle: 'Medications and records',
+      icon: Heart,
+      accent: PASTELS[3],
+      route: '__overlay:health',
+    },
+    {
+      key: 'school',
+      label: 'School',
+      subtitle: 'Schedules and pickup',
+      icon: GraduationCap,
+      accent: PASTELS[0],
+      route: '__overlay:school',
+    },
+    {
+      key: 'homecare',
+      label: 'Home care',
+      subtitle: 'Maintenance and notes',
+      icon: Home,
+      accent: PASTELS[1],
+      route: '__overlay:homeCare',
+    },
+    {
+      key: 'memories',
+      label: 'Memories',
+      subtitle: 'Photos and family stories',
+      icon: ImageIcon,
+      accent: PASTELS[2],
+      route: '/(tabs)/memories',
+    },
+    {
+      key: 'rewards',
+      label: 'Rewards',
+      subtitle: 'Coins and perks',
+      icon: Gift,
+      accent: PASTELS[3],
+      route: '/(tabs)/store',
+    },
+    {
+      key: 'games',
+      label: 'Games',
+      subtitle: 'Fun for everyone',
+      icon: Gamepad2,
+      accent: PASTELS[0],
+      route: '/(tabs)/tasks',
+    },
+  ];
+
+  const countLabel = members.length === 1 ? 'One person'
+    : members.length === 2 ? 'Two people'
+    : members.length === 3 ? 'Three people'
+    : members.length === 4 ? 'Four people'
+    : members.length === 5 ? 'Five people'
+    : `${members.length} people`;
+
+  const handleToolPress = (tool: Tool) => {
+    if (tool.route === '__overlay:calendar') { setShowCalendarPage(true); return; }
+    if (tool.route === '__overlay:familyTree') { setShowFamilyTree(true); return; }
+    if (tool.route === '__overlay:invite') { setShowInvite(true); return; }
+    if (tool.route === '__overlay:homeCare') { setShowHomeCare(true); return; }
+    if (tool.route === '__overlay:health') {
+      setShowHealth(true);
+      if (activeMember?.role === 'parent') hideTabBar();
+      return;
+    }
+    if (tool.route === '__overlay:school') { setShowSchool(true); return; }
+    if (tool.route === '__overlay:locations') { setShowLocations(true); return; }
+    // Rewards opened from the Family tab stays owned by FamilyScreen
+    // itself (own FullPageOverlay below), same as School/Home Care/
+    // Health/Locations above — so swipe-back lands on Family, not Hub
+    // [live-requested: "Back swipe of reward should go to family"].
+    // Every OTHER entry point (Hub's coin pill, kid Hero Card, etc.) still
+    // goes through uiStore's openRewardsScreenRequested flag, which closes
+    // back to Hub — correct for those, since Hub is what's underneath them.
+    if (tool.route === '/(tabs)/store') { setShowRewards(true); return; }
+    // Same reasoning as Rewards above — Memories opened from the Family
+    // tab stays owned by FamilyScreen itself so swipe-back lands on
+    // Family, not Hub. Every other entry point (Hub pill, etc.) still goes
+    // through uiStore's openMemoriesScreenRequested flag.
+    if (tool.route === '/(tabs)/memories') { setShowMemories(true); return; }
+    router.push(tool.route as any);
+  };
+
+  const byKey = (key: string) => TOOLS.find(t => t.key === key)!;
+
+  // Grouped sections, same list-row rhythm across the board (icon chip +
+  // title + subtitle + "Open X →" link), replacing the old 2-column card
+  // grid [live-requested, with a mockup: "can we make the family this
+  // way?"]. Each row keeps its own pastel accent per the brand's existing
+  // *Light token set rather than one flat color for every row.
+  const careRows = ['health', 'homecare', 'school'].map(byKey);
+  // Games hidden app-wide [live-requested: "hide games from the all
+  // roles"] — TOOLS still defines the 'games' entry so byKey() stays
+  // consistent for anything else referencing it, just not rendered here.
+  const everydayRows = ['rewards', 'memories'].map(byKey);
+
+  function ToolRow({ tool, index, accentBg, accentFg }: { tool: Tool; index: number; accentBg: string; accentFg: string }) {
+    const Icon = tool.icon;
+    return (
+      <AnimatedCard index={index}>
+        <AnimatedPressable onPress={() => handleToolPress(tool)}
+          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12 }}>
+          <View style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: accentBg,
+            alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+            <Icon size={18} color={accentFg} strokeWidth={2} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
+              {tool.label}
+            </Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2, lineHeight: 17 }}>
+              {tool.subtitle}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: accentFg, marginTop: 6 }}>
+              Open {tool.label} →
+            </Text>
+          </View>
+        </AnimatedPressable>
+      </AnimatedCard>
+    );
+  }
+
+  function SectionCard({ title, bg, children, style }: { title: string; bg: string; children: React.ReactNode; style?: any }) {
+    return (
+      <View style={[{
+        backgroundColor: bg, borderRadius: 20, padding: 18,
+        shadowColor: isDark ? 'transparent' : '#172337',
+        shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 }, elevation: isDark ? 0 : 1,
+      }, style]}>
+        <Text style={{ fontSize: 17, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR, marginBottom: 6 }}>
+          {title}
+        </Text>
+        {children}
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: isDark ? colors.background : PAGE_BG }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
+
+        {/* ── Title header ── */}
+        <View>
+          <PageHeading
+            topInset={insets.top}
+            eyebrow="FAMILY CUBE · FAMILY"
+            title="Your family"
+            subtitle={familySubtitle}
+            accent="primary"
+            Icon={Users}
+          />
+        </View>
+
+        {/* ── Family card ── */}
+        <AnimatedCard index={1} style={{ marginHorizontal: 20, marginBottom: 20 }}>
+        <View style={{
+          backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 20, padding: 20,
+          shadowColor: isDark ? 'transparent' : '#102347',
+          shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 20,
+          shadowOffset: { width: 0, height: 6 }, elevation: isDark ? 0 : 3,
+        }}>
+          {/* Stacked avatars */}
+          <View style={{ flexDirection: 'row', marginBottom: 16 }}>
+            {members.slice(0, 6).map((m, i) => (
+              <View key={(m as any).id} style={{ marginLeft: i === 0 ? 0 : -10, zIndex: members.length - i }}>
+                <FamilyMemberAvatar member={m} size={52} />
+              </View>
+            ))}
+          </View>
+
+          {/* Family name + subtitle + link */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>
+                The {familyName}s
+              </Text>
+              <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 3 }}>
+                {countLabel} · one calm family space
+              </Text>
+            </View>
+            <Pressable onPress={() => setShowFamilyTree(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: P }}>
+                View family tree →
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+        </AnimatedCard>
+
+        <View style={{ paddingHorizontal: 20, gap: 16 }}>
+
+          {/* ── Care, close at hand — teal-tinted card so each section reads
+              as its own distinct block, not three identical gray cards
+              [live feedback: "i hate the color of section card fills all
+              has same"]. Icon chips sit on white so they still pop. ── */}
+          {isParent && removed.length > 0 && (
+            <SectionCard title="Removed members" bg={colors.amberLight}>
+              <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
+                Their data stays hidden for 60 days, then it is deleted for good. Restore brings the profile back; they can also rejoin with a new invite.
+              </Text>
+              {removed.map(r => {
+                const daysLeft = Math.max(0, 60 - Math.floor((Date.now() - new Date(r.removed_at).getTime()) / 86400000));
+                return (
+                  <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{r.name}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textTertiary }}>{daysLeft} day{daysLeft === 1 ? '' : 's'} left to restore</Text>
+                    </View>
+                    <Pressable onPress={() => restoreRemoved(r.id)} accessibilityRole="button"
+                      style={{ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.primary }}>
+                      <Text style={{ color: '#fff', fontWeight: '800' }}>Restore</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </SectionCard>
+          )}
+
+          <SectionCard title="Care, close at hand" bg={colors.tealLight}>
+            {careRows.map((tool, i) => {
+              const fg = tool.key === 'health' ? colors.pink : tool.key === 'homecare' ? colors.teal : colors.amber;
+              return <ToolRow key={tool.key} tool={tool} index={i + 2} accentBg="#FFFFFF" accentFg={fg} />;
+            })}
+          </SectionCard>
+
+          {/* ── The people in your life — lavender-tinted card. Every row
+              in it (Family Invite, Calendars, Generations) is admin-only
+              [live-requested: "we can remove family invite for non
+              admin" / "remove calender connect for the kids/teens" /
+              "we can hide the generations card for the kids/teens/
+              seniors"] — with nothing left to show for a non-parent,
+              the whole section (heading included) hides too
+              [live-requested: "why do we need to show the people in
+              your life heading banner"] rather than rendering an empty
+              shell. ── */}
+          {isParent && (
+          <SectionCard title="The people in your life" bg={colors.pinkLight}>
+            <ToolRow tool={byKey('people')} index={5} accentBg="#FFFFFF" accentFg={P} />
+            <ToolRow tool={byKey('calendars')} index={6} accentBg="#FFFFFF" accentFg={colors.teal} />
+            <AnimatedCard index={7}>
+              <AnimatedPressable onPress={() => setShowFamilyTree(true)}
+                style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                  <Users size={18} color={colors.pink} strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>Generations</Text>
+                  <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2, lineHeight: 17 }}>
+                    Our family tree · your place in the story
+                  </Text>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink, marginTop: 6 }}>
+                    Open Generations →
+                  </Text>
+                </View>
+              </AnimatedPressable>
+            </AnimatedCard>
+          </SectionCard>
+          )}
+
+          {/* ── Find my family — highlighted teal banner, same rhythm as
+              School's "Scan a schedule flyer" banner. ── */}
+          <AnimatedCard index={8}>
+            <AnimatedPressable onPress={() => setShowLocations(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                backgroundColor: colors.tealLight, borderRadius: 18, padding: 16 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF',
+                alignItems: 'center', justifyContent: 'center' }}>
+                <MapPin size={20} color={colors.teal} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : TITLE_CLR }}>Find my family</Text>
+                <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : BODY_CLR, marginTop: 2, lineHeight: 16 }}>
+                  Recent shared locations · freshness & privacy shown
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.teal, marginTop: 6 }}>
+                  Open family map →
+                </Text>
+              </View>
+            </AnimatedPressable>
+          </AnimatedCard>
+
+          {/* ── Everyday life stays simple — amber-tinted card ── */}
+          <SectionCard title="Everyday life stays simple" bg={colors.amberLight}>
+            {everydayRows.map((tool, i) => {
+              const fg = tool.key === 'rewards' ? colors.pink : tool.key === 'games' ? P : colors.amber;
+              return <ToolRow key={tool.key} tool={tool} index={i + 9} accentBg="#FFFFFF" accentFg={fg} />;
+            })}
+          </SectionCard>
+
+          {/* ── Account — Subscription + Sign Out + Delete account, moved
+              here in full from ProfileSettingsScreen.tsx (no longer
+              rendered there) [live-requested: "lets add the purchase here
+              in the family tab one section.. and the singout delete
+              too.."]. ── */}
+          <AnimatedCard index={12}>
+            <AccountSection colors={colors} isDark={isDark} />
+          </AnimatedCard>
+
+          {/* ── Closing link — Family settings & permissions, last thing on
+              the page [live-requested: "end should be settings"]. ── */}
+          <AnimatedCard index={13}>
+            <AnimatedPressable onPress={() => router.push('/profile-settings' as any)}
+              style={{ borderRadius: 16, borderWidth: 1.5, borderColor: isDark ? colors.border : GEMINI.border,
+                paddingVertical: 14, alignItems: 'center' }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: P }}>
+                Family settings & permissions →
+              </Text>
+            </AnimatedPressable>
+          </AnimatedCard>
+
+          <Text style={{ fontSize: 12, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, textAlign: 'center',
+            lineHeight: 17, paddingHorizontal: 8 }}>
+            Kids own their own health records; parents may review. Membership never replaces personal consent.
+          </Text>
+
+        </View>
+
+      </ScrollView>
+
+      {/* Calendar page — standard FullPageOverlay shell (owns entrance/exit
+          animation + edge-swipe-to-dismiss), same as every other full-page
+          screen in this app; ConnectCalendarPage no longer hand-rolls its
+          own slide animation/PanResponder. */}
+      <FullPageOverlay visible={showCalendarPage} onDismiss={() => setShowCalendarPage(false)} zIndex={51} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        <ConnectCalendarPage onClose={() => setShowCalendarPage(false)} />
+      </FullPageOverlay>
+
+      {/* Family tree full-page overlay — slide-in/out via FullPageOverlay,
+          same as every other full-page screen (was a bare tab route with
+          no entrance animation before). */}
+      <FullPageOverlay visible={showFamilyTree} onDismiss={() => setShowFamilyTree(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => (
+          <FamilyTreePage onClose={requestAnimatedClose} />
+        )}
+      </FullPageOverlay>
+
+      {/* Family Invite — same InvitePage used inside Family Tree's own
+          "Invite" button, now also reachable directly from the Family
+          screen's tool grid [live-requested: "for the people in family
+          rename as family invite.. and then link that family invite
+          page"]. */}
+      <FullPageOverlay visible={showInvite} onDismiss={() => setShowInvite(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => (
+          <InvitePage onClose={requestAnimatedClose} />
+        )}
+      </FullPageOverlay>
+
+      {/* Home care full-page overlay — same '__overlay:*' sentinel pattern
+          as Calendars/Family Tree above. */}
+      <FullPageOverlay visible={showSchool} onDismiss={() => setShowSchool(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <SchoolScreen onClose={requestAnimatedClose} />}
+      </FullPageOverlay>
+      <FullPageOverlay visible={showHomeCare} onDismiss={() => setShowHomeCare(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <HomeownerNotesScreen onClose={requestAnimatedClose} />}
+      </FullPageOverlay>
+      {/* Parent sees the person-picker landing page first [live-requested:
+          "landing page with the persons/family members"] — a kid/teen/
+          senior skips straight to their own records (HealthRecordsScreen
+          already restricts them via kidView, so a person-picker would be
+          meaningless for them). */}
+      <FullPageOverlay visible={showHealth} onDismiss={() => { showTabBar(); setShowHealth(false); }} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => (
+          activeMember?.role === 'parent'
+            ? <HealthPeoplePage onClose={requestAnimatedClose} />
+            : <HealthRecordsScreen onClose={requestAnimatedClose} />
+        )}
+      </FullPageOverlay>
+      <FullPageOverlay visible={showLocations} onDismiss={() => setShowLocations(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <FindFamScreen onClose={requestAnimatedClose} />}
+      </FullPageOverlay>
+      <FullPageOverlay visible={showRewards} onDismiss={() => setShowRewards(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => (
+          <RewardsDashboardScreen onClose={requestAnimatedClose} />
+        )}
+      </FullPageOverlay>
+      <FullPageOverlay visible={showMemories} onDismiss={() => setShowMemories(false)} zIndex={50} backgroundColor={isDark ? colors.background : PAGE_BG}>
+        {(requestAnimatedClose) => <MemoriesScreen onClose={requestAnimatedClose} />}
+      </FullPageOverlay>
+    </View>
+  );
+}

@@ -1,14 +1,17 @@
+import PinResetFlow from './PinResetFlow';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, Pressable, StyleSheet, Animated, Vibration,
+  View, Text, Pressable, StyleSheet, Animated, Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/lib/ThemeContext';
 import { FamilyMember, useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/chatCrypto';
 import { useDeviceClass } from '@/lib/useDeviceClass';
 import { KIOSK_RADIUS } from '@/features/kiosk/kioskTheme';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PIN_LENGTH = 4;
@@ -46,7 +49,7 @@ function PinDots({ entered, shaking, color }: { entered: number; shaking: Animat
 
 // ─── Number key ───────────────────────────────────────────────────────────────
 function Key({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePress = () => {
@@ -61,17 +64,16 @@ function Key({ label, onPress, disabled }: { label: string; onPress: () => void;
   if (label === '') return <View style={styles.keyPlaceholder} />;
 
   return (
-    <Pressable onPress={handlePress} disabled={disabled} style={styles.keyWrap}>
-      <Animated.View style={[styles.key, {
-        backgroundColor: colors.surface,
-        borderColor: colors.border,
+    <Pressable allowRapidPress onPress={handlePress} disabled={disabled} style={styles.keyWrap}>
+      {/* Figma rhythm: bright white round keys that lift off the cream card with a real shadow, no border. */}
+      <Animated.View style={[styles.key, isDark ? { backgroundColor: colors.surface, borderColor: colors.border } : { backgroundColor: GEMINI.cardBg, borderWidth: 0, ...GEMINI.cardShadow, shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }, {
         transform: [{ scale }],
         opacity: disabled ? 0.4 : 1,
       }]}>
         {label === '⌫' ? (
-          <Ionicons name="backspace-outline" size={22} color={colors.textSecondary} />
+          <Ionicons name="backspace-outline" size={24} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />
         ) : (
-          <Text style={[styles.keyText, { color: colors.textPrimary }]}>{label}</Text>
+          <Text style={[styles.keyText, { color: isDark ? colors.textPrimary : GEMINI.titleColor }]}>{label}</Text>
         )}
       </Animated.View>
     </Pressable>
@@ -80,6 +82,8 @@ function Key({ label, onPress, disabled }: { label: string; onPress: () => void;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface PinEntryModalProps {
+  /** Resume lock for the profile already in use: no Cancel (there is nowhere to go back to) and "continue" wording. */
+  resume?: boolean;
   visible: boolean;
   member: FamilyMember | null;
   onSuccess: (member: FamilyMember) => void;
@@ -87,7 +91,7 @@ interface PinEntryModalProps {
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-export default function PinEntryModal({ visible, member, onSuccess, onCancel }: PinEntryModalProps) {
+function PinEntryLayer({ visible, member, onSuccess, onCancel, resume }: PinEntryModalProps) {
   const { colors, isDark } = useTheme();
   // On a kiosk/tablet device this renders as a centered, shaped card
   // (matching KioskFormDrawer's own centered "dialog" variant — same
@@ -105,11 +109,12 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
   const [locked, setLocked]         = useState(false);
   const [lockRemaining, setLockRemaining] = useState(0);
   const [errorMsg, setErrorMsg]     = useState('');
+  const [resetting, setResetting]  = useState(false);
 
   const shakeAnim    = useRef(new Animated.Value(0)).current;
   const lockInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const accentColor = member?.role === 'parent' ? colors.parent : colors.kid;
+  const accentColor = isDark ? (member?.role === 'parent' ? colors.parent : colors.kid) : GEMINI.blue;
 
   const [verifying, setVerifying] = useState(false);
 
@@ -122,6 +127,7 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
       setLockRemaining(0);
       setErrorMsg('');
       setVerifying(false);
+      setResetting(false);
       if (lockInterval.current) clearInterval(lockInterval.current);
     }
   }, [visible, member?.id]);
@@ -193,6 +199,7 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
           if (result.grant_token && result.grant_expires_at) {
             useFamilyStore.getState().setActiveMemberGrant(member.id, result.grant_token, result.grant_expires_at);
           }
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           onSuccess(member);
           setEntered('');
           setAttempts(0);
@@ -211,6 +218,7 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
   }, [entered]);
 
   const shakeAndClear = (msg: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     Vibration.vibrate(400);
     setErrorMsg(msg);
     Animated.sequence([
@@ -225,38 +233,45 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
   const handleKey = (key: string) => {
     if (locked) return;
     if (key === '⌫') {
+      Haptics.selectionAsync().catch(() => {});
       setEntered(p => p.slice(0, -1));
       if (errorMsg) setErrorMsg('');
     } else if (entered.length < PIN_LENGTH) {
+      // A light tap for every digit; the last digit gets a firmer one as the PIN is checked.
+      Haptics.impactAsync(entered.length + 1 === PIN_LENGTH ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       setEntered(p => p + key);
     }
   };
 
   if (!member) return null;
 
-  const content = (
+  const content = resetting ? (
+    <PinResetFlow member={member} onBack={() => setResetting(false)} onDone={() => { setResetting(false); onSuccess(member); }} />
+  ) : (
     <>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-          <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
-        </Pressable>
+        {!resume && (
+          <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Avatar */}
       <View style={styles.avatarSection}>
         <View style={[styles.avatarCircle, {
-          backgroundColor: (member.role === 'parent' ? colors.parentLight : colors.kidLight),
+          backgroundColor: GEMINI.cardBg,
           borderColor: accentColor,
         }]}>
           <Text style={styles.avatarEmoji}>{member.emoji ?? member.name[0]}</Text>
         </View>
-        <Text style={[styles.memberName, { color: colors.textPrimary }]}>{member.name}</Text>
+        <Text style={[styles.memberName, { color: isDark ? colors.textPrimary : GEMINI.titleColor }]}>{member.name}</Text>
         <Text style={[styles.roleTag, { color: accentColor }]}>
           {member.role === 'parent' ? '👑 Parent' : '🌟 Kid'}
         </Text>
-        <Text style={[styles.prompt, { color: colors.textSecondary }]}>
-          {locked ? `🔒 Locked for ${lockRemaining}s` : 'Enter PIN to switch profile'}
+        <Text style={[styles.prompt, { color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '700' }]}>
+          {locked ? `🔒 Locked for ${lockRemaining}s` : resume ? 'Enter your PIN to continue' : 'Enter PIN to switch profile'}
         </Text>
       </View>
 
@@ -287,43 +302,43 @@ export default function PinEntryModal({ visible, member, onSuccess, onCancel }: 
       </View>
 
       {/* Forgot PIN hint */}
-      <Text style={[styles.hint, { color: colors.textTertiary }]}>
-        Forgot PIN? Ask a parent to reset it in Settings.
-      </Text>
+      {member.authUserId ? (
+        <Pressable onPress={() => setResetting(true)} accessibilityRole="button" style={{ paddingVertical: 10 }}>
+          <Text style={[styles.hint, { color: colors.primary, fontWeight: '700' }]}>Forgot PIN? Email me a code</Text>
+        </Pressable>
+      ) : (
+        <Text style={[styles.hint, { color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }]}>
+          Forgot PIN? Ask a parent to reset it in Settings.
+        </Text>
+      )}
     </>
   );
 
-  if (isTablet) {
-    return (
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-        <Pressable style={styles.tabletScrim} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close">
-          <Pressable
-            style={[styles.tabletCard, { backgroundColor: isDark ? colors.surface : colors.background, borderColor: colors.border }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {content}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    );
-  }
-
+  // Inline, not a native Modal: rendered as an absolute full-parent layer so
+  // the PIN prompt is part of the screen instead of a popup ("no more
+  // popup/alerts — all should be inline, including pin ask").
+  if (!visible) return null;
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onCancel}
-    >
-      <View style={[styles.sheet, { backgroundColor: isDark ? colors.surface : colors.background }]}>
-        {content}
-      </View>
-    </Modal>
+    <View style={[StyleSheet.absoluteFill, styles.inlineLayer, { zIndex: 1000, elevation: 1000 }]} pointerEvents="box-none">
+      <Pressable style={[styles.tabletScrim, !isTablet && { padding: 0, alignItems: 'stretch', backgroundColor: 'transparent' }]} onPress={isTablet ? onCancel : undefined} accessibilityRole="button" accessibilityLabel="Close">
+        <Pressable
+          style={[
+            isTablet ? styles.tabletCard : styles.inlineFull,
+            { backgroundColor: isDark ? colors.surface : GEMINI.canvas, borderColor: isDark ? colors.border : GEMINI.border },
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          {content}
+        </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  inlineLayer: { alignItems: 'stretch', justifyContent: 'center' },
+  inlineFull: { flex: 1, width: '100%', alignSelf: 'stretch', alignItems: 'center', paddingTop: 56 },
   sheet: {
     flex: 1,
     alignItems: 'center',
@@ -344,41 +359,42 @@ const styles = StyleSheet.create({
   },
   cancelText: { fontSize: 14, fontWeight: '600' },
 
-  avatarSection: { alignItems: 'center', gap: 6, marginTop: 24, marginBottom: 36 },
+  avatarSection: { alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 16 },
   avatarCircle: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 76, height: 76, borderRadius: 38,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 3,
   },
-  avatarEmoji: { fontSize: 44 },
-  memberName:  { fontSize: 24, fontWeight: '800', marginTop: 6 },
+  avatarEmoji: { fontSize: 38 },
+  memberName:  { fontSize: 24, fontWeight: '800', marginTop: 4 },
   roleTag:     { fontSize: 13, fontWeight: '600' },
   prompt:      { fontSize: 14, marginTop: 4 },
 
   dotsRow: {
     flexDirection: 'row',
-    gap: 20,
-    marginBottom: 16,
+    gap: 22,
+    marginBottom: 6,
   },
   dot: {
     width: 18, height: 18, borderRadius: 9,
     borderWidth: 2,
   },
 
-  errorWrap: { height: 22, marginBottom: 12 },
+  errorWrap: { height: 22, marginBottom: 8 },
   errorText: { fontSize: 13, fontWeight: '600' },
 
-  pad: { width: '100%', paddingHorizontal: 32, gap: 12 },
-  padRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  keyWrap: { flex: 1 },
+  // A centred 3x4 pad of round keys, sized to sit in the middle of the card rather than stretch across it.
+  pad: { alignSelf: 'center', gap: 14 },
+  padRow: { flexDirection: 'row', justifyContent: 'center', gap: 18 },
+  keyWrap: { width: 76, flex: 0 },
   key: {
-    height: 68, borderRadius: 16, borderWidth: 1,
+    width: 76, height: 76, borderRadius: 38, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  keyText: { fontSize: 24, fontWeight: '600' },
-  keyPlaceholder: { flex: 1 },
+  keyText: { fontSize: 28, fontWeight: '600' },
+  keyPlaceholder: { width: 76, flex: 0 },
 
-  hint: { fontSize: 12, marginTop: 28, textAlign: 'center' },
+  hint: { fontSize: 12, marginTop: 18, textAlign: 'center' },
 
   // Tablet/kiosk only — centered dialog card, same width/radius/maxHeight
   // as KioskFormDrawer's own 'dialog' variant so this reads as one of
@@ -388,9 +404,46 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)', padding: 24,
   },
   tabletCard: {
-    width: 420, maxWidth: '100%', maxHeight: '85%',
+    width: 400, maxWidth: '100%', maxHeight: '94%',
     borderWidth: 1, borderRadius: KIOSK_RADIUS.lg,
-    alignItems: 'center', paddingTop: 16, paddingBottom: 24,
+    alignItems: 'center', paddingTop: 14, paddingBottom: 20,
     overflow: 'hidden',
   },
 });
+
+// ─── Root-hosted presentation ────────────────────────────────────────────────
+// A PIN prompt used to be a native Modal; now it is an in-screen layer. Most
+// callers sit inside small containers (e.g. the kiosk header) that would clip
+// it, so by default it is drawn by <PinEntryHost/> mounted once at the app
+// root. Pass `inline` where the caller is itself a full-screen root (the kiosk
+// lock screen is a native Modal, which a root host would sit behind).
+type PinHostState = { props: PinEntryModalProps | null };
+const hostListeners = new Set<(s: PinHostState) => void>();
+let hostState: PinHostState = { props: null };
+const setHost = (props: PinEntryModalProps | null) => {
+  hostState = { props };
+  hostListeners.forEach(l => l(hostState));
+};
+
+export function PinEntryHost() {
+  const [st, setSt] = useState<PinHostState>(hostState);
+  useEffect(() => {
+    hostListeners.add(setSt);
+    return () => { hostListeners.delete(setSt); };
+  }, []);
+  if (!st.props) return null;
+  return <PinEntryLayer {...st.props} />;
+}
+
+export default function PinEntryModal(props: PinEntryModalProps & { inline?: boolean }) {
+  const { inline, ...rest } = props;
+  const { visible, member, onSuccess, onCancel } = rest;
+  useEffect(() => {
+    if (inline) return;
+    if (visible && member) setHost({ visible, member, onSuccess, onCancel });
+    else setHost(null);
+  }, [inline, visible, member, onSuccess, onCancel]);
+  useEffect(() => () => { if (!inline) setHost(null); }, [inline]);
+  if (!inline) return null;
+  return <PinEntryLayer {...rest} />;
+}

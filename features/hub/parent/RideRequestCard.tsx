@@ -10,6 +10,7 @@ import { PickupTimeStepper } from './PickupTimeStepper';
 import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // This card deliberately uses two distinct hues for the two legs of a
 // both-ways ride — money-green for "drop-off" and indigo for "pickup" — so
@@ -141,18 +142,18 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       }>
 
       {ev.notes && (
-        <View style={{ backgroundColor: isDark ? '#1e293b' : '#fefce8', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning }}>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
+        <View style={{ backgroundColor: colors.amberLight, borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning }}>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic' }}>"{ev.notes}"</Text>
         </View>
       )}
 
       {members.some(m => m.role === 'teen') && (
         <View style={{ borderRadius: 10, borderWidth: 1,
-          borderColor: isDark ? '#334155' : '#E2E8F0',
-          backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
           flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 6 }}>
           <Text style={{ fontSize: TYPO.body }}>🪙</Text>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, flex: 1 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), flex: 1 }}>
             Coins for teen driver
             {isBothWays && coinsVal ? ` (split ${splitCoins}+${splitCoins})` : ''}
           </Text>
@@ -169,7 +170,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
 
       {isBothWays ? (
         <View style={{ gap: 8 }}>
-          <View style={{ backgroundColor: isDark ? '#0f2a20' : '#ecfdf5', borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: `${DROPOFF_GREEN}30` }}>
+          <View style={{ backgroundColor: colors.tealLight, borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: `${DROPOFF_GREEN}30` }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <MapPinCheck size={12} color={DROPOFF_GREEN} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: DROPOFF_GREEN }}>Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>

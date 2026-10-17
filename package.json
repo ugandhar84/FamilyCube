@@ -12,6 +12,9 @@
   "dependencies": {
     "@bacons/apple-targets": "^5.0.0",
     "@expo-google-fonts/baloo-2": "^0.4.2",
+    "@expo-google-fonts/bricolage-grotesque": "^0.4.1",
+    "@expo-google-fonts/caveat": "^0.4.1",
+    "@expo-google-fonts/figtree": "^0.4.1",
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/cli": "^57.0.14",

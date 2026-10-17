@@ -1,6 +1,6 @@
 /**
  * kidRequestStore — real-time kid → parent requests.
- * Types: ride, tutor, cheer, emergency, question, permission, appointment
+ * Types: ride, tutor, cheer, emergency, question, permission, appointment, grocery, supplies
  * Status lifecycle: pending → approved | declined | cancelled | expired
  */
 import { create } from 'zustand';
@@ -141,7 +141,30 @@ const memberName = (memberId: string | undefined | null): string => {
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
-export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal';
+export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal' | 'grocery' | 'supplies';
+
+// Auto-expire window for request types with no inherent urgency gate — a
+// pending checkin/question a parent never acts on shouldn't sit forever.
+// checkin: a time-sensitive status ping ("I'm ready for pickup") — stale
+// after a few hours. question: open-ended, no urgency — longer grace
+// period so a real question isn't dropped just because a parent was busy
+// for a day. Other types keep their existing approve/decline-only
+// lifecycle (no default here = never auto-expires).
+const DEFAULT_EXPIRY_MS: Partial<Record<RequestType, number>> = {
+  checkin:  3 * 60 * 60_000,       // 3 hours
+  question: 36 * 60 * 60_000,      // 36 hours
+};
+export type RequestEventType = 'created' | 'approved' | 'declined' | 'assigned' | 'reassigned' | 'completed' | 'cancelled' | 'gp_toggled' | 'read' | 'items_approved' | 'items_rejected' | 'items_appended';
+
+export interface KidRequestEvent {
+  id:         string;
+  requestId:  string;
+  eventType:  RequestEventType;
+  actorId:    string;
+  note?:      string;
+  meta?:      Record<string, unknown>;
+  createdAt:  string;
+}
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled' | 'expired' | 'completed' | 'partial';
 export type RequestUrgency = 'normal' | 'soon' | 'urgent' | 'emergency';
 export type ItemStatus = 'pending' | 'approved' | 'rejected';
@@ -204,6 +227,8 @@ export const REQUEST_META: Record<RequestType, { emoji: string; label: string; c
   // purposes (assignedHelper reward-tagging, appointment scheduling), so
   // this reuses them rather than adding new columns/fields.
   quest_proposal: { emoji: '🧩', label: 'Quest Idea',      color: '#9261C7', bgColor: '#F0E8FA' },
+  grocery:     { emoji: '🛒', label: 'Grocery Run',        color: '#16A34A', bgColor: '#DCFCE7' },
+  supplies:    { emoji: '📚', label: 'School Supplies',    color: '#0891B2', bgColor: '#E0F7FA' },
 };
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -218,13 +243,28 @@ interface KidRequestState {
   approveRequest:  (id: string, respondedBy: string, note?: string) => Promise<void>;
   declineRequest:  (id: string, respondedBy: string, note?: string) => Promise<void>;
   assignRequest:   (id: string, helperId: string, note?: string, assignedBy?: string) => Promise<void>;
-  completeRequest: (id: string, respondedBy: string) => Promise<void>;
+  completeRequest: (id: string, respondedBy: string, note?: string) => Promise<void>;
+  // Check-in ("I'm home!" / "Running Late") ack — distinct from
+  // completeRequest: keeps status 'pending' (so it still reads as a live,
+  // recent fact — not silently erased into history the instant a parent
+  // taps "Got it") but stamps respondedAt/respondedBy so the request
+  // leaves the Needs-You/Action-Needed queue right away. finalizeAckedCheckins
+  // sweeps it into 'completed' once respondedAt is over an hour old.
+  acknowledgeCheckin: (id: string, respondedBy: string, note?: string) => Promise<void>;
+  // Sweeps two cases into 'completed' (History/All) once their respondedAt
+  // is over an hour old: acknowledged-but-still-pending checkins
+  // (acknowledgeCheckin keeps status 'pending' on purpose) and any
+  // 'approved' request (approveRequest/assignRequest) — both get the same
+  // one-hour grace window before leaving the active queue for good. Call on
+  // an interval (app/_layout.tsx) and on app foreground; cheap no-op when
+  // nothing qualifies.
+  finalizeAckedCheckins: () => Promise<void>;
   cancelRequest:   (id: string) => Promise<void>;
   toggleGPWelcome: (id: string, value: boolean) => Promise<void>;
   markRead:        (id: string) => Promise<void>;
   deleteRequest:   (id: string) => Promise<void>;
   clearResolved:   () => void;
-  expireStale:     () => void;
+  expireStale:     () => Promise<void>;
 
   // Per-item approval for grocery/supplies requests
   approveItems:    (requestId: string, itemIds: string[], approvedBy: string, note?: string) => Promise<void>;
@@ -238,6 +278,8 @@ interface KidRequestState {
   getForMember:         (memberId: string) => KidRequest[];
   getUnread:            () => KidRequest[];
   getByType:            (type: RequestType) => KidRequest[];
+
+  getEventsForRequest: (requestId: string) => Promise<KidRequestEvent[]>;
 }
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
@@ -307,6 +349,29 @@ async function deleteFromDb(id: string): Promise<boolean> {
   return true;
 }
 
+const FLUSH_AFTER_MS = 15 * 24 * 60 * 60 * 1000; // 15 days
+
+// Kid requests accumulate as clutter — acknowledged (approved/declined/
+// cancelled/expired/completed) or still-unacknowledged (pending), it
+// doesn't matter which; after 15 days from requestedAt it's just noise in
+// the inbox/history tabs. Fire-and-forget DB delete scoped to this family,
+// run once per loadFromStorage — no separate cron/sweeper exists for this
+// store, so "on load" is the natural cleanup point (mirrors this file's
+// own 200-row cap comment above, same clutter concern, different fix).
+async function flushOld(familyId: string): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - FLUSH_AFTER_MS).toISOString();
+    const { error } = await supabase
+      .from('kid_requests')
+      .delete()
+      .eq('family_id', familyId)
+      .lt('requested_at', cutoff);
+    if (error) console.warn('[kidRequestStore] flushOld failed:', error.message);
+  } catch (e: any) {
+    console.warn('[kidRequestStore] flushOld failed:', e?.message);
+  }
+}
+
 async function notifyKidRequest(
   fromMemberId: string,
   type: string,
@@ -338,6 +403,54 @@ async function notifyMember(memberId: string, type: string, payload: Record<stri
   } catch (e: any) {
     console.warn('[kidRequestStore] notifyMember error:', e?.message);
   }
+}
+
+// Append-only audit log — fire-and-forget like notifyKidRequest/notifyMember,
+// since a slow/failed log insert must never block the real lifecycle action.
+async function logEvent(
+  requestId: string,
+  eventType: RequestEventType,
+  actorId: string,
+  note?: string,
+  meta?: Record<string, unknown>,
+) {
+  try {
+    const familyId = getFamilyId();
+    if (!familyId) return;
+    supabase.from('kid_request_events').insert({
+      request_id: requestId,
+      family_id:  familyId,
+      event_type: eventType,
+      actor_id:   actorId,
+      note:       note ?? null,
+      meta:       meta ?? null,
+    }).then(({ error }) => {
+      if (error) console.warn('[kidRequestStore] logEvent failed:', error.message);
+    });
+  } catch (e: any) {
+    console.warn('[kidRequestStore] logEvent error:', e?.message);
+  }
+}
+
+async function getEventsForRequest(requestId: string): Promise<KidRequestEvent[]> {
+  const { data, error } = await supabase
+    .from('kid_request_events')
+    .select('*')
+    .eq('request_id', requestId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.warn('[kidRequestStore] getEventsForRequest failed:', error.message);
+    return [];
+  }
+  return (data ?? []).map((r: any) => ({
+    id:        r.id,
+    requestId: r.request_id,
+    eventType: r.event_type,
+    actorId:   r.actor_id,
+    note:      r.note ?? undefined,
+    meta:      r.meta ?? undefined,
+    createdAt: r.created_at,
+  }));
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -375,8 +488,12 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
           .order('requested_at', { ascending: false })
           .limit(200);
         if (!error) {
+          flushOld(familyId); // fire-and-forget — don't block this load on it
+          const cutoff = Date.now() - FLUSH_AFTER_MS;
           // rows may be [] on a fresh family — that's valid, don't fall through to seed
-          const requests: KidRequest[] = (rows ?? []).map((r: any) => {
+          const requests: KidRequest[] = (rows ?? [])
+            .filter((r: any) => new Date(r.requested_at).getTime() >= cutoff)
+            .map((r: any) => {
             const fromDb: KidRequest = {
               id:             r.id,
               type:           r.type,
@@ -420,12 +537,14 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   },
 
   sendRequest: async (req) => {
+    const defaultExpiryMs = DEFAULT_EXPIRY_MS[req.type];
     const request: KidRequest = {
       ...req,
       id:          generateId(),
       urgency:     req.urgency ?? (req.type === 'emergency' ? 'emergency' : 'normal'),
       requestedAt: new Date().toISOString(),
       status:      'pending',
+      expiresAt:   req.expiresAt ?? (defaultExpiryMs ? new Date(Date.now() + defaultExpiryMs).toISOString() : undefined),
     };
     // DB-is-truth: await the write before adding it to local state — was
     // optimistic (added immediately, no rollback if the write failed).
@@ -440,6 +559,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       location: request.location, scheduledDate: request.scheduledDate,
       scheduledTime: request.scheduledTime,
     });
+    logEvent(request.id, 'created', request.fromMemberId);
     return request;
   },
 
@@ -464,6 +584,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'approved', note, fromMemberId: req.fromMemberId,
     });
+    logEvent(id, 'approved', respondedBy, note);
   },
 
   declineRequest: async (id, respondedBy, note) => {
@@ -478,6 +599,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'declined', note, fromMemberId: req.fromMemberId,
     });
+    logEvent(id, 'declined', respondedBy, note);
   },
 
   assignRequest: async (id, helperId, note, assignedBy) => {
@@ -506,12 +628,14 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         byName: memberName(assignedBy), byMemberId: assignedBy, memberId: helperId, note,
       });
     }
+    const wasAssigned = !!req.assignedHelper;
+    logEvent(id, wasAssigned && req.assignedHelper !== helperId ? 'reassigned' : 'assigned', assignedBy ?? helperId, note, { helperId });
   },
 
-  completeRequest: async (id, respondedBy) => {
+  completeRequest: async (id, respondedBy, note) => {
     const req = get().requests.find(r => r.id === id);
     if (!req) return;
-    const updated: KidRequest = { ...req, status: 'completed', respondedAt: new Date().toISOString(), respondedBy };
+    const updated: KidRequest = { ...req, status: 'completed', respondedAt: new Date().toISOString(), respondedBy, parentNote: note ?? req.parentNote };
     const ok = await upsertToDb(updated);
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
@@ -525,6 +649,39 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         fromMemberId: req.fromMemberId, byMemberId: respondedBy, byName: memberName(respondedBy),
       });
     }
+    logEvent(id, 'completed', respondedBy, note);
+  },
+
+  acknowledgeCheckin: async (id, respondedBy, note) => {
+    const req = get().requests.find(r => r.id === id);
+    if (!req || req.status !== 'pending') return;
+    const updated: KidRequest = { ...req, respondedAt: new Date().toISOString(), respondedBy, parentNote: note ?? req.parentNote };
+    const ok = await upsertToDb(updated);
+    if (!ok) return;
+    const all = get().requests.map(r => r.id === id ? updated : r);
+    set({ requests: all }); save(all);
+    logEvent(id, 'approved', respondedBy, note);
+  },
+
+  finalizeAckedCheckins: async () => {
+    const oneHourAgo = Date.now() - 3_600_000;
+    // Checkins: acknowledgeCheckin stamps respondedAt but leaves status
+    // 'pending' for an hour. Everything else: approveRequest/assignRequest
+    // already set status 'approved' with its own respondedAt — "Approved"
+    // also moves to History/All an hour after that same timestamp, same
+    // one-hour grace window, just starting from a different status.
+    const due = get().requests.filter(r =>
+      r.respondedAt && new Date(r.respondedAt).getTime() < oneHourAgo &&
+      ((r.type === 'checkin' && r.status === 'pending') || r.status === 'approved')
+    );
+    for (const req of due) {
+      const updated: KidRequest = { ...req, status: 'completed' };
+      const ok = await upsertToDb(updated);
+      if (!ok) continue;
+      const all = get().requests.map(r => r.id === req.id ? updated : r);
+      set({ requests: all }); save(all);
+      logEvent(req.id, 'completed', req.respondedBy ?? req.fromMemberId);
+    }
   },
 
   cancelRequest: async (id) => {
@@ -535,6 +692,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(id, 'cancelled', req.fromMemberId);
   },
 
   toggleGPWelcome: async (id, value) => {
@@ -545,6 +703,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(id, 'gp_toggled', req.respondedBy ?? req.fromMemberId, undefined, { value });
   },
 
   markRead: async (id) => {
@@ -555,6 +714,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === id ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(id, 'read', req.fromMemberId);
   },
 
   deleteRequest: async (id) => {
@@ -592,6 +752,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         decision: 'approved', itemNames: names, note, fromMemberId: before.fromMemberId,
       });
     }
+    logEvent(requestId, 'items_approved', approvedBy, note, { itemIds });
   },
 
   rejectItems: async (requestId, itemIds, rejectedBy, note) => {
@@ -618,6 +779,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
         decision: 'rejected', itemNames: names, note, fromMemberId: before.fromMemberId,
       });
     }
+    logEvent(requestId, 'items_rejected', rejectedBy, note, { itemIds });
   },
 
   approveAllItems: async (requestId, approvedBy, note) => {
@@ -642,6 +804,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     if (!ok) return;
     const all = get().requests.map(r => r.id === requestId ? updated : r);
     set({ requests: all }); save(all);
+    logEvent(requestId, 'items_appended', req.fromMemberId, undefined, { count: newItems.length });
   },
 
   clearResolved: () => {
@@ -649,13 +812,21 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     set({ requests: all }); save(all);
   },
 
-  expireStale: () => {
+  // Client-side lazy sweep — catches requests that went stale between
+  // sweeper cron ticks (kid-request-expire-sweep runs hourly server-side;
+  // this closes the gap on app open so the UI doesn't show a dead
+  // checkin/question as "pending" for up to an hour after it expired).
+  // Persists to DB like every other status transition in this store, not
+  // just local state — was previously local-only, so a stale row would
+  // un-expire itself on the next realtime/refetch from the DB.
+  expireStale: async () => {
     const now = new Date().toISOString();
-    const all = get().requests.map(r =>
-      r.status === 'pending' && r.expiresAt && r.expiresAt < now
-        ? { ...r, status: 'expired' as RequestStatus }
-        : r
-    );
+    const stale = get().requests.filter(r => r.status === 'pending' && r.expiresAt && r.expiresAt < now);
+    if (stale.length === 0) return;
+    const updates = stale.map(r => ({ ...r, status: 'expired' as RequestStatus }));
+    await Promise.all(updates.map(u => upsertToDb(u)));
+    const byId = new Map(updates.map(u => [u.id, u]));
+    const all = get().requests.map(r => byId.get(r.id) ?? r);
     set({ requests: all }); save(all);
   },
 
@@ -665,4 +836,6 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   getForMember:   (memberId) => get().requests.filter(r => r.fromMemberId === memberId),
   getUnread:      () => get().requests.filter(r => r.status === 'pending' && !r.readAt),
   getByType:      (type) => get().requests.filter(r => r.type === type),
+
+  getEventsForRequest: (requestId) => getEventsForRequest(requestId),
 }));

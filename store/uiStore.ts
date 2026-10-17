@@ -39,6 +39,51 @@ interface UIState {
   // "Grocery + FAB should be similar like in the other pages"). Reads this
   // once on focus to open AddItemSheet, then clears it immediately.
   openGroceryComposerRequested: boolean;
+  // One-shot: Grocery/Meals are no longer real tab routes — they're opened
+  // as Hub-owned FullPageOverlay state (same pattern as ReviewInboxScreen)
+  // to fix a stale-Reanimated-shared-value blank-screen bug that came from
+  // Expo Router's tab navigator keeping them mounted forever. Anything
+  // outside HubScreen (a notification tap, a deep link) that used to
+  // router.push('/(tabs)/grocery')/('/(tabs)/meals') now navigates to Hub
+  // and flips this flag instead; HubScreen consumes it once and clears it,
+  // same one-shot shape as openGroceryComposerRequested above.
+  openGroceryScreenRequested: boolean;
+  openMealsScreenRequested: boolean;
+  setOpenGroceryScreenRequested: (v: boolean) => void;
+  setOpenMealsScreenRequested: (v: boolean) => void;
+  // Same one-shot FullPageOverlay pattern as openGroceryScreenRequested —
+  // Memories was a real (hidden) Expo Router tab route, reached via
+  // router.push from AppsQuickAccessPills/FamilyScreen, which doesn't get
+  // the FullPageOverlay swipe-back gesture or PageHeading header rhythm
+  // every other Hub-launched feature now has.
+  openMemoriesScreenRequested: boolean;
+  setOpenMemoriesScreenRequested: (v: boolean) => void;
+  // One-shot, carried alongside openMemoriesScreenRequested — a
+  // memory_posted/memory_liked push tap used to deep-link via
+  // router.push('/(tabs)/memories?memoryId=...') query params, which the
+  // FullPageOverlay path doesn't have a router screen to receive. Set right
+  // before setOpenMemoriesScreenRequested(true); MemoriesScreen reads+clears
+  // it once on open to scroll to that card, same as the old memoryId param.
+  pendingMemoryFocusId: string | undefined;
+  setPendingMemoryFocusId: (v: string | undefined) => void;
+  // Same one-shot pattern as openGroceryScreenRequested/openMealsScreenRequested
+  // above — Rewards (app/(tabs)/store.tsx) is a real-but-hidden Expo Router
+  // tab route (no longer in TABS_DEFAULT/TABS_SENIOR, "moved to Hub pills"),
+  // which meant every router.push('/(tabs)/store') still hit the tab
+  // navigator's own showTabBar() effect (app/(tabs)/_layout.tsx, keyed on
+  // activeTabIndex/activeRouteName) and stomped the screen's own
+  // hideTabBar() call, plus got no FullPageOverlay swipe-back gesture
+  // [live-reported: "Family rewards pages not rhythm of figma no back
+  // swipe and still bottom nav"]. Converts Rewards to the same Hub-owned
+  // FullPageOverlay pattern Meals/Grocery already use.
+  openRewardsScreenRequested: boolean;
+  setOpenRewardsScreenRequested: (v: boolean) => void;
+  // One-shot: a screen asks Chat to open this channel on next focus (e.g. co-parent dispute -> parents' DM).
+  pendingChatChannelId: string | null;
+  // One-shot: a Hub row asks HubScreen to open the approval action center for this chore.
+  openApprovalDetailChoreId: string | null;
+  setOpenApprovalDetailChoreId: (id: string | null) => void;
+  setPendingChatChannelId: (id: string | null) => void;
   setOpenGroceryComposerRequested: (v: boolean) => void;
   // Live-updated (not one-shot) by HealthRecordsScreen/HealthTab so the
   // shared FAB's own background color in app/(tabs)/_layout.tsx can track
@@ -56,6 +101,36 @@ interface UIState {
   // "+" on Hub/Apps and sparkle on Tasks — backwards).
   activeTabName: string | undefined;
   setActiveTabName: (name: string | undefined) => void;
+  // One-shot pattern, same as openTaskComposerRequested above — set by a
+  // screen outside Tasks (e.g. the Hub's Next Up timeline) before
+  // navigating to the Tasks tab, so TasksScreen opens on a specific segment
+  // (Schedule/Chores/Queue) instead of always defaulting to Chores. Read
+  // once on focus, then cleared immediately so a later plain remount
+  // doesn't re-trigger it.
+  requestedTasksSegment: 'schedule' | 'chores' | 'queue' | undefined;
+  setRequestedTasksSegment: (v: 'schedule' | 'chores' | 'queue' | undefined) => void;
+  // Same one-shot pattern — set by the Hub's Next Up timeline before
+  // navigating to Tasks so tapping an event opens its full detail page
+  // directly (EventDetailScreen) instead of just landing on the Schedule
+  // segment's own default day view, leaving the user to find and tap the
+  // event again themselves.
+  requestedEventDetailId: string | undefined;
+  setRequestedEventDetailId: (v: string | undefined) => void;
+  // One-shot, same pattern as openHealthRecordsComposerRequested — set by
+  // HealthRecordsScreen.tsx's flat "Scan prescription / vaccine record →"
+  // bottom button (which has no direct handle to HealthTab's own
+  // showScanSheet/scanMode state) so HealthTab can open the SAME real
+  // ScanReviewSheet its AI banner's scan buttons already trigger, instead
+  // of a second scan implementation. Value is the scan mode to open with
+  // ('rx' | 'vaccine'), undefined when idle.
+  openHealthScanRequested: 'rx' | 'vaccine' | undefined;
+  setOpenHealthScanRequested: (v: 'rx' | 'vaccine' | undefined) => void;
+  // One-shot, same pattern — set by HealthRecordsScreen.tsx's flat
+  // "Export PDF →" bottom button so HealthTab (the only place that holds
+  // the real vaccine array) can run the existing shareVaccineRecordsPdf
+  // export instead of this screen re-querying/duplicating that logic.
+  openHealthPdfExportRequested: boolean;
+  setOpenHealthPdfExportRequested: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -67,12 +142,34 @@ export const useUIStore = create<UIState>((set) => ({
   setOpenMemoryComposerRequested: (v) => set({ openMemoryComposerRequested: v }),
   openHealthRecordsComposerRequested: false,
   setOpenHealthRecordsComposerRequested: (v) => set({ openHealthRecordsComposerRequested: v }),
+  requestedTasksSegment: undefined,
+  setRequestedTasksSegment: (v) => set({ requestedTasksSegment: v }),
+  requestedEventDetailId: undefined,
+  setRequestedEventDetailId: (v) => set({ requestedEventDetailId: v }),
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   openGroceryComposerRequested: false,
+  openGroceryScreenRequested: false,
+  openMealsScreenRequested: false,
+  setOpenGroceryScreenRequested: (v) => set({ openGroceryScreenRequested: v }),
+  setOpenMealsScreenRequested: (v) => set({ openMealsScreenRequested: v }),
+  openMemoriesScreenRequested: false,
+  setOpenMemoriesScreenRequested: (v) => set({ openMemoriesScreenRequested: v }),
+  pendingMemoryFocusId: undefined,
+  setPendingMemoryFocusId: (v) => set({ pendingMemoryFocusId: v }),
+  openRewardsScreenRequested: false,
+  setOpenRewardsScreenRequested: (v) => set({ openRewardsScreenRequested: v }),
+  pendingChatChannelId: null,
+  openApprovalDetailChoreId: null,
+  setOpenApprovalDetailChoreId: (id) => set({ openApprovalDetailChoreId: id }),
+  setPendingChatChannelId: (id) => set({ pendingChatChannelId: id }),
   setOpenGroceryComposerRequested: (v) => set({ openGroceryComposerRequested: v }),
   healthRecordsActiveSegment: 'health',
   setHealthRecordsActiveSegment: (v) => set({ healthRecordsActiveSegment: v }),
   activeTabName: undefined,
   setActiveTabName: (name) => set({ activeTabName: name }),
+  openHealthScanRequested: undefined,
+  setOpenHealthScanRequested: (v) => set({ openHealthScanRequested: v }),
+  openHealthPdfExportRequested: false,
+  setOpenHealthPdfExportRequested: (v) => set({ openHealthPdfExportRequested: v }),
 }));

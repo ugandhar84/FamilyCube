@@ -1,0 +1,902 @@
+/**
+ * FamilyRecipeBookPage — "Family recipe book" full-page screen.
+ * Reads/writes from the dedicated `family_recipes` table (not family_meals).
+ * "Add to week" copies the recipe row into family_meals for a chosen day.
+ * The + button opens a full-page add-recipe form with mic + AI refine.
+ */
+import { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
+  TextInput, Platform, Image, KeyboardAvoidingView, Keyboard,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PageHeading } from '@/components/PageHeading';
+import { OverlayPage, OverlayHeading } from '@/components/OverlayPage';
+import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2, Camera, ImagePlus, RefreshCw } from 'lucide-react-native';
+import { useTheme } from '@/lib/ThemeContext';
+import { useFamilyStore } from '@/store/familyStore';
+import { supabase } from '@/lib/supabase';
+import { useUIStore } from '@/store/uiStore';
+import type { Meal } from './meals/types';
+import { DAYS, weekOf, DIETARY_OPTIONS } from './meals/types';
+import RecipeModal from './meals/RecipeModal';
+
+type FamilyRecipe = {
+  id: string;
+  family_id: string;
+  title: string;
+  emoji?: string | null;
+  image_url?: string | null;
+  ingredients: string[];
+  prep_steps: string[];
+  dietary_tags: string[];
+  prep_minutes?: number | null;
+  servings?: number | null;
+  ai_refined?: boolean;
+  created_by?: string | null;
+  created_at?: string;
+  status?: 'pending' | 'approved';
+};
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { useGroceryStore } from '@/store/groceryStore';
+import { showToast } from '@/components/AppToast';
+import { GEMINI } from '@/constants/geminiRhythm';
+
+const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
+const DAY_FULL: Record<string, string> = {
+  Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday',
+  Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday',
+};
+
+export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void }) {
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { members, activeMemberId } = useFamilyStore();
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const familyName = (members[0] as any)?.familyName ?? 'Family';
+  const familyId   = (members[0] as any)?.familyId as string | undefined;
+  const isParent   = (activeMember as any)?.role === 'parent';
+  const P = colors.primary;
+
+  const [recipes, setRecipes]         = useState<FamilyRecipe[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [query, setQuery]             = useState('');
+  const [activeRecipe, setActiveRecipe] = useState<FamilyRecipe | null>(null);
+
+  // Add recipe form state
+  const [showAddRecipe, setShowAddRecipe] = useState(false);
+  const [newTitle, setNewTitle]           = useState('');
+  const [newEmoji, setNewEmoji]           = useState('');
+  const [newIngredients, setNewIngredients] = useState<string[]>(['']);
+  // Steps as one big text block — user types/dictates; AI parses into array on refine
+  const [newStepsText, setNewStepsText]   = useState('');
+  const [newPrepMins, setNewPrepMins]     = useState('');
+  const [newTags, setNewTags]             = useState<string[]>([]);
+  const [newImageUrl, setNewImageUrl]     = useState<string | null>(null);
+  const [savingRecipe, setSavingRecipe]   = useState(false);
+  const [refining, setRefining]           = useState(false);
+  const [aiTip, setAiTip]                = useState<string | null>(null);
+
+  const resetAddRecipeForm = () => {
+    setNewTitle(''); setNewEmoji(''); setNewIngredients(['']);
+    setNewStepsText(''); setNewPrepMins(''); setNewTags([]);
+    setAiTip(null); setNewImageUrl(null);
+  };
+
+  const refineWithAi = async () => {
+    if (!newTitle.trim() && !newStepsText.trim() && newIngredients.filter(Boolean).length === 0) {
+      showToast('Add a title or some ingredients first');
+      return;
+    }
+    setRefining(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('family-ai', {
+        body: {
+          action: 'refine_recipe',
+          title: newTitle.trim(),
+          ingredients: newIngredients.map(s => s.trim()).filter(Boolean),
+          steps: newStepsText.split('\n').map(s => s.trim()).filter(Boolean),
+          dietaryTags: newTags,
+          prepMinutes: newPrepMins ? parseInt(newPrepMins, 10) : undefined,
+          familyId: familyId ?? '',
+        },
+      });
+      if (error) throw error;
+      const r = (data as any)?.result ?? data;
+      if (r?.title) setNewTitle(r.title);
+      if (r?.emoji) setNewEmoji(r.emoji);
+      if (r?.ingredients?.length) setNewIngredients(r.ingredients);
+      if (r?.steps?.length) setNewStepsText(r.steps.join('\n'));
+      if (r?.dietaryTags?.length) setNewTags(r.dietaryTags);
+      if (r?.prepMinutes) setNewPrepMins(String(r.prepMinutes));
+      if (r?.tip) setAiTip(r.tip);
+      if (r?.imageUrl) setNewImageUrl(r.imageUrl);
+      showToast('Recipe refined by Cube AI ✨');
+    } catch {
+      showToast('AI refinement failed — try again');
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const saveNewRecipe = async () => {
+    if (!newTitle.trim() || !familyId) return;
+    setSavingRecipe(true);
+    try {
+      const ingredients = newIngredients.map(s => s.trim()).filter(Boolean);
+      const prepSteps   = newStepsText.split('\n').map(s => s.trim()).filter(Boolean);
+      const dietaryTags = newTags;
+      const id = `${familyId}-recipe-${Date.now()}`;
+      // Kids/teens send recipes to a parent review queue instead of
+      // publishing straight to the shared book — same "propose, parent
+      // approves" shape as chores/quests [live-requested: "kids can
+      // contribute ... send to the parents to review approve"].
+      const status: 'pending' | 'approved' = isParent ? 'approved' : 'pending';
+      const { data, error } = await supabase.from('family_recipes').insert({
+        id, family_id: familyId,
+        title: newTitle.trim(),
+        emoji: newEmoji.trim() || null,
+        image_url: newImageUrl ?? null,
+        ingredients, prep_steps: prepSteps,
+        dietary_tags: dietaryTags,
+        prep_minutes: newPrepMins ? parseInt(newPrepMins, 10) : null,
+        created_by: activeMember?.id ?? null,
+        ai_refined: false,
+        status,
+      }).select().single();
+      if (!error && data) {
+        setRecipes(prev => [data as FamilyRecipe, ...prev]);
+        showToast(isParent ? `${newTitle.trim()} added to recipe book` : `Sent to your parents for review`);
+        resetAddRecipeForm();
+        setShowAddRecipe(false);
+      } else {
+        showToast('Could not save recipe — try again');
+      }
+    } catch {
+      showToast('Could not save recipe — try again');
+    } finally {
+      setSavingRecipe(false);
+    }
+  };
+
+  // "Add to week" picker state
+  const [addTarget, setAddTarget]     = useState<FamilyRecipe | null>(null);
+  const [pickerDay, setPickerDay]     = useState<string>('Mon');
+  const [pickerType, setPickerType]   = useState<string>('Dinner');
+  const [saving, setSaving]           = useState(false);
+
+  // Keep FAB hidden while this page is mounted (tab bar is already hidden by MealsScreen/layout)
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => {
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!familyId) { setLoading(false); return; }
+    supabase
+      .from('family_recipes')
+      .select('*')
+      .eq('family_id', familyId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setRecipes(data as FamilyRecipe[]);
+        setLoading(false);
+      });
+  }, [familyId]);
+
+  const addGroceryItems = useCallback(async (names: string[], note?: string) => {
+    const { addItem, items: existing } = useGroceryStore.getState();
+    names.forEach(name => {
+      const clean = name.trim();
+      if (clean && !existing.some(e => e.name.toLowerCase() === clean.toLowerCase()))
+        addItem({ name: clean, category: 'Other', notes: note, familyId: familyId ?? '', addedBy: activeMember?.id ?? '' });
+    });
+  }, []);
+
+  // Save recipe to chosen day/type in the current week
+  const addToWeek = async () => {
+    if (!addTarget || !familyId) return;
+    setSaving(true);
+    try {
+      const week = weekOf();
+      const newId = `${familyId}-${week}-${pickerDay}-recipe-${Date.now()}`;
+      await supabase.from('family_meals').insert({
+        id: newId, family_id: familyId,
+        week_of: week, day: pickerDay,
+        title: addTarget.title, type: pickerType.toLowerCase(),
+        emoji: addTarget.emoji ?? null,
+        ingredients: addTarget.ingredients ?? [],
+        prep_steps: addTarget.prep_steps ?? [],
+        dietary_tags: addTarget.dietary_tags ?? [],
+        prep_minutes: addTarget.prep_minutes ?? null,
+        chef_id: null,
+        ai_generated: false,
+      });
+      showToast(`${addTarget.title} added to ${DAY_FULL[pickerDay]} ${pickerType.toLowerCase()}`);
+      setAddTarget(null);
+    } catch {
+      showToast('Could not add to week — try again');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care/Grocery/MealsScreen's own identical
+  // comment).
+  const canvas = isDark ? colors.background : GEMINI.canvas;
+  const cardBg  = isDark ? colors.card : GEMINI.cardBg;
+  const pillBg  = (active: boolean) =>
+    active ? P : (isDark ? colors.surface : colors.surface);
+  const pillText = (active: boolean) =>
+    active ? '#FFFFFF' : (isDark ? colors.textSecondary : GEMINI.bodyColor);
+
+  // Pending recipes only show to the parent reviewing them and the kid
+  // who submitted them — everyone else only ever sees 'approved' rows
+  // (status defaults to 'approved' for parent-created recipes, so this
+  // never hides anything from before this feature existed).
+  const visibleRecipes = recipes.filter(r =>
+    r.status !== 'pending' || isParent || r.created_by === activeMember?.id
+  );
+  const pendingRecipes  = visibleRecipes.filter(r => r.status === 'pending');
+  const approvedRecipes = visibleRecipes.filter(r => r.status !== 'pending');
+
+  const filtered = query.trim()
+    ? approvedRecipes.filter(r =>
+        r.title.toLowerCase().includes(query.toLowerCase()) ||
+        r.ingredients?.some(i => i.toLowerCase().includes(query.toLowerCase()))
+      )
+    : approvedRecipes;
+
+  const reviewRecipe = async (recipe: FamilyRecipe, approve: boolean) => {
+    if (approve) {
+      await supabase.from('family_recipes').update({ status: 'approved' }).eq('id', recipe.id);
+      setRecipes(prev => prev.map(r => r.id === recipe.id ? { ...r, status: 'approved' } : r));
+      showToast(`${recipe.title} added to the recipe book`);
+    } else {
+      await supabase.from('family_recipes').delete().eq('id', recipe.id);
+      setRecipes(prev => prev.filter(r => r.id !== recipe.id));
+      showToast(`${recipe.title} declined`);
+    }
+  };
+
+  const chefLabel = (recipe: FamilyRecipe) => {
+    if (!recipe.created_by) return null;
+    const name = members.find(m => m.id === recipe.created_by)?.name?.split(' ')[0];
+    return name ? `${name}'s recipe` : null;
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: canvas }}>
+
+      <PageHeading
+        eyebrow="FAMILY CUBE · MEALS"
+        title="Family recipe book"
+        subtitle={isParent
+          ? "Recipes your family has made and loved. Add any recipe to this week's plan."
+          : 'Recipes your family has made and loved. Add your own to share with the family.'}
+        accent="amber"
+        Icon={BookOpen}
+        onTitlePress={onClose}
+        topInset={insets.top}
+      />
+
+      <ScrollView showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 80 }}>
+
+        {/* Search */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+          backgroundColor: colors.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 }}>
+          <Search size={16} color={colors.textTertiary} strokeWidth={2} />
+          <TextInput
+            value={query} onChangeText={setQuery}
+            placeholder="Search recipes or ingredients…"
+            placeholderTextColor={colors.textTertiary}
+            style={{ flex: 1, fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
+          />
+        </View>
+
+        {/* Add a recipe CTA card — open to every member now, not just
+            parents [live-requested: "kids can contribute ... we should
+            have the full form like parents does"]. Kid/teen submissions
+            route into the pending-review queue below instead of
+            publishing straight to the book (see saveNewRecipe's status
+            branch). */}
+        <Pressable
+          onPress={() => { resetAddRecipeForm(); setShowAddRecipe(true); }}
+          style={({ pressed }) => ({
+            backgroundColor: colors.amberLight, borderRadius: 18, padding: 18,
+            flexDirection: 'row', alignItems: 'center', gap: 14,
+            opacity: pressed ? 0.85 : 1,
+            borderWidth: 1.5, borderColor: colors.amber + '30',
+          })}>
+          <View style={{ width: 48, height: 48, borderRadius: 14,
+            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.7)',
+            alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Plus size={24} color={colors.amber} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+              Add a family recipe
+            </Text>
+            <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
+              {isParent
+                ? 'Record ingredients and steps — Cube AI can clean it up and generate a photo.'
+                : "Record your recipe and send it to your parents to review."}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 20, color: colors.amber }}>›</Text>
+        </Pressable>
+
+        {/* Pending review queue — parents see every kid submission here;
+            a kid sees only their own pending submissions, so they know
+            it was sent without being able to approve it themselves. */}
+        {pendingRecipes.length > 0 && (
+          <View style={{ gap: 10 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink, letterSpacing: 0.3 }}>
+              {isParent ? `WAITING FOR YOUR REVIEW · ${pendingRecipes.length}` : 'SENT · AWAITING REVIEW'}
+            </Text>
+            {pendingRecipes.map(recipe => (
+              <View key={recipe.id} style={{
+                backgroundColor: colors.pinkLight, borderRadius: 16, padding: 16, gap: 10,
+                borderWidth: 1, borderColor: colors.pink + '30',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 22 }}>{recipe.emoji || '🍽️'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                      {recipe.title}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
+                      {chefLabel(recipe) ?? 'Submitted recipe'} · {recipe.ingredients?.length ?? 0} ingredients
+                    </Text>
+                  </View>
+                </View>
+                {isParent ? (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable onPress={() => setActiveRecipe(recipe)}
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center',
+                        backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.pink }}>View</Text>
+                    </Pressable>
+                    <Pressable onPress={() => reviewRecipe(recipe, false)}
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center',
+                        backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.danger }}>Decline</Text>
+                    </Pressable>
+                    <Pressable onPress={() => reviewRecipe(recipe, true)}
+                      style={{ flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: colors.pink }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Approve</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 12, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                    A parent will review it before it shows up in the recipe book.
+                  </Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Recipe list */}
+        {loading ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator color={P} />
+          </View>
+        ) : filtered.length === 0 ? (
+          <View style={{ backgroundColor: cardBg, borderRadius: 18, padding: 24,
+            alignItems: 'center', gap: 12,
+            ...Platform.select({ ios: { shadowColor: colors.navy, shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 2 } }) }}>
+            <BookOpen size={36} color={colors.textTertiary} strokeWidth={1.4} />
+            <Text style={{ fontSize: 17, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor), textAlign: 'center' }}>
+              {query ? 'No recipes match that search' : 'No recipes yet'}
+            </Text>
+            <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textAlign: 'center', lineHeight: 20 }}>
+              {query
+                ? 'Try a different ingredient or meal name.'
+                : 'Meals with ingredients and steps will appear here automatically. Plan a meal with steps to get started.'}
+            </Text>
+          </View>
+        ) : (
+          filtered.map(recipe => (
+            <View key={recipe.id} style={{
+              backgroundColor: cardBg, borderRadius: 18, overflow: 'hidden',
+              ...Platform.select({
+                ios: { shadowColor: colors.navy, shadowOpacity: isDark ? 0.14 : 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } },
+                android: { elevation: 2 },
+              }),
+            }}>
+              {/* Tap row → opens RecipeModal */}
+              <Pressable
+                onPress={() => setActiveRecipe(recipe as FamilyRecipe)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', gap: 14,
+                  padding: 16, opacity: pressed ? 0.86 : 1,
+                })}
+              >
+                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: colors.amberLight,
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {recipe.emoji
+                    ? <Text style={{ fontSize: 28 }}>{recipe.emoji}</Text>
+                    : <ChefHat size={26} color={colors.amber} strokeWidth={1.6} />}
+                </View>
+
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>
+                    {recipe.title}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={1}>
+                    {[
+                      chefLabel(recipe),
+                      recipe.prep_minutes ? `${recipe.prep_minutes} min` : null,
+                      recipe.ingredients?.length ? `${recipe.ingredients.length} ingredients` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </Text>
+                  {(recipe.dietary_tags?.length ?? 0) > 0 && (
+                    <View style={{ flexDirection: 'row', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
+                      {recipe.dietary_tags!.slice(0, 3).map(tag => (
+                        <View key={tag} style={{ backgroundColor: colors.tealLight, borderRadius: 6,
+                          paddingHorizontal: 7, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.teal }}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                <Text style={{ fontSize: 20, color: colors.textTertiary }}>›</Text>
+              </Pressable>
+
+              {/* "Add to week" CTA — parent-only (planning the actual
+                  week stays a parent action, same as meal add/edit/delete
+                  in MealsTab; only recipe *contribution* opened up to
+                  kids/teens) [live-requested: "we shouldnt allow
+                  kids/teens to add this week meal from family recipie
+                  book"]. */}
+              {isParent && (
+                <Pressable
+                  onPress={() => { setAddTarget(recipe); setPickerDay('Mon'); setPickerType('Dinner'); }}
+                  style={({ pressed }) => ({
+                    marginHorizontal: 16, marginBottom: 14,
+                    borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+                    backgroundColor: pressed ? colors.tealLight : colors.tealLight,
+                    borderWidth: 1, borderColor: colors.teal + '40',
+                  })}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.teal }}>
+                    + Add to this week
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          ))
+        )}
+
+      </ScrollView>
+
+      {/* ── Add new recipe — full-page overlay ── */}
+      <OverlayPage visible={showAddRecipe} onDismiss={() => setShowAddRecipe(false)} zIndex={90}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: canvas }}>
+          <OverlayHeading eyebrow="FAMILY CUBE · MEALS" title="New recipe" accent="amber" Icon={BookOpen} onTitlePress={() => setShowAddRecipe(false)} topInset={insets.top} />
+
+          {/* ── Single scrollable body — photo + all form fields scroll together ── */}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={Keyboard.dismiss}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
+
+            {/* Hero photo — full-bleed inside scroll, no horizontal padding */}
+            {newImageUrl ? (
+              <View style={{ position: 'relative', marginBottom: 20 }}>
+                <Image
+                  source={{ uri: newImageUrl }}
+                  style={{ width: '100%', height: 240 }}
+                  resizeMode="cover"
+                />
+                <View style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+                  paddingHorizontal: 14, paddingBottom: 12,
+                }}>
+                  <View style={{ backgroundColor: 'rgba(0,0,0,0.48)', borderRadius: 8,
+                    paddingHorizontal: 8, paddingVertical: 4 }}>
+                    <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>
+                      AI-generated · review before sharing
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setNewImageUrl(null)}
+                    style={{ backgroundColor: 'rgba(0,0,0,0.48)', borderRadius: 8,
+                      paddingHorizontal: 8, paddingVertical: 4,
+                      flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <RefreshCw size={11} color="#fff" strokeWidth={2.2} />
+                    <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>Remove</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => showToast('Photo library coming soon')}
+                style={{
+                  height: 180, marginHorizontal: 20, borderRadius: 18,
+                  marginTop: 16, marginBottom: 20,
+                  borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed',
+                  backgroundColor: isDark ? colors.surface : colors.surface,
+                  alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}>
+                <Camera size={28} color={colors.textTertiary} strokeWidth={1.6} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                  Add a photo
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 28 }}>
+                  Browse your library, or refine with Cube AI below to auto-generate one.
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: colors.primaryLight, borderRadius: 20,
+                  paddingHorizontal: 16, paddingVertical: 8, marginTop: 4 }}>
+                  <ImagePlus size={15} color={P} strokeWidth={2} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Browse library</Text>
+                </View>
+              </Pressable>
+            )}
+
+            {/* Form fields — padded section */}
+            <View style={{ paddingHorizontal: 20, gap: 22 }}>
+
+            {/* Emoji + Title row */}
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.primary }}>
+                RECIPE NAME
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                <TextInput
+                  value={newEmoji} onChangeText={setNewEmoji}
+                  placeholder="🍽️" placeholderTextColor={colors.textTertiary}
+                  style={{ width: 52, height: 52, borderRadius: 14,
+                    backgroundColor: colors.amberLight, textAlign: 'center', fontSize: 26 }}
+                  maxLength={4}
+                />
+                <TextInput
+                  value={newTitle} onChangeText={setNewTitle}
+                  placeholder="e.g. Lemon chicken bowls"
+                  placeholderTextColor={colors.textTertiary}
+                  style={{ flex: 1, height: 52, borderRadius: 14,
+                    backgroundColor: isDark ? colors.surface : colors.surface,
+                    paddingHorizontal: 14, fontSize: 16, fontWeight: '600',
+                    color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
+                />
+              </View>
+            </View>
+
+            {/* Prep time */}
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.teal }}>
+                PREP TIME (MINUTES)
+              </Text>
+              <TextInput
+                value={newPrepMins} onChangeText={setNewPrepMins}
+                placeholder="e.g. 30"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="number-pad"
+                style={{ height: 48, borderRadius: 14,
+                  backgroundColor: isDark ? colors.surface : colors.surface,
+                  paddingHorizontal: 14, fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
+              />
+            </View>
+
+            {/* Ingredients */}
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.amber }}>
+                INGREDIENTS
+              </Text>
+              {newIngredients.map((val, idx) => (
+                <View key={idx} style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput
+                    value={val}
+                    onChangeText={text => {
+                      const next = [...newIngredients];
+                      next[idx] = text;
+                      setNewIngredients(next);
+                    }}
+                    placeholder={`Ingredient ${idx + 1}`}
+                    placeholderTextColor={colors.textTertiary}
+                    style={{ flex: 1, height: 44, borderRadius: 12,
+                      backgroundColor: isDark ? colors.surface : colors.surface,
+                      paddingHorizontal: 12, fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
+                    onSubmitEditing={() => setNewIngredients(prev => [...prev, ''])}
+                    returnKeyType="next"
+                  />
+                  {newIngredients.length > 1 && (
+                    <Pressable onPress={() => setNewIngredients(prev => prev.filter((_, i) => i !== idx))}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Trash2 size={16} color={colors.textTertiary} strokeWidth={1.8} />
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+              <Pressable onPress={() => setNewIngredients(prev => [...prev, ''])}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
+                <Plus size={15} color={colors.teal} strokeWidth={2.2} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.teal }}>Add ingredient</Text>
+              </Pressable>
+            </View>
+
+            {/* Steps — one big text block, mic to dictate */}
+            <View style={{ gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.pink }}>
+                  HOW TO MAKE IT
+                </Text>
+                {/* Mic button — dictate the procedure */}
+                <Pressable
+                  onPress={() => showToast('Voice dictation coming soon')}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: colors.pinkLight, borderRadius: 20,
+                    paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Mic size={14} color={colors.pink} strokeWidth={2} />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Dictate</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                value={newStepsText}
+                onChangeText={setNewStepsText}
+                placeholder={"Describe how to make it — one step per line, or just write naturally.\n\nAI can help clean this up when you tap Refine."}
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                textAlignVertical="top"
+                style={{ minHeight: 140, borderRadius: 14,
+                  backgroundColor: isDark ? colors.surface : colors.surface,
+                  paddingHorizontal: 14, paddingVertical: 12,
+                  fontSize: 15, color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 22 }}
+              />
+            </View>
+
+            {/* Dietary tags — multi-select pills */}
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.teal }}>
+                DIETARY TAGS (OPTIONAL)
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {DIETARY_OPTIONS.map(tag => {
+                  const sel = newTags.includes(tag);
+                  return (
+                    <Pressable
+                      key={tag}
+                      onPress={() => setNewTags(prev =>
+                        prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                      )}
+                      style={({ pressed }) => ({
+                        borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                        borderWidth: 1.5,
+                        backgroundColor: sel ? colors.teal + '20' : 'transparent',
+                        borderColor: sel ? colors.teal : colors.border,
+                        opacity: pressed ? 0.75 : 1,
+                      })}>
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: sel ? colors.teal : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                        {tag}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {newTags.length > 0 && (
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+                  {newTags.length} tag{newTags.length > 1 ? 's' : ''} selected
+                </Text>
+              )}
+            </View>
+
+            {/* Refine with AI card */}
+            <Pressable
+              onPress={refineWithAi}
+              disabled={refining}
+              style={({ pressed }) => ({
+                backgroundColor: colors.pinkLight, borderRadius: 16, padding: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+                opacity: pressed ? 0.82 : 1,
+              })}>
+              <View style={{ width: 40, height: 40, borderRadius: 12,
+                backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.6)',
+                alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {refining
+                  ? <ActivityIndicator size="small" color={colors.pink} />
+                  : <Wand2 size={20} color={colors.pink} strokeWidth={1.8} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
+                  {refining ? 'Cube AI is refining…' : 'Refine with Cube AI'}
+                </Text>
+                <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
+                  {refining
+                    ? 'Cleaning up steps, quantities, and tags…'
+                    : 'Tap to let AI clean up your steps, suggest quantities, emoji, and dietary notes.'}
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* AI tip — appears after refinement */}
+            {aiTip ? (
+              <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 14,
+                flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                <Sparkles size={16} color={colors.teal} strokeWidth={1.8} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
+                  {aiTip}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Save + Cancel scroll with the form — no fixed footer. Shared
+                Gemini BLUE CTA, same as every other converted module's
+                Save button [live-reported: "i still see toreekotta CTA
+                button instead of gemini blue"]. */}
+            <View style={{ gap: 10, paddingTop: 8 }}>
+              <Pressable
+                onPress={saveNewRecipe}
+                disabled={savingRecipe || !newTitle.trim()}
+                style={({ pressed }) => ({
+                  borderRadius: 16, paddingVertical: 17, alignItems: 'center',
+                  backgroundColor: !newTitle.trim() ? colors.border
+                    : isDark ? P
+                    : (pressed ? GEMINI.blue + 'CC' : GEMINI.blue),
+                  flexDirection: 'row', justifyContent: 'center', gap: 8,
+                })}>
+                {savingRecipe
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <>
+                      <Check size={17} color="#fff" strokeWidth={2.5} />
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>
+                        {isParent ? 'Save to recipe book' : 'Submit for parent review'}
+                      </Text>
+                    </>}
+              </Pressable>
+              <Pressable onPress={() => setShowAddRecipe(false)} style={{ alignItems: 'center', paddingVertical: 6 }}>
+                <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>Cancel</Text>
+              </Pressable>
+            </View>
+
+            </View>{/* end form fields padded section */}
+          </ScrollView>
+        </View>
+        </KeyboardAvoidingView>
+      </OverlayPage>
+
+      {/* ── "Add to week" — full-page overlay (no bottom sheets) ── */}
+      <OverlayPage visible={!!addTarget} onDismiss={() => setAddTarget(null)} zIndex={80}>
+        <View style={{ flex: 1, backgroundColor: canvas }}>
+          <OverlayHeading eyebrow="FAMILY CUBE · MEALS" title="Add to this week" accent="amber" Icon={BookOpen} onTitlePress={() => setAddTarget(null)} topInset={insets.top} />
+
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 24, paddingBottom: insets.bottom + 100 }}>
+
+            {/* Recipe preview */}
+            {addTarget && (
+              <View style={{ backgroundColor: colors.amberLight, borderRadius: 18, padding: 18,
+                flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                {addTarget.emoji
+                  ? <Text style={{ fontSize: 32 }}>{addTarget.emoji}</Text>
+                  : <ChefHat size={28} color={colors.amber} strokeWidth={1.6} />}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={2}>
+                    {addTarget.title}
+                  </Text>
+                  {addTarget.prep_minutes != null && (
+                    <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 3 }}>
+                      {addTarget.prep_minutes} min prep · {addTarget.ingredients?.length ?? 0} ingredients
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Day picker */}
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.teal }}>
+                WHICH DAY?
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {DAYS.map(day => (
+                  <Pressable key={day} onPress={() => setPickerDay(day)}
+                    style={{ paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24,
+                      backgroundColor: pillBg(pickerDay === day) }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: pillText(pickerDay === day) }}>
+                      {DAY_FULL[day]}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Meal type picker */}
+            <View style={{ gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: colors.amber }}>
+                WHICH MEAL?
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {MEAL_TYPES.map(type => (
+                  <Pressable key={type} onPress={() => setPickerType(type)}
+                    style={{ paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24,
+                      backgroundColor: pillBg(pickerType === type) }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: pillText(pickerType === type) }}>
+                      {type}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Inline confirmation note */}
+            <View style={{ backgroundColor: colors.tealLight, borderRadius: 14, padding: 16 }}>
+              <Text style={{ fontSize: 14, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 20 }}>
+                This will add <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{addTarget?.title}</Text> to{' '}
+                <Text style={{ fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{DAY_FULL[pickerDay]} {pickerType.toLowerCase()}</Text> in the current week.
+                Chef assignment can be set from the week plan.
+              </Text>
+            </View>
+
+          </ScrollView>
+
+          {/* Fixed footer */}
+          <View style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            paddingBottom: insets.bottom + 8, paddingTop: 12, paddingHorizontal: 20,
+            backgroundColor: canvas, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+            gap: 10,
+          }}>
+            <Pressable onPress={addToWeek} disabled={saving}
+              style={({ pressed }) => ({
+                borderRadius: 16, paddingVertical: 17, alignItems: 'center',
+                backgroundColor: isDark ? P : (pressed ? GEMINI.blue + 'CC' : GEMINI.blue),
+                flexDirection: 'row', justifyContent: 'center', gap: 8,
+              })}>
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <>
+                    <Check size={17} color="#fff" strokeWidth={2.5} />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>
+                      Add to {DAY_FULL[pickerDay]} {pickerType.toLowerCase()}
+                    </Text>
+                  </>}
+            </Pressable>
+            <Pressable onPress={() => setAddTarget(null)} style={{ alignItems: 'center', paddingVertical: 6 }}>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: P }}>Cancel · keep week unchanged</Text>
+            </Pressable>
+          </View>
+        </View>
+      </OverlayPage>
+
+      {/* ── Recipe detail overlay ── */}
+      <FullPageOverlay visible={!!activeRecipe} onDismiss={() => setActiveRecipe(null)} zIndex={70}>
+        <RecipeModal
+          meal={activeRecipe ? {
+            id: activeRecipe.id,
+            family_id: activeRecipe.family_id,
+            week_of: '', day: 'Mon', type: 'dinner',
+            title: activeRecipe.title,
+            emoji: activeRecipe.emoji ?? undefined,
+            ingredients: activeRecipe.ingredients,
+            prep_steps: activeRecipe.prep_steps,
+            dietary_tags: activeRecipe.dietary_tags,
+            prep_minutes: activeRecipe.prep_minutes ?? undefined,
+            chef_id: activeRecipe.created_by ?? undefined,
+            ai_generated: false,
+            start_time: undefined,
+          } as Meal : null}
+          visible={!!activeRecipe}
+          onClose={() => setActiveRecipe(null)}
+          onAddToGrocery={(names) => addGroceryItems(names, activeRecipe ? `From ${activeRecipe.title}` : undefined)}
+          senderId={activeMember?.id ?? ''}
+          hideAddToGrocery={!isParent}
+          colors={colors} isDark={isDark}
+        />
+      </FullPageOverlay>
+
+    </View>
+  );
+}

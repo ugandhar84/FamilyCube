@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
 import { GROCERY_PREFIX, SUPPLIES_PREFIX, decodeGroceryRequest } from '../KidModals';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "item approved / added" accent, distinct from brand teal
 // used elsewhere in the hub. Not colors.success (which IS brand teal in
@@ -55,21 +56,23 @@ export function GroceryRequestCard({
       }>
       {decodedGrocery && (
         <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
-          backgroundColor: isDark ? '#1e293b' : '#fff',
-          borderLeftWidth: 3, borderLeftColor: accent }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+          backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
+          borderLeftWidth: 3, borderLeftColor: accent,
+          ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             {decodedGrocery.name}{decodedGrocery.qty ? ` × ${decodedGrocery.qty}` : ''}
           </Text>
           {decodedGrocery.notes ? (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>"{decodedGrocery.notes}"</Text>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>"{decodedGrocery.notes}"</Text>
           ) : null}
         </View>
       )}
       {rawDetailText && (
         <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
-          backgroundColor: isDark ? '#1e293b' : '#fff',
-          borderLeftWidth: 3, borderLeftColor: accent }}>
-          <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary }}>
+          backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
+          borderLeftWidth: 3, borderLeftColor: accent,
+          ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+          <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
             "{rawDetailText}"
           </Text>
         </View>
@@ -80,10 +83,10 @@ export function GroceryRequestCard({
           <View style={{ gap: 6, marginBottom: 8 }}>
             {req.items.map((item: any) => (
               <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 10, padding: 10 }}>
+                backgroundColor: isDark ? colors.surface : GEMINI.cardBg, borderRadius: 10, padding: 10 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
-                  {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{item.name}</Text>
+                  {item.qty ? <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Qty: {item.qty}</Text> : null}
                   {item.store ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>🏪 {item.store}</Text> : null}
                 </View>
                 {item.status === 'pending' ? (
@@ -127,7 +130,7 @@ export function GroceryRequestCard({
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Approve" on "${req.detail}" (id=${req.id}) → approveRequest [features/hub/parent/GroceryRequestCard.tsx:126]`); approveRequest(req.id, active.id); }}
-            style={{ flex: 1, backgroundColor: accent, borderRadius: 10,
+            style={{ flex: 1, backgroundColor: isDark ? colors.primary : GEMINI.blue, borderRadius: 10,
               paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <Check size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve</Text>

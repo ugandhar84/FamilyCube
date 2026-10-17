@@ -32,6 +32,7 @@ import { registerStoreGeofences } from '@/lib/storeGeofencing';
 import { PinStoreLocationSheet } from './components/PinStoreLocationSheet';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { showAlert } from '@/components/AppAlert';
+import { localDateStr } from '@/lib/dates';
 
 import { AddItemSheet } from './components/AddItemSheet';
 import { CreateRunSheet } from './components/CreateRunSheet';
@@ -40,7 +41,7 @@ import { ItemDetailSheet } from './components/ItemDetailSheet';
 import { CategorySection } from './components/CategorySection';
 import { HistoryTab } from './components/HistoryTab';
 import { InsightsTab } from './components/InsightsTab';
-import { GroceryAiBanner } from './components/GroceryAiBanner';
+import { AiSuggestionsScreen } from './components/AiSuggestionsScreen';
 import { KidRequestsSection } from './components/KidRequestsSection';
 import { GroceryItemsSection } from './components/GroceryItemsSection';
 import { RecentlyBoughtSection } from './components/RecentlyBoughtSection';
@@ -51,16 +52,23 @@ import { mapBoughtRow, itemEmoji } from './components/types';
 import { s } from './components/styles';
 import { showToast } from '@/components/AppToast';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { RHYTHM } from '@/constants/theme';
+import { OverlayPage } from '@/components/OverlayPage';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { PageHeading } from '@/components/PageHeading';
+import { ShoppingCart } from 'lucide-react-native';
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boolean }) {
+export default function GroceryScreen({ hideHeader = false, onClose }: { hideHeader?: boolean; onClose?: () => void }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const { members, activeMemberId } = useFamilyStore();
+  const { members, activeMemberId, familyName } = useFamilyStore();
   const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun, markReturning, loadPinnedStores, pinnedStores, pinStoreLocation, unpinStoreLocation } = useGroceryStore();
 
-  const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights'>('list');
+  const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights' | null>(null);
   const [showAddItem, setShowAddItem]   = useState(false);
 
   // Shared FAB's Grocery-tab "+" face (app/(tabs)/_layout.tsx) fires this
@@ -84,6 +92,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const [detailItem,  setDetailItem]    = useState<GroceryItem | null>(null);
   const [showNewRun,  setShowNewRun]    = useState(false);
   const [showAiPanel, setShowAiPanel]   = useState(false);
+  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
   // Was a frozen GroceryRun snapshot captured once at selection time — once
   // startRun/completeRun updated the run in the store, RunDetailSheet kept
   // rendering the stale status forever (button stayed "Start Shopping"
@@ -99,6 +108,14 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'receipt' | 'estimate' | 'unrecognized' | 'unknown' }>>({});
   const [priceLoading, setPriceLoading] = useState(false);
   const [pricesLoaded, setPricesLoaded] = useState(false);
+  // When the AI price check last actually ran — used to suppress the
+  // "Price Check" button when nothing has changed since: no new
+  // (unpriced) items AND the last check was within 24h, there's nothing
+  // new for it to tell the family [live-requested: "if there is no new
+  // items added or we ran last 24hs display the button for ai query" —
+  // i.e. hide the re-query affordance in that case instead of inviting a
+  // redundant call].
+  const [lastPriceCheckAt, setLastPriceCheckAt] = useState<number | null>(null);
 
   // Seed priceMap from stored estimatedPrice whenever items load. A
   // receipt-sourced price (parse-grocery-receipt matched this item to a
@@ -186,8 +203,16 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
     } catch (err) {
       console.error('[GroceryScreen] checkPrices() uncaught error:', String(err));
     }
+    setLastPriceCheckAt(Date.now());
     setPriceLoading(false);
   };
+  const unpricedCount = items.filter(i => !i.isBought && !priceMap[i.name] && i.priceSource !== 'receipt').length;
+  const checkedWithinDay = lastPriceCheckAt != null && Date.now() - lastPriceCheckAt < 24 * 60 * 60_000;
+  // Show the "Price Check" action only when there's something new for it
+  // to actually do: unpriced items waiting, or it's been 24h+ (or never
+  // run) since the last check. Otherwise the button is hidden — nothing
+  // changed since the last pass, so a re-query would just repeat it.
+  const canCheckPrices = unpricedCount > 0 || !checkedWithinDay;
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const isSelecting = selectedIds.size > 0;
 
@@ -212,6 +237,10 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
   const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
   const [pinningStore, setPinningStore] = useState<string | null>(null);
+  // Category view (default, Produce/Dairy/etc) vs store view (grouped by
+  // where each item will be bought) [live-requested: "we should have
+  // option to see the store wise list also right"].
+  const [listGroupBy, setListGroupBy] = useState<'category' | 'store'>('category');
 
   // Was no way to remove a store's pin once set (live-requested: "once
   // pin is set we should be able to modify it or delete it") — "modify"
@@ -317,10 +346,25 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const draftRuns  = runs.filter(r => r.status === 'draft');
   const doneRuns   = runs.filter(r => r.status === 'done');
 
-  const bg       = colors.background;
-  const card     = colors.card;
-  const border   = colors.border;
+  // Always hide tab bar + FAB on every focus (covers Hub→Grocery→back→Grocery re-entry)
+  useFocusEffect(useCallback(() => {
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => {
+      showTabBar();
+      useUIStore.getState().setFullBleedScreenActive(false);
+    };
+  }, []));
+
+  // "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, extended per
+  // explicit request — see Home Care's own identical comment for the full
+  // rationale) [live-requested: "lets pickup the groceries - make the
+  // rythm of the home care.. including the header styles"].
+  const bg       = isDark ? colors.background : GEMINI.canvas;
+  const card     = isDark ? colors.card : GEMINI.cardBg;
+  const border   = isDark ? colors.border : GEMINI.border;
   const P        = colors.primary;
+  const pendingCountForHeader = items.filter(i => !i.isBought).length;
 
   const handleBuyItem = (item: GroceryItem) => {
     Alert.alert('Mark as bought?', `"${item.name}"`, [
@@ -369,7 +413,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
       isDaily: false,
       recurrence: 'once',
       status: 'todo',
-      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      dueDate: localDateStr(new Date(Date.now() + 7 * 86400000)),
       photoRequired: false,
       isAdultTask: isAdultAssignee,
     });
@@ -432,326 +476,577 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         isDark={isDark}
         hideHeader={hideHeader}
         insets={insets}
+        onClose={onClose}
       />
     );
   }
 
+  const pendingCount = items.filter(i => !i.isBought).length;
+  const activeRunCount = runs.filter(r => r.status === 'active').length;
+
+  const landingCards: { key: typeof tab; title: string; subtitle: string; iconName: string; color: string; bg: string; count: number }[] = [
+    {
+      key: 'list', title: 'Shopping List',
+      subtitle: pendingCount > 0 ? `${pendingCount} item${pendingCount !== 1 ? 's' : ''} to buy` : 'List is clear',
+      iconName: 'list-outline', color: colors.primary, bg: colors.primaryLight, count: pendingCount,
+    },
+    {
+      key: 'runs', title: 'Shopping Trips',
+      subtitle: activeRunCount > 0 ? `${activeRunCount} trip${activeRunCount !== 1 ? 's' : ''} in progress` : runs.length > 0 ? `${runs.length} total trips` : 'No trips yet',
+      iconName: 'cart-outline', color: colors.teal, bg: colors.tealLight, count: activeRunCount,
+    },
+    {
+      key: 'history', title: 'Purchase History',
+      subtitle: 'Recently bought items',
+      iconName: 'time-outline', color: colors.amber, bg: colors.amberLight, count: 0,
+    },
+    {
+      key: 'insights', title: 'Insights',
+      subtitle: 'Spending & trends',
+      iconName: 'bar-chart-outline', color: colors.pink, bg: colors.pinkLight, count: 0,
+    },
+  ];
+  // Pinned Stores — the only way to pin a store location used to be 3
+  // taps deep (Groceries → Shopping Trips → New Run → "Pin a specific
+  // store location"), with zero entry point from this landing page
+  // itself [live-reported: "i think there should a pin the store page
+  // where is it? under groceries" / "not finding the link" / "didnt
+  // find that pin location here" — pointing at this exact screen].
+  // Matches the other 4 landing cards' shape exactly; opens a dedicated
+  // map screen showing every pinned store as a marker [live-requested:
+  // "pinned store we should have pinned location page mapped not the
+  // groceries list" — the Shopping List sub-screen was the wrong
+  // destination, since it's about items, not locations].
+  const pinnedStoreCount = Object.keys(pinnedStores).length;
+
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
 
-      {/* ── Fixed header + sticky tile nav ── */}
-      <View style={{ backgroundColor: card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
-        paddingTop: hideHeader ? 8 : insets.top + 8 }}>
-        {/* Title row */}
-        {!hideHeader && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 10 }}>
-          <Ionicons name="cart" size={22} color={P} />
-          <Text style={[s.headerTitle, { color: colors.textPrimary, flex: 1 }]}>Groceries</Text>
-          {items.length > 0 && (
-            <View style={[s.countBadge, { backgroundColor: P }]}>
-              <Text style={[s.countText, { color: colors.textInverse }]}>{items.length}</Text>
-            </View>
-          )}
+      {/* ── Header — same PageHeading shell as Home Care (eyebrow + title +
+          subtitle + pastel icon badge), replacing the old custom
+          "ReviewInbox pattern" chrome row, per explicit request to match
+          Home Care's rhythm "including the header styles". ── */}
+      {!hideHeader && (
+        <View style={{ backgroundColor: bg }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · GROCERIES"
+            title="Groceries"
+            subtitle={pendingCountForHeader > 0
+              ? `${pendingCountForHeader} item${pendingCountForHeader !== 1 ? 's' : ''} to buy`
+              : 'List is clear'}
+            accent="primary"
+            Icon={ShoppingCart}
+            onTitlePress={onClose}
+            topInset={insets.top}
+          />
         </View>
-        )}
+      )}
 
-        {/* 1×4 sticky tile nav */}
-        <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
-          {([
-            { key: 'list',     icon: 'list' as const,          label: 'List',     badge: items.filter(i => !i.isBought).length },
-            { key: 'runs',     icon: 'walk' as const,          label: 'Trips',    badge: runs.filter(r => r.status === 'active').length },
-            { key: 'history',  icon: 'receipt-outline' as const, label: 'History',  badge: 0 },
-            { key: 'insights', icon: 'bar-chart' as const,     label: 'Insights', badge: 0 },
-          ] as const).map(t => {
-            const active = tab === t.key;
-            const isRuns = t.key === 'runs';
-            return (
-              <Pressable key={t.key} onPress={() => setTab(t.key)}
-                style={withAndroidShadowFix({ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14,
-                  backgroundColor: active ? P : colors.surface,
-                  borderWidth: active ? 0 : StyleSheet.hairlineWidth,
-                  borderColor: colors.border,
-                  shadowColor: P, shadowOpacity: active ? 0.35 : 0, shadowRadius: 8, elevation: active ? 4 : 0 })}>
-                <Ionicons name={t.icon} size={20} color={active ? colors.textInverse : colors.textSecondary} style={{ marginBottom: 3 }} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: active ? colors.textInverse : colors.textSecondary }}>
-                  {t.label}
-                </Text>
-                {t.badge > 0 && (
-                  <View style={{ position: 'absolute', top: 5, right: 5, minWidth: 16, height: 16,
-                    borderRadius: 8, backgroundColor: active ? 'rgba(255,255,255,0.35)' : P,
-                    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-                    <Text style={{ fontSize: 9, fontWeight: '800', color: colors.textInverse }}>{t.badge}</Text>
-                  </View>
-                )}
-                {isRuns && (
-                  <Pressable
-                    onPress={e => { e.stopPropagation(); setShowNewRun(true); }}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    style={{ position: 'absolute', bottom: 5, right: 5, width: 18, height: 18,
-                      borderRadius: 9, backgroundColor: active ? 'rgba(255,255,255,0.30)' : P,
-                      alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="add" size={12} color={colors.textInverse} />
-                  </Pressable>
-                )}
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ── Scrollable content ── */}
+      {/* ── Landing cards ── */}
       <ScrollView
         ref={scrollRef}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}
+        style={{ flex: 1 }}
       >
-        {/* AI banner + cart total + active run */}
-        <View>
-          <GroceryAiBanner
-            isDark={isDark} colors={colors}
-            onScan={() => setShowReceiptScan(true)}
-            onPriceCheck={() => checkPrices()}
-            pricesLoaded={pricesLoaded} priceLoading={priceLoading}
-          />
+        {/* Active run inline alert card */}
+        {activeRuns.length > 0 && (
+          <Pressable onPress={() => setSelectedRun(activeRuns[0])}
+            style={({ pressed }) => ({
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: colors.tealLight, borderRadius: 16, padding: 16,
+              opacity: pressed ? 0.85 : 1,
+            })}>
+            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+              alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="cart" size={22} color={colors.teal} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Shopping now</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
+                {activeRuns[0].store} · Tap to open →
+              </Text>
+            </View>
+            <View style={{ minWidth: 26, height: 26, borderRadius: 13, paddingHorizontal: 7,
+              backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{activeRuns.length}</Text>
+            </View>
+          </Pressable>
+        )}
 
-          {cartTotal > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingHorizontal: 16, paddingVertical: 10,
-              backgroundColor: colors.primaryLight,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="cart-outline" size={14} color={P} />
-                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>
-                  Estimated total ({items.filter(i => !i.isBought).length} items)
+        {/* Estimated total + Price Check banner — replaces the collapsible
+            CubeAI card (removed) with one flat, always-visible row showing
+            the running total next to the action that produces it
+            [live-requested: "we can remove the Ai banner from the
+            groceries landing page, lets make nice banner for the
+            estimated total and nice flag check price button, enable
+            disable based on condition"]. Button disables once every
+            unbought item already has a price and a check ran within the
+            last 24h (same canCheckPrices condition as before); when
+            disabled, the subtitle swaps to an info line explaining why/when
+            it'll come back, same single row, no extra section
+            [live-requested: "if the condition is met we can add nice info
+            text on card check back when added new items or after 24h" /
+            "no need 2 card row.. just display on the same card"]. */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+          padding: 14,
+          shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05,
+          shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+        }}>
+          <View style={{ flex: 1 }}>
+            {canCheckPrices ? (
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                Estimated total · {items.filter(i => !i.isBought).length} item{items.filter(i => !i.isBought).length !== 1 ? 's' : ''}
+              </Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="checkmark-circle" size={13} color={colors.teal} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.teal }}>
+                  Up to date — check back after new items or 24h
                 </Text>
               </View>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: P }}>${cartTotal.toFixed(2)}</Text>
+            )}
+            <Text style={{ fontSize: 20, fontWeight: '900', color: P, marginTop: 2 }}>${cartTotal.toFixed(2)}</Text>
+          </View>
+          <Pressable onPress={() => checkPrices()} disabled={!canCheckPrices || priceLoading}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14,
+              borderRadius: 100,
+              backgroundColor: pricesLoaded ? colors.tealLight : (canCheckPrices ? colors.primaryLight : colors.surface),
+              opacity: !canCheckPrices || priceLoading ? 0.6 : 1 }}>
+            {priceLoading
+              ? <ActivityIndicator size="small" color={P} />
+              : <Ionicons name="pricetag" size={15} color={pricesLoaded ? colors.teal : (canCheckPrices ? P : colors.textTertiary)} />}
+            <Text style={{ fontSize: 13, fontWeight: '700', color: pricesLoaded ? colors.teal : (canCheckPrices ? P : colors.textTertiary) }}>
+              {pricesLoaded ? 'Prices ✓' : 'Price Check'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Category landing cards — same pastel card rhythm as Home Care's
+            task rows, per explicit request. */}
+        {landingCards.map(card => (
+          <Pressable
+            key={card.key}
+            onPress={() => setTab(card.key)}
+            style={({ pressed }) => ({
+              flexDirection: 'row', alignItems: 'center', gap: 14,
+              backgroundColor: card.bg, borderRadius: 16, padding: 16,
+              opacity: pressed ? 0.8 : 1,
+            })}
+          >
+            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+              alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name={card.iconName as any} size={22} color={card.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{card.title}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>{card.subtitle}</Text>
+            </View>
+            {card.count > 0 && (
+              <View style={{ minWidth: 26, height: 26, borderRadius: 13, paddingHorizontal: 7,
+                backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{card.count}</Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          </Pressable>
+        ))}
+
+        {/* Pinned Stores — see pinnedStoreCount comment above for why
+            this card exists; opens PinStoreLocationSheet directly so one
+            tap gets straight to pinning/re-pinning a store, no
+            intermediate list/map screen [live-requested: "Pin a store
+            page should open when we click on the groceries landing page
+            we dont need another page"]. Opens a blank form — the sheet
+            itself lists every pinned store as a card below the form, and
+            tapping one loads it in for editing [live-requested: "they can
+            pin like 4 location in the same page also they can edit while
+            clicking the perticular card"]. */}
+        <Pressable
+          onPress={() => setPinningStore('')}
+          style={({ pressed }) => ({
+            flexDirection: 'row', alignItems: 'center', gap: 14,
+            backgroundColor: colors.tealLight, borderRadius: 16, padding: 16,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? colors.card : '#FFFFFF',
+            alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="location-outline" size={22} color={colors.teal} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Pinned Stores</Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
+              {pinnedStoreCount > 0 ? `${pinnedStoreCount} store${pinnedStoreCount !== 1 ? 's' : ''} pinned` : 'Pin a store location'}
+            </Text>
+          </View>
+          {pinnedStoreCount > 0 && (
+            <View style={{ minWidth: 26, height: 26, borderRadius: 13, paddingHorizontal: 7,
+              backgroundColor: colors.teal, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{pinnedStoreCount}</Text>
             </View>
           )}
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
 
-          {activeRuns.length > 0 && (
-            <Pressable onPress={() => setSelectedRun(activeRuns[0])}
-              style={[s.activeBanner, { backgroundColor: colors.successLight, borderColor: colors.success }]}>
-              <View style={[s.activeDot, { backgroundColor: colors.success }]} />
-              <Text style={[s.activeBannerText, { color: colors.success }]}>Shopping now at {activeRuns[0].store}</Text>
-              <Text style={[s.activeBannerText, { color: colors.success, fontWeight: '600' }]}>Tap to open →</Text>
-            </Pressable>
-          )}
+        {/* Bottom info tip — closes out the landing page with one
+            contextual nudge instead of trailing off into empty space
+            [live-requested: "show bottom of this page with nice info
+            banner relavent to it to make more professional"]. Picks the
+            single most relevant message: no store pinned yet beats a
+            general reminder, which beats a quiet "all set" note. */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+          backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginTop: 4,
+        }}>
+          <Ionicons name="sparkles" size={16} color={colors.textTertiary} style={{ marginTop: 1 }} />
+          <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+            {pinnedStoreCount === 0
+              ? 'Tip: pin a store location so delivery and pickup runs know exactly where to go.'
+              : doneRuns.length === 0
+              ? 'Tip: once you finish a shopping trip, it shows up here with totals and a reusable item list.'
+              : `Tip: your last trip was to ${doneRuns[doneRuns.length - 1].store}. Start a new run from Shopping Trips whenever you're ready.`}
+          </Text>
         </View>
-
-        {/* Tab content */}
-        {tab === 'history' ? (
-          <HistoryTab familyId={familyId} memberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
-        ) : tab === 'insights' ? (
-          <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
-        ) : loading ? (
-          <ActivityIndicator style={{ marginTop: 60 }} color={P} />
-        ) : tab === 'list' ? (
-        <>
-          <PartnerStatusBar familyId={familyId} currentMemberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
-          <SmartRestockBanner familyId={familyId} colors={colors} isDark={isDark}
-            onAddItem={(name, category) => addItem({ familyId, addedBy: activeMemberId ?? '', name, category })} />
-          <View style={{ padding: 16 }}>
-
-          {/* Supplies section */}
-          {categorisedItems.supplies.length > 0 && (
-            <CategorySection label="Supplies" emoji="📚" color="#6366F1"
-              items={categorisedItems.supplies} isDark={isDark} colors={colors}
-              isKid={isKid} onBuy={handleBuyItem} members={members} />
-          )}
-
-          {/* Clothing section */}
-          {categorisedItems.clothing.length > 0 && (
-            <CategorySection label="Clothing" emoji="👕" color={colors.amber}
-              items={categorisedItems.clothing} isDark={isDark} colors={colors}
-              isKid={isKid} onBuy={handleBuyItem} members={members} />
-          )}
-
-          <KidRequestsSection
-            kidGroceryGroups={kidGroceryGroups}
-            isKid={isKid}
-            selectedIds={selectedIds}
-            setSelectedIds={setSelectedIds}
-            isSelecting={isSelecting}
-            priceMap={priceMap}
-            setDetailItem={setDetailItem}
-            handleBuyItem={handleBuyItem}
-            setEditingItem={setEditingItem}
-            setShowAddItem={setShowAddItem}
-            removeItem={removeItem}
-            members={members}
-            colors={colors}
-            isDark={isDark}
-          />
-
-          <GroceryItemsSection
-            groceryItems={groceryItems}
-            groupedItems={groupedItems}
-            hasSuppliesOrClothing={categorisedItems.supplies.length > 0 || categorisedItems.clothing.length > 0}
-            selectedIds={selectedIds}
-            setSelectedIds={setSelectedIds}
-            isSelecting={isSelecting}
-            priceMap={priceMap}
-            setDetailItem={setDetailItem}
-            handleBuyItem={handleBuyItem}
-            setEditingItem={setEditingItem}
-            setShowAddItem={setShowAddItem}
-            removeItem={removeItem}
-            isKid={isKid}
-            members={members}
-            colors={colors}
-            isDark={isDark}
-            pinnedStores={geofencingEnabled ? pinnedStores : undefined}
-            onPinStore={geofencingEnabled ? (store) => setPinningStore(store) : undefined}
-            onUnpinStore={geofencingEnabled ? handleUnpinStore : undefined}
-            onAutoScroll={handleAutoScroll}
-            familyId={familyId}
-            activeMemberId={activeMemberId ?? ''}
-          />
-
-          <RecentlyBoughtSection
-            boughtItems={boughtItems}
-            boughtExpanded={boughtExpanded}
-            setBoughtExpanded={setBoughtExpanded}
-            returnMode={returnMode}
-            setReturnMode={setReturnMode}
-            returnIds={returnIds}
-            setReturnIds={setReturnIds}
-            isKid={isKid}
-            members={members}
-            colors={colors}
-            isDark={isDark}
-          />
-        </View>
-
-        <ReturnModeToolbar
-          returnMode={returnMode}
-          returnIds={returnIds}
-          colors={colors}
-          onOpenAssigneePicker={() => setShowAssigneePicker(true)}
-        />
-
-        <AssigneePickerSheet
-          visible={showAssigneePicker}
-          onClose={() => setShowAssigneePicker(false)}
-          title="Assign Return To"
-          subtitle="Who will take these items back to the store?"
-          // Live-requested: "kids shouldn't be showing there while
-          // selecting the person" — returning items to a store is a
-          // driving-capable task (parent/senior/teen), not something a
-          // young kid does.
-          members={members.filter((m: any) => m.role !== 'kid')}
-          onSelect={(memberId) => { setShowAssigneePicker(false); handleCreateReturn(memberId); }}
-        />
-
-        <BulkSelectToolbar
-          isSelecting={isSelecting}
-          selectedIds={selectedIds}
-          setSelectedIds={setSelectedIds}
-          items={items}
-          boughtItems={boughtItems}
-          removeItem={removeItem}
-          isKid={isKid}
-          colors={colors}
-          P={P}
-        />
-        </>
-      ) : (
-        <RunsTabBody
-          runs={runs}
-          activeRuns={activeRuns}
-          draftRuns={draftRuns}
-          doneRuns={doneRuns}
-          setSelectedRun={setSelectedRun}
-          handleDeleteRun={handleDeleteRun}
-          isKid={isKid}
-          colors={colors}
-          isDark={isDark}
-          P={P}
-        />
-      )}
-
       </ScrollView>
 
-      {/* Go-to-top FAB */}
-      <Animated.View style={{
-        position: 'absolute', bottom: insets.bottom + 144, right: 20,
-        opacity: fabOpacity, pointerEvents: showFab ? 'auto' : 'none',
-      }}>
-        <Pressable
-          onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
-          style={withAndroidShadowFix({ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryLight,
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 })}>
-          <Ionicons name="chevron-up" size={22} color={P} />
-        </Pressable>
-      </Animated.View>
+      {/* ── Sub-screen overlays (landing card → dedicated page) ── */}
 
-      {/* Sheets */}
-      <ReceiptScanSheet
-        visible={showReceiptScan}
-        onClose={() => setShowReceiptScan(false)}
-        familyId={familyId}
-        memberId={activeMemberId ?? ''}
-        colors={colors}
-        isDark={isDark}
-        onSuccess={() => load(familyId)}
-      />
-      <AddItemSheet
-        visible={showAddItem}
-        onClose={() => { setShowAddItem(false); setEditingItem(undefined); }}
-        familyId={familyId}
-        memberId={activeMemberId ?? ''}
-        colors={colors}
-        isDark={isDark}
-        editItem={editingItem}
-      />
-      <CreateRunSheet
-        visible={showNewRun}
-        onClose={() => setShowNewRun(false)}
-        familyId={familyId}
-        memberId={activeMemberId ?? ''}
-        colors={colors}
-        isDark={isDark}
-        onCreated={(run) => { setShowNewRun(false); setSelectedRun(run); setTab('runs' as any); }}
-      />
-      <RunDetailSheet
-        run={selectedRun}
-        visible={!!selectedRun}
-        onClose={() => setSelectedRun(null)}
-        memberId={activeMemberId ?? ''}
-        pendingItems={items}
-        colors={colors}
-        isDark={isDark}
-      />
-      {geofencingEnabled && (
+      {/* List sub-screen */}
+      <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
+        {(requestAnimatedClose) => (
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 12 }}>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shared groceries" subtitle={`Shared with all ${members.length} ${familyName ? familyName.split(' ')[0] + 's' : 'members'} · updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`} accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
+            {/* Figma: Add item + AI suggestions pill buttons */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={() => setShowAddItem(true)}
+                style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: P,
+                  paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: P }}>Add item</Text>
+              </Pressable>
+              <Pressable onPress={() => setShowAiSuggestions(true)}
+                style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: P,
+                  paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: P }}>AI suggestions</Text>
+              </Pressable>
+            </View>
+            {/* Snap-a-photo banner — full width, opens the AI photo scanner
+                so items get added/categorized from a photo instead of typed
+                by hand [live-requested: "create a banner on top of thr add
+                item full width for sanp photo for add groceries list" /
+                placement confirmed on the list screen, not buried inside
+                Add Item]. Reuses the existing ReceiptScanSheet flow. */}
+            <Pressable onPress={() => setShowReceiptScan(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                backgroundColor: colors.amberLight, borderRadius: 18, padding: 16 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.card,
+                alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="camera" size={19} color={colors.amber} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Snap a photo to add items</Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', lineHeight: 18, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
+                  CubeAI reads the photo and adds items for you
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.amber} />
+            </Pressable>
+            {/* Pinned stores — was only reachable 3 taps deep (Groceries →
+                Shopping Trips → New Run → "Pin a specific store location")
+                with no entry point on the main list at all
+                [live-reported: "i think there should a pin the store page
+                where is it? under groceries" / "not finding the link"].
+                Direct chip row here, same screen as the items it's for. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {Object.keys(pinnedStores).map(store => (
+                <Pressable key={store} onPress={() => setPinningStore(store)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                    borderRadius: 100, borderWidth: 1, borderColor: colors.border,
+                    backgroundColor: colors.primaryLight, paddingVertical: 9, paddingHorizontal: 14 }}>
+                  <Ionicons name="location" size={12} color={P} />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>
+                    {store}
+                  </Text>
+                  <Pressable hitSlop={8} onPress={() => handleUnpinStore(store)}>
+                    <Ionicons name="close" size={14} color={colors.textTertiary} />
+                  </Pressable>
+                </Pressable>
+              ))}
+              <Pressable onPress={() => setPinningStore('Store')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                  borderRadius: 100, borderWidth: 1, borderStyle: 'dashed', borderColor: P,
+                  paddingVertical: 9, paddingHorizontal: 14 }}>
+                <Ionicons name="add" size={14} color={P} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>Pin a store</Text>
+              </Pressable>
+            </ScrollView>
+            {/* Figma: estimated total summary */}
+            {cartTotal > 0 && (
+              <Text style={{ fontSize: 13, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 18 }}>
+                {pendingCount} approved item{pendingCount !== 1 ? 's' : ''} · estimated ${cartTotal.toFixed(2)}
+              </Text>
+            )}
+            {/* Category / Store view toggle — same rows, grouped differently
+                [live-requested: "we should have option to see the store
+                wise list also right"]. */}
+            <View style={{ flexDirection: 'row', borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+              {(['category', 'store'] as const).map(mode => (
+                <Pressable key={mode} onPress={() => setListGroupBy(mode)}
+                  style={{ flex: 1, paddingVertical: 11, alignItems: 'center',
+                    backgroundColor: listGroupBy === mode ? P : 'transparent' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: listGroupBy === mode ? '#FFFFFF' : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
+                    {mode === 'category' ? 'By category' : 'By store'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
+            <PartnerStatusBar familyId={familyId} currentMemberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
+            <SmartRestockBanner familyId={familyId} colors={colors} isDark={isDark}
+              onAddItem={(name, category) => addItem({ familyId, addedBy: activeMemberId ?? '', name, category })} />
+            <View style={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, paddingBottom: RHYTHM.page, gap: RHYTHM.section }}>
+              {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={P} /> : (
+                <>
+                  {categorisedItems.supplies.length > 0 && (
+                    <CategorySection label="Supplies" emoji="📚" color="#6366F1"
+                      items={categorisedItems.supplies} isDark={isDark} colors={colors}
+                      isKid={isKid} onBuy={handleBuyItem} members={members}
+                      pinnedStores={pinnedStores} onPinStore={(store) => setPinningStore(store)} onUnpinStore={handleUnpinStore} />
+                  )}
+                  {categorisedItems.clothing.length > 0 && (
+                    <CategorySection label="Clothing" emoji="👕" color={colors.amber}
+                      items={categorisedItems.clothing} isDark={isDark} colors={colors}
+                      isKid={isKid} onBuy={handleBuyItem} members={members}
+                      pinnedStores={pinnedStores} onPinStore={(store) => setPinningStore(store)} onUnpinStore={handleUnpinStore} />
+                  )}
+                  <KidRequestsSection
+                    kidGroceryGroups={kidGroceryGroups} isKid={isKid}
+                    selectedIds={selectedIds} setSelectedIds={setSelectedIds} isSelecting={isSelecting}
+                    priceMap={priceMap} setDetailItem={setDetailItem} handleBuyItem={handleBuyItem}
+                    setEditingItem={setEditingItem} setShowAddItem={setShowAddItem}
+                    removeItem={removeItem} members={members} colors={colors} isDark={isDark}
+                  />
+                  <GroceryItemsSection
+                    groceryItems={groceryItems} groupedItems={groupedItems}
+                    hasSuppliesOrClothing={categorisedItems.supplies.length > 0 || categorisedItems.clothing.length > 0}
+                    selectedIds={selectedIds} setSelectedIds={setSelectedIds} isSelecting={isSelecting}
+                    priceMap={priceMap} setDetailItem={setDetailItem} handleBuyItem={handleBuyItem}
+                    setEditingItem={setEditingItem} setShowAddItem={setShowAddItem}
+                    removeItem={removeItem} isKid={isKid} members={members} colors={colors} isDark={isDark}
+                    pinnedStores={pinnedStores}
+                    onPinStore={(store) => setPinningStore(store)}
+                    onUnpinStore={handleUnpinStore}
+                    onAutoScroll={handleAutoScroll} familyId={familyId} activeMemberId={activeMemberId ?? ''}
+                    groupBy={listGroupBy}
+                  />
+                  <RecentlyBoughtSection
+                    boughtItems={boughtItems} boughtExpanded={boughtExpanded} setBoughtExpanded={setBoughtExpanded}
+                    returnMode={returnMode} setReturnMode={setReturnMode}
+                    returnIds={returnIds} setReturnIds={setReturnIds}
+                    isKid={isKid} members={members} colors={colors} isDark={isDark}
+                  />
+                  {/* Figma: bottom teal link cards */}
+                  <View style={{ gap: 10, marginTop: 6 }}>
+                    <Pressable onPress={() => setShowAiSuggestions(true)}
+                      style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+                        padding: 16, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>Smart restock →</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setShowReceiptScan(true)}
+                      style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+                        padding: 16, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>Scan receipt →</Text>
+                    </Pressable>
+                    <Pressable onPress={() => { setTab(null); setTimeout(() => setTab('history'), 50); }}
+                      style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+                        padding: 16, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.teal }}>History & insights →</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+          </ScrollView>
+          <ReturnModeToolbar returnMode={returnMode} returnIds={returnIds} colors={colors}
+            onOpenAssigneePicker={() => setShowAssigneePicker(true)} />
+          <AssigneePickerSheet
+            visible={showAssigneePicker} onClose={() => setShowAssigneePicker(false)}
+            title="Assign Return To" subtitle="Who will take these items back to the store?"
+            members={members.filter((m: any) => m.role !== 'kid')}
+            onSelect={(memberId) => { setShowAssigneePicker(false); handleCreateReturn(memberId); }}
+          />
+          <BulkSelectToolbar
+            isSelecting={isSelecting} selectedIds={selectedIds} setSelectedIds={setSelectedIds}
+            items={items} boughtItems={boughtItems} removeItem={removeItem}
+            isKid={isKid} colors={colors} P={P}
+          />
+        </View>
+        )}
+      </FullPageOverlay>
+
+      {/* Runs sub-screen */}
+      <FullPageOverlay visible={tab === 'runs'} onDismiss={() => setTab(null)} zIndex={41}>
+        {(requestAnimatedClose) => (
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+          <View style={{ backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shopping Trips" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={insets.top} />
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
+            <RunsTabBody
+              runs={runs} activeRuns={activeRuns} draftRuns={draftRuns} doneRuns={doneRuns}
+              setSelectedRun={setSelectedRun} handleDeleteRun={handleDeleteRun}
+              onNewRun={() => setShowNewRun(true)}
+              isKid={isKid} colors={colors} isDark={isDark} P={P}
+            />
+          </ScrollView>
+        </View>
+        )}
+      </FullPageOverlay>
+
+      {/* History sub-screen */}
+      <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
+        {(requestAnimatedClose) => (
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 12 }}>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Purchase History" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
+            {/* Scan Receipt — moved here from the CubeAI banner's own
+                button, since a scanned receipt IS a purchase-history
+                entry; scanning from inside the screen that shows that
+                history is the more direct path [live-requested: "scan
+                reciept should be in the purchase heistory right user can
+                scan it directly thre"]. */}
+            {!isKid && (
+              <Pressable onPress={() => setShowReceiptScan(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  paddingVertical: 13, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  borderWidth: 1, borderColor: colors.border }}>
+                <Ionicons name="receipt-outline" size={16} color={P} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Scan Receipt</Text>
+              </Pressable>
+            )}
+          </View>
+          <HistoryTab familyId={familyId} memberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
+        </View>
+        )}
+      </FullPageOverlay>
+
+      {/* Insights sub-screen */}
+      <FullPageOverlay visible={tab === 'insights'} onDismiss={() => setTab(null)} zIndex={43}>
+        {(requestAnimatedClose) => (
+        <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+          <View style={{ backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Insights" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={insets.top} />
+          </View>
+          <InsightsTab familyId={familyId} colors={colors} isDark={isDark}
+            onViewAllPurchases={() => { setTab(null); setTimeout(() => setTab('history'), 50); }} />
+        </View>
+        )}
+      </FullPageOverlay>
+
+      {/* Full-page overlays (no Modals) */}
+      <OverlayPage visible={showReceiptScan} onDismiss={() => setShowReceiptScan(false)} zIndex={50}>
+        <ReceiptScanSheet
+          visible={showReceiptScan}
+          onClose={() => setShowReceiptScan(false)}
+          familyId={familyId}
+          memberId={activeMemberId ?? ''}
+          memberName={activeMember?.name}
+          colors={colors}
+          isDark={isDark}
+          onSuccess={() => load(familyId)}
+        />
+      </OverlayPage>
+      <OverlayPage visible={showAddItem} onDismiss={() => { setShowAddItem(false); setEditingItem(undefined); }} zIndex={51}>
+        <AddItemSheet
+          visible={showAddItem}
+          onClose={() => { setShowAddItem(false); setEditingItem(undefined); }}
+          familyId={familyId}
+          memberId={activeMemberId ?? ''}
+          colors={colors}
+          isDark={isDark}
+          editItem={editingItem}
+        />
+      </OverlayPage>
+      <OverlayPage visible={showNewRun} onDismiss={() => setShowNewRun(false)} zIndex={52}>
+        <CreateRunSheet
+          visible={showNewRun}
+          onClose={() => setShowNewRun(false)}
+          familyId={familyId}
+          memberId={activeMemberId ?? ''}
+          colors={colors}
+          isDark={isDark}
+          onCreated={(run) => { setShowNewRun(false); setSelectedRun(run); }}
+          pendingItems={items}
+          members={members}
+          onPinStore={(storeName) => setPinningStore(storeName)}
+        />
+      </OverlayPage>
+      <OverlayPage visible={!!selectedRun} onDismiss={() => setSelectedRun(null)} zIndex={53}>
+        <RunDetailSheet
+          run={selectedRun}
+          visible={!!selectedRun}
+          onClose={() => setSelectedRun(null)}
+          memberId={activeMemberId ?? ''}
+          pendingItems={items}
+          colors={colors}
+          isDark={isDark}
+        />
+      </OverlayPage>
+      <OverlayPage visible={pinningStore !== null} onDismiss={() => setPinningStore(null)} zIndex={55}>
         <PinStoreLocationSheet
-          visible={!!pinningStore}
+          visible={pinningStore !== null}
           store={pinningStore ?? ''}
+          pinnedStores={pinnedStores}
           onClose={() => setPinningStore(null)}
-          onPin={async (lat, lng) => {
-            if (!pinningStore || !activeMemberId) return;
-            await pinStoreLocation({ familyId, store: pinningStore, latitude: lat, longitude: lng, pinnedBy: activeMemberId });
-            registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+          onPin={async (storeName, lat, lng, address) => {
+            if (!activeMemberId) return;
+            await pinStoreLocation({ familyId, store: storeName, latitude: lat, longitude: lng, pinnedBy: activeMemberId, address });
+            if (geofencingEnabled) registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+          }}
+          onUnpin={(storeName) => handleUnpinStore(storeName)}
+        />
+      </OverlayPage>
+      {/* AI Suggestions full-page overlay */}
+      <OverlayPage visible={showAiSuggestions} onDismiss={() => setShowAiSuggestions(false)} zIndex={56}>
+        <AiSuggestionsScreen
+          visible={showAiSuggestions}
+          onClose={() => setShowAiSuggestions(false)}
+          familyId={familyId}
+          memberId={activeMemberId ?? ''}
+          existingItems={items}
+          colors={colors}
+          isDark={isDark}
+          onAdded={(count) => {
+            showToast(`Added ${count} item${count !== 1 ? 's' : ''} to your list`);
+            load(familyId);
           }}
         />
-      )}
-      <ItemDetailSheet
-        item={detailItem}
-        members={members}
-        onClose={() => setDetailItem(null)}
-        onEdit={() => { setEditingItem(detailItem ?? undefined); setShowAddItem(true); }}
-        onBuy={() => detailItem && handleBuyItem(detailItem)}
-        onDelete={isKid ? undefined : () => detailItem && Alert.alert('Remove item?', `"${detailItem.name}"`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Remove', style: 'destructive', onPress: () => { removeItem(detailItem.id); showToast('Item removed'); } },
-        ])}
-        priceInfo={detailItem ? priceMap[detailItem.name] : undefined}
-        colors={colors}
-        isDark={isDark}
-      />
+      </OverlayPage>
+
+      <OverlayPage visible={!!detailItem} onDismiss={() => setDetailItem(null)} zIndex={54}>
+        <ItemDetailSheet
+          item={detailItem}
+          members={members}
+          onClose={() => setDetailItem(null)}
+          onEdit={() => { setEditingItem(detailItem ?? undefined); setShowAddItem(true); }}
+          onBuy={() => detailItem && handleBuyItem(detailItem)}
+          onDelete={isKid ? undefined : () => detailItem && Alert.alert('Remove item?', `"${detailItem.name}"`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Remove', style: 'destructive', onPress: () => { removeItem(detailItem.id); showToast('Item removed'); } },
+          ])}
+          priceInfo={detailItem ? priceMap[detailItem.name] : undefined}
+          colors={colors}
+          isDark={isDark}
+        />
+      </OverlayPage>
     </View>
   );
 }
@@ -774,13 +1069,14 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 // KioskMealsTab.tsx), kept in sync with that one deliberately.
 const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
 
-function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideHeader, insets }: {
+function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideHeader, insets, onClose }: {
   activeMemberId: string;
   members: any[];
   colors: any;
   isDark: boolean;
   hideHeader: boolean;
   insets: { top: number };
+  onClose?: () => void;
 }) {
   const familyId = (members.find(m => m.id === activeMemberId) as any)?.familyId ?? 'family-1';
   const groceryItems = useGroceryStore(s => s.items);
@@ -820,13 +1116,17 @@ function KidGroceryRequestsView({ activeMemberId, members, colors, isDark, hideH
   };
 
   return (
-    <View style={[s.root, { backgroundColor: colors.background }]}>
+    <View style={[s.root, { backgroundColor: isDark ? colors.background : GEMINI.canvas }]}>
       {!hideHeader && (
-        <View style={{ backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, paddingTop: insets.top + 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
-            <Ionicons name="cart" size={22} color={colors.primary} />
-            <Text style={[s.headerTitle, { color: colors.textPrimary, flex: 1 }]}>My Requested Groceries</Text>
-          </View>
+        <View style={{ backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · GROCERIES"
+            title="My Requested Groceries"
+            accent="primary"
+            Icon={ShoppingCart}
+            onTitlePress={onClose}
+            topInset={insets.top}
+          />
         </View>
       )}
       <ScrollView contentContainerStyle={{ padding: 16, gap: 10 }} showsVerticalScrollIndicator={false}>

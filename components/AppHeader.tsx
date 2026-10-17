@@ -4,8 +4,8 @@
  * Right: persona switcher pill | notification bell
  * Heart replaces the dot of the "i" in "Family" (dotless ı + absolute SVG).
  */
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, AppState } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
   useSharedValue, useAnimatedStyle,
@@ -14,10 +14,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { supabase } from '@/lib/supabase';
 import { LETTER_SPACING } from '@/constants/theme';
 import { IconCubeMark, BRAND } from './FamilyCubeLogo';
 import PersonaSwitcherDropdown from './PersonaSwitcherDropdown';
 import FamilyAvatar from './FamilyAvatar';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -185,6 +187,17 @@ interface AppHeaderProps {
   // features/profile), which every role reaches through the same gear icon
   // regardless of whether they also have a dedicated Profile tab slot.
   onSettingsPress?: () => void;
+  // Figma Make "Scrollable Content Design" reskin's compact TopBar
+  // (design/Scrollable Content Design/src/App.tsx — avatar + "family /
+  // name" two-line text + a single round "+" button, no role badge, no
+  // "Switch Profile" text row) — parent role only, per explicit direction.
+  // Switcher/notification FUNCTION is unchanged (same handlePersonaPress,
+  // same PersonaSwitcherDropdown, same bell) — only the visual chrome
+  // shrinks; nothing here is removed for the roles that don't pass this.
+  compact?: boolean;
+  // "+" button press in compact mode — HubScreen wires this to the Smart
+  // Task Composer, matching Figma's own "+" opening quick-capture.
+  onAddPress?: () => void;
   // Real rendered height of this header instance, measured via onLayout —
   // NotificationPanel (a screen-independent Modal with no knowledge of any
   // particular screen's layout) uses this to sit its top edge exactly below
@@ -204,6 +217,40 @@ function RefreshIcon({ color }: { color: string }) {
   );
 }
 
+// Once per app launch per member: record this open and remember the PREVIOUS one for the header ("Oct 17 · 1:42 PM").
+const _loginSeen: Record<string, Promise<string | null>> = {};
+function fmtLogin(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${date} · ${time}`;
+}
+function useLastLogin(memberId: string | null | undefined): string | null {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!memberId) { setText(null); return; }
+    if (!_loginSeen[memberId]) {
+      _loginSeen[memberId] = Promise.resolve(supabase.rpc('touch_member_login', { p_member_id: memberId }))
+        .then(({ data }) => (data ? fmtLogin(String(data)) : null)).catch(() => null);
+    }
+    let live = true;
+    _loginSeen[memberId].then(t => { if (live) setText(t); });
+    // Coming back to the app after a long break counts as a new visit too.
+    let hiddenAt = 0;
+    const sub = AppState.addEventListener('change', st => {
+      if (st === 'background') hiddenAt = Date.now();
+      else if (st === 'active' && hiddenAt && Date.now() - hiddenAt > 30 * 60_000) {
+        hiddenAt = 0;
+        _loginSeen[memberId] = Promise.resolve(supabase.rpc('touch_member_login', { p_member_id: memberId }))
+          .then(({ data }) => (data ? fmtLogin(String(data)) : null)).catch(() => null);
+        _loginSeen[memberId].then(t => { if (live) setText(t); });
+      }
+    });
+    return () => { live = false; sub.remove(); };
+  }, [memberId]);
+  return text;
+}
+
 export default function AppHeader({
   memberName    = 'Member',
   memberRole    = 'parent',
@@ -214,10 +261,13 @@ export default function AppHeader({
   onBellPress,
   onSettingsPress,
   onHeightChange,
+  compact = false,
+  onAddPress,
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
   const { familyName, members } = useFamilyStore();
   const role = ROLE_CONFIG[memberRole] ?? ROLE_CONFIG.parent;
+  const lastLogin = useLastLogin(useFamilyStore(st => st.activeMemberId));
   const [showSwitcher, setShowSwitcher] = React.useState(false);
 
   const handlePersonaPress = () => {
@@ -225,10 +275,69 @@ export default function AppHeader({
     onPersonaPress?.();
   };
 
+  if (compact) {
+    const greeting = (() => {
+      const h = new Date().getHours();
+      if (h < 12) return 'Good morning';
+      if (h < 17) return 'Good afternoon';
+      return 'Good evening';
+    })();
+    const firstName = memberName.split(' ')[0];
+
+    return (
+      <View style={{ position: 'relative', zIndex: 30 }}
+        onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
+        {/* Main row: avatar + greeting/name + actions */}
+        {/* Transparent instead of a hardcoded white/near-black fill — sits
+            directly on whatever canvas the caller's screen supplies (e.g.
+            Hub's warm Gemini-rhythm cream) rather than painting its own
+            seam over it [live-requested: "i think we can keep that on the
+            canvas directly"]. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4, backgroundColor: 'transparent' }}>
+          <TouchableOpacity
+            onPress={handlePersonaPress} activeOpacity={0.75}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <FamilyAvatar
+              name={memberName} emoji={memberEmoji} avatarUrl={memberAvatarUrl}
+              siblings={members.map(m => m.name)} size={42}
+            />
+            <View>
+              <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700', letterSpacing: 0.1 }} numberOfLines={1}>{greeting}</Text>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, letterSpacing: -0.5, marginTop: 1 }} numberOfLines={1}>{firstName}</Text>
+              {!!lastLogin && <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }} numberOfLines={1}>Last visited {lastLogin}</Text>}
+            </View>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* "+" quick-add button removed from the header per explicit
+                request ("remove + from the header wherever it is
+                present") — onAddPress is still accepted as a prop so
+                callers don't need changes, it's just no longer rendered. */}
+            <TouchableOpacity
+              style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
+              onPress={onBellPress} activeOpacity={0.8}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 2 }}
+            >
+              <BellIcon color={BRAND.amber} />
+              {notifCount > 0 && (
+                <View style={[s.badge, notifCount > 9 ? s.badgeWide : null]}>
+                  <Text style={s.badgeText} numberOfLines={1}>{notifCount > 99 ? '99+' : String(notifCount)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+        <PersonaSwitcherDropdown visible={showSwitcher} onClose={() => setShowSwitcher(false)} />
+      </View>
+    );
+  }
+
   return (
     <View style={{ position: 'relative', zIndex: 30 }}
       onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
-    <View style={[s.bar, { backgroundColor: colors.background }]}>
+    <View style={[s.bar, { backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }]}>
 
       {/* LEFT: persona header (two-line: name+mode, family+switch) — the
           animated cube mark used to live here; it's reserved for loading

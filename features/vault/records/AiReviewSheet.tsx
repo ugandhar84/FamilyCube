@@ -159,7 +159,7 @@ export default function AiReviewSheet({ rec, analysis, approving, onApprove, onD
   });
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onDismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="slide" onRequestClose={onDismiss}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.62)' }}>
         <View style={{
           backgroundColor: '#0F0F1A',

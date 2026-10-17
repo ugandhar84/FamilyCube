@@ -36,7 +36,7 @@
  * would fire mid-sentence. Any NEW modal added to kiosk must do one of the
  * two — there is no third correct option.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Sparkles, UserCircle2 } from 'lucide-react-native';
@@ -44,20 +44,25 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
-import { useEventStore, eventAssignee, isEventSensitive } from '@/store/eventStore';
+import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTripStore } from '@/store/tripStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { fmtTime, localDateStr } from '@/lib/dates';
 import AskCubeChat from '@/components/AskCubeChat';
-import { KioskHeader } from './KioskHeader';
+import { KioskSystemMenu } from './components/KioskSystemMenu';
+import { KioskBarProfile, KioskBarClock } from './components/KioskBarExtras';
 import { KioskLockScreen } from './KioskLockScreen';
 import { KioskAmbientOverlay, type AmbientNextUp } from './KioskAmbientOverlay';
 import { KioskActivityProvider, useKioskLockSuspended } from './KioskActivityContext';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { KioskIntercomModal } from './components/KioskIntercomModal';
-import { ParentStatsColumn } from './components/ParentStatsColumn';
-import { KioskKidTeenStatsColumn } from './components/KioskKidTeenStatsColumn';
+import { useNotifStore } from '@/store/notifStore';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { KioskTabBar } from './components/KioskTabBar';
+import { useKioskPrefsStore } from '@/store/kioskPrefsStore';
+import { pendingKidRequests } from './components/KioskKidRequestsPanel';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_RAIL_WIDTH } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { KioskFormDrawer } from './components/KioskFormDrawer';
@@ -74,7 +79,7 @@ import { KioskStoreTab } from './tabs/KioskStoreTab';
 import { KioskMemoriesTab } from './tabs/KioskMemoriesTab';
 import { KioskSchoolTab } from './tabs/KioskSchoolTab';
 import { KioskHealthTab } from './tabs/KioskHealthTab';
-import { EditMyProfileSheet } from '@/features/profile/ProfileSettingsScreen';
+import { EditMyProfileScreen } from '@/features/profile/EditMyProfileScreen';
 import { KioskProfileTab } from './tabs/KioskProfileTab';
 import { useTheme } from '@/lib/ThemeContext';
 
@@ -104,14 +109,25 @@ export default function KioskScreen() {
   const [intercomOpen, setIntercomOpen] = useState(false);
   const [standbyPinned, setStandbyPinned] = useState(false);
   // Long-press on the sidebar's own identity card (ParentStatsColumn /
-  // KioskKidTeenStatsColumn) opens the same real EditMyProfileSheet the
+  // KioskKidTeenStatsColumn) opens the same real EditMyProfileScreen the
   // phone's Profile screen uses — replaces that screen's own hero card as
   // the entry point on kiosk, since the identity is already always
   // visible here [live-requested: "remove the heroin the profile as we
   // aalready have it in the static side bar we can add that fuctionality
   // long press"].
   const [showEditMyProfile, setShowEditMyProfile] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Bottom bar slides away while a page is scrolled down, back on scroll up.
+  const [barHidden, setBarHidden] = useState(false);
+  const navSide = useKioskPrefsStore(st => st.navSide);
+  useEffect(() => { useKioskPrefsStore.getState().load(); }, []);
+  const touchRef = useRef({ x: 0, y: 0, decided: false });
 
+  // The kitchen display is landscape-only; restore free rotation on unmount.
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    return () => { ScreenOrientation.unlockAsync().catch(() => {}); };
+  }, []);
   const { locked, ambient, registerActivity, lockNow, unlock, suspendLock, resumeLock } = useKioskIdleLock();
 
   // One stable object for the whole subtree — a fresh literal each render
@@ -271,6 +287,23 @@ export default function KioskScreen() {
     [quests],
   );
 
+  // Tab-bar badges: what is waiting on THIS person.
+  const redemptions = useRewardStore(s => s.redemptions);
+  const unreadChat = useNotifStore(s => s.unreadCount);
+  const kidRequestList = useKidRequestStore(s => s.requests);
+  const tabBadges = useMemo(() => {
+    const out: Partial<Record<KioskTabKey, number>> = {};
+    if (active?.role === 'parent') {
+      const pending = quests.filter(q => q.status === 'pending_approval').length;
+      const kidReqs = pendingKidRequests(kidRequestList).length;
+      if (pending + kidReqs) out.tasks = pending + kidReqs;
+      const rewards = redemptions.filter(r => r.status === 'pending').length;
+      if (rewards) out.store = rewards;
+    }
+    if (unreadChat) out.chat = unreadChat;
+    return out;
+  }, [quests, redemptions, unreadChat, kidRequestList, active?.role]);
+
   /**
    * The next thing on today's calendar, for the standby panel.
    *
@@ -285,9 +318,8 @@ export default function KioskScreen() {
     const hhmm = new Date().toTimeString().slice(0, 5);
     const upcoming = dayEvents.find(e => !!e.time && e.time >= hhmm) ?? dayEvents.find(e => !e.time);
     if (!upcoming) return undefined;
-    if (isEventSensitive(upcoming)) {
-      return { time: upcoming.time ? fmtTime(upcoming.time) : undefined, title: 'Something scheduled' };
-    }
+    // The idle screen shows the real event name (it used to hide medical/therapy events as "Something
+    // scheduled"). The lock screen still hides the agenda.
     const who = eventAssignee(upcoming).name?.trim().split(' ')[0]
       ?? members.find(m => m.id === upcoming.memberId)?.name?.trim().split(' ')[0];
     return {
@@ -306,15 +338,26 @@ export default function KioskScreen() {
 
   const showStandby = (ambient || standbyPinned) && !locked;
 
+  const tabBar = (
+    <KioskTabBar
+          side={navSide}
+          items={rail} active={effectiveTab} onSelect={(t) => { setMenuOpen(false); setBarHidden(false); setTab(t); }} badges={tabBadges}
+          leading={<KioskBarProfile member={active} open={menuOpen} onPress={() => setMenuOpen(o => !o)} />}
+          trailing={<KioskBarClock compact={navSide} />}
+          hidden={(!navSide && barHidden) || showStandby}
+        />
+  );
+
   return (
     <KioskActivityProvider value={activityApi}>
       <SafeAreaView
         style={[s.root, { backgroundColor: k.bg }]}
-        edges={['top', 'bottom']}
+        edges={['top']}
         onTouchStart={registerActivity}
       >
         {locked && (
           <KioskLockScreen
+            nextUp={nextUp}
             familyName={familyName || 'Our Family'}
             members={members}
             onUnlock={(memberId) => { setActiveMember(memberId); unlock(); }}
@@ -322,133 +365,8 @@ export default function KioskScreen() {
           />
         )}
 
-        <KioskHeader
-          members={members}
-          activeId={active.id}
-          onSwitch={setActiveMember}
-          onIntercom={() => setIntercomOpen(true)}
-          onLock={lockNow}
-          onNavigate={setTab}
-        />
-
         <View style={s.row}>
-          {/* ══ NAV RAIL ══════════════════════════════════════════════
-              Labelled, not icon-only. The mockup's rail carries a word next
-              to every icon, and that is the right call for a device a
-              grandparent walks up to cold — an unfamiliar glyph set is a
-              guessing game. Scrolls when the full eleven-entry rail is
-              taller than a short landscape screen; the Ask Fam card is
-              pinned below it rather than scrolling away.
-
-              Hidden for EVERY parent tab, not just Overview: ParentStatsColumn
-              (mounted just below, as a persistent shell) carries this same
-              tab list itself, matching the mockup's own page (no separate
-              persistent nav bar at all — its rail IS the page's own left
-              column) — and per live correction, that shell has to stay put
-              across every tab, not just disappear the moment a parent
-              navigates away from Overview (the earlier version's actual
-              bug: hiding this rail only on Overview meant every OTHER tab
-              still forced a real "leave the shell" navigation). Kid/teen
-              get the identical treatment now (KioskKidTeenStatsColumn,
-              mounted just below) — live-requested: "did we miss that
-              leftside colum strip for the profile and the tab navigations
-              similar to the parent?" / "we should use the parent style tab
-              navigation and the left side column" / "i dont want nav
-              rail". Only senior keeps this plain rail, matching that
-              role's own deliberately simpler "one-decision-at-a-time"
-              design (see KioskOverviewTab.tsx's own header comment on
-              why senior stays unlike kid/teen/parent). */}
-          {isSenior && (
-          <View style={[s.rail, { backgroundColor: k.card, borderRightColor: k.cardBorder }]}>
-            <ScrollView
-              contentContainerStyle={s.railGroup}
-              showsVerticalScrollIndicator={false}
-            >
-              {rail.map(({ key, label, Icon }) => {
-                const on = effectiveTab === key;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => setTab(key)}
-                    style={({ pressed }) => withAndroidShadowFix([
-                      s.railBtn,
-                      on
-                        ? {
-                            backgroundColor: k.primary,
-                            // Elevation is mode-dependent by design: a cast
-                            // shadow on a near-black ground reads as mud, so
-                            // dark mode carries the active state entirely in
-                            // the fill.
-                            shadowColor: k.primary,
-                            shadowOpacity: isDark ? 0 : 0.24,
-                            shadowRadius: 8,
-                            shadowOffset: { width: 0, height: 2 },
-                            elevation: isDark ? 0 : 3,
-                          }
-                        : { backgroundColor: pressed ? k.cardHover : 'transparent' },
-                    ])}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: on }}
-                    accessibilityLabel={label}
-                    accessibilityHint={`Show ${label}`}
-                  >
-                    <Icon size={22} color={on ? k.onPrimary : k.textMuted} />
-                    <Text
-                      style={[s.railLabel, { color: on ? k.onPrimary : k.textMuted }]}
-                      numberOfLines={1}
-                    >
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* Ask Fam removed for senior — no AI-shaped surface at all for
-                GP, even a real non-AI local lookup, per explicit direction
-                [live-requested: "restict content to the kids /teens as
-                they are .. no AI at all for the GP"]. Every other role
-                still gets it from their own persistent shell
-                (ParentStatsColumn / KioskKidTeenStatsColumn). */}
-          </View>
-          )}
-
-          {/* Parent's persistent shell, replacing the rail above on every
-              tab — see ParentStatsColumn.tsx's own header for why this
-              lives here (mounted once, independent of which tab is active)
-              rather than inside KioskOverviewTab. */}
-          {isParent && (
-            <ParentStatsColumn
-              active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
-              onNavigate={setTab}
-              // Opens the real AI (AskCubeChat, same one the header's Ask
-              // Cube button opens) instead of the local, non-AI Ask Fam
-              // lookup — a parent's own "Ask Family AI" card should
-              // actually be the real AI [live-requested: "ask fam is not
-              // showing reponse similar to the mobile app" → confirmed:
-              // "Have Ask Fam actually call the real AI backend" +
-              // "Same behavior as Ask Cube — real AI, parent-only"]. Kid/
-              // teen's own Ask Fam (KioskKidTeenStatsColumn, below) stays
-              // the local lookup — AI access is parent-only, matching Ask
-              // Cube's own existing gate.
-              onAskFam={() => setAskCubeOpen(true)}
-              onLongPressIdentity={() => setShowEditMyProfile(true)}
-            />
-          )}
-
-          {/* Kid/teen's own persistent shell — identical relationship to
-              the rail above as ParentStatsColumn: replaces it on every
-              tab, mounted once regardless of which tab is active. Senior
-              is unaffected (still isSenior-gated onto the plain rail
-              above). */}
-          {(isTeen || isKidRole) && (
-            <KioskKidTeenStatsColumn
-              active={active} members={members} familyName={familyName || 'Our Family'} activeTab={effectiveTab}
-              onNavigate={setTab}
-              onLongPressIdentity={() => setShowEditMyProfile(true)}
-            />
-          )}
-
+          {navSide && tabBar}
           {/* Self-service name/DOB/email/avatar edit — same real sheet
               ProfileSettingsScreen.tsx's own (now kiosk-hidden) hero card
               used to open, now reachable via a long-press on the sidebar's
@@ -456,7 +374,7 @@ export default function KioskScreen() {
               profile as we aalready have it in the static side bar we can
               add that fuctionality long press"]. */}
           {active && (
-            <EditMyProfileSheet
+            <EditMyProfileScreen
               visible={showEditMyProfile}
               onClose={() => setShowEditMyProfile(false)}
               member={active}
@@ -473,20 +391,39 @@ export default function KioskScreen() {
                   k={k}
                   onClose={onClose}
                 >
-                  {children}
+                  {/* Figma rhythm: a cream canvas with bright shadowed cards on it. */}
+                  <View style={{ backgroundColor: isDark ? 'transparent' : GEMINI.canvas, borderRadius: 24, padding: isDark ? 0 : 14 }}>
+                    {children}
+                  </View>
                 </KioskFormDrawer>
               )}
             />
           )}
 
           {/* ══ ACTIVE TAB ═══════════════════════════════════════════ */}
-          <View style={s.content}>
+          <View
+            style={s.content}
+            onTouchStart={e => { touchRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, decided: false }; }}
+            onTouchMove={e => {
+              const t = touchRef.current;
+              if (t.decided || effectiveTab === 'overview') return; // Home never scrolls
+              const dy = e.nativeEvent.pageY - t.y, dx = e.nativeEvent.pageX - t.x;
+              if (Math.abs(dy) > 28 && Math.abs(dy) > Math.abs(dx) * 1.5) {
+                t.decided = true;
+                setBarHidden(dy < 0); // finger up = page scrolls down = hide
+                if (dy < 0) setMenuOpen(false);
+              }
+            }}
+          >
             {effectiveTab === 'overview' && (
               <KioskOverviewTab
+                onLock={lockNow}
+                familyName={familyName || 'Our Family'}
                 active={active}
                 members={members}
                 onNavigate={setTab}
                 onIntercom={() => setIntercomOpen(true)}
+                onAskFam={isParent ? () => setAskCubeOpen(true) : undefined}
                 colors={colors}
                 isDark={isDark}
               />
@@ -509,6 +446,27 @@ export default function KioskScreen() {
             {effectiveTab === 'profile' && <KioskProfileTab />}
           </View>
         </View>
+
+        {!navSide && tabBar}
+
+        {!navSide && barHidden && !showStandby && (
+          <Pressable onPress={() => setBarHidden(false)} accessibilityRole="button" accessibilityLabel="Show the menu bar" style={[s.barHandle, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+            <View style={[s.barHandleGrip, { backgroundColor: k.textFaint }]} />
+          </Pressable>
+        )}
+
+        <KioskSystemMenu
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          members={members}
+          activeId={active.id}
+          onSwitch={setActiveMember}
+          onIntercom={() => setIntercomOpen(true)}
+          onLock={lockNow}
+          onNavigate={setTab}
+          onAskFam={isParent ? () => setAskCubeOpen(true) : undefined}
+          onEditProfile={() => setShowEditMyProfile(true)}
+        />
 
         {/* ── Overlays ──────────────────────────────────────────────── */}
 
@@ -579,4 +537,6 @@ const s = StyleSheet.create({
   },
   askFamText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   content: { flex: 1, minWidth: 0 },
+  barHandle: { position: 'absolute', alignSelf: 'center', bottom: 6, width: 96, height: 26, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 40 },
+  barHandleGrip: { width: 44, height: 4, borderRadius: 2 },
 });

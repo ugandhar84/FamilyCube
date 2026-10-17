@@ -35,12 +35,6 @@ const GROUPS: { label: string; keys: { key: FeatureFlagKey; description: string 
     ],
   },
   {
-    label: 'Chat & Security',
-    keys: [
-      { key: 'per_device_e2e', description: 'Multi-device chat encryption envelope (per-device public-key ECDH)' },
-    ],
-  },
-  {
     label: 'Grocery',
     keys: [
       { key: 'store_proximity_reminders', description: "Geofence a pinned store location, notify when nearby with pending items on that store's list" },

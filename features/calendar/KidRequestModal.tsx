@@ -68,7 +68,7 @@ type RideChoice = 'none' | 'dropoff' | 'pickup' | 'both';
 
 const KID_CATEGORIES: { key: EventCategory; emoji: string; label: string; sub: string; color: string }[] = [
   { key: 'Sports',   emoji: '🏅', label: 'Sports',    sub: 'practice, game',   color: '#F59E0B' },
-  { key: 'Study',    emoji: '📚', label: 'Study',     sub: 'class, tutor',     color: '#3B82F6' },
+  { key: 'Study',    emoji: '📚', label: 'Study',     sub: 'class, tutor',     color: '#4A7FA5' },
   { key: 'Event',    emoji: '🎉', label: 'Hang out',  sub: 'party, friend',    color: '#6C5CE7' },
   { key: 'Birthday', emoji: '🎂', label: 'Birthday',  sub: 'a party',          color: '#F59E0B' },
 ];
@@ -323,7 +323,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   if (!visible) return null;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={close}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="slide" onRequestClose={close}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={close} />

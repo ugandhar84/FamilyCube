@@ -24,6 +24,7 @@
  * KioskTaskFormShell.tsx/KioskScanReviewForm.tsx already copy for the same
  * reason — not a bottom sheet.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { View, Text, Pressable, ScrollView, Modal, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { X } from 'lucide-react-native';
 import { KioskModalHost } from '../KioskActivityContext';
@@ -54,7 +55,7 @@ export function KioskAppBottomSheet({
   const accent = accentColor ?? k.primary;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <KioskSlideModal visible={visible} onRequestClose={onClose}>
       <KioskModalHost style={s.host}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -106,7 +107,7 @@ export function KioskAppBottomSheet({
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+    </KioskSlideModal>
   );
 }
 

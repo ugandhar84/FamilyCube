@@ -26,7 +26,6 @@ export type FeatureFlagKey =
   | 'leaderboard'          // Weekly leaderboard (sub-feature of gamification)
   | 'seasonal_events'      // Time-limited holiday challenges
   | 'rewards_marketplace' // Partner coupons redeemable with coins
-  | 'per_device_e2e'      // Multi-device chat encryption envelope (see lib/chatCrypto.ts)
   | 'store_proximity_reminders' // Geofence a pinned store location, notify when nearby with pending items on that store's list
   | 'home_screen_widgets'  // iOS home-screen widgets (small/medium, role-based content) — not yet built, flag reserved ahead of the native work
   | 'couple_channel';      // "Just Us" private parents-only chat channel — app-admin kill switch, independent of any family's own enable/disable toggle
@@ -38,12 +37,6 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   leaderboard:         false,
   seasonal_events:     false,
   rewards_marketplace: false,
-  // Real per-device public-key (X25519 ECDH) encryption for chat + location,
-  // replacing the legacy shared-family-passcode-key scheme — both envelopes
-  // were fully built, just gated off. Enabled per explicit request
-  // (20260925030000_enable_per_device_e2e.sql flips the remote flag too;
-  // this default only matters before that first remote fetch resolves).
-  per_device_e2e:      true,
   store_proximity_reminders: false,
   home_screen_widgets: false,
   couple_channel:      true,

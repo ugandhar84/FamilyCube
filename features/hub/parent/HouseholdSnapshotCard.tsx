@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "Reviewed" stat accent, distinct from brand teal used
 // elsewhere in the hub. Not colors.success (which IS brand teal in this
@@ -83,13 +84,13 @@ export function HouseholdSnapshotCard({
                   ringColor={idx === 0 ? colors.kid : colors.primary} ringWidth={1.5}
                 />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     {kid.name.split(' ')[0]}
                   </Text>
                   {streak > 0 && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                       <Flame size={11} color={STREAK_ORANGE} fill={STREAK_ORANGE} />
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{streak} day streak</Text>
+                      <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>{streak} day streak</Text>
                     </View>
                   )}
                 </View>

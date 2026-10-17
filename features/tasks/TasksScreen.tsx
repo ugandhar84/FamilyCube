@@ -34,9 +34,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, ListChecks, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
+import { CalendarDays, ListChecks, Layers, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
@@ -46,11 +46,21 @@ import { useNotifStore } from '@/store/notifStore';
 import { useUIStore } from '@/store/uiStore';
 import { localDateStr } from '@/lib/dates';
 import AppHeader from '@/components/AppHeader';
+import { PageHeading } from '@/components/PageHeading';
+import { PageTopBar } from '@/components/PageTopBar';
 import NotificationPanel from '@/components/NotificationPanel';
 import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
+import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
+import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
+import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
+import type { FamilyEvent } from '@/store/eventStore';
+import { HouseholdWorkQueue } from '@/features/tasks/HouseholdWorkQueue';
+import { TaskFlowChooser } from '@/features/tasks/components/TaskFlowChooser';
+import { CreateResponsibilitySheet } from '@/features/tasks/components/CreateResponsibilitySheet';
+import { DispatchRideSheet } from '@/features/hub/parent/DispatchRideSheet';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -58,10 +68,20 @@ import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
 import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
 import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
+import { GEMINI } from '@/constants/geminiRhythm';
 
-type Segment = 'schedule' | 'chores';
+// "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, extended to Calendar/
+// Tasks per explicit request — see School/Home Care/Health's own identical
+// comment for the full rationale) [live-requested: "did you take the same
+// rythim in all other modules like calender, meal and grocery?" -> "go
+// ahead" -> "header also change the same color so that i will flow along"].
+const PAGE_BG = GEMINI.canvas;
+const CARD_BG = GEMINI.cardBg;
+const BORDER  = GEMINI.border;
 
-export default function TasksScreen() {
+type Segment = 'schedule' | 'chores' | 'queue';
+
+export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedule' | 'chores' } = {}) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
@@ -100,7 +120,7 @@ export default function TasksScreen() {
   // KidRequestModal directly and only covered rides — this FAB covers
   // every ask category from one place, matching the Hub's own FAB.
   const isKidCreator = activeMember?.role === 'kid';
-  const [segment, setSegment] = useState<Segment>('schedule');
+  const [segment, setSegment] = useState<Segment>(lockedSegment ?? 'chores');
 
   // One search query per segment — kept separate so switching tabs doesn't
   // carry a Schedule search term into Chores' unrelated result set.
@@ -218,6 +238,15 @@ export default function TasksScreen() {
     return { pending, active };
   }, [chores, activeMemberId, activeMember?.role]);
 
+  // Work queue counts — parent-only. Unassigned + pending review = needs action.
+  const queueCounts = useMemo(() => {
+    if (!isParent) return { pending: 0, active: 0 };
+    const unassigned = chores.filter(c => c.status === 'todo' && !c.assignedToId && c.isPool !== false).length;
+    const pendingReview = chores.filter(c => c.status === 'pending_approval' || c.status === 'pending_parent_approval').length;
+    const locked = chores.filter(c => c.status === 'in_progress').length;
+    return { pending: unassigned + pendingReview, active: locked };
+  }, [chores, isParent]);
+
   // Smart creator — one "+" regardless of segment. SmartTaskComposer
   // classifies free text live as the user types (via extractResponsibility)
   // into Event vs Quest, auto-fills category/assignee/coins, and creates
@@ -235,6 +264,15 @@ export default function TasksScreen() {
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);
 
+  // Parent creation: chooser → then either CreateResponsibilitySheet or DispatchRideSheet
+  const [showFlowChooser, setShowFlowChooser] = useState(false);
+  const [showResponsibilitySheet, setShowResponsibilitySheet] = useState(false);
+  const [showRideSheet, setShowRideSheet] = useState(false);
+  const [rideSeedMemberId, setRideSeedMemberId] = useState<string | undefined>();
+  const [rideSeedTitle, setRideSeedTitle] = useState<string | undefined>();
+  const [choreConvertTitle, setChoreConvertTitle] = useState<string | undefined>();
+  const [choreConvertMemberId, setChoreConvertMemberId] = useState<string | undefined>();
+
   // Kid gets the same stacked "Ask Parent" picker the Hub's FAB opens
   // (AskParentSheet) instead of the unrestricted SmartTaskComposer —
   // routes to each dedicated modal below, no free-text guessing.
@@ -244,8 +282,48 @@ export default function TasksScreen() {
   const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [questProposalModal, setQuestProposalModal] = useState(false);
   const [choreProposalModal, setChoreProposalModal] = useState(false);
+
+  // Figma "Just describe it" full-page — dedicated Tasks-tab creation path
+  const [showJustDescribe, setShowJustDescribe] = useState(false);
+  const [showJustDescribeEvent, setShowJustDescribeEvent] = useState(false);
+  const [justDescribeEventPrefill, setJustDescribeEventPrefill] = useState<{ date?: string; time?: string; text?: string; auto?: boolean }>({});
+  const [detailEvent, setDetailEvent] = useState<FamilyEvent | null>(null);
+  const { deleteEvent } = useEventStore();
+  useEffect(() => {
+    useUIStore.getState().setFullBleedScreenActive(showJustDescribe || showJustDescribeEvent || !!detailEvent);
+    return () => { useUIStore.getState().setFullBleedScreenActive(false); };
+  }, [showJustDescribe, showJustDescribeEvent, detailEvent]);
+
+  // Deep-link support — other screens (e.g. the Hub's Next Up timeline) set
+  // uiStore's requestedTasksSegment/requestedEventDetailId before navigating
+  // here. requestedEventDetailId opens that event's full detail page
+  // directly — previously tapping a Next Up card only landed on Schedule's
+  // own default day view, leaving the user to find and tap the event again
+  // themselves. Same one-shot pattern as openTaskComposerRequested above.
+  useFocusEffect(useCallback(() => {
+    const requestedSegment = useUIStore.getState().requestedTasksSegment;
+    if (requestedSegment) {
+      if (!lockedSegment || requestedSegment === lockedSegment) {
+        useUIStore.getState().setRequestedTasksSegment(undefined);
+        setSegment(requestedSegment);
+      }
+    }
+    const requestedEventId = useUIStore.getState().requestedEventDetailId;
+    if (requestedEventId) {
+      useUIStore.getState().setRequestedEventDetailId(undefined);
+      const found = useEventStore.getState().events.find(e => e.id === requestedEventId);
+      if (found) setDetailEvent(found);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
+
+  // Figma .quick-capture — real text input; on submit opens JustDescribeIt screen
   const [rideRequestModal, setRideRequestModal] = useState(false);
-  const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
+  const openCreator = () => {
+    if (isKidCreator) setShowAskParentSheet(true);
+    else if (isParent || isSenior) setShowJustDescribe(true);
+    else setShowComposer(true);
+  };
 
   // Set by the shared FAB in app/(tabs)/_layout.tsx when tapped while
   // showing its Tasks-tab "+" face — opens SmartTaskComposer directly
@@ -265,209 +343,248 @@ export default function TasksScreen() {
   useEffect(() => {
     if (openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);
-      setShowComposer(true);
+      if (isParent || isSenior) setShowJustDescribe(true);
+      else setShowComposer(true);
     }
-  }, [openTaskComposerRequested]);
+  }, [openTaskComposerRequested, isParent, isSenior]);
 
   useFocusEffect(useCallback(() => {
     if (useUIStore.getState().openTaskComposerRequested) {
       useUIStore.getState().setOpenTaskComposerRequested(false);
-      setShowComposer(true);
+      if (isParent || isSenior) setShowJustDescribe(true);
+      else setShowComposer(true);
     }
-  }, []));
+  }, [isParent, isSenior]));
 
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
 
-  // Page title + the 2 status-count tab-cards + the collapsible search bar
-  // that drops down from whichever card is active — passed into
-  // CalendarScreen/QuestsScreen as headerContent so it scrolls away with
-  // the rest of the page instead of staying pinned above it.
-  const tasksHeader = (
-    <View>
-      <Text style={{ fontSize: TYPO.heading, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary, paddingHorizontal: 14, paddingTop: 10 }}>
-        Tasks
-      </Text>
+  // Figma TasksPage header — injected into QuestsScreen/CalendarScreen's own
+  // ScrollView via headerContent so it scrolls with content.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const doneToday = chores.filter(c =>
+    (c.status === 'approved' || c.status === 'auto_approved' || c.status === 'completed') &&
+    ((c.approvedAt ?? c.createdAt ?? '').slice(0, 10) === todayISO)
+  ).length;
+  const stillOpen = choreCounts.pending + choreCounts.active;
+  const helpers = chores.filter(c => c.status === 'in_progress' || c.status === 'pending_approval').length;
 
-      {/* Two square tab-cards. Each reads as a small stat tile (big count,
-          not a sentence) so "does anything need me right now" is
-          answerable at a glance, with a dot on the inactive tab when it's
-          carrying pending items the parent hasn't switched over to see
-          yet. The active card's own search icon sits bottom-right; tapping
-          it drops the search bar down directly beneath the card row. */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 2 }}>
+  const todayStr = localDateStr(new Date());
+  const todayEventCount = events.filter(e => e.date === todayStr).length;
+  const overdueCount = chores.filter(c => {
+    if (!c.dueDate) return false;
+    if (['done','approved','archived','cancelled','completed','auto_approved'].includes(c.status)) return false;
+    return c.dueDate < todayStr && (activeMember?.role === 'parent' || c.assignedToId === activeMemberId);
+  }).length;
+  const scheduleSubtitle = todayEventCount === 0
+    ? 'Nothing scheduled today — a calm day.'
+    : `${todayEventCount} event${todayEventCount === 1 ? '' : 's'} today · tap any day to see more`;
+  const tasksSubtitle = overdueCount > 0
+    ? `${stillOpen} open · ${overdueCount} overdue — start with the late ones`
+    : stillOpen > 0
+      ? `${stillOpen} open · ${doneToday} done today`
+      : doneToday > 0 ? `All caught up — ${doneToday} done today` : 'All caught up — nothing left to do';
+
+  // Title + tab switcher — now scrolls away with the rest of the page
+  // (prepended into tasksHeader below) instead of staying pinned.
+  const isSchedule = segment === 'schedule' || lockedSegment === 'schedule';
+  const fixedHeader = (
+    <View style={{ backgroundColor: isDark ? '#0E0C13' : PAGE_BG, paddingBottom: 8 }}>
+      <PageHeading
+        eyebrow={`FAMILY CUBE · ${isSchedule ? 'SCHEDULE' : 'TASKS'}`}
+        title={isSchedule ? 'Schedule' : 'Tasks'}
+        subtitle={isSchedule ? scheduleSubtitle : tasksSubtitle}
+        accent={isSchedule ? 'teal' : 'pink'}
+        Icon={isSchedule ? CalendarDays : ListChecks}
+        topInset={0}
+      />
+      {!lockedSegment && <View style={{
+        flexDirection: 'row', gap: 4, marginHorizontal: 20,
+        padding: 4, borderRadius: 14,
+        backgroundColor: isDark ? colors.surface : '#F0EDE6',
+      }}>
         {([
-          { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays, counts: scheduleCounts, accent: colors.teal, accentLight: colors.tealLight },
-          { key: 'chores' as const, label: 'Chores', Icon: ListChecks, counts: choreCounts, accent: colors.amber, accentLight: colors.amberLight },
-        ]).map(({ key, label, Icon, counts, accent, accentLight }) => {
+          { key: 'schedule' as const, label: 'Schedule' },
+          { key: 'chores' as const, label: 'Tasks' },
+        ] as { key: Segment; label: string }[]).map(({ key, label }) => {
           const active = segment === key;
-          const needsAttention = !active && counts.pending > 0;
+          const needsAttention = !active && key === 'chores' && choreCounts.pending > 0;
           return (
             <TouchableOpacity
               key={key}
-              onPress={() => {
-                setSegment(key);
-                if (searchOpen) toggleSearch(false);
-                // AI dropdown lives in QuestsScreen (only mounted while
-                // segment === 'chores') — leaving it open across a switch
-                // to Schedule left a stale row on screen whose buttons
-                // called into runAIRef pointing at an unmounted screen's
-                // runAI (found live: ultrareview Angle A, finding #2).
-                if (aiOpen) setAiOpen(false);
-              }}
+              onPress={() => { setSegment(key); if (searchOpen) toggleSearch(false); if (aiOpen) setAiOpen(false); }}
               activeOpacity={0.85}
-              style={withAndroidShadowFix([
-                styles.tabCard,
-                {
-                  backgroundColor: active ? accent : (isDark ? colors.card : '#FFFFFF'),
-                  borderColor: active ? accent : colors.border,
-                },
-              ])}
+              style={{
+                flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center',
+                borderRadius: 10, flexDirection: 'row', gap: 5,
+                backgroundColor: active ? (isDark ? colors.card : CARD_BG) : 'transparent',
+                shadowColor: active ? 'rgba(44,39,34,0.10)' : 'transparent',
+                shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 6,
+              }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{
-                  width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: active ? 'rgba(255,255,255,0.22)' : accentLight,
-                }}>
-                  <Icon size={14} color={active ? '#fff' : accent} />
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {key === 'chores' && active && isParent && (
-                    <TouchableOpacity
-                      onPress={() => { setAiOpen(v => !v); if (searchOpen) toggleSearch(false); }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{
-                        width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                        backgroundColor: aiOpen ? '#fff' : 'rgba(255,255,255,0.22)',
-                      }}
-                    >
-                      {aiState.isAiLoading
-                        ? <ActivityIndicator size="small" color={aiOpen ? accent : '#fff'} />
-                        : <Bot size={13} color={aiOpen ? accent : '#fff'} />}
-                    </TouchableOpacity>
-                  )}
-                  {needsAttention && (
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger }} />
-                  )}
-                </View>
-              </View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 8, color: active ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
+              <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500',
+                color: active ? colors.pink : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                 {label}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 2 }}>
-                  <Text style={{ fontSize: 22, fontWeight: '900', color: active ? '#fff' : colors.textPrimary }}>
-                    {counts.pending}
-                  </Text>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary }}>
-                    pending
-                  </Text>
-                  {counts.active > 0 && (
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary, marginLeft: 2 }}>
-                      · {counts.active} active
-                    </Text>
-                  )}
-                </View>
-                {active && (
-                  <TouchableOpacity
-                    onPress={() => { toggleSearch(!searchOpen); if (aiOpen) setAiOpen(false); }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={{
-                      width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: searchOpen ? '#fff' : 'rgba(255,255,255,0.22)',
-                    }}
-                  >
-                    {searchOpen
-                      ? <X size={13} color={accent} />
-                      : <Search size={13} color="#fff" />}
-                  </TouchableOpacity>
-                )}
-              </View>
+              {needsAttention && (
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.danger }} />
+              )}
             </TouchableOpacity>
           );
         })}
-      </View>
-
-      {searchOpen && (
-        <Animated.View style={{
-          marginHorizontal: 14, marginTop: 10, marginBottom: 6,
-          opacity: searchAnim,
-          transform: [{ translateY: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
-        }}>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 8,
-            borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: colors.border,
-            backgroundColor: isDark ? colors.surface : '#F8FAFC',
-            paddingHorizontal: 12, paddingVertical: 13,
-          }}>
-            <Search size={15} color={colors.textTertiary} />
-            <TextInput
-              value={activeQuery}
-              onChangeText={setActiveQuery}
-              placeholder={segment === 'schedule' ? 'Search events…' : 'Search chores…'}
-              placeholderTextColor={colors.textTertiary}
-              autoFocus
-              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 0 }}
-            />
-            {activeQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setActiveQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={15} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </Animated.View>
-      )}
-
-      {/* CubeAI tool dropdown — opens directly under the card row when the
-          Chores card's bot icon is tapped, mirroring the search bar's own
-          drop-down pattern. Same 3 tools/tints as the inline pill this
-          replaces (AiEngineBanner), just relocated. */}
-      {aiOpen && (
-        <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 14, marginTop: 10, marginBottom: 6 }}>
-          {([
-            { key: 'autobalance' as const, label: 'Balance', Icon: Sparkles, tint: colors.primary },
-            { key: 'spark' as const, label: 'Spark', Icon: Flame, tint: colors.kid },
-            { key: 'advice' as const, label: 'Advice', Icon: Award, tint: colors.pink },
-          ]).map(({ key, label, Icon, tint }) => {
-            const toolActive = aiState.showAiTool === key;
-            return (
-              <TouchableOpacity key={key}
-                onPress={() => runAiTool(key)}
-                activeOpacity={0.8}
-                style={{
-                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  paddingVertical: 13, borderRadius: RADIUS.lg,
-                  backgroundColor: toolActive ? tint : tint + '18',
-                  borderWidth: 1, borderColor: tint + (toolActive ? '' : '40'),
-                }}
-              >
-                <Icon size={13} color={toolActive ? '#fff' : tint} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: toolActive ? '#fff' : tint }}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+      </View>}
     </View>
   );
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name}
-        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-        memberEmoji={activeMember?.emoji}
-        memberAvatarUrl={activeMember?.avatarUrl}
-        notifCount={unreadNotifCount}
-        onPersonaPress={undefined}
-        onBellPress={() => setNotifPanelOpen(true)}
+  // Scrollable per-segment chrome injected into each child screen's ScrollView
+  // — now includes the title/eyebrow/segment-switcher block too (previously
+  // `fixedHeader`, rendered as a pinned sibling above the ScrollView) so the
+  // whole page scrolls as one unit instead of the title staying fixed while
+  // only the chrome below it scrolled [live-requested: "we can now move the
+  // tasks header also in scroll view"].
+  const tasksHeader = (
+    <View>
+      {fixedHeader}
+
+      {/* CTA / Search bar — scrolls with content */}
+      <View style={{ marginHorizontal: 20, marginTop: 6, marginBottom: 4, height: 52 }}>
+        {searchOpen ? (
+          <View style={{
+            flex: 1, flexDirection: 'row', alignItems: 'center',
+            borderRadius: 16, paddingHorizontal: 14, gap: 10,
+            backgroundColor: segment === 'schedule' ? colors.tealLight : colors.pinkLight,
+          }}>
+            <Search size={18} color={segment === 'schedule' ? colors.teal : colors.pink} strokeWidth={2} />
+            <TextInput
+              autoFocus
+              value={segment === 'schedule' ? scheduleQuery : choreQuery}
+              onChangeText={segment === 'schedule' ? setScheduleQuery : setChoreQuery}
+              placeholder={segment === 'schedule' ? 'Search events…' : 'Search tasks…'}
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={segment === 'schedule' ? colors.teal : colors.pink}
+              style={{ flex: 1, height: 44, paddingVertical: 0, fontSize: 16, fontWeight: '600', color: colors.textPrimary }}
+              returnKeyType="search"
+            />
+            <TouchableOpacity onPress={() => toggleSearch(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X size={18} color={segment === 'schedule' ? colors.teal : colors.pink} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={segment === 'schedule' ? () => setShowJustDescribeEvent(true) : () => setShowJustDescribe(true)}
+              activeOpacity={0.88}
+              style={{
+                flex: 1, height: 52, borderRadius: 16,
+                backgroundColor: colors.primary,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textInverse, letterSpacing: 0.2 }}>
+                {segment === 'schedule' ? '+ Add event' : '+ Add task'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => toggleSearch(true)}
+              activeOpacity={0.88}
+              style={{
+                width: 52, height: 52, borderRadius: 16,
+                backgroundColor: colors.primary,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Search size={20} color={colors.textInverse} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* Tasks segment chrome */}
+      {segment === 'chores' && (
+        <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+          {/* Status line */}
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+            {stillOpen > 0
+              ? `${stillOpen} task${stillOpen === 1 ? '' : 's'} open · everyone sees what they own`
+              : 'All clear — nothing left to do'}
+          </Text>
+
+          {/* Summary tiles */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+            {[
+              { val: doneToday, label: 'done today',     bg: isDark ? 'rgba(61,122,90,0.18)'   : colors.tealLight,    color: colors.teal },
+              { val: stillOpen, label: 'still open',     bg: isDark ? 'rgba(245,168,90,0.18)'   : colors.amberLight,   color: colors.amber },
+              { val: helpers,   label: 'in progress',    bg: isDark ? 'rgba(123,94,167,0.18)'  : colors.pinkLight,    color: colors.pink },
+            ].map(({ val, label, bg, color }) => (
+              <View key={label} style={{
+                flex: 1, borderRadius: 16, backgroundColor: bg,
+                paddingVertical: 12, paddingHorizontal: 12,
+              }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color }}>{val}</Text>
+                <Text style={{ fontSize: 11, color, marginTop: 2, opacity: 0.8, fontWeight: '600' }}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+    </View>
+  );
+
+  // Full-page overlay — renders instead of the tab content, same pattern as hub review screens
+  if (showJustDescribeEvent) {
+    return (
+      <JustDescribeItEventScreen
+        visible
+        activeMemberId={activeMemberId ?? ''}
+        prefillDate={justDescribeEventPrefill.date}
+        prefillTime={justDescribeEventPrefill.time}
+        initialText={justDescribeEventPrefill.text}
+        autoOpenForm={justDescribeEventPrefill.auto}
+        onClose={() => { setShowJustDescribeEvent(false); setJustDescribeEventPrefill({}); }}
       />
+    );
+  }
+
+  if (showJustDescribe) {
+    return (
+      <JustDescribeItScreen
+        visible={true}
+        onClose={() => setShowJustDescribe(false)}
+        onOpenFullForm={(kind, prefill) => {
+          setShowJustDescribe(false);
+          setTimeout(() => {
+            if (kind === 'quest') {
+              setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+              setShowManualQuest(true);
+            } else {
+              // Described as a task but it is really an event: hand it to the Schedule's own full-page "Just describe your
+              // schedule" flow (same text, read again there) instead of a bottom-sheet form.
+              const p = prefill as typeof manualEventPrefill;
+              const [d, t] = (p?.startAt ?? '').split('T');
+              setJustDescribeEventPrefill({ text: p?.title, date: d || undefined, time: t ? t.slice(0, 5) : undefined, auto: true });
+              setShowJustDescribeEvent(true);
+            }
+          }, 350);
+        }}
+      />
+    );
+  }
+
+  return (
+    <>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : PAGE_BG }} edges={['top']}>
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {segment === 'schedule'
-        ? <CalendarScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
+        ? <CalendarScreen hideHeader hideCreateButton={false} hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} onRequestJustDescribe={(prefill) => { setJustDescribeEventPrefill(prefill ?? {}); setShowJustDescribeEvent(true); }} onRequestEventDetail={(ev) => setDetailEvent(ev)} />
+        : segment === 'queue'
+        ? (
+          <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+            {tasksHeader}
+            <HouseholdWorkQueue activeMemberId={activeMemberId ?? ''} />
+          </ScrollView>
+        )
         : (
           <QuestsScreen
             hideHeader hideCreateButton hideSearchBar hideAiTrigger
@@ -475,15 +592,6 @@ export default function TasksScreen() {
             onAiStateChange={setAiState} onExposeAiRunner={exposeAiRunner}
           />
         )}
-
-      {/* No FAB owned by this screen — parent creation routes through the
-          single shared FAB in app/(tabs)/_layout.tsx (morphs from Ask
-          Cube's sparkle into this screen's own "+" the moment Tasks is
-          focused — see openTaskComposerRequested below). Kids/teens rely
-          on the inline +Event/+Quest header buttons (CalendarScreen/
-          QuestsScreen, hideCreateButton removed) and their own dedicated
-          buttons elsewhere (Hub's Ask Parent flow, etc.) instead of a
-          floating FAB here. */}
 
       <AskParentSheet
         visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}
@@ -522,8 +630,11 @@ export default function TasksScreen() {
             setManualQuestPrefill(prefill as typeof manualQuestPrefill);
             setShowManualQuest(true);
           } else {
-            setManualEventPrefill(prefill as typeof manualEventPrefill);
-            setShowManualEvent(true);
+            // Detected as an event: continue in the full-page event flow (see the Just describe hand-off above).
+            const p = prefill as typeof manualEventPrefill;
+            const [d, t] = (p?.startAt ?? '').split('T');
+            setJustDescribeEventPrefill({ text: p?.title, date: d || undefined, time: t ? t.slice(0, 5) : undefined, auto: true });
+            setShowJustDescribeEvent(true);
           }
         }}
       />
@@ -544,15 +655,60 @@ export default function TasksScreen() {
           onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
           activeMemberId={activeMemberId ?? ''}
           prefill={manualEventPrefill as any}
-          // The composer only ever hands off here once it's already detected
-          // title/category/when/who/recurrence — restarting at step 0 threw
-          // all of that context away and made the user re-click through the
-          // whole wizard just to see what it already knew. Opening on
-          // Review lets them confirm/adjust in place instead.
           initialStep="review"
         />
       )}
+
+      {/* Parent creation flow: chooser → responsibility or ride */}
+      <TaskFlowChooser
+        visible={showFlowChooser}
+        onClose={() => setShowFlowChooser(false)}
+        onChooseResponsibility={() => setShowResponsibilitySheet(true)}
+        onChooseRide={() => setShowRideSheet(true)}
+      />
+
+      <CreateResponsibilitySheet
+        visible={showResponsibilitySheet}
+        onClose={() => { setShowResponsibilitySheet(false); setChoreConvertTitle(undefined); setChoreConvertMemberId(undefined); }}
+        prefillTitle={choreConvertTitle}
+        prefillMemberId={choreConvertMemberId}
+        onCreated={() => setShowResponsibilitySheet(false)}
+        onConvertToRide={(seed) => {
+          setShowResponsibilitySheet(false);
+          setRideSeedTitle(seed.title);
+          setRideSeedMemberId(seed.memberId);
+          setTimeout(() => setShowRideSheet(true), 300);
+        }}
+      />
+
+      <DispatchRideSheet
+        visible={showRideSheet}
+        onClose={() => { setShowRideSheet(false); setRideSeedMemberId(undefined); setRideSeedTitle(undefined); }}
+        seedMemberId={rideSeedMemberId}
+        onDispatched={() => setShowRideSheet(false)}
+        onConvertToChore={(seed) => {
+          setShowRideSheet(false);
+          setChoreConvertTitle(seed.title);
+          setChoreConvertMemberId(seed.memberId);
+          setTimeout(() => setShowResponsibilitySheet(true), 300);
+        }}
+      />
     </SafeAreaView>
+
+      {/* Event detail — rendered as a sibling overlay, not an early-return,
+          so TasksScreen's own tree (Schedule/Queue/Chores) stays mounted
+          behind it, matching QuestsScreen's own QuestDetailModal rendering.
+          EventDetailScreen owns its own full-page edit flow internally
+          (swaps to JustDescribeItEventScreen in edit mode), so no separate
+          EditEventModal/editEvent plumbing is needed here. */}
+      {detailEvent && (
+        <EventDetailScreen
+          ev={detailEvent}
+          onClose={() => setDetailEvent(null)}
+          onDelete={async (id) => { await deleteEvent(id); setDetailEvent(null); }}
+        />
+      )}
+    </>
   );
 }
 

@@ -1,14 +1,26 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { GroceryItem } from '@/store/groceryStore';
 import { FlatSectionHeader } from './FlatSectionHeader';
 
 // ─── CategorySection ──────────────────────────────────────────────────────────
 
-export function CategorySection({ label, emoji, color, items, isDark, colors, isKid, onBuy, members }: {
+export function CategorySection({
+  label, emoji, color, items, isDark, colors, isKid, onBuy, members,
+  pinnedStores, onPinStore, onUnpinStore,
+}: {
   label: string; emoji: string; color: string;
   items: GroceryItem[]; isDark: boolean; colors: any; isKid: boolean;
   onBuy: (item: GroceryItem) => void;
   members: any[];
+  // Pin-a-store affordance — was only reachable 3 taps deep (Groceries →
+  // Shopping Trips → New Run → "Pin a specific store location") with no
+  // entry point from the main list itself [live-reported: "i want the pin
+  // store on the groceries landing page stacked card"]. Optional so other
+  // callers of this component aren't forced to wire it.
+  pinnedStores?: Record<string, { lat: number; lng: number }>;
+  onPinStore?: (store: string) => void;
+  onUnpinStore?: (store: string) => void;
 }) {
   const pending = items.filter(i => !i.isBought).length;
   // Group by store
@@ -23,15 +35,25 @@ export function CategorySection({ label, emoji, color, items, isDark, colors, is
   );
 
   return (
-    <View style={{ marginBottom: 20 }}>
+    <View>
       <FlatSectionHeader emoji={emoji} title={label} accent={color} colors={colors} badge={`${pending} left`} />
 
-      {storeGroups.map(([store, storeItems]) => (
-        <View key={store} style={{ marginBottom: 10 }}>
+      {storeGroups.map(([store, storeItems]) => {
+        const isPinnable = store !== 'Any store' && !isKid && !!onPinStore;
+        const isPinned = !!pinnedStores?.[store];
+        return (
+        <View key={store} style={{ marginBottom: 12 }}>
           {storeGroups.length > 1 && (
-            <Text style={{ fontSize: 11, fontWeight: '800', color, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.7, marginBottom: 4 }}>
-              {store === 'Any store' ? 'Any Store' : store}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.7 }}>
+                {store === 'Any store' ? 'Any Store' : store}
+              </Text>
+              {isPinnable && (
+                <Pressable hitSlop={8} onPress={() => isPinned ? onUnpinStore?.(store) : onPinStore?.(store)}>
+                  <Ionicons name={isPinned ? 'location' : 'location-outline'} size={13} color={isPinned ? color : color + '80'} />
+                </Pressable>
+              )}
+            </View>
           )}
           <View>
             {storeItems.map((item, idx) => (
@@ -74,7 +96,8 @@ export function CategorySection({ label, emoji, color, items, isDark, colors, is
             ))}
           </View>
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 }

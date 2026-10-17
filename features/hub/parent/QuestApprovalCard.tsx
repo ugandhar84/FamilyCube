@@ -7,6 +7,7 @@ import { CollapsibleCard, QuestLiveness } from '../hubComponents';
 import { useCelebrationStore } from '@/store/celebrationStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // A kid's submitted-for-review quest — photo proof (or a missing-proof
 // warning), completion note, and the approve/decline decision.
@@ -67,14 +68,14 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
           <TouchableOpacity onPress={() => setPhotoOpen(true)} style={{ borderRadius: 10, overflow: 'hidden' }}>
             <Image
               source={{ uri: q.photoUrl }}
-              style={{ width: 56, height: 56, backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }}
+              style={{ width: 56, height: 56, backgroundColor: colors.surface }}
               resizeMode="cover"
             />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Photo proof attached</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Photo proof attached</Text>
             {q.completionNote ? (
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', marginTop: 2 }} numberOfLines={2}>
+              <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic', marginTop: 2 }} numberOfLines={2}>
                 "{q.completionNote}"
               </Text>
             ) : (
@@ -90,7 +91,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
         </View>
       ) : null}
       {q.completionNote && !q.photoUrl ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', marginBottom: 10 }}>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic', marginBottom: 10 }}>
           "{q.completionNote}"
         </Text>
       ) : null}
@@ -120,7 +121,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
       </View>
 
       {q.photoUrl && (
-        <Modal visible={photoOpen} transparent animationType="fade" onRequestClose={() => setPhotoOpen(false)}>
+        <Modal supportedOrientations={['portrait', 'landscape']} visible={photoOpen} transparent animationType="fade" onRequestClose={() => setPhotoOpen(false)}>
           <Pressable
             onPress={() => setPhotoOpen(false)}
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}>

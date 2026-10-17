@@ -64,6 +64,12 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    // A personal task (someone's own private reminder) never notifies anyone.
+    if (questId) {
+      const { data: pq } = await supabase.from('chore_tasks').select('is_personal').eq('id', questId).maybeSingle();
+      if (pq?.is_personal) return json({ ok: true, skipped: 'personal task' });
+    }
+
     // ── Resolve members ────────────────────────────────────────────────────────
     const { data: members } = await supabase
       .from('members')

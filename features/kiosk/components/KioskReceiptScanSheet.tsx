@@ -32,7 +32,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { Camera, Image as ImageIcon, FileText, ScanLine, Check } from 'lucide-react-native';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadReceiptScanPhoto } from '@/lib/supabase';
 import { compressImage } from '@/lib/compressImage';
 import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
@@ -83,12 +83,10 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
     try {
       let imageUrl: string | undefined;
       if (localUri) {
-        const path = `receipts/${familyId}/${Date.now()}.jpg`;
-        const blob = await (await fetch(localUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-          imageUrl = urlData.publicUrl;
+        try {
+          imageUrl = await uploadReceiptScanPhoto(familyId, base64);
+        } catch (e) {
+          console.warn('[KioskReceiptScanSheet] receipt photo upload failed', e);
         }
       }
       const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {
@@ -131,13 +129,20 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
     }
   };
 
+  // iOS cannot present a camera/picker on top of an open Modal (it freezes), so the drawer steps aside.
+  const [picking, setPicking] = useState(false);
+  const aside = async (run: () => Promise<void>) => {
+    setPicking(true);
+    await new Promise(r => setTimeout(r, 450));
+    try { await run(); } finally { setPicking(false); }
+  };
   const withAiConsent = (action: () => void) => {
     if (!consentChecked || consented) { action(); return; }
     pendingScanAction.current = action;
     setShowConsent(true);
   };
 
-  const pickCamera = () => withAiConsent(async () => {
+  const pickCamera = () => withAiConsent(() => aside(async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
     const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, base64: false, allowsEditing: true });
@@ -145,9 +150,9 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
       const { uri, base64 } = await compressImage(res.assets[0].uri);
       await runScan(base64, uri);
     }
-  });
+  }));
 
-  const pickLibrary = () => withAiConsent(async () => {
+  const pickLibrary = () => withAiConsent(() => aside(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Photo access needed', 'Allow photo library in Settings.'); return; }
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, base64: false });
@@ -155,14 +160,14 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
       const { uri, base64 } = await compressImage(res.assets[0].uri);
       await runScan(base64, uri);
     }
-  });
+  }));
 
-  const pickFile = () => withAiConsent(async () => {
+  const pickFile = () => withAiConsent(() => aside(async () => {
     const res = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.[0]) return;
     const b64 = await FileSystem.readAsStringAsync(res.assets[0].uri, { encoding: 'base64' });
     await runScan(b64);
-  });
+  }));
 
   const addToList = async () => {
     setSaving(true);
@@ -207,7 +212,7 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
       onDecline={() => { setShowConsent(false); pendingScanAction.current = null; }}
     />
     <KioskFormDrawer
-      visible={visible}
+      visible={visible && !picking}
       variant="drawer"
       title={page === 1 ? 'Scan Receipt' : `${items.length} Items Found`}
       subtitle={page === 1

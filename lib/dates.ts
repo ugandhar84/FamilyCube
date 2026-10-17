@@ -109,6 +109,18 @@ export function fmtDate(dateStr: string | null | undefined, fallback = '—'): s
 }
 
 /**
+ * Format a YYYY-MM-DD string for display with weekday: "Wed, Jan 1, 2026".
+ */
+export function fmtDateWithWeekday(dateStr: string | null | undefined, fallback = '—'): string {
+  if (!dateStr) return fallback;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return fallback;
+  const date = new Date(y, m - 1, d);
+  if (isNaN(date.getTime())) return fallback;
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
  * Format a YYYY-MM-DD string for compact display without year: "Jan 1".
  */
 export function fmtDateShort(dateStr: string | null | undefined, fallback = '—'): string {

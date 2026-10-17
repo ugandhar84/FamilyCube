@@ -71,7 +71,7 @@ export function KioskRedoReasonDialog({ visible, choreTitle, k, onClose, onSend 
           return (
             <Pressable
               key={r}
-              onPress={() => { setPreset(on ? '' : r); if (!on) setCustom(''); }}
+              onPress={() => { onSend(r); close(); }}
               style={({ pressed }) => [
                 s.preset,
                 on ? { backgroundColor: k.gold, borderColor: k.gold } : { backgroundColor: k.well, borderColor: k.cardBorder },

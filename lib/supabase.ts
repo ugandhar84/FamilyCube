@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
 import { todayLocal } from '@/lib/dates';
 import { markNetworkOffline, markNetworkOnline, isNetworkError } from '@/lib/networkStore';
 
@@ -404,6 +405,76 @@ export async function uploadMemberAvatar(familyId: string, memberId: string, loc
   return data.publicUrl;
 }
 
+// ── Chore/quest submission proof photo ────────────────────────────────────────
+// Path: chore-proofs/<familyId>/<choreId>-<timestamp>.jpg — same bucket/prefix
+// convention as uploadMemberAvatar above. QuestDetailModal/QuestsScreen
+// previously uploaded proof photos with a raw `fetch(uri).blob()`, which
+// silently returns a 0-byte blob for a local file:// URI on Android — the
+// upload "succeeded" (200, public URL generated, written to
+// chore_tasks.submission_photo_url) but the stored file was empty, so the
+// photo never rendered anywhere it was shown (QuestCard, ParentReviewDeck,
+// QuestDetailModal's own submitted-photo section) despite every one of
+// those correctly reading the URL that was saved
+// [live-reported: "photo proof, submitted tasks not showing the photo
+// thumbnail at all" — confirmed via a direct HEAD request on the stored
+// URL returning `content-length: 0`]. Routes through the same
+// compressImage + encodeBody (base64) path every other working upload in
+// this app already uses instead of duplicating the fix per call site.
+export async function uploadChoreProofPhoto(familyId: string, choreId: string, localUri: string): Promise<string> {
+  const path = `chore-proofs/${familyId}/${choreId}-${Date.now()}.jpg`;
+  const { base64 } = await compressImage(localUri, COMPRESS.default);
+  const encoded = await encodeBody('', base64);
+  const bodySize = encoded instanceof ArrayBuffer ? encoded.byteLength : (encoded as Blob).size;
+  if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
+  const { error } = await supabase.storage.from('family-media').upload(path, encoded, { upsert: false, contentType: 'image/jpeg' });
+  if (error) {
+    console.error('[uploadChoreProofPhoto] upload failed', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    throw new Error(error.message || (error as any).error || (error as any).statusCode || 'Unknown storage error');
+  }
+  const { data } = supabase.storage.from('family-media').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// ── Chore errand receipt photo ─────────────────────────────────────────────────
+// Path: chore-proofs/<familyId>/receipt-<choreId>-<timestamp>.jpg — same bug/
+// fix as uploadChoreProofPhoto above, just the GP-errand receipt variant
+// (SeniorView.tsx / KioskOverviewTab.tsx) instead of a completion proof photo.
+export async function uploadChoreReceiptPhoto(familyId: string, choreId: string, localUri: string): Promise<string> {
+  const path = `chore-proofs/${familyId}/receipt-${choreId}-${Date.now()}.jpg`;
+  const { base64 } = await compressImage(localUri, COMPRESS.default);
+  const encoded = await encodeBody('', base64);
+  const bodySize = encoded instanceof ArrayBuffer ? encoded.byteLength : (encoded as Blob).size;
+  if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
+  const { error } = await supabase.storage.from('family-media').upload(path, encoded, { upsert: false, contentType: 'image/jpeg' });
+  if (error) {
+    console.error('[uploadChoreReceiptPhoto] upload failed', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    throw new Error(error.message || (error as any).error || (error as any).statusCode || 'Unknown storage error');
+  }
+  const { data } = supabase.storage.from('family-media').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// ── Grocery receipt scan photo ─────────────────────────────────────────────────
+// Path: receipts/<familyId>/<timestamp>.jpg. Same 0-byte-on-Android bug as
+// uploadChoreProofPhoto above (ReceiptScanSheet.tsx / KioskReceiptScanSheet.tsx
+// both used a raw fetch(localUri).blob()) — these callers already have the
+// base64 string on hand (read once for the OCR edge function call), so this
+// variant takes base64 directly instead of re-reading/re-compressing the
+// file a second time.
+export async function uploadReceiptScanPhoto(familyId: string, base64: string): Promise<string> {
+  const path = `receipts/${familyId}/${Date.now()}.jpg`;
+  const encoded = await encodeBody('', base64);
+  const bodySize = encoded instanceof ArrayBuffer ? encoded.byteLength : (encoded as Blob).size;
+  if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
+  const { error } = await supabase.storage.from('family-media').upload(path, encoded, { upsert: false, contentType: 'image/jpeg' });
+  if (error) {
+    console.error('[uploadReceiptScanPhoto] upload failed', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    throw new Error(error.message || (error as any).error || (error as any).statusCode || 'Unknown storage error');
+  }
+  const { data } = supabase.storage.from('family-media').getPublicUrl(path);
+  return data.publicUrl;
+}
+
 // ── Feedback screenshot ───────────────────────────────────────────────────────
 // Path: <userId>/<timestamp>.<ext>  — private bucket, admin reads via service role
 export async function uploadFeedbackScreenshot(
@@ -524,12 +595,22 @@ export async function uploadFamilyMemoryVideo(
   }
 
   const path = `${session.user.id}/${familyId}/memories/${Date.now()}${suffix !== undefined ? `_${suffix}` : ''}.mp4`;
-  const blob = await fetch(compressedUri).then(r => r.blob());
-  if (blob.size === 0) throw new Error('Encoded video upload is 0 bytes — the source file may be empty or unreadable.');
+  // fetch(uri).blob() silently produced 0-byte video uploads in this app
+  // (confirmed live: Supabase storage returned the upload as "ok" with a
+  // real signed URL, but the stored object had content-length: 0, so
+  // nothing ever decoded in the feed) — same failure uploadSocialVideo's
+  // own comment already documented and fixed for the social-video upload
+  // path. Read the compressed file as base64 instead (expo-file-system,
+  // not fetch) and hand Supabase a real ArrayBuffer.
+  const base64 = await FileSystem.readAsStringAsync(compressedUri, { encoding: 'base64' });
+  const binary = atob(base64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  if (bytes.byteLength === 0) throw new Error('Encoded video upload is 0 bytes — the source file may be empty or unreadable.');
 
   const { error: upErr } = await supabase.storage
     .from(MEMORIES_BUCKET)
-    .upload(path, blob, { upsert: false, contentType: 'video/mp4' });
+    .upload(path, bytes.buffer, { upsert: false, contentType: 'video/mp4' });
   if (upErr) throw new Error(upErr.message);
 
   let signed: { signedUrl: string } | null = null;

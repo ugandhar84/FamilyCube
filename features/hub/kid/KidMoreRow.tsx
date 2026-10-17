@@ -1,58 +1,182 @@
-import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
-import { PiggyBank, Gift, ClipboardList, Calendar, Trophy, PartyPopper } from 'lucide-react-native';
+import { View, Text } from 'react-native';
+import { ClipboardCheck, MessageCircle, PiggyBank, Gift, ArrowUpRight } from 'lucide-react-native';
 import { KID } from './kidTheme';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { useUIStore } from '@/store/uiStore';
+import { KidSectionHeader } from './KidSectionHeader';
+import { AnimatedPressable } from '@/components/AnimatedPressable';
 
-// Row wraps to two lines of 3 (rather than 6-in-a-row, which got cramped)
-// once Leaderboard/Cheer Squad joined Piggy Bank/Rewards/My Requests/Full
-// Calendar as entries here — both used to be their own always-visible
-// blocks; now they're one tap away from this row instead of permanently
-// occupying scroll space.
-export function KidMoreRow({ onPiggyBank, onHistory, onLeaderboard, onCheerSquad, cheerBadge, colors, isDark }: {
-  onPiggyBank: () => void; onHistory: () => void;
-  onLeaderboard: () => void; onCheerSquad: () => void;
-  /** Count badge on the Cheer Squad tile — sibling wins still waiting on a cheer. */
-  cheerBadge?: number;
+// KidActionGrid — figma's "Quick actions" block: a 2x2 grid of pastel
+// cards, each with an icon chip + arrow-up-right affordance in the header
+// row, then a title + one-line status/subtitle underneath (not a bare
+// icon+label tile) ["this kids figma rythem ... inspiring the parents hub
+// rythms"]. Check-in quick taps (I'm Home!/Running Late) moved to their
+// own compact row below this grid (see KidCheckinRow), matching the mock's
+// separate "Quick check-ins" strip under the 2x2 action cards.
+export function KidActionGrid({ onMyChores, onAskParent, onPiggyBank, myChoresSubtitle, choreStats, rewardStats, colors, isDark }: {
+  onMyChores: () => void;
+  onAskParent: () => void;
+  onPiggyBank: () => void;
+  /** e.g. "2 of 3 approved today" — figma's chore-inbox tile subtitle. */
+  myChoresSubtitle?: string;
+  /** Stacked To do/Review/Done today counts — mirrors the Parent Hub's
+      "Add a task" tile [live-requested: "we should have the counters on
+      my chores similar to the Parents.. on my chores quick action card"].
+      Optional so the tile still renders fine if a caller doesn't pass it. */
+  choreStats?: { label: string; value: number; color: string }[];
+  /** Stacked Pending/Approved today counts on the Rewards tile
+      [live-requested: "rewards card should show the pending rewards
+      request, approved requests today if available"]. Optional — falls
+      back to the plain "Spend your coins" subtitle when omitted. */
+  rewardStats?: { label: string; value: number; color: string }[];
   colors: any; isDark: boolean;
 }) {
-  // Same brand tokens as ParentQuickActions — no off-palette hex (was
-  // BRAND.amber/purple/teal plus two bare local hex constants for Rewards
-  // pink and Cheer Squad green that didn't exist anywhere else in the app).
-  const tiles: { Icon: typeof PiggyBank; label: string; color: string; onPress: () => void; badge?: number }[] = [
-    { Icon: PiggyBank,     label: 'Piggy Bank',    color: colors.kid,    onPress: onPiggyBank },
-    { Icon: Gift,          label: 'Rewards',       color: colors.accent, onPress: () => router.push('/(tabs)/store' as any) },
-    // colors.danger previously tinted this tile — a fun competitive
-    // feature rendered in the same alarm/red color as "Running Late" and
-    // decline actions elsewhere on this screen. colors.primary isn't used
-    // by any sibling tile in this row and reads naturally as "achievement".
-    { Icon: Trophy,        label: 'Leaderboard',   color: colors.primary, onPress: onLeaderboard },
-    { Icon: PartyPopper,   label: 'Cheer Squad',   color: colors.parent, onPress: onCheerSquad, badge: cheerBadge },
-    { Icon: ClipboardList, label: 'My Requests',   color: colors.accent, onPress: onHistory },
-    { Icon: Calendar,      label: 'Full Calendar', color: colors.parent, onPress: () => router.push('/(tabs)/calendar') },
+  // Each tile gets its own pastel from the brand's *Light token set — was
+  // My Chores and Ask Parent both on colors.pinkLight, reading as one
+  // repeated color instead of 4 distinct tiles [live-requested: "hub quick
+  // actions should get distinct pastels"]. primaryLight (terracotta) is
+  // the one brand pastel not already used elsewhere on this grid/row, so
+  // Ask Parent takes it instead of doubling up on pink.
+  const tiles: { Icon: typeof ClipboardCheck; title: string; subtitle: string; bg: string; iconColor: string; onPress: () => void }[] = [
+    { Icon: MessageCircle,  title: 'Ask Parent', subtitle: 'Permission, questions & more', bg: colors.primaryLight, iconColor: colors.primary, onPress: onAskParent },
+    { Icon: PiggyBank,      title: 'Piggy Bank', subtitle: 'Track your savings',           bg: colors.tealLight,    iconColor: colors.teal,    onPress: onPiggyBank },
   ];
 
+  // No marginBottom — RideStatusCard right below always supplies its own
+  // marginTop: 14 (HubFullWidthActionCard), so adding a trailing margin
+  // here doubled that gap to 28px ["ask for ride card is also having
+  // more top of the card"]. marginTop stays here since the sections
+  // above (ChoresNeedsYou/NeedsYou) are conditionally absent and never
+  // reliably supply their own bottom margin.
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-      {tiles.map(({ Icon, label, color, onPress, badge }) => (
-        <Pressable key={label} onPress={onPress}
-          style={{ flexBasis: '31%', flexGrow: 1, borderRadius: 16, paddingVertical: 15, alignItems: 'center', gap: 7,
-            backgroundColor: isDark ? color + '22' : color + '1E', borderWidth: 1, borderColor: color + (isDark ? '38' : '2C') }}>
-          {/* Solid-tint icon chip with a white icon — matches the Parent
-              Hub's quick-action tile treatment instead of a bare icon
-              floating directly on the tinted wash. */}
-          <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: color }}>
-            <Icon size={19} color="#fff" />
-            {!!badge && badge > 0 && (
-              <View style={{ position: 'absolute', top: -6, right: -8, backgroundColor: color, borderRadius: 9,
-                minWidth: 16, height: 16, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1.5, borderColor: colors.card }}>
-                <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{badge}</Text>
+    <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
+      <KidSectionHeader label="QUICK ACTIONS" accent={colors.pink} colors={colors} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        {/* My Chores — same stacked-counters shape as the Parent Hub's
+            "Add a task" tile (icon left, counts stacked beside it, title
+            pinned to the bottom) instead of a single subtitle line. */}
+        <AnimatedPressable onPress={onMyChores}
+          style={{ flexBasis: '47%', flexGrow: 1, minHeight: 116, borderRadius: 22, padding: 16,
+            backgroundColor: colors.pinkLight, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            justifyContent: 'space-between',
+            ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+          {choreStats && choreStats.length > 0 ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'stretch' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 10 }}>
+                <View style={{ justifyContent: 'center' }}>
+                  <ClipboardCheck size={30} color={colors.pink} strokeWidth={2} />
+                </View>
+                <View style={{ gap: 2, justifyContent: 'center' }}>
+                  {choreStats.map(s => (
+                    <View key={s.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: s.color, minWidth: 16 }}>{s.value}</Text>
+                      <Text style={{ fontSize: 10, color: isDark ? colors.textSecondary : GEMINI.bodyColor }} numberOfLines={1}>{s.label}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
+              <ArrowUpRight size={15} color={colors.textTertiary} />
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <ClipboardCheck size={22} color={colors.pink} strokeWidth={2} />
+              <ArrowUpRight size={15} color={colors.textTertiary} />
+            </View>
+          )}
+          <View>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>My Chores</Text>
+            {!choreStats && (
+              <Text style={{ fontSize: KID.tiny, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 3 }} numberOfLines={2}>{myChoresSubtitle ?? 'See what\'s left today'}</Text>
             )}
           </View>
-          <Text style={{ fontSize: KID.tiny, fontWeight: '800', color, textAlign: 'center' }}>{label}</Text>
-        </Pressable>
-      ))}
+        </AnimatedPressable>
+
+        {/* Rewards — same stacked-counters shape as My Chores when the
+            kid has pending/approved-today redemption requests to show. */}
+        <AnimatedPressable onPress={() => useUIStore.getState().setOpenRewardsScreenRequested(true)}
+          style={{ flexBasis: '47%', flexGrow: 1, minHeight: 116, borderRadius: 22, padding: 16,
+            backgroundColor: colors.amberLight, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            justifyContent: 'space-between',
+            ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+          {rewardStats && rewardStats.length > 0 ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'stretch' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 10 }}>
+                <View style={{ justifyContent: 'center' }}>
+                  <Gift size={30} color={colors.amber} strokeWidth={2} />
+                </View>
+                <View style={{ gap: 2, justifyContent: 'center' }}>
+                  {rewardStats.map(s => (
+                    <View key={s.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: s.color, minWidth: 16 }}>{s.value}</Text>
+                      <Text style={{ fontSize: 10, color: isDark ? colors.textSecondary : GEMINI.bodyColor }} numberOfLines={1}>{s.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              <ArrowUpRight size={15} color={colors.textTertiary} />
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Gift size={22} color={colors.amber} strokeWidth={2} />
+              <ArrowUpRight size={15} color={colors.textTertiary} />
+            </View>
+          )}
+          <View>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>Rewards</Text>
+            {!rewardStats && (
+              <Text style={{ fontSize: KID.tiny, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 3 }} numberOfLines={2}>Spend your coins</Text>
+            )}
+          </View>
+        </AnimatedPressable>
+
+        {tiles.map(({ Icon, title, subtitle, bg, iconColor, onPress }) => (
+          <AnimatedPressable key={title} onPress={onPress}
+            style={{ flexBasis: '47%', flexGrow: 1, borderRadius: 22, padding: 16, gap: 14,
+              backgroundColor: bg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+              ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Icon size={22} color={iconColor} strokeWidth={2} />
+              <ArrowUpRight size={15} color={colors.textTertiary} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>{title}</Text>
+              <Text style={{ fontSize: KID.tiny, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 3 }} numberOfLines={2}>{subtitle}</Text>
+            </View>
+          </AnimatedPressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Quick check-ins — figma's compact 3-pill strip under the action grid ──
+export function KidCheckinRow({ onCheckin, colors, isDark }: {
+  onCheckin: (type: 'home' | 'ready' | 'late') => void;
+  colors: any; isDark?: boolean;
+}) {
+  const pills: { label: string; type: 'home' | 'ready' | 'late' }[] = [
+    { label: "I'm Home", type: 'home' },
+    { label: "I'm Ready", type: 'ready' },
+    { label: 'Running Late', type: 'late' },
+  ];
+  // RideStatusCard right above has no marginBottom of its own (only its
+  // own marginTop, same one-sided convention as everywhere else), so this
+  // row needs its own marginTop or the two cards sit flush against each
+  // other with zero gap ["quick check in is sticking to the ask for ride
+  // card?"].
+  return (
+    <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
+      <KidSectionHeader label="QUICK CHECK-IN" accent={colors.primary} colors={colors} />
+      <View style={{ flexDirection: 'row', gap: 7 }}>
+        {pills.map(({ label, type }) => (
+          <AnimatedPressable key={type} onPress={() => onCheckin(type)}
+            style={{ flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center',
+              backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+              ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
+          </AnimatedPressable>
+        ))}
+      </View>
     </View>
   );
 }

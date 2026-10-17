@@ -56,11 +56,13 @@
  * the Well treatment every other migrated tab uses for a list row.
  */
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet, Pressable, Platform, Linking, Alert, useWindowDimensions } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import { MapPin, BatteryLow, BatteryMedium, Navigation, History } from 'lucide-react-native';
+import { MapPin, BatteryLow, BatteryMedium, Navigation, History, Plus, Minus, LocateFixed, Clock, Car, ShieldCheck, MessageCircle } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
-import { useKioskColors, kioskRoleAccent } from '../kioskPalette';
+import { useKioskColors, kioskRoleAccent, kioskPastels } from '../kioskPalette';
+import { useKioskNavStore } from '@/store/kioskNavStore';
+import { Eyebrow } from '../components/KioskHomeParts';
 import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote } from '../components/KioskOS';
 import { KioskFormDrawer } from '../components/KioskFormDrawer';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
@@ -134,14 +136,15 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 // stable coordinate object and primitive-only props so React.memo can
 // actually skip re-rendering a marker whose own data didn't change.
 const KioskFamilyMapMarker = memo(function KioskFamilyMapMarker({
-  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor,
+  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor, onPress,
 }: {
   lat: number; lng: number; name: string; statusText: string;
   emoji?: string; avatarUrl?: string; siblingNames: string[]; ringColor: string;
+  onPress?: () => void;
 }) {
   const coordinate = useMemo(() => ({ latitude: lat, longitude: lng }), [lat, lng]);
   return (
-    <Marker coordinate={coordinate} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}>
+    <Marker coordinate={coordinate} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }} onPress={onPress}>
       <View style={s.mapPinWrap}>
         <View style={withAndroidShadowFix([s.mapPinAvatar, { borderColor: ringColor }])}>
           <FamilyAvatar name={name} emoji={emoji} avatarUrl={avatarUrl}
@@ -328,181 +331,156 @@ export function KioskFindFamTab({ active, members }: {
   }, [initialRegion, pinned.length]);
 
   const sharingCount = pinned.length;
+  const pastels = kioskPastels(k);
+  const regionRef = useRef<{ latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | null>(null);
+  const [selectedId, setSelectedId] = useState<string>(active.id);
+  const zoomMap = (factor: number) => {
+    const r = regionRef.current ?? initialRegion;
+    mapRef.current?.animateToRegion({ ...r, latitudeDelta: r.latitudeDelta * factor, longitudeDelta: r.longitudeDelta * factor }, 250);
+  };
+  const focusMember = (id: string) => {
+    setSelectedId(id);
+    const l = locFor(id);
+    if (l && Number.isFinite(l.lat) && Number.isFinite(l.lng) && l.share_location_enabled !== false) {
+      const r = regionRef.current ?? initialRegion;
+      mapRef.current?.animateToRegion({ latitude: l.lat as number, longitude: l.lng as number, latitudeDelta: Math.min(r.latitudeDelta, 0.05), longitudeDelta: Math.min(r.longitudeDelta, 0.05) }, 450);
+    }
+  };
+  const ago = (iso?: string) => {
+    if (!iso) return '';
+    const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} min ago`;
+    const h = Math.floor(mins / 60);
+    return h < 24 ? `${h} hr ago` : new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  const roster = members.filter(m => !(m as any).deletedAt && (m as any).inviteStatus !== 'pending');
+  const messageMember = (id: string) => {
+    registerActivity();
+    useKioskNavStore.getState().setPendingDm(id);
+    useKioskNavStore.getState().setPendingTab('chat');
+  };
 
   return (
     <View style={s.root}>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={k.primary} />
       ) : (
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.scroll}
-        onScrollBeginDrag={registerActivity}
-      >
-        <TabTitle
-          title="Find Family"
-          subtitle="Where everyone is right now, from their own phones"
-          k={k}
-          right={
-            <Chip
-              label={`${sharingCount}/${members.length} sharing`}
-              accent={sharingCount > 0 ? k.sage : k.textFaint}
-              isDark={isDark}
-              k={k}
-            />
-          }
-        />
-
-        {/* Real map — same MapView/Marker/avatar-pin rendering GpsTab.tsx
-            uses, just laid out full-width above the roster instead of
-            behind a draggable sheet, since kiosk has room to show both at
-            once rather than trading one for the other. */}
-        <WidgetCard k={k} isDark={isDark} padded={false} style={s.mapCard}>
-        <View style={[s.mapWrap, { height: mapHeight }]}>
-          <MapView
-            ref={mapRef}
-            provider={PROVIDER_DEFAULT}
-            style={StyleSheet.absoluteFill}
-            initialRegion={initialRegion}
-            showsMyLocationButton={false}
-            showsCompass={false}
-          >
-            {pinned.map(loc => {
-              const m = members.find(mb => mb.id === loc.member_id);
-              const rc = roleColor(m?.role ?? 'kid');
-              return (
-                <KioskFamilyMapMarker
-                  key={loc.member_id}
-                  lat={loc.lat} lng={loc.lng}
-                  name={m?.name ?? 'Family member'}
-                  statusText={loc.status_text ?? STATUS_LABEL[loc.status]}
-                  emoji={m?.emoji} avatarUrl={m?.avatarUrl}
-                  siblingNames={members.map(mb => mb.name)}
-                  ringColor={rc}
-                />
-              );
-            })}
-          </MapView>
-          {pinned.length === 0 && (
-            <View pointerEvents="none" style={s.mapEmptyOverlay}>
-              <MapPin size={28} color="#F7F2EE" />
-              {/* Fixed light-on-scrim rather than a palette token: this
-                  plate sits over map tiles, so its contrast has to come
-                  from the scrim beneath it, not from the theme. */}
-              <Text style={s.mapEmptyText} numberOfLines={2}>
-                No one is sharing their location yet
-              </Text>
-            </View>
-          )}
-        </View>
-        </WidgetCard>
-
-        <WidgetCard k={k} isDark={isDark}>
-          <WidgetHeader
-            Icon={MapPin} eyebrow="Roster" title="Family"
-            accent={k.sage} k={k} isDark={isDark}
-            right={<Chip label={`${members.length}`} accent={k.sage} isDark={isDark} k={k} />}
-          />
-        <View style={s.grid}>
-        {members.map(m => {
-          const rawLoc = locFor(m.id);
-          // A member who explicitly turned "Share my location" off still
-          // has a member_locations row (last-known data isn't deleted) —
-          // GpsTab.tsx already gates its own "isLive" state on this same
-          // flag so the pin/roster stop reading as current the instant
-          // sharing is off; this kiosk view read the row unconditionally,
-          // so it kept showing someone's last status/battery/neighborhood
-          // as if it were live even after they opted out.
-          const loc = rawLoc && rawLoc.share_location_enabled !== false ? rawLoc : null;
-          const isLive = !!(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng));
-          // Layout: row 1 avatar+name, row 2 current location, battery %
-          // badge pinned to the card's own top-right corner, a bottom
-          // action button (repurposes the real "get directions" action —
-          // no separate location-history feature exists anywhere in the
-          // app to back a literal history view) [live-requested: "2 row
-          // avtar + name / current location / battery % on tthe top right
-          // and bottom is history icon"].
-          const lowBattery = loc?.battery_level != null && loc.battery_level <= 20;
-          return (
-            <Well
-              key={m.id}
-              k={k}
-              accent={isLive ? roleColor(m.role ?? 'kid') : undefined}
-              style={s.card}
+        <View style={s.page}>
+          {/* ── Map ── */}
+          <View style={s.mapCol}>
+            <MapView
+              ref={mapRef}
+              provider={PROVIDER_DEFAULT}
+              style={StyleSheet.absoluteFill}
+              initialRegion={initialRegion}
+              showsMyLocationButton={false}
+              showsCompass={false}
+              onRegionChangeComplete={r => { regionRef.current = r; }}
             >
-              {loc?.battery_level != null && (
-                <View style={[s.batteryBadge, { backgroundColor: lowBattery ? k.dangerSoft : k.well, borderColor: lowBattery ? k.dangerEdge : k.cardBorder }]}>
-                  {lowBattery
-                    ? <BatteryLow size={11} color={k.danger} />
-                    : <BatteryMedium size={11} color={k.textMuted} />}
-                  <Text style={[s.batteryBadgeText, { color: lowBattery ? k.danger : k.textMuted }]} numberOfLines={1}>
-                    {loc.battery_level}%
-                  </Text>
-                </View>
-              )}
-
-              <View style={s.cardRow1}>
-                <KioskAvatar
-                  name={m.name}
-                  emoji={m.emoji}
-                  avatarUrl={m.avatarUrl}
-                  siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
-                  size={32}
-                  bgColor={roleColor(m.role ?? 'kid') + (isDark ? '24' : '1A')}
-                  k={k}
-                />
-                <Text style={[s.name, { color: k.text }]} numberOfLines={1}>{m.name}</Text>
+              {pinned.map(loc => {
+                const m = members.find(mb => mb.id === loc.member_id);
+                const rc = roleColor(m?.role ?? 'kid');
+                return (
+                  <KioskFamilyMapMarker
+                    key={loc.member_id}
+                    lat={loc.lat} lng={loc.lng}
+                    name={m?.name ?? 'Family member'}
+                    statusText={loc.status_text ?? STATUS_LABEL[loc.status]}
+                    emoji={m?.emoji} avatarUrl={m?.avatarUrl}
+                    siblingNames={members.map(mb => mb.name)}
+                    ringColor={loc.member_id === selectedId ? k.primary : rc}
+                    onPress={() => setSelectedId(loc.member_id)}
+                  />
+                );
+              })}
+            </MapView>
+            {pinned.length === 0 && (
+              <View pointerEvents="none" style={s.mapEmptyOverlay}>
+                <MapPin size={28} color="#F7F2EE" />
+                <Text style={s.mapEmptyText} numberOfLines={2}>No one is sharing their location yet</Text>
               </View>
+            )}
+            <View style={[s.mapTitle, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+              <Text style={[s.mapTitleText, { color: k.text }]}>Find family</Text>
+              <Text style={[s.mapSub, { color: k.textMuted }]}>{sharingCount} of {roster.length} sharing · from their phones</Text>
+            </View>
+            <View style={s.mapCtl}>
+              {([[Plus, 0.5, 'Zoom in'], [Minus, 2, 'Zoom out']] as const).map(([Icon, f, label]) => (
+                <Pressable key={label} onPress={() => zoomMap(f)} accessibilityRole="button" accessibilityLabel={label}
+                  style={[s.ctlBtn, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+                  <Icon size={22} color={k.text} />
+                </Pressable>
+              ))}
+              <Pressable onPress={() => mapRef.current?.animateToRegion(initialRegion, 450)} accessibilityRole="button" accessibilityLabel="Show everyone"
+                style={[s.ctlBtn, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+                <LocateFixed size={22} color={k.text} />
+              </Pressable>
+            </View>
+          </View>
 
-              {loc ? (
-                <View style={s.metaRow}>
-                  <MapPin size={12} color={k.sage} />
-                  <Text style={[s.status, { color: k.sage }]} numberOfLines={1}>
-                    {loc.neighborhood || loc.status_text || STATUS_LABEL[loc.status] || 'Unknown'}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={[s.addr, { color: k.textFaint }]} numberOfLines={1}>Location not shared</Text>
-              )}
-
-              {/* Two real, separate actions — History (member_location_
-                  history's own today-timeline, same real GpsTab.tsx
-                  feature) and Navigation (native-maps directions), not
-                  one icon standing in for the other
-                  [live-requested: "history we have the location history
-                  of each person right.. and provide the location icon to
-                  open the maps"]. History works for anyone with at least
-                  one location ping today, even one not currently pinned
-                  live; Navigation only makes sense with a real live pin. */}
-              <View style={s.cardActionsRow}>
-                <TouchableOpacity
-                  onPress={() => openHistory(m.id, m.name)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${m.name}'s location history today`}
-                  style={[s.navBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-                  <History size={16} color={k.textMuted} />
-                </TouchableOpacity>
-                {isLive && (
-                  <TouchableOpacity
-                    onPress={() => { registerActivity(); openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name); }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Get directions to ${m.name}`}
-                    style={[s.navBtn, { backgroundColor: k.sageSoft, borderColor: k.sageEdge }]}>
-                    <Navigation size={16} color={k.sage} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </Well>
-          );
-        })}
+          {/* ── Family panel ── */}
+          <View style={[s.panel, { borderLeftColor: k.cardBorder }]}>
+            <View style={s.panelHead}>
+              <Eyebrow label="FAMILY" accent={k.sage} k={k} />
+              <Text style={[s.panelCount, { color: k.textMuted }]}>{roster.length} people</Text>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: KIOSK_SPACE.sm, padding: KIOSK_SPACE.md, paddingTop: 0 }} onScrollBeginDrag={registerActivity}>
+              {roster.map((m, i) => {
+                const tone = pastels[Math.max(0, members.findIndex(x => x.id === m.id)) % pastels.length];
+                const rawLoc = locFor(m.id);
+                // Someone who turned sharing off keeps a stale row; never show it as live.
+                const loc = rawLoc && rawLoc.share_location_enabled !== false ? rawLoc : null;
+                const isLive = !!(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng));
+                const lowBattery = loc?.battery_level != null && loc.battery_level <= 20;
+                const on = selectedId === m.id;
+                const place = loc ? (loc.neighborhood || loc.status_text || STATUS_LABEL[loc.status] || 'Unknown') : 'Location not shared';
+                return (
+                  <View key={m.id} style={[s.card, { backgroundColor: on ? tone.card : tone.col, borderColor: on ? tone.fg : 'transparent' }]}>
+                    <Pressable onPress={() => focusMember(m.id)} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${m.name}, ${place}`} style={s.cardTop}>
+                      <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+                        siblings={members.filter(x => x.id !== m.id).map(x => x.name)} size={48} bgColor={k.card} k={k} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[s.name, { color: k.text }]} numberOfLines={1}>{m.name}{m.id === active.id ? ' (you)' : ''}</Text>
+                        <Text style={[s.place, { color: isLive ? k.textMuted : k.textFaint }]} numberOfLines={1}>{place}</Text>
+                      </View>
+                    </Pressable>
+                    <View style={s.pills}>
+                      {!!loc?.last_updated && <View style={[s.pill, { backgroundColor: k.card }]}><Clock size={13} color={k.sage} /><Text style={[s.pillText, { color: k.sage }]}>{ago(loc.last_updated)}</Text></View>}
+                      {loc?.battery_level != null && (
+                        <View style={[s.pill, { backgroundColor: lowBattery ? k.pastelPrimaryCard : k.card }]}>
+                          {lowBattery ? <BatteryLow size={13} color={k.danger} /> : <BatteryMedium size={13} color={k.textMuted} />}
+                          <Text style={[s.pillText, { color: lowBattery ? k.danger : k.textMuted }]}>{lowBattery ? 'Low battery ' : ''}{loc.battery_level}%</Text>
+                        </View>
+                      )}
+                      {loc?.status === 'in_transit' && <View style={[s.pill, { backgroundColor: k.card }]}><Car size={13} color={k.textMuted} /><Text style={[s.pillText, { color: k.textMuted }]}>Moving</Text></View>}
+                      <View style={[s.pill, { backgroundColor: k.card }]}><ShieldCheck size={13} color={loc ? k.sage : k.textFaint} /><Text style={[s.pillText, { color: loc ? k.sage : k.textFaint }]}>{loc ? 'Sharing' : 'Not sharing'}</Text></View>
+                    </View>
+                    {on && (
+                      <View style={s.actions}>
+                        {isLive && m.id !== active.id && (
+                          <Pressable onPress={() => { registerActivity(); openDirections(loc!.lat!, loc!.lng!, loc!.address || m.name); }}
+                            accessibilityRole="button" accessibilityLabel={`Get directions to ${m.name}`} style={[s.act, { backgroundColor: k.primary, flex: 1.3 }]}>
+                            <Navigation size={17} color={k.onPrimary} /><Text style={[s.actText, { color: k.onPrimary }]}>Directions</Text>
+                          </Pressable>
+                        )}
+                        {m.id !== active.id && (
+                          <Pressable onPress={() => messageMember(m.id)} accessibilityRole="button" accessibilityLabel={`Message ${m.name}`} style={[s.act, { backgroundColor: k.card }]}>
+                            <MessageCircle size={17} color={k.text} /><Text style={[s.actText, { color: k.text }]}>Message</Text>
+                          </Pressable>
+                        )}
+                        <Pressable onPress={() => openHistory(m.id, m.name)} accessibilityRole="button" accessibilityLabel={`${m.name}'s location history today`} style={[s.act, { backgroundColor: k.card }]}>
+                          <History size={17} color={k.text} /><Text style={[s.actText, { color: k.text }]}>Today</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+              {roster.length === 0 && <Text style={[s.place, { color: k.textFaint, textAlign: 'center' }]}>No family members yet.</Text>}
+            </ScrollView>
+          </View>
         </View>
-        {members.length === 0 && (
-          <EmptyNote text="No family members yet." k={k} />
-        )}
-        </WidgetCard>
-      </ScrollView>
       )}
 
       {/* Location history — real GpsTab.tsx feature (today-only timeline
@@ -555,24 +533,13 @@ export function KioskFindFamTab({ active, members }: {
   );
 }
 
-// Rescaled to the kiosk ladder. The roster cards carried 11.5-12px meta
-// text — unreadable at the distance this screen is actually consulted
-// from ("is anyone on their way home yet?"). Every fixed-width card also
-// gains maxWidth:'100%' so a narrow portrait pane reflows instead of
-// clipping (the grid already wraps).
 const s = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
-  mapCard: { overflow: 'hidden', marginBottom: KIOSK_SPACE.md },
-  // The map fills its WidgetCard edge to edge (the card is padded={false}),
-  // so the card's own radius does the rounding and this only owns height.
-  mapWrap: { overflow: 'hidden' },
+  page: { flex: 1, flexDirection: 'row', minHeight: 0 },
+  mapCol: { flex: 1.7, minWidth: 0, overflow: 'hidden' },
   mapPinWrap: { alignItems: 'center' },
-  // The pin plate, its shadow and the empty-state scrim below are the one
-  // place in this file that stays fixed rather than theme-derived: they sit
-  // on MAP TILES, which are the same in light and dark mode, so their
-  // contrast has to come from the pin itself. A dark-mode card color here
-  // would make pins vanish against the map. Matches GpsTab.tsx's own pins.
+  // The pin plate, its shadow and the empty-state scrim sit on MAP TILES,
+  // which look the same in light and dark mode, so these stay fixed.
   mapPinAvatar: {
     borderRadius: 22, borderWidth: 3, backgroundColor: '#fff', padding: 2,
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4,
@@ -587,64 +554,25 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(10,8,7,0.45)', padding: KIOSK_SPACE.lg,
   },
-  mapEmptyText: {
-    fontSize: KIOSK_TYPO.body, fontWeight: '700', color: '#F7F2EE',
-    marginTop: KIOSK_SPACE.xs, textAlign: 'center',
-  },
-  // Real 4-per-row grid — was a fixed 300px card width with no share-based
-  // sizing, wrapping to whatever count happened to fit rather than a
-  // deliberate column count [live-requested: "lets make this ia nice grid
-  // of familuy memebrs to fit the ocntenter an dmaller like 4 ppl. in a
-  // row"]. Smaller/more compact card to match: less padding, smaller
-  // avatar/text, nav button moved below the name row instead of beside it
-  // (no room for it inline at this width).
-  // 3 per row now (was 4), and a shorter card — smaller vertical padding
-  // and inter-row gap [live-requested: "may be resuc the height of the
-  // card and make grid limit to 3?"].
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
-  // [live-requested: "dont waste the space on the card"] — tighter
-  // padding all round, and cardRow1's own reserved clearance for the
-  // battery badge cut down to just what that small badge actually needs.
-  // Cut down further [live-reported: "over sized too much blank spaces
-  // make it cute and nice"] — a fixed, content-hugging width instead of a
-  // percentage share of the row (percentage sizing was forcing every card
-  // as wide as the grid's own column math regardless of how little text
-  // actually needed that width), a smaller avatar/nav-button footprint,
-  // and every inter-row gap trimmed to the minimum that still reads as
-  // separate rows rather than a jammed block.
-  card: {
-    width: 132,
-    flexDirection: 'column', alignItems: 'center', gap: 1,
-    paddingVertical: 5, paddingHorizontal: 5, position: 'relative',
-  },
-  // Row 1: avatar + name side by side [live-requested: "2 row avtar +
-  // name / current location"].
-  cardRow1: { flexDirection: 'row', alignItems: 'center', gap: 5, width: '100%', paddingRight: 20 },
-  avatar: {
-    width: 26, height: 26, borderRadius: 13,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarEmoji: { fontSize: 13 },
-  name: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
-  // Battery %, pinned to the card's own top-right corner
-  // [live-requested: "battery % on tthe top right"].
-  batteryBadge: {
-    position: 'absolute', top: 4, right: 4,
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    borderWidth: 1, borderRadius: KIOSK_RADIUS.sm,
-    paddingHorizontal: 4, paddingVertical: 1,
-  },
-  batteryBadgeText: { fontSize: 9, fontWeight: '800' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 1 },
-  status: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  addr: { fontSize: KIOSK_TYPO.micro, fontWeight: '600', marginTop: 1, textAlign: 'center' },
-  lowBattery: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
-  // Bottom action row — History always shows, Navigation only when live.
-  cardActionsRow: { flexDirection: 'row', gap: 5, marginTop: 1 },
-  navBtn: {
-    width: 26, height: 26, borderRadius: 13, marginTop: 1,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
+  mapEmptyText: { fontSize: KIOSK_TYPO.body, fontWeight: '700', color: '#F7F2EE', marginTop: KIOSK_SPACE.xs, textAlign: 'center' },
+  mapTitle: { position: 'absolute', left: KIOSK_SPACE.md, top: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, paddingHorizontal: KIOSK_SPACE.md, paddingVertical: 10 },
+  mapTitleText: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', letterSpacing: -0.4 },
+  mapSub: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  mapCtl: { position: 'absolute', right: KIOSK_SPACE.md, top: KIOSK_SPACE.md, gap: 8 },
+  ctlBtn: { width: 48, height: 48, borderRadius: KIOSK_RADIUS.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  panel: { width: 388, borderLeftWidth: StyleSheet.hairlineWidth, minHeight: 0 },
+  panelHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', padding: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.sm },
+  panelCount: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  card: { borderRadius: KIOSK_RADIUS.xl, borderWidth: 2, padding: 12, gap: 10 },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  name: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  place: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 1 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 },
+  pillText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  actions: { flexDirection: 'row', gap: 6 },
+  act: { flex: 1, minHeight: 48, borderRadius: KIOSK_RADIUS.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  actText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   // Location-history drawer rows.
   historyRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: KIOSK_SPACE.sm },
   historyTimeCol: { width: 68 },

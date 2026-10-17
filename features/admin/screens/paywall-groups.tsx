@@ -26,7 +26,7 @@ import type { FeatureFlagKey } from '@/lib/featureFlags';
 // other screen.
 const ALL_FEATURE_KEYS: FeatureFlagKey[] = [
   'gamification', 'daily_quests', 'leaderboard', 'seasonal_events',
-  'rewards_marketplace', 'per_device_e2e', 'store_proximity_reminders',
+  'rewards_marketplace', 'store_proximity_reminders',
   'home_screen_widgets',
 ];
 

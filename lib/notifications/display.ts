@@ -38,6 +38,11 @@ export function iconFor(type: string): string {
   return TYPE_ICON[type] ?? DEFAULT_ICON;
 }
 
+// Switches from a relative "Xh ago" to the actual date as soon as it
+// crosses a day old, rather than letting "Xd ago" run for a week — a
+// timer is only useful while something is actively pending/fresh;
+// live-requested for the kid-requests queue's own Xago timer: "on this
+// Xago if it crosses a day then put the actual date".
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (isNaN(then)) return '';
@@ -47,9 +52,6 @@ export function relativeTime(iso: string): string {
   if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day === 1) return 'Yesterday';
-  if (day < 7) return `${day}d ago`;
   const d = new Date(iso);
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

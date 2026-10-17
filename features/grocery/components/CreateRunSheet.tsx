@@ -1,39 +1,54 @@
-import { useEffect, useRef, useState } from 'react';
+import { ShoppingCart } from 'lucide-react-native';
+import { OverlayHeading } from '@/components/OverlayPage';
+import { useRef, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
-  Modal, Platform, Keyboard, StyleSheet, TouchableOpacity,
+  Keyboard, StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useGroceryStore, GroceryRun } from '@/store/groceryStore';
-import { sh } from './styles';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import { useGroceryStore, GroceryRun, GroceryItem } from '@/store/groceryStore';
 import PickerOverlay from '@/features/calendar/components/eventForm/PickerOverlay';
 
-// ─── Create Run Sheet ─────────────────────────────────────────────────────────
+// ─── Create Run Sheet — Figma "Start shopping run" ───────────────────────────
 
-export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, onCreated }: {
+function fmtPlannedStart(d: Date) {
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+  const day = d.getDate();
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const year = d.getFullYear();
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${weekday} ${day} ${month} ${year} · ${time}`;
+}
+
+export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, onCreated, pendingItems, members, onPinStore }: {
   visible: boolean; onClose: () => void;
   familyId: string; memberId: string;
   colors: any; isDark: boolean;
   onCreated: (run: GroceryRun) => void;
+  pendingItems?: GroceryItem[];
+  members?: any[];
+  onPinStore?: (storeName: string) => void;
 }) {
   const createRun = useGroceryStore(s => s.createRun);
   const pastStores = useGroceryStore(s => s.pastStores);
-  const [name,    setName]   = useState('');
-  const [store,   setStore]  = useState('');
-  const [saving,  setSaving] = useState(false);
+  const pinnedStoresMap = useGroceryStore(s => s.pinnedStores);
+  const pinnedStoreNames = Object.keys(pinnedStoresMap);
+  const [store, setStore]   = useState('');
+  const [name, setName]     = useState('');
+  const [saving, setSaving] = useState(false);
   const [plannedAt, setPlannedAt] = useState<Date | null>(null);
   const [pickerMode, setPickerMode] = useState<'none' | 'date' | 'time'>('none');
 
-  const DEFAULT_STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
-  const STORE_SUGGESTIONS = [...new Set([...pastStores, ...DEFAULT_STORE_SUGGESTIONS])].slice(0, 9);
+  const DEFAULT_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', "Trader Joe's", 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
+  // Pinned branches first, then past runs, then the generic default list
+  // [live-requested: "these pinned location should store on the shopping
+  // store list as a suggestion as prefernce in first place along with
+  // other store"] — was pinned-only-or-defaults-only (never mixed with
+  // past/default once any pin existed), so a family with one pinned store
+  // lost every other suggestion entirely.
+  const STORE_SUGGESTIONS = [...new Set([...pinnedStoreNames, ...pastStores, ...DEFAULT_SUGGESTIONS])].slice(0, 9);
 
-  // Was: guarded only by `saving` state — a fast double-tap can fire
-  // onPress twice before React re-renders with the disabled button, since
-  // setSaving(true) doesn't take effect synchronously [live-reported: two
-  // identical "Walmart trip" rows created "just now"]. savingRef is a
-  // synchronous, same-tick lock that closes this gap; state stays for the
-  // actual UI (spinner/disabled look).
   const savingRef = useRef(false);
   const handleSave = async () => {
     if (!store.trim() || savingRef.current) return;
@@ -52,123 +67,168 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
     if (run) { setName(''); setStore(''); setPlannedAt(null); onCreated(run); }
   };
 
-  const inputBg = colors.surface;
-  const border  = colors.border;
+  const insets = useSafeAreaInsets();
+  const P = colors.primary;
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  // Live-requested: "apply same fixes in all bottomsheets - don't forget
-  // 75% is max but fit to the content" — was 90%.
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
-    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+
+  // Item summary for the Figma "items · estimated" card
+  const approvedItems = (pendingItems ?? []).filter(i => !i.isBought);
+  const kidPendingCount = (pendingItems ?? []).filter(i => {
+    const requester = (members ?? []).find((m: any) => m.id === i.addedBy);
+    return requester?.role === 'kid' && !i.isBought;
+  }).length;
+
+  // Active member for shopper card
+  const activeMember = (members ?? []).find((m: any) => m.id === memberId);
+
+  if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
 
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+      {/* Header — ReviewInbox pattern */}
+      <OverlayHeading eyebrow="FAMILY CUBE · GROCERIES" title="Start shopping run" subtitle="Choose a store and a time. Pending Kid requests stay out of the run." accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>Start a Shopping Trip</Text>
-                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>Which store are you heading to?</Text>
-              </View>
-              <TouchableOpacity
-                onPress={dismiss}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
+      <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, gap: 12, paddingBottom: insets.bottom + 48 }}>
 
-            <ScrollView
-              keyboardShouldPersistTaps="always"
-              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-              showsVerticalScrollIndicator={false}>
-          <TextInput
-            style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
-            placeholder="Store name (e.g. Costco, Patel Brothers)"
-            placeholderTextColor={colors.textTertiary}
-            value={store} onChangeText={setStore} autoFocus
-          />
-
-          {/* Store suggestions */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
-              {STORE_SUGGESTIONS.map(s => (
-                <Pressable
-                  key={s}
-                  onPress={() => setStore(s)}
-                  style={[sh.catChip, { backgroundColor: store === s ? colors.primary : inputBg, borderColor: store === s ? colors.primary : border }]}
-                >
-                  <Text style={{ fontSize: 12, color: store === s ? colors.textInverse : colors.textSecondary }}>🛒 {s}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
-
-          <TextInput
-            style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
-            placeholder="Give this trip a name (optional — e.g. Diwali party groceries)"
-            placeholderTextColor={colors.textTertiary}
-            value={name} onChangeText={setName}
-          />
-
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
-            When are you going? (optional)
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
-            <Pressable
-              onPress={() => setPickerMode('date')}
-              style={[sh.catChip, { flex: 1, backgroundColor: inputBg, borderColor: border, alignItems: 'center' }]}
-            >
-              <Text style={{ fontSize: 12, color: plannedAt ? colors.textPrimary : colors.textTertiary }}>
-                📅 {plannedAt ? plannedAt.toLocaleDateString() : 'Pick a date'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setPickerMode('time')}
-              style={[sh.catChip, { flex: 1, backgroundColor: inputBg, borderColor: border, alignItems: 'center' }]}
-            >
-              <Text style={{ fontSize: 12, color: plannedAt ? colors.textPrimary : colors.textTertiary }}>
-                🕐 {plannedAt ? plannedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Pick a time'}
+        {/* Figma: "Planned start" labeled field card */}
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginBottom: 4 }}>Planned start</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={() => setPickerMode('date')} style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: plannedAt ? colors.textPrimary : colors.textTertiary }}>
+                {plannedAt ? fmtPlannedStart(plannedAt) : 'Wed 7 Oct · tap to set'}
               </Text>
             </Pressable>
             {plannedAt && (
-              <Pressable onPress={() => setPlannedAt(null)} style={{ justifyContent: 'center', paddingHorizontal: 4 }}>
-                <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+              <Pressable onPress={() => setPlannedAt(null)}>
+                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
               </Pressable>
             )}
           </View>
-              {/* Live-requested: "add buttons also in the scroll view" —
-                  was a separate fixed footer below the ScrollView. */}
-              <Pressable
-                onPress={handleSave}
-                disabled={!store.trim() || saving}
-                style={[sh.btn, { backgroundColor: (!store.trim() || saving) ? colors.textDisabled : colors.primary }]}
-              >
-                {saving
-                  ? <ActivityIndicator color={colors.textInverse} size="small" />
-                  : <Text style={[sh.btnText, { color: colors.textInverse }]}>Start Trip</Text>}
+          {/* Date/time tap targets */}
+          {!plannedAt && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              <Pressable onPress={() => setPickerMode('date')}
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>📅 Date</Text>
               </Pressable>
-            </ScrollView>
-
-          </View>
-          {keyboardHeight > 0 && (
-            <View pointerEvents="none"
-              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
+              <Pressable onPress={() => setPickerMode('time')}
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>🕐 Time</Text>
+              </Pressable>
+            </View>
           )}
         </View>
+
+        {/* Figma: "Choose your branch" card with store rows + pin link */}
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+          padding: 20, gap: 14,
+          shadowColor: '#172337', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>Choose your branch</Text>
+
+          {/* Store rows — pinned branches first (real mapped locations),
+              then past/default suggestions, all in one list so a pinned
+              store doesn't crowd out everything else. */}
+          {STORE_SUGGESTIONS.slice(0, 3).map((s, i) => {
+            const isPinned = pinnedStoreNames.includes(s);
+            return (
+              <Pressable key={s} onPress={() => setStore(s)} style={{ gap: 2 }}>
+                <Text style={{ fontSize: 15, fontWeight: store === s ? '700' : '600', color: colors.textPrimary }}>
+                  {store === s ? 'Selected · ' : ''}{s}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                  {isPinned ? `Pinned branch${store !== s ? ' · not selected' : ''}` : (store === s ? 'Selected store' : 'not selected')}
+                </Text>
+                {i < Math.min(STORE_SUGGESTIONS.length, 3) - 1 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginTop: 10 }} />}
+              </Pressable>
+            );
+          })}
+
+          {/* Type custom store */}
+          <View style={{ borderRadius: 10, borderWidth: 1, borderColor: store ? P : colors.border,
+            padding: 12, backgroundColor: isDark ? colors.surface : '#FFFFFF' }}>
+            <TextInput
+              style={{ fontSize: 14, color: colors.textPrimary }}
+              placeholder="Or type store name…"
+              placeholderTextColor={colors.textTertiary}
+              value={store} onChangeText={setStore}
+            />
+          </View>
+
+          {/* Figma: "Pin a specific store location →" link */}
+          <Pressable
+            onPress={() => onPinStore?.(store.trim() || 'Store')}
+            style={{ borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, alignItems: 'center' }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: P }}>Pin a specific store location →</Text>
+          </Pressable>
+        </View>
+
+        {/* Figma: Shopper member card (pinkLight bg) */}
+        {activeMember && (
+          <View style={{ backgroundColor: colors.pinkLight, borderRadius: 14, padding: 16,
+            flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: P,
+              alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>
+                {activeMember.name?.[0]?.toUpperCase() ?? '?'}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                {activeMember.name} · Selected
+              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                Run owner · shopper · drives
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Figma: Items summary card (amberLight bg) */}
+        {approvedItems.length > 0 && (
+          <View style={{ backgroundColor: colors.amberLight, borderRadius: 14, padding: 16, gap: 6 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>
+              {approvedItems.length} item{approvedItems.length !== 1 ? 's' : ''} ready to shop
+            </Text>
+            {kidPendingCount > 0 && (
+              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                {kidPendingCount} kid request{kidPendingCount !== 1 ? 's' : ''} excluded (pending approval).
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Figma: footer note */}
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, lineHeight: 18 }}>
+          Starts a shared shopping run only. It does not purchase items or dispatch a ride.
+        </Text>
+
+        {/* Optional trip name */}
+        <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Trip name (optional)</Text>
+          <TextInput
+            style={{ fontSize: 14, color: colors.textPrimary }}
+            placeholder={store ? `${store} trip` : 'e.g. Diwali party groceries'}
+            placeholderTextColor={colors.textTertiary}
+            value={name} onChangeText={setName}
+          />
+        </View>
+
+        {/* Start button */}
+        <Pressable onPress={handleSave} disabled={!store.trim() || saving}
+          style={{ borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+            backgroundColor: (!store.trim() || saving) ? colors.surface : P }}>
+          {saving
+            ? <ActivityIndicator color="#FFFFFF" size="small" />
+            : <Text style={{ fontSize: 16, fontWeight: '700', color: (!store.trim() || saving) ? colors.textTertiary : '#FFFFFF' }}>
+                Start Trip{store ? ` · ${store}` : ''}
+              </Text>}
+        </Pressable>
+
+      </ScrollView>
 
       <PickerOverlay
         showDate={pickerMode === 'date'}
@@ -185,11 +245,11 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
           return next;
         })}
         onDone={() => setPickerMode('none')}
-        accentColor={colors.primary}
+        accentColor={P}
         colors={colors}
         dateLabel="📅 When are you going?"
         timeLabel="🕐 What time?"
       />
-    </Modal>
+    </View>
   );
 }

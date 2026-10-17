@@ -1,0 +1,505 @@
+<title>Health and Records</title><style>
+:root{
+  --bg:#EFEAE2; --canvas:#FFFFFF; --card:#FFFFFF; --well:#F2ECE1; --line:#E6DED2;
+  --ink:#2C2722; --muted:#6B5F52; --faint:#A69A8A; --on:#fff;
+  --primary:#5872C4; --primary-soft:#D5DCF1;
+  --peach:#FDF1EB; --peach-card:#FADFD2; --peach-fg:#B4532F;
+  --sage:#3D7A5A; --sage-col:#EAF2ED; --sage-card:#D1E3D9;
+  --amber:#B8650A; --amber-col:#FCF3E1; --amber-card:#F9E5C1;
+  --lav:#7B5EA7; --lav-col:#F2EEF8; --lav-card:#E3DAF0;
+  --danger:#C23B3B;
+  --display:'Bricolage Grotesque','Avenir Next',system-ui,sans-serif;
+  --body:'Figtree',system-ui,-apple-system,sans-serif;
+  --shadow:0 1px 2px rgba(44,39,34,.05),0 10px 26px rgba(61,122,90,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0A0910; --canvas:#0E0C13; --card:#1D1A24; --well:#17151D; --line:#2B2733;
+  --ink:#FDFCF9; --muted:#B8AC9C; --faint:#7A6E60; --on:#14100F;
+  --primary:#8EA3DD; --primary-soft:#2A3354;
+  --peach:rgba(238,128,88,.12); --peach-card:rgba(238,128,88,.24); --peach-fg:#F0A07F;
+  --sage:#5FA37D; --sage-col:rgba(95,163,125,.12); --sage-card:rgba(95,163,125,.24);
+  --amber:#F5A85A; --amber-col:rgba(245,168,90,.12); --amber-card:rgba(245,168,90,.24);
+  --lav:#A78BC9; --lav-col:rgba(167,139,201,.12); --lav-card:rgba(167,139,201,.24);
+  --danger:#EF7B7B; --shadow:0 8px 24px rgba(0,0,0,.4); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0A0910; --canvas:#0E0C13; --card:#1D1A24; --well:#17151D; --line:#2B2733;
+  --ink:#FDFCF9; --muted:#B8AC9C; --faint:#7A6E60; --on:#14100F;
+  --primary:#8EA3DD; --primary-soft:#2A3354;
+  --peach:rgba(238,128,88,.12); --peach-card:rgba(238,128,88,.24); --peach-fg:#F0A07F;
+  --sage:#5FA37D; --sage-col:rgba(95,163,125,.12); --sage-card:rgba(95,163,125,.24);
+  --amber:#F5A85A; --amber-col:rgba(245,168,90,.12); --amber-card:rgba(245,168,90,.24);
+  --lav:#A78BC9; --lav-col:rgba(167,139,201,.12); --lav-card:rgba(167,139,201,.24);
+  --danger:#EF7B7B; --shadow:0 8px 24px rgba(0,0,0,.4); color-scheme:dark}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);padding-inline:16px;padding-block:16px}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--lav);outline-offset:2px}
+svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.page{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:20px;align-items:start}
+@media(max-width:1100px){.page{grid-template-columns:minmax(0,1fr)}}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar h1{font:700 18px var(--display);margin-right:auto}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:100px;padding:3px}
+.seg button{padding:7px 14px;border-radius:100px;font-weight:700;font-size:13px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--canvas)}
+.fit{width:100%;position:relative;overflow:hidden;border-radius:26px}
+.stage{width:1180px;height:820px;transform-origin:0 0;background:var(--canvas);border-radius:26px;border:10px solid #1b1a1e;position:absolute;left:0;top:0;overflow:hidden;display:flex;flex-direction:column}
+.main{flex:1;min-height:0;display:flex;position:relative;gap:0}
+
+/* bar */
+.tabs{display:flex;align-items:stretch;border-top:1px solid var(--line);background:var(--card);padding:0 20px;z-index:10}
+.prof{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:72px;padding:6px 12px;font-size:12px;font-weight:800;color:var(--faint)}
+.prof .ring{border:2.5px solid var(--sage);border-radius:22px;padding:1px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:58px;font-size:12px;font-weight:800;color:var(--faint);position:relative}
+.tab[aria-current="page"]{color:var(--primary)}
+.tab[aria-current="page"]::before{content:'';position:absolute;top:0;left:24%;right:24%;height:3px;border-radius:2px;background:var(--primary)}
+.clk{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:120px;padding-left:12px}
+.clk b{font:800 20px var(--display);letter-spacing:-.5px}.clk span{font-size:12px;color:var(--muted);font-weight:600}
+.av{display:grid;place-items:center;border-radius:50%;font:800 14px var(--display);flex:none}
+.eb{display:inline-block}.eb i{display:block;height:2px;width:100%;border-radius:1px;margin-bottom:6px;background:var(--c,var(--sage));opacity:.6}.eb span{font-size:11px;font-weight:800;letter-spacing:.09em;color:var(--faint)}
+.h2{font:800 26px var(--display);letter-spacing:-.7px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;min-height:46px;padding:0 16px;font-weight:800;font-size:14.5px;white-space:nowrap}
+.btn.pri{background:var(--primary);color:var(--on)}.btn.sec{background:var(--well);color:var(--ink)}.btn.pst{background:var(--lav-card);color:var(--lav)}
+.iconb{width:46px;height:46px;border-radius:14px;background:var(--well);display:grid;place-items:center;color:var(--muted)}
+
+/* ---------- area menu (left) ---------- */
+.menu{width:262px;border-right:1px solid var(--line);padding:12px 14px 10px;display:flex;flex-direction:column;gap:6px;min-height:0;overflow-y:auto}
+.menu .h2{padding:2px 8px 2px;font-size:21px}
+.area{display:flex;align-items:center;gap:10px;border-radius:18px;padding:7px 10px;background:var(--c-col);border:2px solid transparent;text-align:left;width:100%}
+.area.sel{background:var(--c-card);border-color:var(--c-fg)}
+.area .ic{width:38px;height:38px;border-radius:12px;background:var(--c-card);color:var(--c-fg);display:grid;place-items:center;flex:none}
+.area.sel .ic{background:var(--canvas)}
+.area b{display:block;font:800 15.5px var(--display);letter-spacing:-.3px}.area small{font-size:12px;font-weight:700;color:var(--muted)}
+.area .bd{margin-left:auto;min-width:24px;height:24px;border-radius:12px;background:var(--primary);color:var(--on);font-size:12px;font-weight:800;display:grid;place-items:center;padding:0 7px}
+.mini{margin-top:auto;display:flex;flex-direction:column;gap:8px}
+.tonight{border-radius:18px;padding:8px 10px;background:linear-gradient(135deg,var(--sage-card),var(--lav-card));display:flex;gap:10px;align-items:center;text-align:left;width:100%}
+.tonight .em{width:40px;height:40px;border-radius:14px;background:var(--canvas);display:grid;place-items:center;font-size:25px;flex:none}
+.tonight small{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--sage)}.tonight b{display:block;font-size:15px;line-height:1.2}
+.shopnow{display:flex;gap:8px;align-items:center;background:var(--sage-col);color:var(--sage);border-radius:16px;padding:9px 12px;font-weight:800;font-size:12.5px}
+
+/* ---------- content (right) ---------- */
+.content{flex:1;min-width:0;padding:16px 22px 0;display:flex;flex-direction:column;gap:12px;min-height:0}
+.chead2{display:flex;align-items:center;gap:10px}.chead2 .h2{flex:1}.chead2 .sub{font-weight:700;color:var(--muted);font-size:14px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:100px;padding:5px 12px;font-size:13px;font-weight:800;background:var(--canvas);color:var(--muted)}
+.pill.g{color:var(--sage)}
+/* week board */
+.board{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding-bottom:12px}
+.col{border-radius:22px;background:var(--well);padding:8px 7px;display:flex;flex-direction:column;gap:7px;min-height:0;overflow-y:auto}
+.col.today{background:var(--primary-soft)}
+.col h4{font:800 13px var(--body);text-align:center;color:var(--muted);letter-spacing:.06em;padding:3px 0 1px}
+.col h4 b{display:block;font:800 22px var(--display);color:var(--ink);letter-spacing:-.5px}
+.mcard{border-radius:16px;padding:8px;background:var(--c-card);display:flex;flex-direction:column;gap:3px;text-align:left;width:100%}
+.mcard .typ{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--c-fg)}
+.mcard .em{font-size:24px}.mcard b{font-size:13.5px;line-height:1.2}.mcard small{font-size:11.5px;font-weight:700;color:var(--muted)}
+.mcard.dn{background:var(--c-col);border:1.5px solid var(--c-card)}
+.addc{border:2px dashed var(--line);border-radius:14px;min-height:42px;display:grid;place-items:center;color:var(--faint)}
+/* grocery */
+.stores{display:flex;gap:8px;flex-wrap:wrap}
+.stores button{min-height:42px;border-radius:100px;padding:0 15px;font-weight:800;font-size:13.5px;background:var(--well);color:var(--muted)}
+.stores button[aria-pressed="true"]{background:var(--ink);color:var(--canvas)}
+.qa{display:flex;gap:8px;flex:1}
+.qa input{flex:1;min-height:52px;border-radius:26px;border:2px solid var(--line);background:var(--well);padding:0 20px;font:600 16px var(--body);color:var(--ink)}
+.qa input:focus{border-color:var(--primary)}
+.addb{width:52px;height:52px;border-radius:50%;background:var(--primary);color:var(--on);display:grid;place-items:center}
+.sug{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.sug span{font-size:12px;font-weight:800;color:var(--faint);letter-spacing:.06em}
+.sug button{background:var(--amber-card);color:var(--amber);border-radius:100px;padding:0 13px;min-height:38px;font-weight:800;font-size:13px;display:flex;align-items:center;gap:5px}
+.lists{flex:1;min-height:0;overflow-y:auto;columns:2;column-gap:12px;padding-bottom:16px}
+.cat{border-radius:24px;padding:10px 12px 8px;background:var(--c-col);break-inside:avoid;margin-bottom:12px}
+.chead{display:flex;align-items:center;gap:10px;padding:2px 4px 8px;width:100%;text-align:left}
+.chead .e{width:34px;height:34px;border-radius:11px;background:var(--c-card);display:grid;place-items:center;font-size:18px}
+.chead b{font:800 17px var(--display);flex:1}
+.cnt{min-width:26px;height:26px;border-radius:13px;background:var(--c-fg);color:var(--on);font-weight:800;font-size:13px;display:grid;place-items:center;padding:0 7px}
+.it{display:flex;align-items:center;gap:11px;background:var(--canvas);border-radius:16px;padding:7px 12px 7px 8px;margin-bottom:6px;width:100%;text-align:left;min-height:54px}
+.ck{width:34px;height:34px;border-radius:50%;border:2.5px solid var(--c-fg);display:grid;place-items:center;flex:none;color:transparent}
+.it b{font-size:15.5px;font-weight:700;display:block;line-height:1.2}.it small{font-size:12.5px;color:var(--muted);font-weight:600}
+.it .t{flex:1;min-width:0}
+.sp{font-size:11.5px;font-weight:800;border-radius:100px;padding:3px 9px;background:var(--well);color:var(--muted);white-space:nowrap}
+.done .ck{background:var(--c-fg);color:var(--on)}.done b{text-decoration:line-through;color:var(--muted)}
+.kidreq{background:var(--lav-col);border-radius:22px;padding:12px;display:flex;flex-direction:column;gap:8px;break-inside:avoid;margin-bottom:12px}
+.kr{display:flex;align-items:center;gap:10px;background:var(--canvas);border-radius:14px;padding:8px 12px;font-weight:700;font-size:15px}
+.kr .st{margin-left:auto;font-size:12px;font-weight:800;border-radius:100px;padding:3px 10px}
+.st.ok{background:var(--sage-card);color:var(--sage)}.st.wait{background:var(--amber-card);color:var(--amber)}
+.rb{background:var(--well);border-radius:22px;padding:10px 12px;break-inside:avoid;margin-bottom:12px}
+.rb .undo{color:var(--primary);font-weight:800;font-size:13px;margin-left:auto}
+.run{display:flex;align-items:center;gap:10px;background:var(--sage-card);color:var(--sage);border-radius:16px;padding:10px 14px;font-weight:800;font-size:14px}
+/* recipe book */
+.fil{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fil button.f{min-height:42px;border-radius:100px;padding:0 15px;font-weight:800;font-size:13.5px;background:var(--well);color:var(--muted)}
+.fil button.f[aria-pressed="true"]{background:var(--ink);color:var(--canvas)}
+.search{display:flex;align-items:center;gap:8px;background:var(--well);border-radius:100px;padding:0 16px;min-height:46px;flex:1;min-width:200px;color:var(--muted)}
+.search input{border:0;background:none;flex:1;font:600 15px var(--body);color:var(--ink);outline:none}
+.pend{background:var(--peach);border-radius:22px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.pr{display:flex;align-items:center;gap:12px;background:var(--canvas);border-radius:16px;padding:8px 12px}
+.pr .em{font-size:26px}.pr b{display:block;font-size:15.5px}.pr small{color:var(--muted);font-weight:700;font-size:12.5px}.pr .t{flex:1}
+.sb{border-radius:12px;padding:0 14px;min-height:42px;font-weight:800;font-size:14px}.sb.y{background:var(--primary);color:var(--on)}.sb.n{background:var(--well);color:var(--ink)}
+.rgrid{flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-content:start;padding-bottom:16px}
+.rc{border-radius:24px;padding:12px;background:var(--c-col);border:1.5px solid var(--c-card);display:flex;flex-direction:column;gap:7px;text-align:left}
+.rc .ph{height:96px;border-radius:18px;background:var(--c-card);display:grid;place-items:center;font-size:48px}
+.rc b{font:800 17px/1.2 var(--display)}.rc small{color:var(--muted);font-weight:700;font-size:12.5px}
+.rc .by{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--muted);margin-top:auto}
+.tg{display:flex;gap:5px;flex-wrap:wrap}.tg span{font-size:11px;font-weight:800;border-radius:100px;padding:2px 9px;background:var(--canvas);color:var(--muted)}
+/* ideas */
+.idea-hero{border-radius:28px;padding:20px;background:linear-gradient(135deg,var(--lav-card),var(--peach-card));display:flex;gap:16px;align-items:center}
+.idea-hero .ic{width:64px;height:64px;border-radius:20px;background:var(--canvas);color:var(--lav);display:grid;place-items:center}
+.idea-hero h3{font:800 24px var(--display);letter-spacing:-.5px}.idea-hero p{font-weight:600;color:var(--muted);font-size:14.5px;margin-top:3px}
+.igrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.ic2{border-radius:24px;padding:14px;background:var(--c-col);border:1.5px solid var(--c-card);display:flex;flex-direction:column;gap:7px}
+.ic2 .em{font-size:40px}.ic2 b{font:800 17px/1.2 var(--display)}.ic2 small{font-weight:700;color:var(--muted);font-size:12.5px}
+.ic2 .row{display:flex;gap:8px;margin-top:auto}.ic2 .row .btn{flex:1;min-height:44px}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--lav-card);border-top-color:var(--lav);animation:sp 0.8s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---------- drawers ---------- */
+.scrim{position:absolute;inset:0;background:rgba(20,16,12,.45);z-index:20;animation:fade .2s}
+@keyframes fade{from{opacity:0}}
+.drawer{position:absolute;right:0;top:0;bottom:0;width:520px;background:var(--canvas);z-index:21;border-left:1px solid var(--line);display:flex;flex-direction:column;animation:slide .26s cubic-bezier(.2,.8,.2,1);box-shadow:-20px 0 50px rgba(0,0,0,.18)}
+@keyframes slide{from{transform:translateX(100%)}}
+.dh{display:flex;align-items:center;gap:14px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.dh .em{width:60px;height:60px;border-radius:20px;background:var(--sage-card);display:grid;place-items:center;font-size:32px}
+.dh h3{font:800 24px/1.1 var(--display);letter-spacing:-.5px}.dh small{color:var(--muted);font-weight:700}
+.db{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:14px}
+.ing{display:flex;align-items:center;gap:12px;border-radius:16px;padding:10px 14px;background:var(--amber-col);font-weight:700;font-size:16px}
+.ing small{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--sage)}
+.step{display:flex;gap:12px;font-size:16px;font-weight:600;line-height:1.4}
+.step i{flex:none;width:30px;height:30px;border-radius:50%;background:var(--lav-card);color:var(--lav);font-style:normal;font-weight:800;display:grid;place-items:center}
+.df{padding:14px 22px 18px;border-top:1px solid var(--line);display:flex;gap:10px}.df .btn{flex:1}
+.field{min-height:52px;border-radius:16px;border:1px solid var(--line);background:var(--well);padding:0 16px;font:600 16px var(--body);color:var(--ink);width:100%}
+textarea.field{padding:12px 16px;min-height:96px;resize:none}
+.flab{font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--faint);margin-bottom:6px;display:block}
+.daypick{display:flex;gap:7px;flex-wrap:wrap}
+.daypick button{min-height:44px;border-radius:14px;padding:0 14px;font-weight:800;background:var(--well);color:var(--muted)}
+.daypick button[aria-pressed="true"]{background:var(--primary);color:var(--on)}
+.toast{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);background:var(--ink);color:var(--canvas);padding:12px 22px;border-radius:100px;font-weight:800;z-index:30;white-space:nowrap}
+.notes{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:12px;position:sticky;top:16px}
+.notes h2{font:700 20px var(--display)}.notes li{font-size:13px;line-height:1.45;margin-left:16px}
+.verdict{display:flex;gap:8px}.verdict button{flex:1;padding:12px;border-radius:14px;font-weight:800;border:1px solid var(--line)}
+.verdict button[aria-pressed="true"].a{background:var(--sage);color:#fff;border-color:var(--sage)}
+.verdict button[aria-pressed="true"].c{background:var(--amber);color:#1a0f0a;border-color:var(--amber)}
+#cm{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px;font:inherit;font-size:13px;background:var(--well);color:var(--ink);resize:vertical;min-height:70px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- additional (full feature set) ---- */
+.grp{font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--faint);padding:4px 8px 0}
+.tools{display:flex;gap:8px;align-items:center}
+.ban{display:flex;align-items:center;gap:10px;border-radius:16px;padding:8px 12px;font-weight:700;font-size:13px}
+.banrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.banrow .ban{min-width:0}.banrow .ban div{min-width:0}.banrow .ban b,.banrow .ban small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.ban .ic{width:34px;height:34px;border-radius:12px;background:var(--canvas);display:grid;place-items:center;flex:none}
+.ban b{display:block;font-size:14.5px}.ban small{font-weight:600;color:var(--muted);font-size:12.5px}
+.ban .btn{min-height:38px;padding:0 12px;font-size:13px;margin-left:auto}
+.ban.sage{background:var(--sage-card);color:var(--sage)}.ban.amber{background:var(--amber-card);color:var(--amber)}.ban.lav{background:var(--lav-card);color:var(--lav)}.ban.peach{background:var(--peach-card);color:var(--peach-fg)}
+.ban.sage .ic{color:var(--sage)}.ban.amber .ic{color:var(--amber)}.ban.lav .ic{color:var(--lav)}
+.wk{display:flex;align-items:center;gap:6px;background:var(--well);border-radius:100px;padding:3px}
+.wk button{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}.wk span{font-weight:800;font-size:14px;padding:0 8px}
+.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-items:start}
+.store{border-radius:24px;padding:10px 12px 6px;background:var(--c-col)}
+.sh{display:flex;align-items:center;gap:10px;padding:2px 4px 8px}
+.sh .e{width:34px;height:34px;border-radius:11px;background:var(--c-card);display:grid;place-items:center;color:var(--c-fg)}
+.sh b{font:800 17px var(--display);flex:1}
+.sh .pn{width:34px;height:34px;border-radius:10px;background:var(--canvas);display:grid;place-items:center;color:var(--muted)}
+.row2{display:flex;align-items:center;gap:10px;background:var(--canvas);border-radius:16px;padding:7px 8px 7px 8px;margin-bottom:6px;min-height:54px}
+.row2 .ckb{width:34px;height:34px;border-radius:50%;border:2.5px solid var(--c-fg);display:grid;place-items:center;flex:none;color:transparent;background:none}
+.row2 .ckb.on{background:var(--c-fg);color:var(--on)}
+.row2 .t{flex:1;min-width:0;text-align:left}.row2 b{font-size:15.5px;font-weight:700;display:block;line-height:1.2}.row2 small{font-size:12px;color:var(--muted);font-weight:600}
+.badge2{font-size:11px;font-weight:800;border-radius:100px;padding:2px 8px;background:var(--lav-card);color:var(--lav);display:inline-flex;align-items:center;gap:4px}
+.price{font-size:12px;font-weight:800;color:var(--sage)}.price i{font-style:normal;color:var(--faint);font-weight:700}
+.mv{width:36px;height:36px;border-radius:11px;background:var(--well);color:var(--muted);display:grid;place-items:center}
+.seltool{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:var(--ink);color:var(--canvas);border-radius:100px;padding:8px 10px 8px 20px;display:flex;align-items:center;gap:10px;z-index:15;font-weight:800;box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.seltool button{border-radius:100px;padding:0 16px;min-height:44px;font-weight:800;background:rgba(255,255,255,.16);color:inherit}
+.seltool button.p{background:var(--primary);color:var(--on)}
+.rcard{border-radius:24px;padding:14px;background:var(--c-col);border:1.5px solid var(--c-card);display:flex;flex-direction:column;gap:10px}
+.rcard h4{font:800 18px var(--display)}.rcard .meta{display:flex;gap:8px;flex-wrap:wrap}
+.pbar{height:10px;border-radius:5px;background:var(--canvas);overflow:hidden}.pbar i{display:block;height:100%;background:var(--c-fg);border-radius:5px}
+.rsec{display:flex;flex-direction:column;gap:9px}
+.hist{border-radius:22px;background:var(--well);padding:10px 12px}
+.hist .hh{display:flex;align-items:center;gap:10px;padding:2px 4px 8px;font-weight:800}.hist .hh b{flex:1;font:800 16px var(--display)}
+.hrow{display:flex;align-items:center;gap:10px;background:var(--canvas);border-radius:14px;padding:8px 12px;margin-bottom:6px;font-weight:700}
+.hrow small{color:var(--muted);font-weight:600;font-size:12.5px;display:block}.hrow .t{flex:1}.hrow span.pr{font-weight:800;color:var(--sage)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{border-radius:22px;padding:14px;background:var(--c-col)}.stat b{display:block;font:800 28px var(--display);letter-spacing:-.8px}.stat small{font-weight:700;color:var(--muted);font-size:12.5px}
+.chart{border-radius:24px;background:var(--well);padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+.bar3{display:flex;align-items:center;gap:10px;font-weight:800;font-size:14px}.bar3 .l{width:92px}.bar3 .tr{flex:1;height:16px;border-radius:8px;background:var(--canvas);overflow:hidden}.bar3 .tr i{display:block;height:100%;border-radius:8px;background:var(--c-fg)}.bar3 .v{width:62px;text-align:right}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tags2{display:flex;gap:7px;flex-wrap:wrap}
+.tags2 button,.opt{min-height:44px;border-radius:14px;padding:0 14px;font-weight:800;font-size:14px;background:var(--well);color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.tags2 button[aria-pressed="true"],.opt.on{background:var(--primary);color:var(--on)}
+.stepper{display:flex;align-items:center;gap:10px}.stepper button{width:44px;height:44px;border-radius:14px;background:var(--well);display:grid;place-items:center}.stepper b{min-width:30px;text-align:center;font:800 20px var(--display)}
+.upl{border:2px dashed var(--line);border-radius:22px;min-height:120px;display:grid;place-items:center;text-align:center;color:var(--muted);font-weight:700;padding:14px}
+.pick{display:flex;align-items:center;gap:12px;border-radius:16px;padding:10px 14px;background:var(--c-col);font-weight:700}
+.pick .ckb{width:32px;height:32px;border-radius:10px;border:2.5px solid var(--c-fg);display:grid;place-items:center;color:transparent}.pick.on .ckb{background:var(--c-fg);color:var(--on)}
+.mapph{height:140px;border-radius:20px;background:linear-gradient(135deg,var(--sage-card),var(--lav-card));display:grid;place-items:center;color:var(--sage)}
+.ops{display:flex;gap:8px;overflow:hidden}
+
+.menu .it{display:flex;align-items:center;gap:12px;min-height:54px;border-radius:15px;padding:0 10px;font-weight:800;font-size:15px;color:var(--ink);text-align:left;width:100%}
+.menu .it small{display:block;font-size:11.5px;font-weight:700;color:var(--muted)}
+.menu .it[aria-current="page"]{background:var(--primary);color:var(--on)}.menu .it[aria-current="page"] small{color:var(--on);opacity:.85}
+.menu .it .em{width:38px;height:38px;border-radius:13px;display:grid;place-items:center;font-size:19px;flex:none}
+.menu .it[aria-current="page"] .em{background:rgba(255,255,255,.22)!important}
+.menu .it .n{margin-left:auto;min-width:24px;height:24px;border-radius:12px;background:var(--danger);color:#fff;font-size:12px;display:grid;place-items:center;padding:0 7px}
+.menu .g{font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--faint);padding:6px 8px 0}
+.t1 .em{background:var(--amber-card)}.t2 .em{background:var(--sage-card)}.t3 .em{background:var(--lav-card)}.t4 .em{background:var(--peach-card)}
+.content{flex:1;min-width:0;overflow-y:auto;padding:16px 24px 90px;display:flex;flex-direction:column;gap:12px}
+.hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.hd .h2{margin-right:auto}
+.chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{min-height:42px;border-radius:100px;padding:0 15px;font-weight:800;font-size:14px;display:inline-flex;align-items:center;gap:7px;background:var(--well);color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--primary)!important;color:var(--on)!important}
+.chips .chip:nth-child(4n+1){background:var(--amber-card);color:var(--amber)}.chips .chip:nth-child(4n+2){background:var(--sage-card);color:var(--sage)}.chips .chip:nth-child(4n+3){background:var(--lav-card);color:var(--lav)}.chips .chip:nth-child(4n+4){background:var(--peach-card);color:var(--peach-fg)}
+.who{display:flex;gap:8px;flex-wrap:wrap}.who button{display:flex;align-items:center;gap:8px;min-height:46px;border-radius:100px;padding:0 15px 0 6px;font-weight:800;background:var(--well);color:var(--muted)}
+.who button[aria-pressed="true"]{background:var(--primary);color:var(--on)}
+.search{display:flex;align-items:center;gap:8px;background:var(--well);border-radius:100px;padding:0 16px;min-height:46px;flex:1;min-width:200px}.search input{border:0;background:none;font:600 15px var(--body);color:var(--ink);flex:1;outline:0}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-items:start}
+.mc{border-radius:24px;border:1.5px solid var(--c-card);background:var(--c-col);padding:14px;display:flex;flex-direction:column;gap:9px}
+.mc .top{display:flex;align-items:center;gap:12px}.mc .top b{font:800 18px var(--display)}.mc small{color:var(--muted);font-weight:700;font-size:12.5px}
+.pill{border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800;background:var(--canvas);color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.pill.red{background:var(--danger);color:#fff}.pill.g{background:var(--sage-card);color:var(--sage)}.pill.a{background:var(--amber-card);color:var(--amber)}.pill.l{background:var(--lav-card);color:var(--lav)}
+.dose{display:flex;align-items:center;gap:10px;background:var(--canvas);border-radius:15px;padding:8px 12px}
+.dose .tm{font-weight:800;color:var(--muted);font-size:13px;min-width:74px}.dose b{font-size:15.5px}.dose small{margin-left:auto}
+.dose.od{outline:2.5px solid var(--danger)}.dose.ok{opacity:.75}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;min-height:46px;padding:0 16px;font-weight:800;font-size:14.5px;white-space:nowrap}
+.btn.pri{background:var(--primary);color:var(--on)}.btn.sec{background:var(--well);color:var(--ink)}.btn.pst{background:var(--lav-card);color:var(--lav)}.btn.sm{min-height:38px;padding:0 12px;font-size:13px}.btn.ok{background:var(--sage);color:#fff}.btn.dg{background:transparent;border:1.5px solid var(--danger);color:var(--danger)}
+.bar{height:10px;border-radius:5px;background:var(--canvas);overflow:hidden}.bar i{display:block;height:100%;background:var(--sage)}.bar.low i{background:var(--danger)}
+.dots{display:flex;gap:4px;flex-wrap:wrap}.dots i{width:16px;height:16px;border-radius:5px;background:var(--sage)}.dots i.m{background:var(--danger)}.dots i.u{background:var(--line)}
+.stat{border-radius:22px;padding:14px;display:flex;flex-direction:column;gap:2px}.stat b{font:800 28px var(--display)}.stat small{font-weight:700;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.rec{display:flex;gap:12px;align-items:flex-start;border-radius:22px;border:1.5px solid var(--c-card);background:var(--c-col);padding:14px;text-align:left;width:100%}
+.rec .ic{width:46px;height:46px;border-radius:15px;background:var(--c-card);display:grid;place-items:center;font-size:22px;flex:none}
+.rec b{font-size:16px}.rec p{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px;line-height:1.4}
+.row2{display:flex;align-items:center;gap:12px;border-radius:18px;border:1.5px solid var(--c-card);background:var(--c-col);padding:12px 16px}
+.row2 small{display:block;color:var(--muted);font-weight:700}.row2 .btn{margin-left:auto}
+.ai{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+.msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;min-height:200px}
+.bub{max-width:78%;border-radius:20px;padding:12px 16px;font-weight:600;line-height:1.45;font-size:15px}.bub.u{align-self:flex-end;background:var(--primary);color:var(--on)}.bub.a{background:var(--lav-col);border:1.5px solid var(--lav-card)}
+.hero{display:flex;gap:16px;align-items:center;border-radius:26px;padding:16px;background:var(--lav-col);border:1.5px solid var(--lav-card)}.hero .ic{width:60px;height:60px;border-radius:20px;background:var(--lav-card);display:grid;place-items:center;font-size:30px}
+.rcdr{display:grid;place-items:center;height:150px;border-radius:24px;background:var(--peach);border:2.5px dashed var(--peach-card);text-align:center;font-weight:800;color:var(--peach-fg)}
+.rcdr.on{background:var(--danger);color:#fff;border-color:var(--danger)}
+.step{display:flex;gap:12px;font-size:15px;font-weight:600;line-height:1.4}.step i{flex:none;width:30px;height:30px;border-radius:50%;background:var(--lav-card);color:var(--lav);font-style:normal;font-weight:800;display:grid;place-items:center}
+.tg{border-radius:16px;padding:10px 14px;font-weight:700;font-size:14px}.tg b{display:block;margin-bottom:2px}
+.sw{width:56px;height:32px;border-radius:16px;background:var(--line);position:relative;flex:none}.sw::after{content:'';position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:.2s}.sw[aria-pressed="true"]{background:var(--primary)}.sw[aria-pressed="true"]::after{left:27px}
+.empty{padding:34px;text-align:center;color:var(--muted);font-weight:700;background:var(--well);border-radius:22px}
+.daypick{display:flex;gap:7px;flex-wrap:wrap}.daypick button{min-height:44px;border-radius:14px;padding:0 14px;font-weight:800;background:var(--well);color:var(--muted)}.daypick button[aria-pressed="true"]{background:var(--primary);color:var(--on)}
+.stepper{display:flex;align-items:center;gap:10px}.stepper button{width:44px;height:44px;border-radius:14px;background:var(--well);font-size:20px;font-weight:800}.stepper b{font:800 20px var(--display);min-width:30px;text-align:center}
+.pdf{background:#fff;color:#2c2722;border-radius:12px;padding:18px;box-shadow:0 6px 20px rgba(0,0,0,.12);font-size:13px;line-height:1.5}.pdf h4{font:800 16px var(--display)}.pdf table{width:100%;border-collapse:collapse;margin-top:8px}.pdf td,.pdf th{border-bottom:1px solid #eee;padding:5px 4px;text-align:left}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Figtree:wght@500;600;700;800&display=swap">
+<div class="page">
+ <div>
+  <div class="bar2 bar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;height:auto;background:none;overflow:visible">
+   <h1 style="font:700 18px var(--display);margin-right:auto">Health and Records · area menu layout</h1>
+   <div class="seg" role="group" aria-label="Signed in as"><button data-role="parent" aria-pressed="true">Parent (Maya)</button><button data-role="teen" aria-pressed="false">Teen (Zoe)</button><button data-role="kid" aria-pressed="false">Kid (Leo)</button><button data-role="senior" aria-pressed="false">Senior (Nana)</button></div>
+  </div>
+  <div class="fit" id="fit"><div class="stage" id="stage"></div></div>
+ </div>
+ <aside class="notes">
+  <h2>Health and Records</h2>
+  <ul>
+   <li><b>Left menu:</b> Medications (Today’s doses, All medications, Refills), Immunizations (Vaccines), Records (All records, Record a visit, Bring in a document, Scan a prescription), and Tools (Ask health AI, Export PDF). Red badges show overdue doses and records needing attention.</li>
+   <li><b>Whose records?</b> A family chip row at the top of every area, the same as the phone’s people page. Everyone, or one person.</li>
+   <li><b>Today’s doses</b> shows a pastel card per person with each dose time, Mark taken, overdue outlined in red, and a taken streak. <b>All medications</b> has the phone’s filters (Active, Taken today, Pending, Overdue, All), search, History with 14 days of taken or missed dots, Edit and Delete with confirmation.</li>
+   <li><b>Add medication</b> has every phone field: name, who it is for, category, dosage and unit, frequency, times, days, start and end date, refill date, pills left, doctor, pharmacy, source, instructions, missed-dose alert after N minutes, who to alert, and ring like a call.</li>
+   <li><b>Refills</b> shows pills left bars and the refill date, with Mark refilled. <b>Vaccines</b> shows series progress, administered by, location, next due, with Pending, Done and Due soon filters and Add vaccine.</li>
+   <li><b>Records</b> has search and tag filters, an Encrypted badge, urgency, an AI summary, Download and a detail drawer with key findings and follow-up actions you can turn into an event or a chore.</li>
+   <li><b>Record a visit</b> records, then Submit for analysis returns a summary, discussion topics (Important, Monitor, Info) and next steps you can add to the calendar. <b>Bring in a document</b> and <b>Scan a prescription</b> end in a “Check the findings” review with “I verified the source values” before anything is saved.</li>
+   <li><b>Ask health AI</b> answers questions about the selected person. <b>Export PDF</b> has the phone’s review step: members, record types, doses included, format and a preview.</li>
+   <li><b>Kid</b> sees only their own medications and can mark them taken. A <b>teen or senior</b> sees only their own medications, vaccines and records. Switch roles above.</li>
+  </ul>
+  <div class="verdict" role="group" aria-label="Decision"><button class="a" id="va" aria-pressed="false">Approve</button><button class="c" id="vc" aria-pressed="false">Needs changes</button></div>
+  <textarea id="cm" placeholder="What should change?" aria-label="Change notes"></textarea>
+ </aside>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const PAL=[{c:'amber',col:'var(--amber-col)',card:'var(--amber-card)',fg:'var(--amber)'},{c:'sage',col:'var(--sage-col)',card:'var(--sage-card)',fg:'var(--sage)'},{c:'lav',col:'var(--lav-col)',card:'var(--lav-card)',fg:'var(--lav)'},{c:'peach',col:'var(--peach)',card:'var(--peach-card)',fg:'var(--peach-fg)'}];
+const M={maya:{n:'Maya',role:'parent',em:'🧑'},dan:{n:'Dan',role:'parent',em:'👨'},zoe:{n:'Zoe',role:'teen',em:'👧'},leo:{n:'Leo',role:'kid',em:'🧒'},nana:{n:'Nana',role:'senior',em:'👵'}};
+const ME={parent:'maya',teen:'zoe',kid:'leo',senior:'nana'};
+const NOW=15*60+42;
+const t12=h=>{const [a,b]=h.split(':').map(Number);return (a%12||12)+':'+String(b).padStart(2,'0')+' '+(a>=12?'PM':'AM')};
+const mins=h=>{const [a,b]=h.split(':').map(Number);return a*60+b};
+const FREQ={daily:'Daily',twice_daily:'2× Daily',three_daily:'3× Daily',weekly:'Weekly',as_needed:'As needed'};
+const CAT={prescription:'Rx',otc:'OTC',vitamin:'Vitamin',supplement:'Supplement'};
+const TAGS=[['lab','Lab','🧪'],['discharge','Discharge','🏥'],['prescription','Prescription','💊'],['imaging','Imaging','🩻'],['insurance','Insurance','🛡️'],['vaccination','Vaccination','💉'],['visit_recording','Visit Recording','🎙️'],['other','Other','📄']];
+const S={role:'parent',area:'today',who:'all',drawer:null,toast:'',ms:'active',vs:'all',tag:'All',q:'',rq:'',sel:false,picked:[],confirm:null,
+ meds:[
+ {id:1,m:'maya',n:'Lisinopril',d:'10',u:'mg',f:'daily',t:['08:00'],c:'prescription',doc:'Dr. Patel',ph:'CVS',refill:'Oct 24, 2026',pills:6,ins:'Take with water, morning.',tk:{'08:00':1},esc:true,after:30,start:'Jan 4, 2026'},
+ {id:2,m:'maya',n:'Vitamin D',d:'1000',u:'IU',f:'daily',t:['09:00'],c:'supplement',doc:'',ph:'',refill:'',pills:48,ins:'',tk:{},esc:false,after:30,start:'Mar 2, 2026'},
+ {id:3,m:'dan',n:'Metformin',d:'500',u:'mg',f:'twice_daily',t:['08:00','20:00'],c:'prescription',doc:'Dr. Lee',ph:'Walgreens',refill:'Nov 15, 2026',pills:38,ins:'Take with food.',tk:{'08:00':1},esc:false,after:30,start:'Feb 9, 2026'},
+ {id:4,m:'leo',n:'Amoxicillin',d:'250',u:'mg',f:'three_daily',t:['07:30','13:00','19:00'],c:'prescription',doc:'Dr. Kim',ph:'CVS',refill:'Oct 19, 2026',pills:5,ins:'Finish the whole course. Shake the bottle.',tk:{'07:30':1},esc:true,after:20,start:'Oct 12, 2026',end:'Oct 22, 2026'},
+ {id:5,m:'zoe',n:'Zyrtec',d:'10',u:'mg',f:'daily',t:['21:00'],c:'otc',doc:'',ph:'',refill:'',pills:20,ins:'',tk:{},esc:false,after:30,start:'Apr 1, 2026'},
+ {id:6,m:'nana',n:'Aspirin',d:'81',u:'mg',f:'daily',t:['08:30'],c:'prescription',doc:'Dr. Patel',ph:'CVS',refill:'Oct 21, 2026',pills:12,ins:'',tk:{'08:30':1},esc:true,after:45,start:'Jan 1, 2025'},
+ {id:7,m:'nana',n:'Omega-3',d:'1000',u:'mg',f:'daily',t:['12:00'],c:'supplement',doc:'',ph:'',refill:'',pills:30,ins:'',tk:{},esc:false,after:30,start:'Jan 1, 2025'}],
+ vax:[
+ {id:1,m:'leo',n:'Flu Shot 2026',type:'Flu',date:'',due:'Oct 30, 2026',done:false,cur:0,tot:1,by:'',loc:'',notes:''},
+ {id:2,m:'leo',n:'MMR',type:'MMR',date:'Mar 3, 2025',due:'',done:true,cur:2,tot:2,by:'Dr. Kim',loc:'Riverside Clinic',notes:'Lot 4471B'},
+ {id:3,m:'zoe',n:'Tdap',type:'Tdap',date:'Jun 12, 2026',due:'Jun 12, 2036',done:true,cur:1,tot:1,by:'CVS pharmacist',loc:'CVS',notes:''},
+ {id:4,m:'zoe',n:'HPV',type:'HPV',date:'Aug 1, 2026',due:'Nov 12, 2026',done:false,cur:2,tot:3,by:'Dr. Kim',loc:'Riverside Clinic',notes:''},
+ {id:5,m:'nana',n:'Shingles',type:'Shingrix',date:'Oct 1, 2026',due:'Dec 3, 2026',done:false,cur:1,tot:2,by:'CVS pharmacist',loc:'CVS',notes:''},
+ {id:6,m:'maya',n:'COVID booster',type:'COVID-19',date:'Oct 2, 2025',due:'Oct 25, 2026',done:true,cur:5,tot:5,by:'',loc:'Workplace clinic',notes:''}],
+ recs:[
+ {id:1,m:'maya',n:'Annual bloodwork',tag:'lab',date:'Oct 3, 2026',size:'214 KB',urg:'routine',sum:'Cholesterol slightly high. Everything else is in range.',find:['LDL 138 mg/dL (above 130)','Vitamin D 31 ng/mL (low-normal)','A1C 5.4%'],fu:['Repeat lipid panel in 3 months','Discuss diet changes with Dr. Patel']},
+ {id:2,m:'leo',n:'Urgent care discharge',tag:'discharge',date:'Sep 22, 2026',size:'1.2 MB',urg:'attention',sum:'Ear infection treated with a 10 day antibiotic course.',find:['Right ear infection','Fever 101.2 F on arrival'],fu:['Finish the antibiotic','Recheck with Dr. Kim in 2 weeks']},
+ {id:3,m:'dan',n:'Chest X-ray',tag:'imaging',date:'Aug 14, 2026',size:'3.4 MB',urg:'urgent',sum:'A small nodule is noted. Follow-up imaging is recommended.',find:['4 mm nodule, right lower lobe'],fu:['Book a follow-up CT in 3 months']},
+ {id:4,m:'maya',n:'Insurance card 2026',tag:'insurance',date:'Jan 2, 2026',size:'96 KB',urg:'routine',sum:'Member ID and group number for the 2026 plan.',find:[],fu:[]},
+ {id:5,m:'maya',n:'Check-up with Dr. Patel',tag:'visit_recording',date:'Oct 10, 2026',size:'5.8 MB',urg:'routine',sum:'Routine check-up. Blood pressure is well controlled.',find:['BP 118/76'],fu:['Schedule the flu shot']}],
+ ai:[{r:'a',x:'Hi. Ask me about medications, doses or records for the person selected above.'}],
+ rec:0,recDone:false,bring:null,scan:null,exp:{members:['maya','dan','zoe','leo','nana'],types:['vax'],doses:true,fmt:'PDF'}};
+const me=()=>ME[S.role];
+const mem=()=>S.role==='parent'?Object.keys(M):[me()];
+const scope=l=>l.filter(x=>mem().includes(x.m)&&(S.who==='all'||x.m===S.who));
+const toast=m=>{S.toast=m;render();clearTimeout(toast.h);toast.h=setTimeout(()=>{S.toast='';render()},1800)};
+const pal=id=>PAL[Object.keys(M).indexOf(id)%4];
+const av=(id,sz=40)=>`<span class="av" style="width:${sz}px;height:${sz}px;background:${pal(id).card};font-size:${sz*.5}px">${M[id].em}</span>`;
+const dosesOf=m=>m.t.map(t=>({m,t,taken:!!m.tk[t],od:!m.tk[t]&&mins(t)<NOW&&m.f!=='as_needed'}));
+const overdue=()=>scope(S.meds).flatMap(dosesOf).filter(d=>d.od);
+const lowRx=()=>scope(S.meds).filter(m=>m.pills!=null&&m.pills<=10||/Oct (19|2[0-4])/.test(m.refill));
+const attn=()=>scope(S.recs).filter(r=>r.urg!=='routine');
+const hist=m=>{const o=[];for(let i=13;i>=0;i--){const n=(m.id*7+i*5)%11;o.push(i===0?(m.t.every(t=>m.tk[t])?'t':'u'):(n<2?'m':'t'))}return o};
+const eb=(t,c)=>`<span class="eb" style="--c:${c||'var(--sage)'}"><i></i><span>${t}</span></span>`;
+const lab=t=>`<span class="flab">${t}</span>`;
+/* ---------- menu ---------- */
+function menu(){
+ const kid=S.role==='kid',par=S.role==='parent';
+ const it=(id,e,t,sub,tone,n)=>`<button class="it t${tone}" data-area="${id}" ${S.area===id?'aria-current="page"':''}><span class="em">${e}</span><div><b>${t}</b><small>${sub}</small></div>${n?`<span class="n">${n}</span>`:''}</button>`;
+ const od=overdue().length,lr=lowRx().length,at=attn().length;
+ return `<aside class="menu"><span class="h2">Health &amp; Records</span>
+ <span class="g">MEDICATIONS</span>${it('today','⏰',"Today’s doses",od?od+' overdue':'All caught up',1,od)}${it('meds','💊',kid?'My medications':'All medications',scope(S.meds).length+' active',2)}${kid?'':it('refills','🔁','Refills',lr?lr+' due soon':'Nothing due',4,lr)}
+ ${kid?'':`<span class="g">IMMUNIZATIONS</span>${it('vax','💉','Vaccines',scope(S.vax).filter(v=>!v.done).length+' pending',3)}
+ <span class="g">RECORDS</span>${it('records','🗂️','All records',scope(S.recs).length+' documents',1,at)}${it('visit','🎙️','Record a visit','Summary and next steps',2)}${it('bring','📥','Bring in a document','Photo, PDF or manual',3)}${it('scanrx','📷','Scan a prescription','Adds the medication',4)}
+ <span class="g">TOOLS</span>${it('ai','✨','Ask health AI','About '+(S.who==='all'?'the family':M[S.who].n),2)}${par?it('export','📤','Export PDF','Vaccines and doses',3):''}`}
+ </aside>`}
+function who(){
+ if(S.role!=='parent')return '';
+ return `<div class="who" role="group" aria-label="Whose records"><button data-who="all" aria-pressed="${S.who==='all'}"><span class="av" style="width:34px;height:34px;background:var(--well);font-size:17px">👪</span>Everyone</button>${Object.keys(M).map(id=>`<button data-who="${id}" aria-pressed="${S.who===id}">${av(id,34)}${M[id].n}</button>`).join('')}</div>`}
+/* ---------- areas ---------- */
+function today(){
+ const ids=mem().filter(id=>S.who==='all'||S.who===id);
+ const cards=ids.map((id,i)=>{const p=pal(id);const ds=scope(S.meds).filter(m=>m.m===id).flatMap(dosesOf).sort((a,b)=>mins(a.t)-mins(b.t));const tk=ds.filter(d=>d.taken).length;
+  return `<section class="mc" style="--c-col:${p.col};--c-card:${p.card}"><div class="top">${av(id,46)}<div style="flex:1"><b>${M[id].n}</b><div><small>${tk} of ${ds.length} doses taken today</small></div></div>${ds.some(d=>d.od)?'<span class="pill red">Overdue</span>':ds.length&&tk===ds.length?'<span class="pill g">All done ✓</span>':''}</div>
+  <div class="bar"><i style="width:${ds.length?tk/ds.length*100:0}%"></i></div>
+  ${ds.length?ds.map(d=>`<div class="dose ${d.od?'od':''} ${d.taken?'ok':''}"><span class="tm">${t12(d.t)}</span><div><b>${d.m.n} ${d.m.d} ${d.m.u}</b>${d.m.ins?`<small style="display:block;margin:0">${d.m.ins}</small>`:''}</div>${d.taken?'<span class="pill g" style="margin-left:auto">✓ Taken</span>':`<button class="btn ok sm" style="margin-left:auto" data-take="${d.m.id}|${d.t}">Mark taken</button>`}</div>`).join(''):'<small>No medications scheduled.</small>'}</section>`}).join('');
+ return `<div class="hd"><span class="h2">Today’s doses</span><span class="pill" style="background:var(--well)">Fri, Oct 16, 2026 · 3:42 PM</span>${S.role!=='kid'?'<button class="btn pri" data-open="addmed">＋ Add medication</button>':''}</div>${who()}<div class="grid2">${cards}</div>`}
+function meds(){
+ const f=m=>{const ds=dosesOf(m);return (S.ms==='all')||(S.ms==='active')||(S.ms==='taken'&&ds.every(d=>d.taken))||(S.ms==='pending'&&ds.some(d=>!d.taken))||(S.ms==='overdue'&&ds.some(d=>d.od))};
+ const l=scope(S.meds).filter(f).filter(m=>!S.q||(m.n+m.doc).toLowerCase().includes(S.q.toLowerCase()));
+ const cards=l.map((m,i)=>{const p=pal(m.m);const pct=Math.min(100,(m.pills||0)*3.3);return `<section class="mc" style="--c-col:${p.col};--c-card:${p.card}">
+  <div class="top">${S.sel?`<button class="chip" data-pick="${m.id}" aria-pressed="${S.picked.includes(m.id)}" style="min-height:38px">${S.picked.includes(m.id)?'✓':'○'}</button>`:av(m.m,44)}<div style="flex:1;min-width:0"><b>${m.n} ${m.d} ${m.u}</b><div><small>${M[m.m].n} · ${FREQ[m.f]} · ${m.t.map(t12).join(', ')}</small></div></div><span class="pill ${m.c==='prescription'?'l':'a'}">${CAT[m.c]}</span></div>
+  ${m.ins?`<small>${m.ins}</small>`:''}
+  <div style="display:flex;gap:6px;flex-wrap:wrap">${m.doc?`<span class="pill">🩺 ${m.doc}</span>`:''}${m.ph?`<span class="pill">🏪 ${m.ph}</span>`:''}${m.esc?`<span class="pill a">🔔 Alert after ${m.after} min</span>`:''}${m.end?`<span class="pill">Ends ${m.end}</span>`:''}</div>
+  ${m.pills!=null?`<div><small>${m.pills} pills left${m.refill?' · refill '+m.refill:''}</small><div class="bar ${m.pills<=10?'low':''}"><i style="width:${pct}%"></i></div></div>`:''}
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ok sm" data-take="${m.id}|next">Taken</button><button class="btn sec sm" data-open="hist:${m.id}">History</button>${S.role==='kid'?'':`<button class="btn sec sm" data-open="addmed:${m.id}">Edit</button><button class="btn dg sm" data-del="med:${m.id}">Delete</button>`}</div></section>`}).join('');
+ return `<div class="hd"><span class="h2">${S.role==='kid'?'My medications':'All medications'}</span>${S.role!=='kid'?`<button class="btn sec" data-sel>${S.sel?'Done':'Select'}</button><button class="btn pri" data-open="addmed">＋ Add medication</button>`:''}</div>${who()}
+ <div class="chips"><label class="search">🔍<input id="q" placeholder="Search medications" value="${S.q}" aria-label="Search medications"></label>${[['active','Active'],['taken','Taken today'],['pending','Pending'],['overdue','Overdue'],['all','All']].map(([k,t])=>`<button class="chip" data-ms="${k}" aria-pressed="${S.ms===k}">${t}</button>`).join('')}</div>
+ ${S.sel&&S.picked.length?`<div class="hd"><span class="pill l">${S.picked.length} selected</span><button class="btn dg sm" data-del="bulk:0">Delete selected</button></div>`:''}
+ <div class="grid2">${cards||'<div class="empty">No medications match.</div>'}</div>`}
+function refills(){
+ const l=lowRx();
+ return `<div class="hd"><span class="h2">Refills</span></div>${who()}${l.length?l.map((m,i)=>{const p=PAL[i%4];return `<div class="row2" style="--c-col:${p.col};--c-card:${p.card}">${av(m.m,44)}<div style="flex:1"><b>${m.n} ${m.d} ${m.u}</b><small>${M[m.m].n} · ${m.pills} pills left · refill ${m.refill||'not set'}${m.ph?' · '+m.ph:''}</small><div class="bar ${m.pills<=10?'low':''}" style="margin-top:6px;max-width:300px"><i style="width:${Math.min(100,m.pills*3.3)}%"></i></div></div><button class="btn ok sm" data-refilled="${m.id}">Mark refilled</button></div>`}).join(''):'<div class="empty">Nothing is running low. 🎉</div>'}`}
+function vax(){
+ const l=scope(S.vax).filter(v=>S.vs==='all'||(S.vs==='done'&&v.done)||(S.vs==='pending'&&!v.done)||(S.vs==='due'&&v.due&&/Oct|Nov/.test(v.due)&&!/2036/.test(v.due)));
+ return `<div class="hd"><span class="h2">Vaccines</span>${S.role!=='kid'?'<button class="btn pri" data-open="addvax">＋ Add vaccine</button>':''}</div>${who()}
+ <div class="chips">${[['all','All'],['pending','Pending'],['done','Done'],['due','Due soon']].map(([k,t])=>`<button class="chip" data-vs="${k}" aria-pressed="${S.vs===k}">${t}</button>`).join('')}</div>
+ <div class="grid2">${l.map((v,i)=>{const p=PAL[i%4];return `<section class="mc" style="--c-col:${p.col};--c-card:${p.card}"><div class="top">${av(v.m,44)}<div style="flex:1"><b>${v.n}</b><div><small>${M[v.m].n}${v.date?' · '+v.date:' · not given yet'}</small></div></div><span class="pill ${v.done?'g':'a'}">${v.done?'Done':'Pending'}</span></div>
+  <div class="bar"><i style="width:${v.cur/v.tot*100}%"></i></div><small>Dose ${v.cur} of ${v.tot}${v.due?' · next due '+v.due:''}</small>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">${v.by?`<span class="pill">💉 ${v.by}</span>`:''}${v.loc?`<span class="pill">📍 ${v.loc}</span>`:''}</div>
+  <div style="display:flex;gap:8px"><button class="btn sec sm" data-open="vaxview:${v.id}">View vaccine</button>${S.role==='kid'?'':`<button class="btn dg sm" data-del="vax:${v.id}">Delete</button>`}</div></section>`}).join('')||'<div class="empty">No vaccines match.</div>'}</div>`}
+function records(){
+ const l=scope(S.recs).filter(r=>(S.tag==='All'||r.tag===S.tag)&&(!S.rq||r.n.toLowerCase().includes(S.rq.toLowerCase())));
+ return `<div class="hd"><span class="h2">All records</span><button class="btn pri" data-area="bring">＋ Bring in a document</button></div>${who()}
+ <div class="chips"><label class="search">🔍<input id="rq" placeholder="Search records" value="${S.rq}" aria-label="Search records"></label></div>
+ <div class="chips"><button class="chip" data-tag="All" aria-pressed="${S.tag==='All'}">All</button>${TAGS.map(t=>`<button class="chip" data-tag="${t[0]}" aria-pressed="${S.tag===t[0]}">${t[2]} ${t[1]}</button>`).join('')}</div>
+ <div class="grid2">${l.map((r,i)=>{const p=PAL[i%4];const t=TAGS.find(x=>x[0]===r.tag);return `<button class="rec" data-open="rec:${r.id}" style="--c-col:${p.col};--c-card:${p.card}"><span class="ic">${t[2]}</span><div style="flex:1;min-width:0"><b>${r.n}</b><div style="display:flex;gap:6px;margin:4px 0;flex-wrap:wrap"><span class="pill">${t[1]}</span><span class="pill">${M[r.m].n}</span><span class="pill">${r.date}</span><span class="pill g">🔒 Encrypted</span>${r.urg!=='routine'?`<span class="pill ${r.urg==='urgent'?'red':'a'}">${r.urg==='urgent'?'Urgent':'Attention'}</span>`:''}</div><p><b style="font-size:11px;letter-spacing:.08em;color:var(--faint)">AI SUMMARY</b><br>${r.sum}</p></div></button>`}).join('')||'<div class="empty">No records match.</div>'}</div>`}
+function visit(){
+ return `<div class="hd"><span class="h2">Record a visit</span></div>${who()}
+ <div class="hero"><span class="ic">🎙️</span><div><h3 style="font:800 20px var(--display)">Capture the appointment</h3><p style="color:var(--muted);font-weight:600">Record the doctor’s visit. CubeAI writes a summary, the topics discussed and the next steps, and nothing is saved until you check it.</p></div></div>
+ <button class="rcdr ${S.rec===1?'on':''}" data-rec>${S.rec===1?'● Recording… tap to stop':S.recDone?'Recording ready':'Tap to start recording'}</button>
+ ${S.recDone?`<button class="btn pri" data-analyze>Submit for analysis</button>`:''}
+ ${S.rec===2?`<div style="display:flex;flex-direction:column;gap:10px">${eb('SUMMARY','var(--lav)')}<div class="tg" style="background:var(--lav-col)">Routine check-up. Blood pressure is steady. Dr. Patel suggests a flu shot and a repeat lipid panel in three months.</div>${eb('WHAT WE TALKED ABOUT','var(--amber)')}
+ <div class="tg" style="background:var(--peach)"><b>Cholesterol <span class="pill red">Important</span></b>LDL is a little high. Try more fiber and less red meat.</div><div class="tg" style="background:var(--amber-col)"><b>Blood pressure <span class="pill a">Monitor</span></b>118/76 today. Keep checking weekly.</div><div class="tg" style="background:var(--sage-col)"><b>Vitamin D <span class="pill g">Info</span></b>Low-normal. Keep taking the daily supplement.</div>
+ ${eb('NEXT STEPS','var(--sage)')}${['Get the flu shot|Oct 30 · 10:00 AM|event','Repeat lipid panel|Jan 16 · 8:00 AM|task'].map((n,i)=>{const [a,b,c]=n.split('|');return `<div class="row2" style="--c-col:${PAL[i+1].col};--c-card:${PAL[i+1].card}"><div><b>${a}</b><small>${b}</small></div><button class="btn sm sec" data-toast="${c==='event'?'Added to the calendar':'Chore created for Maya'}">${c==='event'?'Add to calendar':'Create a chore'}</button></div>`}).join('')}
+ <button class="btn pri" data-toast="Visit saved to records">Save to records</button></div>`:''}`}
+function bring(){
+ const B=S.bring;
+ return `<div class="hd"><span class="h2">Bring in a document</span></div>${who()}
+ <div class="hero"><span class="ic">📥</span><div><h3 style="font:800 20px var(--display)">Choose how to bring it in</h3><p style="color:var(--muted);font-weight:600">Keep the page clear, flat and in frame. CubeAI reads it and you check the findings before saving.</p></div></div>
+ <div class="chips"><button class="btn pst" data-bring="Photo taken">📷 Take a photo</button><button class="btn pst" data-bring="Photo chosen">🖼️ Choose photo</button><button class="btn pst" data-bring="PDF chosen">📄 Choose PDF</button><button class="btn sec" data-open="manual">✏️ Enter details manually instead</button></div>
+ ${B?`<div class="row2" style="--c-col:var(--sage-col);--c-card:var(--sage-card)"><div><b>${B}</b><small>Reading the document…</small></div><button class="btn pri sm" data-open="review:doc">Check the findings</button></div>`:''}`}
+function scanrx(){
+ return `<div class="hd"><span class="h2">Scan a prescription</span></div>${who()}
+ <div class="hero"><span class="ic">📷</span><div><h3 style="font:800 20px var(--display)">Bring in a prescription</h3><p style="color:var(--muted);font-weight:600">Take a photo of the label. The medication, dose and doctor are filled in for you to confirm.</p></div></div>
+ <div class="chips"><button class="btn pst" data-scan="1">📷 Take a photo</button><button class="btn pst" data-scan="1">Choose an existing file</button></div>
+ ${S.scan?`<div class="row2" style="--c-col:var(--lav-col);--c-card:var(--lav-card)"><div><b>Found: Amoxicillin 250 mg · 3× daily</b><small>Dr. Kim · CVS · 14 pills</small></div><button class="btn pri sm" data-open="review:rx">Check the findings</button></div>`:''}`}
+function ai(){
+ const qs=['Is Leo on track with the antibiotic?','What is due soon?','Any refills running low?'];
+ return `<div class="hd"><span class="h2">Ask health AI</span><span class="pill l">About ${S.who==='all'?'the family':M[S.who].n}</span></div>${who()}
+ <div class="ai"><div class="msgs">${S.ai.map(m=>`<div class="bub ${m.r}">${m.x}</div>`).join('')}</div>
+ <div class="chips">${qs.map(q=>`<button class="chip" data-ask="${q}">${q}</button>`).join('')}</div>
+ <div class="chips" style="flex-wrap:nowrap"><label class="search" style="flex:1">✨<input id="aiq" placeholder="Ask a health question…" aria-label="Ask a health question"></label><button class="btn pri" data-send>Send</button></div></div>`}
+function exportP(){
+ const E=S.exp;
+ return `<div class="hd"><span class="h2">Export PDF</span><span class="pill" style="background:var(--well)">Step 1 · before export</span></div>
+ ${eb('MEMBERS INCLUDED','var(--sage)')}<div class="who">${Object.keys(M).map(id=>`<button data-em="${id}" aria-pressed="${E.members.includes(id)}">${av(id,34)}${M[id].n}</button>`).join('')}</div>
+ ${eb('RECORD TYPE','var(--lav)')}<div class="chips">${[['vax','Vaccines'],['meds','Medications'],['recs','Records list']].map(([k,t])=>`<button class="chip" data-et="${k}" aria-pressed="${E.types.includes(k)}">${t}</button>`).join('')}</div>
+ <div class="row2" style="--c-col:var(--amber-col);--c-card:var(--amber-card)"><div><b>Doses included</b><small>Add each medication’s recent taken and missed doses</small></div><button class="sw" style="margin-left:auto" data-edoses aria-pressed="${E.doses}"></button></div>
+ ${eb('FORMAT','var(--amber)')}<div class="chips">${['PDF','Share link'].map(f=>`<button class="chip" data-ef="${f}" aria-pressed="${E.fmt===f}">${f}</button>`).join('')}</div>
+ <div class="pdf"><h4>Family Health Summary</h4><span style="color:#6b5f52">Generated on Oct 16, 2026 · ${E.members.length} members</span><table><tr><th>Member</th><th>Vaccine</th><th>Date</th><th>Dose</th></tr>${S.vax.filter(v=>E.members.includes(v.m)).map(v=>`<tr><td>${M[v.m].n}</td><td>${v.n}</td><td>${v.date||'—'}</td><td>${v.cur}/${v.tot}</td></tr>`).join('')}</table></div>
+ <div class="chips"><button class="btn sec" data-toast="Export cancelled">Cancel</button><button class="btn pri" data-toast="PDF ready to share">Export ${E.fmt}</button></div>`}
+/* ---------- drawers ---------- */
+function dshell(title,sub,em,body,foot){return `<div class="scrim" data-close></div><aside class="drawer" role="dialog" aria-label="${title}"><div class="dh"><div class="em" style="background:var(--lav-card)">${em}</div><div style="flex:1;min-width:0"><h3>${title}</h3><small>${sub||''}</small></div><button class="iconb" data-close aria-label="Close">✕</button></div><div class="db">${body}</div>${foot?`<div class="df">${foot}</div>`:''}</aside>`}
+function drawer(){
+ const d=S.drawer;if(!d)return '';const [t,a]=d.split(':');
+ if(S.confirm){const c=S.confirm;return `<div class="scrim" data-close></div><aside class="drawer" role="alertdialog" aria-label="Confirm"><div class="dh"><div class="em" style="background:var(--peach-card)">⚠️</div><div><h3>${c.t}</h3><small>${c.s}</small></div></div><div class="db"><p style="font-weight:600">This cannot be undone.</p></div><div class="df"><button class="btn sec" data-close>Cancel</button><button class="btn pri" style="background:var(--danger)" data-confirm>Delete</button></div></aside>`}
+ if(t==='addmed'){const m=a?S.meds.find(x=>x.id==a):null;const F=S.f||(S.f={m:m?m.m:me(),n:m?.n||'',cat:m?.c||'prescription',d:m?m.d:'',u:m?.u||'mg',f:m?.f||'daily',t:m?[...m.t]:['08:00'],days:[1,1,1,1,1,1,1],esc:m?.esc||false,after:m?.after||30,call:false});
+  const times=F.f==='twice_daily'?2:F.f==='three_daily'?3:1;while(F.t.length<times)F.t.push(['08:00','14:00','20:00'][F.t.length]);F.t.length=times;
+  return dshell(m?'Edit medication':'Add medication','Everything the phone asks for','💊',
+  `${eb('MEDICATION DETAILS','var(--lav)')}${lab('MEDICATION NAME *')}<input class="field" id="mn" value="${F.n}" placeholder="e.g. Lisinopril">${lab('WHO IS THIS FOR?')}<div class="who">${mem().map(id=>`<button data-fm="${id}" aria-pressed="${F.m===id}">${av(id,30)}${M[id].n}</button>`).join('')}</div>${lab('CATEGORY')}<div class="daypick">${Object.keys(CAT).map(c=>`<button data-fc="${c}" aria-pressed="${F.cat===c}">${CAT[c]}</button>`).join('')}</div>
+  ${eb('DOSAGE & ROUTINE','var(--amber)')}<div style="display:flex;gap:10px"><div style="flex:1">${lab('DOSAGE')}<input class="field" value="${F.d}" placeholder="10"></div><div style="flex:1">${lab('UNIT')}<input class="field" value="${F.u}" placeholder="mg"></div></div>${lab('FREQUENCY')}<div class="daypick">${Object.keys(FREQ).map(f=>`<button data-ff="${f}" aria-pressed="${F.f===f}">${FREQ[f]}</button>`).join('')}</div>
+  ${lab('TIMES PER DAY')}<div class="daypick">${F.t.map((x,i)=>`<button data-ftime="${i}" aria-pressed="true">${t12(x)}</button>`).join('')}</div>${lab('WHICH DAY(S)')}<div class="daypick">${['M','T','W','T','F','S','S'].map((x,i)=>`<button data-fday="${i}" aria-pressed="${!!F.days[i]}">${x}</button>`).join('')}</div>
+  ${eb('DATES & SOURCE','var(--sage)')}<div style="display:flex;gap:10px"><div style="flex:1">${lab('START DATE')}<input class="field" value="${m?.start||'Oct 16, 2026'}"></div><div style="flex:1">${lab('END DATE · OPTIONAL')}<input class="field" value="${m?.end||''}" placeholder="Ongoing"></div></div><div style="display:flex;gap:10px"><div style="flex:1">${lab('REFILL DATE')}<input class="field" value="${m?.refill||''}" placeholder="Nov 15, 2026"></div><div style="flex:1">${lab('PILLS LEFT')}<input class="field" value="${m?.pills??''}" placeholder="30"></div></div>${lab('SOURCE / VERIFICATION')}<input class="field" placeholder="e.g. Prescription label, pharmacist, clinician note">
+  <div style="display:flex;gap:10px"><div style="flex:1">${lab('DOCTOR')}<input class="field" value="${m?.doc||''}" placeholder="Dr. Smith"></div><div style="flex:1">${lab('PHARMACY')}<input class="field" value="${m?.ph||''}" placeholder="CVS / Walgreens"></div></div>${lab('SPECIAL INSTRUCTIONS')}<input class="field" value="${m?.ins||''}" placeholder="Take with food, avoid grapefruit…">
+  ${eb('MISSED-DOSE ALERT','var(--peach-fg)')}<div class="row2" style="--c-col:var(--peach);--c-card:var(--peach-card)"><div><b>Alert if not taken</b><small>Tell someone when a dose is missed</small></div><button class="sw" style="margin-left:auto" data-fesc aria-pressed="${F.esc}"></button></div>
+  ${F.esc?`<div class="stepper"><button data-fa="-5">−</button><b>${F.after}</b><button data-fa="5">＋</button><span style="font-weight:700;color:var(--muted)">min after the dose</span></div>${lab('ALERT')}<div class="who">${Object.keys(M).filter(x=>x!==F.m).map(id=>`<button data-fal="${id}" aria-pressed="${id==='maya'}">${av(id,30)}${M[id].n}</button>`).join('')}</div><div class="row2" style="--c-col:var(--well);--c-card:var(--line)"><div><b>Ring like a call</b><small>A loud ringing alert instead of a normal notification</small></div><button class="sw" style="margin-left:auto" data-fcall aria-pressed="${F.call}"></button></div>`:''}`,
+  `<button class="btn sec" data-close>Cancel</button><button class="btn pri" data-savemed="${a||''}">${m?'Save medication':'Add medication'}</button>`)}
+ if(t==='hist'){const m=S.meds.find(x=>x.id==a);const h=hist(m);const tk=h.filter(x=>x==='t').length;return dshell(m.n+' history','Last 14 days · '+M[m.m].n,'📊',`<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat" style="background:var(--sage-col)"><b>${tk}</b><small>taken</small></div><div class="stat" style="background:var(--peach)"><b>${14-tk}</b><small>missed or open</small></div><div class="stat" style="background:var(--amber-col)"><b>${Math.round(tk/14*100)}%</b><small>adherence</small></div></div><div class="dots">${h.map(x=>`<i class="${x==='m'?'m':x==='u'?'u':''}"></i>`).join('')}</div><small>Green taken · red missed · grey still open</small>${h.map((x,i)=>`<div class="dose ${x==='m'?'od':''}"><span class="tm">Oct ${16-(13-i)>0?16-(13-i):0}</span><b>${m.t.map(t12).join(', ')}</b><small>${x==='t'?'Taken':x==='m'?'Missed':'Open'}</small></div>`).reverse().slice(0,6).join('')}`)}
+ if(t==='addvax'){return dshell('Add vaccine','Vaccine details','💉',`${lab('WHO IS THIS FOR?')}<div class="who">${mem().map(id=>`<button data-fm="${id}" aria-pressed="${id===(S.who==='all'?me():S.who)}">${av(id,30)}${M[id].n}</button>`).join('')}</div>${lab('VACCINE NAME *')}<input class="field" placeholder="e.g. Flu Shot 2026">${lab('VACCINE TYPE')}<input class="field" placeholder="Flu, MMR, Tdap…">${eb('DATES & SERIES','var(--sage)')}<div style="display:flex;gap:10px"><div style="flex:1">${lab('DATE ADMINISTERED *')}<input class="field" value="Oct 16, 2026"></div><div style="flex:1">${lab('NEXT DUE · OPTIONAL')}<input class="field" placeholder="—"></div></div><div style="display:flex;gap:10px"><div style="flex:1">${lab('CURRENT DOSE #')}<input class="field" value="1"></div><div style="flex:1">${lab('TOTAL DOSES')}<input class="field" value="1"></div></div>${eb('PROVIDER & NOTES','var(--amber)')}<input class="field" placeholder="Dr. Name / CVS"><input class="field" placeholder="Clinic / School">${lab('NOTES / LOT NUMBER')}<textarea class="field" placeholder="Reactions, lot number, clinic notes…" style="min-height:90px"></textarea>`,`<button class="btn sec" data-close>Cancel</button><button class="btn pri" data-savevax>Add vaccine</button>`)}
+ if(t==='vaxview'){const v=S.vax.find(x=>x.id==a);return dshell(v.n,M[v.m].n+' · '+(v.date||'not given yet'),'💉',`<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat" style="background:var(--sage-col)"><b>${v.cur}/${v.tot}</b><small>doses</small></div><div class="stat" style="background:var(--amber-col)"><b>${v.due||'—'}</b><small>next due</small></div><div class="stat" style="background:var(--lav-col)"><b>${v.done?'Done':'Pending'}</b><small>status</small></div></div>${v.by?`<div class="row2" style="--c-col:var(--well);--c-card:var(--line)"><div><b>Administered by</b><small>${v.by}</small></div></div>`:''}${v.loc?`<div class="row2" style="--c-col:var(--well);--c-card:var(--line)"><div><b>Location</b><small>${v.loc}</small></div></div>`:''}${v.notes?`<div class="tg" style="background:var(--amber-col)"><b>Notes</b>${v.notes}</div>`:''}`,S.role==='kid'?'':`<button class="btn sec" data-toast="Marked as done">Mark dose given</button><button class="btn pri" data-close>Close</button>`)}
+ if(t==='rec'){const r=S.recs.find(x=>x.id==a);const tg=TAGS.find(x=>x[0]===r.tag);return dshell(r.n,`${tg[1]} · ${M[r.m].n} · ${r.date}`,tg[2],`<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="pill g">🔒 Encrypted</span><span class="pill">${r.size}</span>${r.urg!=='routine'?`<span class="pill ${r.urg==='urgent'?'red':'a'}">${r.urg==='urgent'?'Urgent':'Attention'}</span>`:'<span class="pill">Routine</span>'}</div>${eb('AI SUMMARY','var(--lav)')}<div class="tg" style="background:var(--lav-col)">${r.sum}</div>${r.find.length?eb('KEY FINDINGS','var(--amber)')+r.find.map((f,i)=>`<div class="tg" style="background:var(--amber-col)">${f}</div>`).join(''):''}${r.fu.length?eb('FOLLOW-UP ACTIONS','var(--sage)')+r.fu.map((f,i)=>`<div class="row2" style="--c-col:var(--sage-col);--c-card:var(--sage-card)"><div><b>${f}</b></div><button class="btn sm sec" data-toast="Added to the calendar">Add</button></div>`).join(''):''}`,`<button class="btn sec" data-toast="Download started">⬇ Download</button>${S.role==='parent'?`<button class="btn sec" style="color:var(--danger)" data-del="rec:${r.id}">Delete</button>`:''}<button class="btn pri" data-close>Close</button>`)}
+ if(t==='manual'){return dshell('Enter details manually','Visit record · health document','✏️',`${lab('DOCUMENT TITLE')}<input class="field" placeholder="e.g. Lab results">${lab('RECORD OWNER')}<div class="who">${mem().map(id=>`<button data-fm="${id}" aria-pressed="${id===me()}">${av(id,30)}${M[id].n}</button>`).join('')}</div>${lab('RECORD TYPE')}<div class="daypick">${TAGS.map(x=>`<button data-fc="${x[0]}" aria-pressed="${x[0]==='lab'}">${x[2]} ${x[1]}</button>`).join('')}</div>${lab('DATE')}<input class="field" value="Oct 16, 2026">${lab('NOTES')}<textarea class="field" style="min-height:90px"></textarea>`,`<button class="btn sec" data-close>Cancel</button><button class="btn pri" data-toast="Record saved">Save record</button>`)}
+ if(t==='review'){const rx=a==='rx';return dshell('Check the findings','Draft findings · nothing saved','🔎',`<div class="tg" style="background:var(--peach)"><b>Nothing is saved yet</b>Read these against the source before you confirm.</div>${lab('DOCUMENT TITLE')}<input class="field" value="${rx?'Amoxicillin prescription':'Blood panel, Oct 2026'}">${lab('RECORD OWNER')}<div class="who">${mem().map(id=>`<button data-fm="${id}" aria-pressed="${id===(rx?'leo':me())}">${av(id,30)}${M[id].n}</button>`).join('')}</div>${lab('RECORD TYPE')}<div class="daypick"><button aria-pressed="true">${rx?'💊 Prescription':'🧪 Lab'}</button></div>${eb('AI SUMMARY','var(--lav)')}<div class="tg" style="background:var(--lav-col)">${rx?'Amoxicillin 250 mg, three times a day for 10 days, for an ear infection.':'Cholesterol is slightly high. Everything else is in range.'}</div>${eb('KEY FINDINGS','var(--amber)')}<div class="tg" style="background:var(--amber-col)">${rx?'250 mg · 3× daily · 14 pills · Dr. Kim':'LDL 138 mg/dL (above 130)'}</div>${eb('FOLLOW-UP ACTIONS','var(--sage)')}<div class="tg" style="background:var(--sage-col)">${rx?'Add as a medication with reminders':'Repeat lipid panel in 3 months'}</div><div class="row2" style="--c-col:var(--well);--c-card:var(--line)"><div><b>I verified the source values</b></div><button class="sw" style="margin-left:auto" data-ver aria-pressed="${!!S.ver}"></button></div>`,`<button class="btn sec" data-close>Cancel · don’t save record</button><button class="btn pri" data-savereview="${a}" style="${S.ver?'':'opacity:.45'}">${rx?'Add medication':'Save record'}</button>`)}
+ return '';
+}
+function render(){
+ const a=S.area;const m={today,meds,refills,vax,records,visit,bring,scanrx,ai,export:exportP}[a]||today;
+ $('#stage').innerHTML=`<div class="main">${menu()}<section class="content">${m()}</section></div><nav class="tabs">${[['Home','🏠'],['Chores','✅'],['Schedule','📅'],['Chat','💬'],['Find','📍'],['Rewards','🎁'],['Meals','🍽️'],['Health','❤️'],['Memories','🖼️']].map(([n,e])=>`<button class="tab" ${n==='Health'?'aria-current="page"':''}><span style="font-size:22px">${e}</span>${n}</button>`).join('')}<div class="clk"><b>3:42 PM</b><span>Fri, Oct 16</span></div></nav>${drawer()}${S.toast?`<div class="toast">${S.toast}</div>`:''}`}
+function closeD(){S.drawer=null;S.f=null;S.confirm=null;S.ver=false}
+document.addEventListener('input',e=>{if(e.target.id==='q'){S.q=e.target.value;const p=e.target.selectionStart;render();const n=$('#q');n.focus();n.setSelectionRange(p,p)}if(e.target.id==='rq'){S.rq=e.target.value;const p=e.target.selectionStart;render();const n=$('#rq');n.focus();n.setSelectionRange(p,p)}});
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const D=b.dataset;
+ if(D.role){S.role=D.role;S.who='all';S.area='today';closeD();document.querySelectorAll('[data-role]').forEach(x=>x.setAttribute('aria-pressed',x===b));render();return}
+ if(b.id==='va'||b.id==='vc'){$('#va').setAttribute('aria-pressed',b.id==='va');$('#vc').setAttribute('aria-pressed',b.id==='vc');return}
+ if(D.area){S.area=D.area;S.bring=null;S.scan=null;S.rec=0;S.recDone=false;render();return}
+ if(D.who){S.who=D.who;render();return}
+ if(D.take){const [id,t]=D.take.split('|');const m=S.meds.find(x=>x.id==id);const tt=t==='next'?(m.t.find(x=>!m.tk[x])||m.t[0]):t;m.tk[tt]=1;render();toast(m.n+' marked taken');return}
+ if(D.ms){S.ms=D.ms;render();return}if(D.vs){S.vs=D.vs;render();return}if(D.tag){S.tag=D.tag;render();return}
+ if('sel' in D){S.sel=!S.sel;S.picked=[];render();return}
+ if(D.pick){const i=+D.pick;S.picked=S.picked.includes(i)?S.picked.filter(x=>x!==i):[...S.picked,i];render();return}
+ if(D.refilled){const m=S.meds.find(x=>x.id==D.refilled);m.pills=60;m.refill='Nov 30, 2026';render();toast(m.n+' refilled');return}
+ if(D.open){S.f=null;S.drawer=D.open;render();return}
+ if(b.hasAttribute('data-close')){closeD();render();return}
+ if(D.del){const [t,id]=D.del.split(':');S.confirm={t:t==='bulk'?'Delete '+S.picked.length+' medications?':'Delete this '+(t==='med'?'medication':t==='vax'?'vaccine':'record')+'?',s:'Removed for everyone in the family',k:t,id:+id};S.drawer='confirm';render();return}
+ if(b.hasAttribute('data-confirm')){const c=S.confirm;if(c.k==='med')S.meds=S.meds.filter(x=>x.id!==c.id);if(c.k==='vax')S.vax=S.vax.filter(x=>x.id!==c.id);if(c.k==='rec')S.recs=S.recs.filter(x=>x.id!==c.id);if(c.k==='bulk'){S.meds=S.meds.filter(x=>!S.picked.includes(x.id));S.picked=[];S.sel=false}closeD();render();toast('Deleted');return}
+ if(D.fm){S.f.m=D.fm;render();return}if(D.fc){S.f.cat=D.fc;render();return}if(D.ff){S.f.f=D.ff;render();return}if(D.fday){S.f.days[D.fday]=S.f.days[D.fday]?0:1;render();return}if(D.ftime){render();toast('Pick a time on the iPad');return}
+ if('fesc' in D){S.f.esc=!S.f.esc;render();return}if('fcall' in D){S.f.call=!S.f.call;render();return}if(D.fa){S.f.after=Math.max(5,S.f.after+ +D.fa);render();return}if(D.fal){render();return}
+ if('savemed' in D){const F=S.f,id=D.savemed;const n=($('#mn')||{}).value||F.n||'New medication';if(id){const m=S.meds.find(x=>x.id==id);Object.assign(m,{n,m:F.m,c:F.cat,f:F.f,t:F.t,esc:F.esc,after:F.after})}else S.meds.push({id:Date.now(),m:F.m,n,d:'10',u:'mg',f:F.f,t:F.t,c:F.cat,doc:'',ph:'',refill:'',pills:30,ins:'',tk:{},esc:F.esc,after:F.after,start:'Oct 16, 2026'});closeD();render();toast(id?'Medication saved':'Medication added');return}
+ if('savevax' in D){S.vax.push({id:Date.now(),m:S.who==='all'?me():S.who,n:'Flu Shot 2026',type:'Flu',date:'Oct 16, 2026',due:'',done:true,cur:1,tot:1,by:'',loc:'',notes:''});closeD();render();toast('Vaccine added');return}
+ if('rec' in D){S.rec=S.rec===1?0:1;S.recDone=S.rec===0;render();return}if('analyze' in D){S.rec=2;S.recDone=false;render();return}
+ if(D.bring){S.bring=D.bring;render();return}if(D.scan){S.scan=1;render();return}
+ if('ver' in D){S.ver=!S.ver;render();return}if(D.savereview){if(!S.ver){toast('Tick “I verified the source values” first');return}const rx=D.savereview==='rx';closeD();if(rx){S.meds.push({id:Date.now(),m:'leo',n:'Amoxicillin',d:'250',u:'mg',f:'three_daily',t:['07:30','13:00','19:00'],c:'prescription',doc:'Dr. Kim',ph:'CVS',refill:'',pills:14,ins:'',tk:{},esc:false,after:30,start:'Oct 16, 2026'});S.area='meds'}else{S.recs.unshift({id:Date.now(),m:me(),n:'Blood panel, Oct 2026',tag:'lab',date:'Oct 16, 2026',size:'180 KB',urg:'routine',sum:'Cholesterol is slightly high.',find:['LDL 138'],fu:[]});S.area='records'}render();toast(rx?'Medication added':'Record saved');return}
+ if(D.ask){S.ai.push({r:'u',x:D.ask},{r:'a',x:D.ask.includes('Leo')?'Leo has taken 1 of 3 doses today. The 1:00 PM dose is overdue and only 5 pills are left.':D.ask.includes('refill')?'Amoxicillin (Leo) and Aspirin (Nana) are running low.':'Flu shot for Leo is due Oct 30 and HPV for Zoe on Nov 12.'});render();return}
+ if('send' in D){const v=($('#aiq')||{}).value;if(v){S.ai.push({r:'u',x:v},{r:'a',x:'Based on the records, nothing looks urgent. Ask a doctor before changing any dose.'});render()}return}
+ if(D.em){const i=S.exp.members.indexOf(D.em);i<0?S.exp.members.push(D.em):S.exp.members.splice(i,1);render();return}
+ if(D.et){const i=S.exp.types.indexOf(D.et);i<0?S.exp.types.push(D.et):S.exp.types.splice(i,1);render();return}
+ if('edoses' in D){S.exp.doses=!S.exp.doses;render();return}if(D.ef){S.exp.fmt=D.ef;render();return}
+ if(D.toast){toast(D.toast);return}
+});
+function fit(){const f=$('#fit'),sc=Math.min(1,f.clientWidth/1180);$('#stage').style.transform='scale('+sc+')';f.style.height=(820*sc)+'px'}
+addEventListener('resize',fit);render();fit();
+</script>

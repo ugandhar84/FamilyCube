@@ -106,8 +106,9 @@ export function useParentEventClassification(
   // name is a reliable signal "this slot was filled and is now open again"
   // — catch it here regardless of category/location.
   const pendingRideRequiredEvents = unassigned.filter(e =>
+    // Only events where someone chose a drop-off or pick-up (rideRequired) or already has a driver/helper. An
+    // appointment at an address that a parent just attends themselves is not a ride, so it is not listed here.
     e.rideRequired
-    || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
     || !!e.helperId || !!e.driverId
   );
   // pending_approval and pending_grandparent_approval both collapse to the
@@ -253,8 +254,14 @@ export function useParentEventClassification(
     // parent approved 2 items, declined 1, card never left the list). Only
     // a request with at least one item still genuinely pending belongs here.
     if (r.status === 'partial' && (r.items?.length ?? 0) > 0 && !r.items!.some((it: any) => it.status === 'pending')) return false;
-    // Auto-expire checkin requests older than 2 hours
+    // A checkin leaves the Needs-You queue the instant it's acknowledged
+    // (acknowledgeCheckin stamps respondedAt but deliberately keeps status
+    // 'pending' for an hour so it still reads as a recent fact, not yet
+    // history) — finalizeAckedCheckins flips it to 'completed' an hour
+    // later. Still also hide an un-acked checkin older than 2 hours so a
+    // check-in nobody ever tapped doesn't sit in the queue forever.
     if (r.type === 'checkin') {
+      if (r.respondedAt) return false;
       const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;
       if (ageHours > 2) return false;
     }

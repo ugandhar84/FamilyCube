@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { router } from 'expo-router';
+import { useUIStore } from './uiStore';
 
 /**
  * useKioskNavStore — a tiny cross-screen signal so a push/in-app
@@ -32,12 +33,18 @@ interface KioskNavState {
   pendingTab: KioskNavTab | null;
   setPendingTab: (tab: KioskNavTab) => void;
   consumePendingTab: () => void;
+  /** One-shot: the Chat tab opens this member's direct message on mount
+   *  (set by Find's "Message" button), then clears it. */
+  pendingDmMemberId: string | null;
+  setPendingDm: (memberId: string | null) => void;
 }
 
 export const useKioskNavStore = create<KioskNavState>((set) => ({
   pendingTab: null,
   setPendingTab: (tab) => set({ pendingTab: tab }),
   consumePendingTab: () => set({ pendingTab: null }),
+  pendingDmMemberId: null,
+  setPendingDm: (memberId) => set({ pendingDmMemberId: memberId }),
 }));
 
 // Phone tab route -> kiosk rail tab. See this file's own header comment for
@@ -83,8 +90,58 @@ export function navigateFromNotification(
   if (isKiosk) {
     const kioskTab = PHONE_ROUTE_TO_KIOSK_TAB[pathname] ?? 'hub';
     useKioskNavStore.getState().setPendingTab(kioskTab);
-    router.push('/(tabs)' as any);
+    router.navigate('/(tabs)' as any);
     return;
   }
-  router.push(dest as any);
+  // '/(tabs)/grocery' and '/(tabs)/meals' are no longer real tab routes —
+  // both are opened as Hub-owned FullPageOverlay state instead (see
+  // HubScreen.tsx/GroceryScreen.tsx/MealsScreen.tsx's own header
+  // comments), to fix a stale-Reanimated-shared-value blank-screen bug
+  // that came from Expo Router's tab navigator keeping them mounted
+  // forever. Every notification/deep-link call site that used to push
+  // straight to one of those routes goes through this single function, so
+  // intercepting here (rather than at each call site in app/_layout.tsx
+  // and NotificationPanel.tsx) is the one place that needs to know: land
+  // on Hub first, then flip the one-shot uiStore flag HubScreen consumes
+  // to open the matching overlay.
+  if (pathname === '/(tabs)/grocery') {
+    router.navigate('/(tabs)' as any);
+    useUIStore.getState().setOpenGroceryScreenRequested(true);
+    return;
+  }
+  if (pathname === '/(tabs)/meals') {
+    router.navigate('/(tabs)' as any);
+    useUIStore.getState().setOpenMealsScreenRequested(true);
+    return;
+  }
+  // Same interception as grocery/meals above — '/(tabs)/store' (Rewards)
+  // is a real-but-hidden tab route kept only for stale deep links; normal
+  // navigation goes through Hub-owned FullPageOverlay state instead (see
+  // app/(tabs)/store.tsx's own header comment for why: a hidden tab route
+  // got neither swipe-back nor a reliable tab-bar hide on repeat visits).
+  if (pathname === '/(tabs)/store') {
+    router.navigate('/(tabs)' as any);
+    useUIStore.getState().setOpenRewardsScreenRequested(true);
+    return;
+  }
+  // Same interception — '/(tabs)/memories' is kept only for stale deep
+  // links; normal navigation opens the Hub-owned FullPageOverlay instead.
+  // A memory_posted/memory_liked push carries ?memoryId=... as a route
+  // param on `dest`, which has no router screen to land on anymore — carry
+  // it over to pendingMemoryFocusId so MemoriesScreen can still scroll to
+  // the right card once opened.
+  if (pathname === '/(tabs)/memories') {
+    const memoryId = typeof dest === 'object' ? dest.params?.memoryId : undefined;
+    router.navigate('/(tabs)' as any);
+    if (memoryId) useUIStore.getState().setPendingMemoryFocusId(memoryId);
+    useUIStore.getState().setOpenMemoriesScreenRequested(true);
+    return;
+  }
+  // navigate (not push) — a sibling-tab path reached via push lands a beat
+  // behind the bottom-tab navigator's own state.index, leaving
+  // CustomTabBar's highlight stuck on the previous tab while the new
+  // screen's content is already visible [live-reported: tab bar "stuck on
+  // the different pages sometimes"]. navigate() reuses the tab navigator's
+  // own transition, same as tapping the bar directly.
+  router.navigate(dest as any);
 }

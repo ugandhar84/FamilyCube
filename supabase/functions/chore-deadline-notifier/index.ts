@@ -176,6 +176,7 @@ serve(async (req) => {
       .from('chore_tasks')
       .select('id, title, base_points, coins_reward, status, due_date, due_time, timezone, assigned_to_id, claimed_at, is_pool, family_id, invite_grandparents, is_open_to_teens, pool_urgent_notified_at')
       .in('status', ['todo', 'in_progress'])
+      .eq('is_personal', false) // a private personal task never notifies anyone
       .lte('due_date', tomorrowUTC)
       .not('due_date', 'is', null);
 

@@ -6,7 +6,7 @@ import {
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { fmtDateTime, fmtDateShort, parseLocalDate } from '@/lib/dates';
 import { KID } from './kidTheme';
-import { CollapsibleCard, QuestLiveness } from '../hubComponents';
+import { QuestLiveness } from '../hubComponents';
 import { BonusCoinBadge } from './BonusCoinBadge';
 import { FlashBonusBadge } from '@/features/quests/components/FlashBonusBadge';
 import type { FamilyMember } from '@/store/familyStore';
@@ -20,6 +20,12 @@ import { ChoreHistorySheet } from '@/features/tasks/components/ChoreHistorySheet
 // teal (used elsewhere in this card for in-progress/claimed state). Not
 // colors.success (which IS brand teal in this app) — kept as one constant.
 const MONEY_GREEN = '#10B981';
+// Muted blue — primary CTA fill (Claim/Start/Mark Done/etc.) [live-requested:
+// "make the CTA buttons to muted blue color in fill"]. No brand token for
+// this exists in constants/colors.ts, so kept as a local constant, same
+// pattern as MONEY_GREEN above — a softer, desaturated blue rather than
+// GEMINI.blue (which is a punchier link/banner-icon blue elsewhere).
+const CTA_BLUE = '#5B7FA6';
 
 function questStatusMeta(q: Quest, colors: any) {
   const isPool = q.isPool && q.status === 'todo';
@@ -40,7 +46,7 @@ function questStatusMeta(q: Quest, colors: any) {
 
 export function KidQuestCard({
   q, active, members, allQuests, colors, isDark,
-  onClaim, onStart, onSubmit, onAcceptGpQuest, onDeclineGpQuest,
+  onClaim, onStart, onSubmit, onAcceptGpQuest, onDeclineGpQuest, onOpenDetail,
 }: {
   q: Quest; active: FamilyMember; members: FamilyMember[]; allQuests: Quest[]; colors: any; isDark: boolean;
   onClaim: (id: string) => void;
@@ -48,6 +54,7 @@ export function KidQuestCard({
   onSubmit: (q: Quest) => void;
   onAcceptGpQuest: (id: string) => void;
   onDeclineGpQuest: (q: Quest) => void;
+  onOpenDetail?: (q: Quest) => void;
 }) {
   // Selected individually (not destructured from the whole store) — Zustand
   // actions are stable references, so this subscribes to nothing and never
@@ -105,8 +112,24 @@ export function KidQuestCard({
   const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <CollapsibleCard accent={meta.color} colors={colors} isDark={isDark} defaultExpanded={false}
-      summary={
+    // Plain, always-expanded card — no inline accordion. Tapping the title/
+    // badges row still opens the full KidQuestDetailScreen (same navigation
+    // as before), but everything that used to be hidden behind
+    // CollapsibleCard's chevron is now always visible: once the detail page
+    // existed, the inline expand/collapse was just extra friction hiding
+    // info the kid could already see one tap away [live-requested: "why dod
+    // we need the expanded cards just plain make it"]. Styling (white card,
+    // accent border/shadow) replicates CollapsibleCard's own `flatBg` look
+    // so this card still matches its CollapsibleCard-using siblings visually
+    // — only the toggle behavior is dropped, scoped to this file only.
+    <View style={{
+      borderRadius: 16, borderWidth: 1, backgroundColor: colors.card, borderColor: meta.color + '40',
+      overflow: 'hidden', padding: 12, gap: 8,
+      shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
+      shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+      elevation: isDark ? 3 : 2,
+    }}>
+      <Pressable onPress={() => onOpenDetail?.(q)} disabled={!onOpenDetail}>
         <View style={{ gap: 6 }}>
           <Text style={{ fontSize: KID.body, fontWeight: '700', color: colors.textPrimary }} numberOfLines={2}>{q.title}</Text>
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
@@ -169,7 +192,7 @@ export function KidQuestCard({
           )}
           <QuestLiveness history={q.history} members={members} colors={colors} />
         </View>
-      }>
+      </Pressable>
       {q.description ? (
         <Text style={{ fontSize: KID.body, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 18 }}>"{q.description}"</Text>
       ) : null}
@@ -213,117 +236,15 @@ export function KidQuestCard({
           </Text>
         </View>
       )}
-      {q.pendingTerms ? (
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <Pressable onPress={() => { acceptTermsChange(q.id, active.id); }}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-              borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
-            <CheckCircle2 size={15} color="#fff" />
-            <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Still fine by me</Text>
-          </Pressable>
-          <Pressable onPress={() => { rejectTermsChange(q.id, active.id); }}
-            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
-            <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Hand it back</Text>
-          </Pressable>
-        </View>
-      ) : isActionable && (
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {isGpTodo ? (
-            <>
-              <Pressable onPress={() => { onAcceptGpQuest(q.id); }}
-                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
-                <Sparkles size={15} color="#fff" />
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>I'll take it</Text>
-              </Pressable>
-              <Pressable onPress={() => { onDeclineGpQuest(q); }}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Decline</Text>
-              </Pressable>
-            </>
-          ) : isPool ? (
-            <Pressable onPress={() => { onClaim(q.id); }}
-              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                borderRadius: 10, backgroundColor: BRAND.purple, paddingVertical: 13 }}>
-              <Trophy size={15} color="#fff" />
-              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Claim (+{q.coins} 🪙)</Text>
-            </Pressable>
-          ) : isClaimed ? (
-            // Was Start-only — canDeclinePlain (below) already includes
-            // 'claimed' in its own status check to offer a decline here,
-            // matching the Chores tab's canSubmit/canKidDecline (both true
-            // simultaneously for a claimed quest there), but this branch
-            // order meant isClaimed always won first, making that decline
-            // path dead code — a kid who claimed a pool quest and changed
-            // their mind could back out from the Chores tab but not from
-            // the identical card on the Hub (QA sweep, kid-role audit,
-            // Medium).
-            <>
-              <Pressable onPress={() => { onStart(q.id); }}
-                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 13 }}>
-                <Zap size={15} color="#fff" fill="#ffffff30" />
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Chore</Text>
-              </Pressable>
-              {canDeclinePlain && (
-                <Pressable onPress={() => { onDeclineGpQuest(q); }}
-                  style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
-                  <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
-                </Pressable>
-              )}
-            </>
-          ) : canDeclinePlain ? (
-            <>
-              <Pressable onPress={() => { onSubmit(q); }}
-                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
-                {q.photoRequired ? <Camera size={15} color="#fff" /> : <CheckCircle2 size={15} color="#fff" />}
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>
-                  {q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => { onDeclineGpQuest(q); }}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
-              </Pressable>
-            </>
-          ) : q.kidDisputedRedo ? (
-            <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10 }}>
-              <Text style={{ fontSize: KID.body, color: colors.textTertiary, fontStyle: 'italic' }}>
-                Waiting on a second parent to take a look…
-              </Text>
-            </View>
-          ) : isDeclined ? (
-            <>
-              <Pressable onPress={() => { onSubmit(q); }}
-                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  borderRadius: 10, backgroundColor: colors.danger, paddingVertical: 13 }}>
-                <RotateCcw size={15} color="#fff" />
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>↩ Revise & Resubmit</Text>
-              </Pressable>
-              {/* QA punch list #5 — pre-payout dispute: "I did do it right the
-                  first time" instead of resubmitting. Only offered on a real
-                  redo_requested (not while already disputed). */}
-              <Pressable onPress={() => { useChoreStore.getState().disputeRedo(q.id, active.id); }}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${BRAND.purple}50`, paddingVertical: 13, alignItems: 'center' }}>
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: BRAND.purple }}>I did do it</Text>
-              </Pressable>
-            </>
-          ) : (
-            <Pressable onPress={() => { onSubmit(q); }}
-              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
-              {q.photoRequired ? <Camera size={15} color="#fff" /> : <CheckCircle2 size={15} color="#fff" />}
-              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>
-                {q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      )}
+      {/* Action buttons (Claim/Start/Mark Done/Decline/etc.) removed from
+          this card — they now live only on KidQuestDetailScreen's own CTA
+          row [live-requested: "remove the CTA buttons on the quest card
+          and i said CTA button on the Quest details page"]. Tapping this
+          card's title/summary row above still opens that detail page via
+          onOpenDetail. */}
       {historyOpen && (
         <ChoreHistorySheet choreId={q.id} title={q.title} members={members} onClose={() => setHistoryOpen(false)} />
       )}
-    </CollapsibleCard>
+    </View>
   );
 }

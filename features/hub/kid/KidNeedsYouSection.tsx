@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
 import {
-  X, AlertTriangle, Clock, RotateCcw, PartyPopper, ThumbsUp, CheckCircle2, XCircle, Car,
+  X, AlertTriangle, Clock, PartyPopper, Car,
   UserCheck, Check, Navigation, MapPin,
 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -16,6 +15,8 @@ import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest, QuestCheer } from '@/store/questStore';
+import { KidSectionHeader } from './KidSectionHeader';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — positive/confirmed accent used throughout this section
 // (approved quest, cheer, confirmed pickup, en-route trip). Not
@@ -27,30 +28,51 @@ const MONEY_GREEN = '#10B981';
 // Every "Needs You" row — alert, reply, ride banner, awaiting-driver,
 // live trip — renders through this one shell so the merged list reads as
 // ONE consistent kind of thing, not four components stitched together.
-function NeedsYouRow({ Icon, accent, colors, isDark, title, detail, onPress, onDismiss, tone = 'flat', children }: {
+// Rebuilt to match the Parent Hub's NeedsYouCard row rhythm (icon chip,
+// status pill, flush divider-separated rows inside one shared card) instead
+// of each row being its own separate bordered/tinted box
+// [live-reported via screenshot: "see this needs you not exactly same
+// stucture as the parent?"]. Kid keeps its own per-row dismiss-X (DB-backed
+// per-item dismissal) and onPress navigation, both of which the parent
+// card doesn't need — those two affordances are additive on top of the
+// shared chrome, not a departure from it.
+function NeedsYouRow({ Icon, accent, colors, isDark, title, detail, statusLabel, onPress, onDismiss, tone = 'flat', children }: {
   Icon: typeof AlertTriangle; accent: string; colors: any; isDark: boolean; title: string; detail?: string;
+  // Short colored-pill label (e.g. "Sent back", "Approved!") shown next to
+  // the detail line — same role as NeedsYouCard's status pill.
+  statusLabel?: string;
   onPress?: () => void; onDismiss?: () => void;
-  // 'flat' — tinted background (default, matches old AlertRow/reply cards).
+  // 'flat' — icon chip in accent tint (default).
   // 'solid' — full-color background with white text, reserved for the ride
   // banner's overdue/here states which need to read as more urgent/alive
-  // than a flat tinted row.
+  // than a flat row.
   tone?: 'flat' | 'solid';
   children?: React.ReactNode;
 }) {
   const Wrapper = onPress ? Pressable : View;
   const solid = tone === 'solid';
   return (
-    // Tighter padding/gaps and a smaller inline icon (no separate chip
-    // circle) than before — these are temporary "heads up" notifications,
-    // not primary content, so the card shouldn't take as much vertical
-    // space as an actual action tile.
-    <View style={{ borderRadius: 14, backgroundColor: solid ? accent : (isDark ? colors.card : accent + '14'),
-      borderWidth: 1.5, borderColor: solid ? accent : accent + '50', padding: 10, gap: 6 }}>
-      <Wrapper onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <Icon size={16} color={solid ? '#fff' : accent} />
+    <View style={{
+      paddingVertical: 10, paddingHorizontal: 12, gap: 6,
+      ...(solid ? { borderRadius: 14, backgroundColor: accent, marginVertical: 2 } : null),
+    }}>
+      <Wrapper onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{
+          width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: solid ? 'rgba(255,255,255,0.22)' : accent + '20',
+        }}>
+          <Icon size={18} color={solid ? '#fff' : accent} strokeWidth={1.8} />
+        </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: KID.sub, fontWeight: '900', color: solid ? '#fff' : accent }} numberOfLines={2}>{title}</Text>
-          {!!detail && <Text style={{ fontSize: KID.tiny, color: solid ? 'rgba(255,255,255,0.85)' : colors.textSecondary, marginTop: 1 }} numberOfLines={2}>{detail}</Text>}
+          <Text style={{ fontSize: KID.sub, fontWeight: '900', color: solid ? '#fff' : colors.textPrimary }} numberOfLines={2}>{title}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            {!!statusLabel && (
+              <View style={{ paddingHorizontal: 7, paddingVertical: 1, borderRadius: 9, backgroundColor: solid ? 'rgba(255,255,255,0.22)' : accent + '20' }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: solid ? '#fff' : accent }}>{statusLabel}</Text>
+              </View>
+            )}
+            {!!detail && <Text style={{ fontSize: KID.tiny, color: solid ? 'rgba(255,255,255,0.85)' : colors.textSecondary, flex: 1 }} numberOfLines={2}>{detail}</Text>}
+          </View>
         </View>
         {onDismiss && (
           <Pressable onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -199,7 +221,8 @@ export function KidNeedsYouSection({
   declinedRides, pendingRides, declinedQuests, approvedQuests, cheersForMe, recentReplies,
   confirmedRide, rideCountdown, confirmedRideConflict, confirmedRideDispatched, awaitingDriverRide, activeTrips,
   active, members, colors, isDark, dismissedIds, onDismiss,
-  onConfirmPickup, onSendDriverLate, lateNudgeSent,
+  onConfirmPickup, onSendDriverLate, lateNudgeSent, onOpenHistory,
+  hasChoresCard,
 }: {
   declinedRides: FamilyEvent[]; pendingRides: FamilyEvent[];
   declinedQuests: Quest[]; approvedQuests: Quest[];
@@ -221,10 +244,32 @@ export function KidNeedsYouSection({
   onConfirmPickup: (ev: FamilyEvent) => void;
   onSendDriverLate: (ev: FamilyEvent) => void;
   lateNudgeSent: Record<string, boolean>;
+  // Opens My Chores' own history/done tab — surfaced only in the empty
+  // state below, once there's genuinely nothing left requiring action
+  // [live-requested: "we can make the show history link in the empty
+  // component"].
+  onOpenHistory?: () => void;
+  // True when KidChoresNeedsYouCard (rendered just above this section) is
+  // already showing its own NEEDS YOU card — in that case this section's
+  // "Nothing needs you right now · Show history" empty-state link must
+  // stay hidden instead of appearing directly under an already-visible
+  // NEEDS YOU card, which read as contradictory
+  // ["ther is empty component for needs you when there is already acard"].
+  hasChoresCard?: boolean;
 }) {
   const filteredDeclinedRides = declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`));
   const filteredPendingRides  = pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`));
-  const filteredDeclinedQuests = declinedQuests.filter(q => !dismissedIds.has(`quest-${q.id}`));
+  // Declined/approved chores are NOT rendered as their own rows here
+  // anymore — KidChoresNeedsYouCard (the compact chores card higher up on
+  // the Hub) already surfaces "Chore sent back" as its headline the moment
+  // nothing else is more urgent, and now counts declined chores into its
+  // own To Do total too. Showing the same status again as a second,
+  // separately-dismissible row here was pure duplication of the same fact
+  // [live direction: "show what actually need to to the kids without
+  // overwheming the hub"]. filteredApprovedQuests is kept ONLY to drive the
+  // one-time celebration trigger below (a chore getting approved is worth
+  // one confetti burst, not a lingering card) — it is deliberately never
+  // rendered as a row.
   const filteredApprovedQuests = approvedQuests.filter(q => !dismissedIds.has(`quest-approved-${q.id}`));
   const filteredCheersForMe = cheersForMe.filter(({ quest, cheer }) => !dismissedIds.has(`cheer-${quest.id}-${cheer.memberId}`));
 
@@ -292,129 +337,129 @@ export function KidNeedsYouSection({
   const showConfirmedRide = !!confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedIds.has(confirmedRide.id);
   const showAwaitingDriver = !confirmedRide && !!awaitingDriverRide && !dismissedIds.has(`awaiting-${awaitingDriverRide.id}`);
 
+  // Cheers and replies (check-in/permission/medical/tutor/question answers)
+  // are also resolved-already facts, same reasoning as declined/approved
+  // chores above — confirmed via explicit user selection. Cheers still
+  // drive the one-time celebration trigger above; replies don't render as
+  // rows anymore either.
   const hasAnything = filteredDeclinedRides.length > 0 || filteredPendingRides.length > 0 ||
-    filteredDeclinedQuests.length > 0 || filteredApprovedQuests.length > 0 || filteredCheersForMe.length > 0 ||
-    recentReplies.length > 0 || showConfirmedRide || showAwaitingDriver || !!activeTrips?.length;
+    showConfirmedRide || showAwaitingDriver || !!activeTrips?.length;
 
-  if (!hasAnything) return null;
+  // Nothing currently needs the kid's action — no NEEDS YOU card at all
+  // (per the same "only where action is required" rule that dropped
+  // chores/cheers/replies above), just a quiet text link down to past
+  // activity instead of an empty card shell.
+  if (!hasAnything) {
+    if (!onOpenHistory || hasChoresCard) return null;
+    return (
+      <Pressable onPress={onOpenHistory} style={{ paddingHorizontal: 16, marginTop: 10, marginBottom: 10 }}>
+        <Text style={{ color: colors.textTertiary, fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+          Nothing needs you right now · Show history
+        </Text>
+      </Pressable>
+    );
+  }
+
+  // Sequential divider counter — every row past the first gets a hairline
+  // above it, matching ParentView.tsx's `i > 0` divider pattern for its own
+  // needsYouCards stack. A plain mutable counter (not array index) because
+  // rows here come from several different conditionals/maps in sequence,
+  // not one flat array.
+  let rowIndex = 0;
+  const Divider = () => {
+    const show = rowIndex > 0;
+    rowIndex++;
+    return show ? <View style={{ height: 1, marginHorizontal: 12, backgroundColor: isDark ? colors.border : GEMINI.border, opacity: 0.6 }} /> : null;
+  };
 
   return (
     // marginBottom bumped from 4 to 14 — these cards sat almost flush
     // against the action-tile row directly below (KidTodaySection),
     // reading as if they were part of the same group rather than two
-    // distinct sections.
-    <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 14 }}>
+    // distinct sections. Rebuilt to match ParentView.tsx's NEEDS YOU
+    // rhythm: one shared bordered/shadowed outer card with divider lines
+    // between rows, instead of each row being its own separate bordered
+    // box [live-reported via screenshot: "see this needs you not exactly
+    // same stucture as the parent?"]. Row components themselves
+    // (NeedsYouRow/NeedsYouRideRow/NeedsYouTripRow) keep their own
+    // dismiss/press/state-machine logic untouched.
+    // No marginBottom — KidActionGrid right below always supplies its own
+    // marginTop: 14, so adding a trailing margin here doubled the gap when
+    // this section is actually visible (and when it's hidden/empty,
+    // relying on ITS margin for the gap collapsed Quick Actions flush
+    // against whatever's above it instead) ["see this Quick actions
+    // stupid.. in teens view"].
+    <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
+      <KidSectionHeader label="NEEDS YOU" accent={colors.pink} colors={colors} />
+      <View style={{
+        borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+        borderRadius: 22, backgroundColor: colors.amberLight,
+        ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow),
+        overflow: 'hidden',
+      }}>
       {showConfirmedRide && (
-        <NeedsYouRideRow
-          ev={confirmedRide!} rideCountdown={rideCountdown!} colors={colors} isDark={isDark}
-          active={active} members={members}
-          onConfirmPickup={onConfirmPickup}
-          onDismiss={(id) => onDismiss(id)}
-          onSendDriverLate={onSendDriverLate} lateNudgeSent={lateNudgeSent}
-          conflictReason={confirmedRideConflict}
-          driverDispatched={confirmedRideDispatched}
-        />
+        <>
+          <Divider />
+          <NeedsYouRideRow
+            ev={confirmedRide!} rideCountdown={rideCountdown!} colors={colors} isDark={isDark}
+            active={active} members={members}
+            onConfirmPickup={onConfirmPickup}
+            onDismiss={(id) => onDismiss(id)}
+            onSendDriverLate={onSendDriverLate} lateNudgeSent={lateNudgeSent}
+            conflictReason={confirmedRideConflict}
+            driverDispatched={confirmedRideDispatched}
+          />
+        </>
       )}
 
       {showAwaitingDriver && (() => {
         const driverFirst = eventAssignee(awaitingDriverRide!).name?.split(' ')[0] ?? 'Someone';
         return (
-          <NeedsYouRow
-            Icon={UserCheck} accent={BRAND.purple} colors={colors} isDark={isDark}
-            title={`${driverFirst} was asked to drive you`}
-            detail={`${awaitingDriverRide!.title} · ${fmtTime(awaitingDriverRide!.time)} · waiting for ${driverFirst} to confirm`}
-            onDismiss={() => { onDismiss(`awaiting-${awaitingDriverRide!.id}`); }}
-          />
+          <>
+            <Divider />
+            <NeedsYouRow
+              Icon={UserCheck} accent={BRAND.purple} colors={colors} isDark={isDark}
+              title={`${driverFirst} was asked to drive you`}
+              detail={`${awaitingDriverRide!.title} · ${fmtTime(awaitingDriverRide!.time)} · waiting for ${driverFirst} to confirm`}
+              onDismiss={() => { onDismiss(`awaiting-${awaitingDriverRide!.id}`); }}
+            />
+          </>
         );
       })()}
 
       {activeTrips?.map(trip => (
-        <NeedsYouTripRow key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
+        <View key={trip.tripId}><Divider /><NeedsYouTripRow colors={colors} isDark={isDark} activeTrip={trip} /></View>
       ))}
 
       {filteredDeclinedRides.map(ev => (
-        <NeedsYouRow key={ev.id} Icon={Car} accent={colors.danger} colors={colors} isDark={isDark}
-          title={`No driver — ${ev.title}`}
-          detail={ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
-          onDismiss={() => { onDismiss(`ride-${ev.id}`); }} />
+        <View key={ev.id}><Divider />
+          <NeedsYouRow Icon={Car} accent={colors.danger} colors={colors} isDark={isDark}
+            title={`No driver — ${ev.title}`} statusLabel="Unassigned"
+            detail={ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
+            onDismiss={() => { onDismiss(`ride-${ev.id}`); }} />
+        </View>
       ))}
 
       {filteredPendingRides.map(ev => {
         const h = hoursUntilEvent(ev.date, ev.time);
         const isUrgent = h >= 0 && h < 2;
         return (
-          <NeedsYouRow key={ev.id} Icon={isUrgent ? AlertTriangle : Clock} accent={isUrgent ? colors.danger : BRAND.amber} colors={colors} isDark={isDark}
-            title={isUrgent ? 'Still no driver — getting close!' : 'Waiting on driver…'}
-            detail={`${ev.title} · ${fmtTime(ev.time)}`}
-            onDismiss={() => { onDismiss(`pending-${ev.id}`); }} />
+          <View key={ev.id}><Divider />
+            <NeedsYouRow Icon={isUrgent ? AlertTriangle : Clock} accent={isUrgent ? colors.danger : BRAND.amber} colors={colors} isDark={isDark}
+              title={isUrgent ? 'Still no driver — getting close!' : 'Waiting on driver…'} statusLabel="Pending"
+              detail={`${ev.title} · ${fmtTime(ev.time)}`}
+              onDismiss={() => { onDismiss(`pending-${ev.id}`); }} />
+          </View>
         );
       })}
 
-      {filteredDeclinedQuests.map(q => {
-        const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
-        return (
-          <NeedsYouRow key={q.id} Icon={RotateCcw} accent={BRAND.purple} colors={colors} isDark={isDark}
-            title="Chore sent back" detail={note ? `"${note}"` : q.title}
-            onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
-            onDismiss={() => { onDismiss(`quest-${q.id}`); }} />
-        );
-      })}
-
-      {filteredApprovedQuests.map(q => (
-        <NeedsYouRow key={`approved-${q.id}`} Icon={PartyPopper} accent={MONEY_GREEN} colors={colors} isDark={isDark}
-          title="Chore approved!" detail={`${q.title} · +${q.coins} coins`}
-          onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
-          onDismiss={() => { onDismiss(`quest-approved-${q.id}`); }} />
-      ))}
-
-      {filteredCheersForMe.map(({ quest, cheer }) => {
-        const cheerer = members.find(m => m.id === cheer.memberId);
-        const key = `cheer-${quest.id}-${cheer.memberId}`;
-        return (
-          <NeedsYouRow key={key} Icon={PartyPopper} accent={BRAND.purple} colors={colors} isDark={isDark}
-            title={`${cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!`}
-            detail={`${quest.title}${cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}`}
-            onDismiss={() => { onDismiss(key); }} />
-        );
-      })}
-
-      {recentReplies.map(r => {
-        const approved = r.status === 'approved';
-        const isCheckin = r.type === 'checkin';
-        const accent = isCheckin ? BRAND.teal : approved ? MONEY_GREEN : colors.danger;
-        const ReplyIcon = isCheckin ? ThumbsUp : approved ? CheckCircle2 : XCircle;
-        const label = isCheckin ? 'Seen!' : approved ? 'Yes!' : 'No';
-        const typeLabel = isCheckin ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission'
-          : r.type === 'tutor' ? 'Tutor Offer' : r.type === 'cheer' ? 'Cheer' : 'Question';
-        const responder = r.respondedBy ? members.find(m => m.id === r.respondedBy) : null;
-        const responderName = responder ? responder.name.split(' ')[0] : 'Parent';
-        let timeAgo = '';
-        if (r.respondedAt) {
-          const diffMins = Math.floor((Date.now() - parseDbTime(r.respondedAt).getTime()) / 60000);
-          if (Number.isFinite(diffMins)) {
-            timeAgo = diffMins < 60 ? `${diffMins}m ago` : diffMins < 1440 ? `${Math.floor(diffMins / 60)}h ago` : `${Math.floor(diffMins / 1440)}d ago`;
-          }
-        }
-        return (
-          <NeedsYouRow key={r.id} Icon={ReplyIcon} accent={accent} colors={colors} isDark={isDark}
-            title={`${label} — ${typeLabel}`}
-            onDismiss={() => { onDismiss(r.id); }}
-          >
-            <View>
-              <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>
-                {responderName}{timeAgo && ` · ${timeAgo}`}
-              </Text>
-              <Text style={{ fontSize: KID.sub, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>"{r.detail}"</Text>
-              {r.parentNote ? (
-                <Text style={{ fontSize: KID.sub, fontStyle: 'italic', marginTop: 4 }}>
-                  <Text style={{ color: accent, fontStyle: 'normal', fontWeight: '700' }}>Parent: </Text>
-                  <Text style={{ color: colors.textPrimary }}>"{r.parentNote}"</Text>
-                </Text>
-              ) : null}
-            </View>
-          </NeedsYouRow>
-        );
-      })}
+      {/* Declined/approved chores, cheers, and replies no longer render
+          as rows here — see the filteredApprovedQuests comment above for
+          why. KidChoresNeedsYouCard covers chore status; cheers/replies
+          are resolved-already facts the kid has already seen the result
+          of (cheer landed, question answered) and don't need a second
+          dismissible card competing for attention on the Hub. */}
+      </View>
     </View>
   );
 }

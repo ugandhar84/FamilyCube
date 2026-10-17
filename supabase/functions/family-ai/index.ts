@@ -23,10 +23,14 @@ const json = (body: unknown, status = 200) =>
     status, headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 
-const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-const DEEPSEEK_KEY  = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
-const DEEPSEEK_URL  = 'https://api.deepseek.com/chat/completions';
+const GEMINI_KEY       = Deno.env.get('GEMINI_API_KEY') ?? '';
+const GEMINI_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+// gemini-2.0-flash-exp supports image output via responseModalities — works with AI Studio key
+const GEMINI_IMAGE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
+const DEEPSEEK_KEY     = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
+const DEEPSEEK_URL     = 'https://api.deepseek.com/chat/completions';
+const SUPABASE_URL_ENV = Deno.env.get('SUPABASE_URL') ?? '';
+const SERVICE_KEY      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 // ─── Model calls ──────────────────────────────────────────────────────────────
 
@@ -513,7 +517,12 @@ Input: "${text}"
 
 Return JSON: {
   task: null | {
-    title: string,
+    title: string — a short, clean, action-verb task name (2–5 words). Strip all scheduling
+      details (times, dates, days, "every Monday", "by Friday"), filler words, and any
+      person's name unless the name IS the task identity (e.g. "Call Grandma"). Start with
+      an imperative verb. Examples: "Water the plants", "Take out the trash", "Finish math
+      homework", "Clean the garage", "Walk the dog", "Pay electricity bill". Never return
+      the raw input text — always distil it into a crisp, board-ready task title.
     category: one of ${JSON.stringify(taskDomains)} (pick the closest match, never invent a new value),
     kind: "event" | "quest" — decide using this rule, in order:
       1. Does the input mention a driver, ride, pickup, or drop-off ("pick up X from Y",
@@ -547,11 +556,12 @@ Return JSON: {
       a single named person -> that one name only, still as a one-item array. Empty
       array if nobody specific was named or implied.)
     recurrenceFrequency: "once" | "daily" | "weekly" | "monthly" — "once" unless the
-      input names a repeating pattern ("every Wednesday", "every day", "daily", "weekly",
-      "every week", "monthly", "every weekday", "weekdays"). "Pick up Maya from soccer
-      every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct from
-      "every day" which is all 7) is ALSO "weekly", not "daily" — "School drop-off every
-      weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
+      input names a repeating pattern ("every Wednesday", "every day", "everyday", "daily",
+      "weekly", "every week", "monthly", "every weekday", "weekdays"). Note: "everyday"
+      (one word) means the same as "every day" — treat it as "daily". "Pick up Maya from
+      soccer every Wednesday" -> "weekly". "every weekday"/"weekdays" (Mon-Fri, distinct
+      from "every day"/"everyday" which is all 7) is ALSO "weekly", not "daily" —
+      "School drop-off every weekday" -> "weekly" with recurrenceDays [1,2,3,4,5], not "daily".
     recurrenceDays: number[] — weekly recurrence only, which weekdays it repeats on,
       0=Sunday..6=Saturday (e.g. "every Wednesday" -> [3], "every Mon and Thu" -> [1,4],
       "every weekday"/"weekdays" -> [1,2,3,4,5]). Empty array unless recurrenceFrequency
@@ -562,6 +572,23 @@ Return JSON: {
       reminder/notification/alert (e.g. "enable call reminder", "call notification").
       false for a plain mention of a phone call that is the task itself ("call the
       dentist", "phone call with tutor").
+    pickupLocation: string | null — ONLY when category is "transport": where the
+      rider is being picked up FROM (e.g. "Eastfield library", "home", "school").
+      Clean place name, no leading "from". Null if not mentioned or category isn't
+      transport.
+    dropoffLocation: string | null — ONLY when category is "transport": where the
+      rider is being taken TO (e.g. "soccer practice", "Maya's house"). Clean place
+      name, no leading "to"/"at". Null if not mentioned or category isn't transport.
+    rideDirection: "pickup" | "dropoff" | "both" | null — ONLY when category is
+      "transport": which leg(s) are actually being asked for. "Pick me up from X" /
+      "collect me from X" -> "pickup". "Drop me off at X" / "take me to X" ->
+      "dropoff". Both a pickup location AND a dropoff location named, or language
+      implying a round trip ("...then pick me up after at 6pm") -> "both". Null if
+      category isn't transport or direction is unclear.
+    returnTime: string | null — ONLY when rideDirection is "both": the 24h "HH:MM" clock
+      time of the second leg (the pick-up after a drop-off), e.g. "drop her at 6 and pick
+      her up at 7" -> "19:00" for 7pm. Null otherwise. Use am/pm context sensibly (evening
+      activities are PM).
   },
   errand: null | {
     category: one of ${JSON.stringify(errandSubcategories)} (pick the closest match, never invent a new value — this must be one of these exact values, they map directly to a database constraint),
@@ -592,6 +619,107 @@ async function groceryAi(body: Record<string, unknown>) {
   return parseJson<{ items: unknown[]; summary: string }>(text, { items: [], summary: 'Could not generate list.' });
 }
 
+async function generateRecipeImage(title: string, ingredients: string[], familyId: string): Promise<string | null> {
+  if (!GEMINI_KEY || !SUPABASE_URL_ENV || !SERVICE_KEY) return null;
+  try {
+    const topIngredients = ingredients.slice(0, 4).join(', ') || 'fresh ingredients';
+    const imagePrompt = `Generate a beautiful, appetising food photograph of "${title}". ` +
+      `Made with ${topIngredients}. ` +
+      `Plated on a wooden table with natural side lighting. ` +
+      `Professional food photography style, warm tones, shallow depth of field, no text, no watermarks.`;
+
+    // gemini-2.0-flash-exp supports inline image output with AI Studio keys
+    const res = await fetch(`${GEMINI_IMAGE_URL}?key=${GEMINI_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: imagePrompt }] }],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      }),
+    });
+    if (!res.ok) {
+      console.warn('[refine_recipe] Gemini image failed:', res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    // Find the inline image part
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imagePart) {
+      console.warn('[refine_recipe] No image part in Gemini response');
+      return null;
+    }
+    const b64: string = imagePart.inlineData.data;
+    const mime: string = imagePart.inlineData.mimeType ?? 'image/png';
+    const ext = mime.includes('png') ? 'png' : 'jpg';
+
+    // Upload to Supabase Storage — bucket: recipe-images (public)
+    const sb = createClient(SUPABASE_URL_ENV, SERVICE_KEY);
+    const fileName = `${familyId}/${Date.now()}.${ext}`;
+    const binary = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const { error } = await sb.storage.from('recipe-images').upload(fileName, binary, {
+      contentType: mime, upsert: false,
+    });
+    if (error) {
+      console.warn('[refine_recipe] Storage upload failed:', error.message);
+      return null;
+    }
+    const { data: { publicUrl } } = sb.storage.from('recipe-images').getPublicUrl(fileName);
+    return publicUrl;
+  } catch (e) {
+    console.warn('[refine_recipe] Image generation error:', e);
+    return null;
+  }
+}
+
+async function refineRecipe(body: Record<string, unknown>) {
+  const { title, ingredients, steps, dietaryTags, prepMinutes, familyId } = body as {
+    title?: string; ingredients?: string[]; steps?: string[];
+    dietaryTags?: string[]; prepMinutes?: number; familyId?: string;
+  };
+  const prompt = `You are a helpful family cooking assistant for FamilyCube.
+A family member has drafted a recipe and wants you to clean it up and improve it.
+
+Recipe title: "${title ?? 'Untitled'}"
+Prep time: ${prepMinutes ? `${prepMinutes} minutes` : 'not set'}
+Ingredients: ${ingredients?.filter(Boolean).join(', ') || 'none listed'}
+Steps: ${steps?.filter(Boolean).map((s, i) => `${i + 1}. ${s}`).join(' | ') || 'none listed'}
+Dietary tags: ${dietaryTags?.join(', ') || 'none'}
+
+Improve this recipe by:
+- Cleaning up grammar and making steps clear and actionable
+- Adding missing quantities to ingredients if obvious (e.g. "2 cloves garlic")
+- Breaking run-on steps into distinct numbered steps
+- Suggesting up to 3 dietary tags (e.g. "gluten-free", "kid-friendly", "vegetarian", "high-protein", "dairy-free") if appropriate
+- Suggesting an emoji that represents this dish
+- Estimating prep time in minutes if not set
+
+Return JSON with exactly these keys:
+{
+  "title": string (cleaned up title, keep it close to original),
+  "emoji": string (single emoji),
+  "ingredients": string[] (cleaned, one per item),
+  "steps": string[] (clear, actionable steps),
+  "dietaryTags": string[] (up to 3 tags),
+  "prepMinutes": number,
+  "tip": string (one friendly sentence about this dish for the family)
+}`;
+
+  // Run text refinement and image generation in parallel
+  const [text, imageUrl] = await Promise.all([
+    callAI(prompt),
+    familyId ? generateRecipeImage(title ?? 'Recipe', ingredients ?? [], familyId) : Promise.resolve(null),
+  ]);
+
+  const refined = parseJson(text, {
+    title: title ?? '', emoji: '🍽️', ingredients: ingredients ?? [],
+    steps: steps ?? [], dietaryTags: dietaryTags ?? [],
+    prepMinutes: prepMinutes ?? 30, tip: '',
+  });
+
+  return { ...refined, imageUrl };
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 const ACTIONS: Record<string, (b: Record<string, unknown>) => Promise<unknown>> = {
@@ -609,6 +737,7 @@ const ACTIONS: Record<string, (b: Record<string, unknown>) => Promise<unknown>> 
   smart_chores:    smartChores,
   grocery_ai:      groceryAi,
   extract_responsibility: extractResponsibility,
+  refine_recipe:   refineRecipe,
 };
 
 serve(async (req) => {

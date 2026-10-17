@@ -133,6 +133,8 @@ export interface Quest {
   reviewedById?:    string;  // who approved/declined it — chore_tasks.reviewed_by_id
 
   photoRequired:    boolean;
+  /** Parent-marked trusted chore: the assignee's submit auto-approves and pays. */
+  trustedAutoApprove?: boolean;
   photoUrl?:        string;
   photoUrls:        string[];
   videoUrl?:        string;

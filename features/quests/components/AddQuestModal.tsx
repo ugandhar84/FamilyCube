@@ -32,12 +32,18 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 
+// Figma action tokens (meruVxaWmdV6SIQBX8XkRK foundations)
+const ACTION       = '#345de3';
+const ACTION_DARK  = '#99b3ff';
+const ACTION_SOFT  = '#e9efff';
+const ACTION_SOFT_DARK = '#253862';
+const ACTION_TEXT  = '#294fc7';
+
 // ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
 // The same stepper shell, voice box, due-date picker and call-reminder
 // toggle AddEventModal uses. Previously this file hand-maintained its own
 // copy of each; see TaskFormShell's header for why that stopped being safe.
 import { TaskFormShell } from '@/features/tasks/components/forms/TaskFormShell';
-import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
 import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
 
@@ -97,6 +103,9 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   initialStep?: 'review';
 }) {
   const { colors, isDark } = useTheme();
+  const periwinkle = isDark ? ACTION_DARK : ACTION;
+  const periwinkleSoft = isDark ? ACTION_SOFT_DARK : ACTION_SOFT;
+  const periwinkleText = isDark ? ACTION_DARK : ACTION_TEXT;
   const { addQuest, createParticipants } = useQuestStore();
   const members = useFamilyStore(s => s.members);
   const kids    = members.filter(m => m.role === 'kid');
@@ -114,6 +123,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const [isPool,       setIsPool]       = useState(false);
   const [maxClaimants, setMaxClaimants] = useState<number>(1); // pool: how many kids can claim
   const [photoReq,     setPhotoReq]     = useState(prefill?.photoRequired ?? false);
+  const [trusted,      setTrusted]      = useState(false);
   const [desc,         setDesc]         = useState('');
   const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
   const [bonusCoins,   setBonusCoins]   = useState('');
@@ -479,7 +489,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
     setCategory('Other'); setCategoryTouched(false);
     setAssignIds([]); setIsPool(false); setMaxClaimants(1);
-    setPhotoReq(false); setDueDate(defaultDue()); setIsAdultTask(false);
+    setPhotoReq(false); setTrusted(false); setDueDate(defaultDue()); setIsAdultTask(false);
     setShowDatePick(false); setShowTimePick(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
@@ -623,6 +633,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       dueTime: fmtTimeLabel(dueDate),
       alertCall, alertCallLeadMinutes,
       photoRequired: routineType === 'shopping' ? true : photoReq,
+      trustedAutoApprove: trusted && !photoReq && routineType !== 'shopping',
       createdById: activeMemberId,
       isAdultTask,
       questType: resolvedQuestType,
@@ -799,9 +810,12 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       stepTitles={stepTitles}
       step={step}
       setStep={setStep}
-      accentColor={BRAND.purple}
+      accentColor={periwinkle}
+      hideProgress={initialStep === 'review'}
       headerTitle={defaultQuestType === 'grandparent_quest' ? '👴 Sponsor a Chore' : 'New Chore'}
       headerSubtitle={defaultQuestType === 'grandparent_quest' ? 'Create a special chore for the grandkids' : 'Assign a chore, bounty, or task'}
+      stepLabels={stepIds.map(id => ({ what: 'What', grocery: 'Items', when: 'When', assign: 'Who', review: 'Review' }[id] ?? id))}
+      hasDraft={titleTouched || descTouched || title.trim().length > 0}
     >
 
             {currentStepId === 'what' && <>
@@ -832,7 +846,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
             <VoicePrefillBox
               voice={voice} voiceDraft={voiceDraft} setVoiceDraft={setVoiceDraft}
               isPrefilling={isPrefilling} onSend={applyVoiceTranscript}
-              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+              accentColor={periwinkle} colors={colors} isDark={isDark}
             />
 
             {/* Dynamic suggestion pills — always visible */}
@@ -849,12 +863,12 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                         <TouchableOpacity
                           key={i}
                           style={[aq.suggPill, {
-                            backgroundColor: isSelected ? BRAND.purple + '25' : colors.surface,
-                            borderColor:     isSelected ? BRAND.purple : colors.border,
+                            backgroundColor: isSelected ? periwinkleSoft : colors.surface,
+                            borderColor:     isSelected ? periwinkle : colors.border,
                           }]}
                           onPress={() => 'coins' in s ? applySuggestion(s) : setTitle(s.title)}
                         >
-                          <Text style={{ fontSize: TYPO.micro, color: isSelected ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>
+                          <Text style={{ fontSize: TYPO.micro, color: isSelected ? periwinkle : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>
                             {s.title}
                           </Text>
                           {'coins' in s && !isSelected && (
@@ -868,7 +882,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                               style={{ marginLeft: 6 }}
                             >
-                              <Ionicons name="close-circle" size={15} color={BRAND.purple} />
+                              <Ionicons name="close-circle" size={15} color={periwinkle} />
                             </Pressable>
                           )}
                         </TouchableOpacity>
@@ -966,13 +980,13 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                   style={{
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                     borderRadius: 14, paddingVertical: 11, borderWidth: 1.5, borderStyle: 'dashed',
-                    borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : '#F8F5FF',
+                    borderColor: periwinkle + '60', backgroundColor: periwinkleSoft,
                     opacity: loadingSuggestion ? 0.6 : 1, marginBottom: 8,
                   }}
                 >
                   {loadingSuggestion
-                    ? <ActivityIndicator size="small" color={BRAND.purple} />
-                    : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
+                    ? <ActivityIndicator size="small" color={periwinkle} />
+                    : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: periwinkle }}>
                         ✨ Who would this go to?
                       </Text>
                   }
@@ -1061,10 +1075,10 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                 <Text style={[aq.label, { color: 'transparent' }]}>·</Text>
                 <TouchableOpacity
                   style={[aq.toggleRow, { paddingHorizontal: 10,
-                    borderColor: photoReq ? BRAND.purple : pillBdr, backgroundColor: photoReq ? BRAND.purple + '18' : pillBg }]}
+                    borderColor: photoReq ? periwinkle : pillBdr, backgroundColor: photoReq ? periwinkle + '18' : pillBg }]}
                   onPress={() => setPhotoReq(p => !p)}
                 >
-                  <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: photoReq ? BRAND.purple : colors.textSecondary, textAlign: 'center' }} numberOfLines={1}>
+                  <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: photoReq ? periwinkle : colors.textSecondary, textAlign: 'center' }} numberOfLines={1}>
                     {photoReq ? '📷 Required' : '📷 Optional'}
                   </Text>
                 </TouchableOpacity>
@@ -1078,6 +1092,24 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 3 }}>no reward</Text>
             ) : null}
 
+
+            {!photoReq && routineType !== 'shopping' && (
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginTop: 10,
+                  backgroundColor: trusted ? colors.tealLight : colors.card,
+                  borderWidth: 1.5, borderColor: trusted ? colors.teal : colors.border }}
+                onPress={() => setTrusted(t => !t)} activeOpacity={0.8}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: trusted ? colors.teal : colors.textPrimary }}>✅ Trusted chore</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>Paid right away when done — no review needed</Text>
+                </View>
+                <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: trusted ? colors.teal : colors.border, justifyContent: 'center', padding: 2 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.card, alignSelf: trusted ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
+            )}
+
             {/* Hardness — its own row now that Coins/Bonus/Photo share one above */}
             <View style={{ marginTop: 10, marginBottom: 14 }}>
               <Text style={[aq.label, { color: colors.textSecondary }]}>Hardness <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
@@ -1086,7 +1118,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                   { key: 'easy',   label: '😊',  color: '#10B981' },
                   { key: 'medium', label: '💪',  color: BRAND.amber },
                   { key: 'hard',   label: '🔥',  color: '#EF4444' },
-                  { key: 'hero',   label: '⚡',  color: BRAND.purple },
+                  { key: 'hero',   label: '⚡',  color: ACTION },
                 ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
                   <TouchableOpacity
                     key={d.key}
@@ -1115,7 +1147,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               showDatePick={showDatePick} setShowDatePick={setShowDatePick}
               showTimePick={showTimePick} setShowTimePick={setShowTimePick}
               fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
-              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+              accentColor={periwinkle} colors={colors} isDark={isDark}
               pillStyle={aq.datePill} overlayStyle={aq.pickerOverlay} cardStyle={aq.pickerCard}
             />
 
@@ -1132,11 +1164,11 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                 <View style={{ marginBottom: 14 }}>
                   <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
                   <TouchableOpacity
-                    style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
+                    style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? periwinkle + '20' : pillBg, borderColor: showEventPicker ? periwinkle : pillBdr }]}
                     onPress={() => setShowEventPicker(p => !p)}
                   >
                     <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? periwinkle : colors.textPrimary }} numberOfLines={1}>
                       {linkedEvent ? linkedEvent.title : 'None'}
                     </Text>
                   </TouchableOpacity>
@@ -1147,7 +1179,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                           style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
                           onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
                         >
-                          <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? periwinkle : colors.textSecondary }}>None</Text>
                         </TouchableOpacity>
                         {upcomingEvents.length === 0 ? (
                           <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
@@ -1157,7 +1189,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                             style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
                             onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
                           >
-                            <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? periwinkle : colors.textPrimary }} numberOfLines={1}>
                               {ev.title}
                             </Text>
                             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{fmtDate(ev.date)}{ev.time ? ` · ${fmtTime(ev.time)}` : ''}</Text>
@@ -1170,14 +1202,13 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               );
             })()}
 
-            {/* Call-style reminder — shared with the Schedule form and
-                EditQuestModal (see CallReminderToggle). */}
-            <CallReminderToggle
-              alertCall={alertCall} setAlertCall={setAlertCall}
-              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
-              accentColor={BRAND.purple} colors={colors} isDark={isDark}
-              variant="icon" pillStyle={aq.datePill}
-            />
+            {/* Call reminder removed from chore creation [live-requested:
+                "we should only alert the meaningful - dont use the
+                annolying calls"] — a chore has no equivalent of an event's
+                Medical/Ride urgency, so this never offers a real
+                CallKit-style ring anymore. alertCall/alertCallLeadMinutes
+                state is kept (still defaults to false) so submit() below
+                doesn't need its own separate change. */}
             </>}
 
             {currentStepId === 'assign' && <>

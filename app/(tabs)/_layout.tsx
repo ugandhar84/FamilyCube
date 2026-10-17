@@ -1,44 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
 import { Tabs, router } from 'expo-router';
 import {
-  View, Text, StyleSheet, Pressable, Animated, Easing,
+  View, Text, StyleSheet, Pressable, Animated, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import { tabBarAnim, showTabBar } from '@/lib/tabBarVisibility';
+import { tabBarAnim, showTabBar, hideTabBar, forceShowTabBar } from '@/lib/tabBarVisibility';
 import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
 import { useChatStore } from '@/store/chatStore';
-import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useChoreStore } from '@/store/choreStore';
+import { countOverdueChores } from '@/lib/overdue';
 import { useAuthStore } from '@/store/authStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
 import { useUIStore } from '@/store/uiStore';
-import { Sparkles, Plus, Home, ListChecks, MessageCircle } from 'lucide-react-native';
+import { Sparkles, Plus, Home, ListChecks, MessageCircle, CalendarDays } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 import { useDeviceClass } from '@/lib/useDeviceClass';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid-outline',
-  tasks:    'checkmark-done-outline',
+  schedule: 'calendar-outline',
+  tasks:    'checkbox-outline',
   chat:     'chatbubbles-outline',
   profile:  'apps-outline',
   memories: 'images-outline',
-  gps:      'radio-outline',
+  gps:      'people-outline',
   store:    'gift-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
-  tasks:    'checkmark-done',
+  schedule: 'calendar',
+  tasks:    'checkbox',
   chat:     'chatbubbles',
   profile:  'apps',
   memories: 'images',
-  gps:      'radio',
+  gps:      'people',
   store:    'gift',
 };
 
@@ -60,15 +62,17 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // destinations. The '/(tabs)/profile' ROUTE stays registered below (not in
 // this array) since the pills still navigate to it — only the always-
 // visible tab-bar entry point is gone.
+// Store moved to Hub's AppsQuickAccessPills — no longer a bottom-nav tab.
 const TABS_DEFAULT = [
-  { name: 'index',    label: 'Hub'    },
-  { name: 'tasks',    label: 'Tasks'  },
-  { name: 'store',    label: 'Store'  },
-  { name: 'chat',     label: 'Chat'   },
-  { name: 'gps',      label: 'FindFam' },
+  { name: 'index',    label: 'Hub'      },
+  { name: 'schedule', label: 'Schedule' },
+  { name: 'tasks',    label: 'Tasks'    },
+  { name: 'chat',     label: 'Chat'     },
+  { name: 'gps',      label: 'Family'   },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
+  { name: 'schedule', label: 'Schedule' },
   { name: 'tasks',    label: 'Tasks'    },
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
@@ -99,7 +103,7 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
   // deliberate per-tab requests, not a library-wide switch; gps/profile/
   // memories stay on Ionicons (ICON_OUTLINE/ICON_FILLED) below.
   const LUCIDE_ICONS: Partial<Record<TabName, typeof Home>> = {
-    index: Home, tasks: ListChecks, chat: MessageCircle,
+    index: Home, schedule: CalendarDays, tasks: ListChecks, chat: MessageCircle,
   };
   const LucideIcon = LUCIDE_ICONS[name];
   if (LucideIcon) {
@@ -123,39 +127,50 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
 function CustomTabBar({ state, navigation }: any) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  // Kitchen-hub kiosk mode (features/kiosk/) replaces the Hub tab's content
-  // with its own full-screen nav rail — but this tab bar lives one level
-  // up, outside HubScreen's control, so it kept rendering underneath/
-  // alongside the rail regardless (live-reported: "I see bottom bar for
-  // kiosk"). The rail is the ONLY navigation kiosk mode should show.
   const { deviceClass } = useDeviceClass();
   const isKioskMode = deviceClass === 'kitchenHub';
-  // Chat tab shows a plain unread DOT, not a count — distinct from the
-  // AppHeader bell's numeric badge (general app notifications: quest
-  // posted/approved/etc.). Reads chatStore's own per-channel unread
-  // tracking, not notifStore's unreadCount — those used to be the same
-  // number, conflating "you have an app notification" with "you have an
-  // unread chat message," which are genuinely different things.
   const chatUnreadCounts = useChatStore(s => s.unreadCounts);
-  const hasUnreadChat = Object.values(chatUnreadCounts).some(n => n > 0);
+  const totalChatUnread = Object.values(chatUnreadCounts).reduce((sum, n) => sum + n, 0);
   const lastNavTime = useRef(0);
-  const { members, activeMemberId } = useFamilyStore();
-  const activeRole = members.find(m => m.id === activeMemberId)?.role;
+  // Selectors, not the whole store: the bar must not re-render on every unrelated family-store change while tabs animate.
+  const activeMember = useFamilyStore(st => st.members.find(m => m.id === st.activeMemberId));
+  const activeRole = activeMember?.role;
+  const overdueCount = useChoreStore(s => countOverdueChores(s.chores, activeMember));
+  const overduePulse = useRef(new Animated.Value(1)).current;
+  const prevOverdue = useRef(0);
+  useEffect(() => {
+    if (overdueCount > prevOverdue.current) {
+      const beat = Animated.sequence([
+        Animated.timing(overduePulse, { toValue: 1.4, duration: 220, useNativeDriver: true }),
+        Animated.timing(overduePulse, { toValue: 1, duration: 220, useNativeDriver: true }),
+      ]);
+      Animated.sequence([beat, beat, beat]).start();
+    }
+    prevOverdue.current = overdueCount;
+  }, [overdueCount]);
   const isSenior = activeRole === 'senior';
-  // Pending redemption count — parent-only signal (only a parent approves
-  // a kid's coin redemption); a kid/teen/senior sees the Store tab with no
-  // badge even if redemptions happen to be pending, same as Chat's badge
-  // logic only counting UNREAD (not "any message exists").
-  const pendingRedemptions = useRewardStore(s => s.redemptions).filter(r => r.status === 'pending').length;
-  const showStoreBadge = activeRole === 'parent' && pendingRedemptions > 0;
-  // FindFam (gps) is now in TABS_DEFAULT for everyone except senior
-  // (who gets Memories in that slot instead) — kid/teen/parent all share
-  // the same bar shape now that kids also get direct FindFam access.
+  // Store moved to Hub pills — badge was on the store tab, now unused here
   const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
-  const activeColor   = colors.primary;
-  const inactiveColor = colors.tabInactive;
-  const TAB_COUNT     = TABS.length;
+  // Nav bar is a solid dark pill in both themes, so inactive-icon color
+  // must read against dark regardless of light/dark mode — was
+  // colors.textSecondary in light mode, a dark warm-gray meant for a
+  // light background, nearly invisible here.
+  // Light mode: warm espresso-black, matched to the warm cream canvas'
+  // own undertone (#ECE6DE) instead of a cool neutral near-black.
+  // Dark mode: colors.card (#1D1A24) nearly matched the screen's own
+  // background (#0E0C13) behind it, so the floating pill barely read as
+  // its own surface [live-reported: "we can give some different color on
+  // black theme to highlight"]. Lightened to a visibly distinct warm
+  // charcoal instead of reusing an existing (too-dark) token.
+  const NAV_BAR_BG    = isDark ? '#2E2A3A' : '#211A13';
+  // Active tab uses a dedicated warm gold (not colors.amber, which reads
+  // as burnt orange, #D97706) rather than the brand terracotta — gold
+  // reads richer against the dark bar [live-requested: "maybe the
+  // selected active tab to gold color?"].
+  const NAV_GOLD      = '#E8B84B';
+  const activeColor   = NAV_GOLD;
+  const inactiveColor = 'rgba(255,255,255,0.55)';
 
   const activeTabIndex = TABS.findIndex(t => t.name === state.routes[state.index]?.name);
   const activeRouteName: string | undefined = state.routes[state.index]?.name;
@@ -163,118 +178,133 @@ function CustomTabBar({ state, navigation }: any) {
     useUIStore.getState().setActiveTabName(activeRouteName);
   }, [activeRouteName]);
 
-  const [barWidth, setBarWidth] = useState(0);
-  const tabWidth = barWidth / TAB_COUNT;
-
-  const pillAnim = useRef(new Animated.Value(activeTabIndex >= 0 ? activeTabIndex : 0)).current;
+  // 'meals'/'grocery' route names no longer apply here — both screens are
+  // now opened as Hub-owned FullPageOverlay state instead of real tab
+  // routes (see HubScreen.tsx/GroceryScreen.tsx/MealsScreen.tsx), and each
+  // hides the tab bar itself on mount via lib/tabBarVisibility.ts. Every
+  // remaining real tab always shows the tab bar.
   useEffect(() => {
     if (activeTabIndex < 0) return;
-    Animated.timing(pillAnim, {
-      toValue: activeTabIndex,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-    showTabBar();
-  }, [activeTabIndex]);
+    // Switching tabs means no full-page overlay can be open, so reset instead of decrementing: a leaked hide request
+    // from an overlay that closed oddly can no longer leave the bar hidden.
+    forceShowTabBar();
+  }, [activeTabIndex, activeRouteName]);
 
-  // Matches colors.background exactly so the nav reads as part of the same
-  // canvas, not a separate bar sitting on top of it — was hardcoded to
-  // stale pre-Kinfolk-rebrand hex (#1A1428/#FFFFFF, purple border) that
-  // never tracked the real theme tokens.
-  const bgColor = colors.background;
+  // Hard reset on the tab shell's own first mount — a cold-boot
+  // notification-driven overlay flag (grocery/memories/rewards) can call
+  // hideTabBar() from HubScreen's first effect pass with no guaranteed
+  // ordering against the plain showTabBar() above, which only decrements a
+  // count. This runs once, unconditionally, to guarantee the bar starts
+  // visible regardless of how that race resolved [live-reported: bottom
+  // nav sometimes invisible on cold app startup].
+  useEffect(() => {
+    forceShowTabBar();
+  }, []);
 
+  // School schedules/holidays: nothing loaded them from the phone or the server at startup, so every launch began from the
+  // demo data and anything saved before was invisible. Load once when the tab shell mounts.
+  useEffect(() => {
+    import('@/store/schoolStore').then(({ useSchoolStore }) => useSchoolStore.getState().loadFromStorage()).catch(() => {});
+  }, []);
+
+  const floatBottom = (insets.bottom || 16) + 10;
   const [barHeight, setBarHeight] = useState(0);
-  const totalHeight = barHeight + (insets.bottom || 16);
+  const totalHeight = barHeight + floatBottom + 10;
 
-  // Placed after every hook above (Rules of Hooks) so a live device-class
-  // change (rotation/resize) never skips a hook on some renders but not
-  // others — same ordering rule HubScreen's own kiosk guard follows.
   if (isKioskMode) return null;
 
   return (
-    <Animated.View style={{
-      backgroundColor: bgColor,
-      transform: [{
-        translateY: tabBarAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [totalHeight, 0],
-        }),
-      }],
-    }}>
+    <Animated.View
+      pointerEvents="box-none"
+      style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        paddingBottom: floatBottom,
+        paddingHorizontal: 20,
+        transform: [{
+          translateY: tabBarAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [totalHeight, 0],
+          }),
+        }],
+      }}
+    >
+      {/* Solid near-black pill, both themes — was a frosted light-glass
+          blur, then GEMINI.titleColor (#0D1210, a cool neutral near-
+          black) which read as a disconnected dark slab against the warm
+          cream canvas [live-reported: "does this combination look good
+          for the background and the nav color matching?" -> "make nice
+          combination color"]. Warmed to a dark espresso-brown with the
+          same warm undertone as the canvas (#ECE6DE) instead. */}
       <View
-        style={[styles.bar, { backgroundColor: bgColor }]}
-        onLayout={e => { setBarWidth(e.nativeEvent.layout.width); setBarHeight(e.nativeEvent.layout.height); }}
+        style={[styles.bar, {
+          backgroundColor: NAV_BAR_BG,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOpacity: 0.3,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 16,
+        }]}
+        onLayout={e => setBarHeight(e.nativeEvent.layout.height)}
       >
-        {/* Sliding gradient pill */}
-        {tabWidth > 0 && (
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.pillWrap, {
-              width: tabWidth,
-              transform: [{
-                translateX: pillAnim.interpolate({
-                  inputRange: TABS.map((_, i) => i),
-                  outputRange: TABS.map((_, i) => i * tabWidth),
-                  extrapolate: 'clamp',
-                }),
-              }],
-            }]}
-          >
-            <LinearGradient
-              colors={[colors.primary + '22', colors.accent + '14']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={styles.pill}
-            />
-          </Animated.View>
-        )}
-
         {TABS.map(({ name, label }, index) => {
           const focused = activeTabIndex === index;
           const route   = state.routes.find((r: any) => r.name === name);
-          const showBadge = name === 'chat' && hasUnreadChat;
-          const showStoreCount = name === 'store' && showStoreBadge;
 
           return (
             <Pressable
               key={name}
               onPress={() => {
-                const now = Date.now();
-                if (now - lastNavTime.current < 400) return;
-                lastNavTime.current = now;
+                // No tap debounce: every tap must register. navigate() to the tab that is already focused is a no-op,
+                // so there is nothing to guard against, and dropping taps is what made switching feel unresponsive.
                 const event = navigation.emit({ type: 'tabPress', target: route?.key, canPreventDefault: true });
                 if (!focused && !event.defaultPrevented) navigation.navigate(name);
               }}
               style={styles.tabItem}
             >
-              <View style={{ position: 'relative' }}>
-                <AnimatedTabIcon
-                  name={name}
-                  focused={focused}
-                  activeColor={activeColor}
-                  inactiveColor={inactiveColor}
-                />
-                {showBadge && (
-                  <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />
-                )}
-                {showStoreCount && (
-                  <View style={[styles.countBadge, { backgroundColor: colors.danger }]}>
-                    <Text style={styles.countBadgeText}>{pendingRedemptions > 9 ? '9+' : pendingRedemptions}</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={[
-                styles.label,
-                { color: focused ? activeColor : inactiveColor, fontWeight: focused ? '700' : '500' },
+              {/* All tabs: icon + label stacked; active tab gets a gold
+                  pill highlight, matching the active icon/label color. */}
+              <View style={[
+                styles.tabInner,
+                focused && { backgroundColor: NAV_GOLD + '26' },
               ]}>
-                {label}
-              </Text>
+                <View style={{ position: 'relative' }}>
+                  <AnimatedTabIcon
+                    name={name}
+                    focused={focused}
+                    activeColor={activeColor}
+                    inactiveColor={inactiveColor}
+                  />
+                  {name === 'chat' && totalChatUnread > 0 && (
+                    <View
+                      accessibilityLabel={`${totalChatUnread} unread`}
+                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: NAV_BAR_BG }]}>
+                      <Text style={styles.countBadgeText}>{totalChatUnread > 99 ? '99+' : totalChatUnread}</Text>
+                    </View>
+                  )}
+                  {name === 'tasks' && overdueCount > 0 && (
+                    <Animated.View
+                      accessibilityLabel={`${overdueCount} overdue`}
+                      style={[styles.countBadge, { backgroundColor: colors.danger, borderColor: NAV_BAR_BG, transform: [{ scale: overduePulse }] }]}>
+                      <Text style={styles.countBadgeText}>{overdueCount > 99 ? '99+' : overdueCount}</Text>
+                    </Animated.View>
+                  )}
+                </View>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[
+                  styles.tabLabel,
+                  { color: focused ? activeColor : inactiveColor, fontWeight: focused ? '700' : '500' },
+                ]}>
+                  {label}
+                </Text>
+              </View>
             </Pressable>
           );
         })}
       </View>
-
-      <View style={{ height: insets.bottom || 16, backgroundColor: bgColor }} />
     </Animated.View>
   );
 }
@@ -305,13 +335,6 @@ export default function TabLayout() {
   // state.index] is synchronous and authoritative.
   const activeTabName = useUIStore(s => s.activeTabName);
   const onChatTab = activeTabName === 'chat';
-  // Grocery now joins the shared-FAB "+" pattern (Tasks/Memories/Health/
-  // School) instead of having its own separate always-"+" local FAB —
-  // live-requested: "Grocery + FAB should be similar like in the other
-  // pages... that sparkling FAB should convert to + dynamically." Adding a
-  // grocery item isn't parent-only, so like Memories this is read OUTSIDE
-  // the parent-only gate below (see the FAB render's own comment).
-  const onGroceryTab = activeTabName === 'grocery';
   // One shared FAB (not two separate ones) swaps between Ask Cube
   // (sparkle, every tab except Chat/Tasks) and Tasks' own smart-create
   // entry point (+, Tasks tab only) — same physical button, same position.
@@ -321,7 +344,7 @@ export default function TabLayout() {
   // on stale state after certain tab sequences (live-reported repeatedly:
   // "+" stuck showing on Hub/Apps after visiting Chat). Plain conditional
   // icon render instead — no animation, but always correct.
-  const onTasksTab = activeTabName === 'tasks';
+  const onTasksTab = activeTabName === 'tasks' || activeTabName === 'schedule';
   // Store and FindFam (gps) both have their own focused, full-screen
   // purposes (redeem/approve perks; check the family map) where a
   // household-wide AI assistant launcher is off-topic clutter, same
@@ -342,12 +365,12 @@ export default function TabLayout() {
   // viewing this screen still just gets the FAB hidden (same as Store/
   // FindFam), not a "+" they can't actually use.
   const onFamilyHealthTab = activeTabName === 'family-health';
+  const onFamilyRosterTab = activeTabName === 'family-roster';
   // Same treatment as Health & Records above — School's own add/edit-
   // schedule affordance is already inline per-kid inside
   // SchoolScheduleCard (parent-only), so this stays inside the parent-only
   // gate below the same way onFamilyHealthTab does.
   const onSchoolTab = activeTabName === 'school';
-  const healthRecordsActiveSegment = useUIStore(s => s.healthRecordsActiveSegment);
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
@@ -527,15 +550,17 @@ export default function TabLayout() {
         tabBar={props => <CustomTabBar {...props} />}
         screenOptions={{
           headerShown: false,
+          // No paddingBottom — content scrolls under the floating tab bar,
+          // which is position:absolute and floats above the scene.
           sceneStyle: { backgroundColor: colors.background },
           lazy: true,
           freezeOnBlur: true,
         }}
       >
         <Tabs.Screen name="index"    />
+        <Tabs.Screen name="schedule" />
         <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
-        <Tabs.Screen name="store"    />
         {/* FindFam — in TABS_DEFAULT for everyone except senior (Memories
             takes that slot instead); registered without href:null like
             every other visible tab, same pattern already used for
@@ -547,39 +572,43 @@ export default function TabLayout() {
         <Tabs.Screen name="quests"   options={{ href: null }} />
         <Tabs.Screen name="calendar" options={{ href: null }} />
         {/* Hidden routes — not in tab bar */}
+        <Tabs.Screen name="store"                options={{ href: null }} />
         <Tabs.Screen name="grocery"              options={{ href: null }} />
         <Tabs.Screen name="meals"                options={{ href: null }} />
         <Tabs.Screen name="school"               options={{ href: null }} />
         <Tabs.Screen name="memories"             options={{ href: null }} />
         {/* Family Health & Records combined (one screen, segmented switch) */}
         <Tabs.Screen name="family-health"        options={{ href: null }} />
+        <Tabs.Screen name="findFam"              options={{ href: null }} />
+        <Tabs.Screen name="family-roster"        options={{ href: null }} />
       </Tabs>
 
       {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Store/
           FindFam/Tasks/Memories/Grocery/Health & Records; morphs in place
           into Tasks' own "+" (opens SmartTaskComposer via the one-shot
           openTaskComposerRequested flag TasksScreen consumes), Memories'
-          own "+" (openMemoryComposerRequested, MemoriesTab consumes),
-          Grocery's own "+" (openGroceryComposerRequested, GroceryScreen
-          consumes — replaces that screen's previous separate always-"+"
-          local FAB), or Health & Records' own "+"
-          (openHealthRecordsComposerRequested, HealthTab/RecordsTab each
-          consume it for whichever segment is mounted) depending on which
-          is focused. One physical button, one position, crossfading icon —
-          not separate FABs swapping in and out. Ask Cube itself (the
-          sparkle face, Tasks' "+", and Health & Records' "+") stays
-          parent-only — Ask Cube can act broadly across the household on
-          the parent's behalf, which isn't something a kid/teen/GP account
-          should trigger, Tasks' kid/teen creation path uses its own
-          separate header buttons instead of this shared button, and
-          Health & Records' own add-medication/add-record controls are
-          already parent(-visible)-only inside
+          own "+" (openMemoryComposerRequested, MemoriesTab consumes), or
+          Health & Records' own "+" (openHealthRecordsComposerRequested,
+          HealthTab/RecordsTab each consume it for whichever segment is
+          mounted) depending on which is focused. One physical button, one
+          position, crossfading icon — not separate FABs swapping in and
+          out. Ask Cube itself (the sparkle face, Tasks' "+", and Health &
+          Records' "+") stays parent-only — Ask Cube can act broadly
+          across the household on the parent's behalf, which isn't
+          something a kid/teen/GP account should trigger, Tasks' kid/teen
+          creation path uses its own separate header buttons instead of
+          this shared button, and Health & Records' own add-medication/
+          add-record controls are already parent(-visible)-only inside
           HealthRecordsList.tsx/RecordsTab.tsx (kidView hides them) — so a
           kid/teen there correctly just gets the FAB hidden, same as Store/
-          FindFam. Memories' and Grocery's "+" are the two exceptions
-          carved out of the gate below — posting a memory or adding a
-          grocery item isn't a parent-only action the way Ask Cube is. */}
-      {!isKioskMode && (activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (
+          FindFam. Memories' "+" is the one exception carved out of the
+          gate below — posting a memory isn't a parent-only action the way
+          Ask Cube is. Grocery and Meals no longer render this shared FAB
+          at all, and aren't real tab routes anymore either — both are now
+          reached as Hub-owned FullPageOverlay screens instead of their own
+          tabs (see HubScreen.tsx), and Grocery's "+" add-item entry point
+          lives inside that screen's own header/list instead. */}
+      {!isKioskMode && (activeMember?.role === 'parent' || onMemoriesTab) && (
         <>
           {/* Hidden on the Chat tab — a second AI entry point on top of the
               family's own messaging surface was redundant/confusing there.
@@ -589,36 +618,31 @@ export default function TabLayout() {
               both are focused, single-purpose screens (redeem/approve
               perks; check the family map) where a household-wide AI
               launcher doesn't add anything and just clutters the corner. */}
-          {!onChatTab && !onStoreTab && !onGpsTab && !fullBleedScreenActive
-            && (activeMember?.role === 'parent' || onMemoriesTab || onGroceryTab) && (() => {
-            // Health & Records has its own inner segmented switch (Health/
-            // Immunizations/Records) nested inside one route — the FAB
-            // tracks that too, not just which top-level route is focused,
-            // so it visually matches whichever segment is actually showing
-            // (danger-red for Health, teal for Immunizations or Records).
-            const fabColor = onFamilyHealthTab
-              ? (healthRecordsActiveSegment === 'health' ? colors.danger : colors.teal)
-              : onSchoolTab ? colors.amber
-              : onGroceryTab ? colors.teal
-              : colors.primary;
+          {/* Health & Records is hidden from this shared FAB entirely (like
+              Store/GPS/Chat/Tasks) rather than morphing to a "+" — the new
+              Figma-rebuilt Health pages have their own in-page "Add
+              medication"/"Add vaccine from document" buttons per the
+              mockup, so a floating duplicate "+" was redundant clutter
+              [live-requested: "remove the FAB + on these pages"]. */}
+          {!onChatTab && !onStoreTab && !onGpsTab && !onTasksTab && !onFamilyRosterTab && !onFamilyHealthTab && !fullBleedScreenActive
+            && (activeMember?.role === 'parent' || onMemoriesTab) && (() => {
+            const fabColor = onSchoolTab ? colors.amber : colors.primary;
             return (
               <Pressable
                 onPress={() => {
                   if (onTasksTab) useUIStore.getState().setOpenTaskComposerRequested(true);
                   else if (onMemoriesTab) useUIStore.getState().setOpenMemoryComposerRequested(true);
-                  else if (onGroceryTab) useUIStore.getState().setOpenGroceryComposerRequested(true);
-                  else if (onFamilyHealthTab) useUIStore.getState().setOpenHealthRecordsComposerRequested(true);
                   else if (onSchoolTab) useUIStore.getState().setOpenSchoolScheduleComposerRequested(true);
                   else setAskCubeOpen(true);
                 }}
                 style={{
-                  position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
+                  position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 92,
                   width: 52, height: 52, borderRadius: 26, backgroundColor: fabColor,
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: fabColor, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
                   elevation: 6,
                 }}>
-                {(onTasksTab || onMemoriesTab || onGroceryTab || onFamilyHealthTab || onSchoolTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
+                {(onTasksTab || onMemoriesTab || onSchoolTab) ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
               </Pressable>
             );
           })()}
@@ -636,36 +660,36 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   bar: {
-    // Flush with the canvas — no border/shadow/elevation seam. Nav should
-    // read as part of the same surface as the page above it, not a
-    // separate lifted bar (explicit direction, plus this shadowColor was
-    // leftover pre-Kinfolk-rebrand purple that never matched anything).
     flexDirection: 'row',
-    paddingTop: 8,
-    position: 'relative',
-  },
-  pillWrap: {
-    position: 'absolute',
-    top: 6,
-    left: 0,
-    height: 56,
-    paddingHorizontal: 4,
-  },
-  pill: {
-    flex: 1,
-    borderRadius: 14,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 100,
+    gap: 2,
+    width: '100%',
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
-    paddingTop: 2,
-    gap: 2,
   },
-  label: {
-    fontSize: 12,
+  /* Icon + label column, pill highlight on active */
+  tabInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
+  tabLabel: {
+    fontSize: 11,
+    letterSpacing: -0.1,
+  },
+  /* Legacy aliases kept so any stray ref compiles */
+  activePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100 },
+  activeLabel: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
+  inactiveIcon: { alignItems: 'center', justifyContent: 'center', padding: 9 },
   dotBadge: {
     position: 'absolute',
     top: -2,

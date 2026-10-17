@@ -8,6 +8,7 @@ import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { RideLatePayload } from '../KidModals';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "I'm on my way" resolve accent, distinct from brand teal
 // used elsewhere in this card (Message action). Not colors.success (which
@@ -48,7 +49,7 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
             <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.danger }}>
               {kidName} is still waiting
             </Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
+            <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }} numberOfLines={1}>
               {rideLate.title}{rideLate.time ? ` · was ${fmtTime(rideLate.time)}` : ''}
             </Text>
           </View>
@@ -72,7 +73,7 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
           <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Icon size={13} color={colors.textTertiary} />
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, width: 68 }}>{label}</Text>
-            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }} numberOfLines={2}>{value}</Text>
+            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={2}>{value}</Text>
           </View>
         ))}
       </View>

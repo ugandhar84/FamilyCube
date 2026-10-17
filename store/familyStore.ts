@@ -191,6 +191,8 @@ export interface FamilyMember {
   // scheduled for permanent purge 7 days from this timestamp unless
   // restored (PIN re-entry or, for auth-linked members, a fresh login).
   deletedAt?: string;
+  /** Set when an admin removed this member on purpose (the person cannot restore themselves). */
+  removedBy?: string;
   // Per-category push/panel notification opt-outs (Profile page's
   // Notifications section) — keyed by the same NotifCategory buckets
   // family-notifier's own categoryFor() groups every real notification
@@ -328,7 +330,7 @@ interface FamilyState {
   // generated, per explicit spec: the profile exists first, the code just
   // claims it later. Returns the created member (id needed immediately to
   // call generate-invite-code with targetMemberId) or null on failure.
-  addPendingMember: (name: string, role: MemberRole, relationship?: string, dateOfBirth?: string, email?: string) => Promise<FamilyMember | null>;
+  addPendingMember: (name: string, role: MemberRole, relationship?: string, dateOfBirth?: string, email?: string, linkedParentId?: string) => Promise<FamilyMember | null>;
   updateMember: (id: string, updates: Partial<FamilyMember>) => Promise<void>;
   removeMember: (id: string) => Promise<void>;
   awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => Promise<void>;
@@ -423,6 +425,7 @@ function fromRow(row: any): FamilyMember {
     appleCalendarSyncEnabled: row.apple_calendar_sync_enabled ?? false,
     authUserId:         row.auth_user_id ?? undefined,
     deletedAt:          row.deleted_at ?? undefined,
+    removedBy:          row.removed_by ?? undefined,
     createdAt:          row.created_at ?? undefined,
     // notification_prefs was added to the type but never actually wired
     // into fromRow/toRow — every toggle write via updateMember() was
@@ -470,7 +473,7 @@ function toRow(m: FamilyMember) {
     // to whatever field the caller actually meant to change (role,
     // linked_parent_id, GP dispatch prefs, etc.) — the root cause behind a
     // whole string of "X isn't saving" reports this session.
-    pin:   m.pin ?? null,
+    // pin is intentionally NOT written here: it is a server-side hash, only set_member_pin / the email reset change it.
     last_celebration_seen_at: m.lastCelebrationSeenAt ?? null,
     has_car: m.hasCar ?? false,
     ride_earnings_per_run: m.rideEarningsPerRun ?? 50,
@@ -745,7 +748,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // block the (already-instant, local) profile switch on a network round
     // trip — the switch has already happened above by the time this lands.
     const switched = get().members.find(m => m.id === id);
-    if (switched?.deletedAt) {
+    if (switched?.deletedAt && !switched.removedBy) {
       const deletedMs = new Date(switched.deletedAt).getTime();
       const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
       if (Date.now() - deletedMs < SEVEN_DAYS_MS) {
@@ -770,8 +773,8 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // re-foregrounded) could go a long time as the active member with no
     // extra chance to self-heal their own wrap, even though becoming
     // active is exactly the moment they're about to start writing/being
-    // viewed. getOrCreateLocationSessionKey only reads/creates a key in
-    // THIS device's own local SecureStore (lib/chatCrypto.ts) — it can
+    // viewed. forceRecheckLocationKeyWrap only reads/creates a key in
+    // THIS device's own local SecureStore (lib/locationCrypto.ts) — it can
     // only ever wrap the key for whoever is the real, physical user of
     // THIS device right now, never for some other family member from a
     // different device, so this call is only meaningful for the member
@@ -813,7 +816,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   },
 
-  addPendingMember: async (name, role, relationship, dateOfBirth, email) => {
+  addPendingMember: async (name, role, relationship, dateOfBirth, email, linkedParentId) => {
     const active = get().members.find(m => m.id === get().activeMemberId);
     if (!active?.familyId) { console.warn('[familyStore] addPendingMember: no active familyId'); return null; }
     const dbRole = role === 'kid' ? 'child' : role === 'teen' ? 'teenager' : role === 'senior' ? 'grandparent' : role;
@@ -840,6 +843,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         coins: 0, xp: 0, level: 1, max_xp: 100, streak: 0,
         family_id: active.familyId,
         invite_status: 'pending',
+        linked_parent_id: linkedParentId ?? null,
       }])
       .select()
       .single();
@@ -1002,8 +1006,10 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 
+    // removed_by marks this as a deliberate admin removal: no auto-restore, and the person's own login loses access.
+    const removerId = prevActiveId && prevActiveId !== id ? prevActiveId : null;
     const { error } = await supabase.from('members')
-      .update({ deleted_at: deletedAtIso })
+      .update({ deleted_at: deletedAtIso, ...(removerId ? { removed_by: removerId } : {}) })
       .eq('id', id);
     if (error) {
       console.warn('[familyStore] removeMember (soft-delete) failed:', error.message);
@@ -1155,13 +1161,20 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // and ProfileSettingsScreen.tsx's PIN sheets now route through here and
     // rely on this throwing to show a real error instead of a false
     // "PIN saved").
-    const { error } = await supabase.from('members').update({ pin: pin ?? null }).eq('id', id);
+    const { error } = await supabase.rpc('set_member_pin', { p_member_id: id, p_pin: pin ?? null });
     if (error) {
       console.warn('[familyStore] setMemberPin failed', error.message);
       set({ members: get().members.map(m => m.id === id ? { ...m, pin: before?.pin, pinEnabled: !!before?.pin } : m) });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
       throw error;
     }
+
+    // The PIN is stored as a server-side hash now; take that stored value so local state never holds a plain PIN.
+    try {
+      const { data: stored } = await supabase.from('members').select('pin').eq('id', id).maybeSingle();
+      set({ members: get().members.map(m => m.id === id ? { ...m, pin: (stored as any)?.pin ?? undefined, pinEnabled: !!(stored as any)?.pin } : m) });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
+    } catch { /* the next sync brings it in */ }
 
     // Multi-family membership — a grandparent's PIN is kept in sync
     // across ALL of their family member rows, not just this one, per live

@@ -68,7 +68,7 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
   }, []);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss} onDismiss={onDismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss} onDismiss={onDismiss}>
         <View pointerEvents={visible ? 'auto' : 'none'}
           style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: keyboardHeight }}>
         {/* Backdrop — only the flex area ABOVE the sheet, so it never sits on top of the sheet content */}

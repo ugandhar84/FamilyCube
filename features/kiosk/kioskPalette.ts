@@ -35,7 +35,7 @@
  *
  *   role      Kinfolk light   Kiosk light   Kiosk dark
  *   ──────────────────────────────────────────────────────────────
- *   primary   #BF4E12         #B04710       #F0714A   terracotta
+ *   primary   #5872C4         #5872C4       #8EA3DD   muted blue
  *   sage      #3C805B         #377551       #5FB585   sage / CONNECT
  *   gold      #BF7600         #9C5B00       #E9A23B   amber / ORGANIZE
  *   purple    #6C519F         #6C519F       #A98BD6   lavender / CARE
@@ -77,15 +77,15 @@ const light = {
   // shadow + a genuinely white card against a warm off-white page, which is
   // the light-mode equivalent of dark mode's fill-based elevation.
   /** Page ground. */
-  bg: '#F7F3EC',
+  bg: '#FFFFFF',
   /** Raised card / panel fill. */
   card: '#FFFFFF',
   /** Hover / pressed / selected fill for a card or row. */
-  cardHover: '#F1EADF',
+  cardHover: '#F7F2E9',
   /** Inset well INSIDE a card (the mockup's nested `bg-hub-bg` blocks). */
   well: '#F2ECE1',
   /** Hairline borders and dividers. */
-  cardBorder: '#E4D9C9',
+  cardBorder: '#E6DED2',
   /** Stronger border for a focused / active surface. */
   cardBorderStrong: '#CDBCA5',
 
@@ -99,14 +99,14 @@ const light = {
   // one step deeper than its Kinfolk counterpart — the same hue, visibly
   // the same color, now legible on all three grounds rather than on the
   // most flattering one.
-  /** Terracotta. Main brand, primary actions, active nav. 4.8:1 on well. */
-  primary: '#B04710',
-  primaryPress: '#8A3A0D',
-  primarySoft: 'rgba(176,71,16,0.10)',
-  primaryEdge: 'rgba(176,71,16,0.30)',
+  /** Muted blue (the health-records CTA blue). Main brand, primary actions, active nav. */
+  primary: '#5872C4',
+  primaryPress: '#4259A0',
+  primarySoft: 'rgba(88,114,196,0.12)',
+  primaryEdge: 'rgba(88,114,196,0.32)',
 
   /** Sage. CONNECT / parent role / confirmed / online. 4.7:1 on well. */
-  sage: '#377551',
+  sage: '#3D7A5A',
   sageSoft: 'rgba(55,117,81,0.10)',
   sageEdge: 'rgba(55,117,81,0.28)',
 
@@ -126,15 +126,15 @@ const light = {
   blueEdge: 'rgba(47,111,168,0.28)',
 
   /** Destructive / overdue / error. 5.9:1 */
-  danger: '#B23A22',
-  dangerSoft: 'rgba(178,58,34,0.10)',
-  dangerEdge: 'rgba(178,58,34,0.30)',
+  danger: '#C23B3B',
+  dangerSoft: 'rgba(194,59,59,0.10)',
+  dangerEdge: 'rgba(194,59,59,0.30)',
 
   // ── Text ──────────────────────────────────────────────────────────────
   /** Primary text. 13.9:1 */
-  text: '#2C2722',
+  text: '#0D1210',
   /** Secondary: descriptions, metadata. 5.6:1 — AA for body. */
-  textMuted: '#6B5F52',
+  textMuted: '#3D4D47',
   /** Tertiary: timestamps, captions, eyebrows. 3.6:1 on the worst ground
    *  (`well`) — deliberately an AA-large token, never used below
    *  KIOSK_TYPO.caption. Taken a step deeper than a typical tertiary grey
@@ -143,7 +143,7 @@ const light = {
   textFaint: '#8A7C63',
   /** Text on a filled sage/gold/purple surface. 4.7-6.3:1. */
   onAccent: '#FFFFFF',
-  /** Text on a filled primary (terracotta) surface. 4.9:1. */
+  /** Text on a filled primary (muted blue) surface. */
   onPrimary: '#FFFFFF',
 
   // ── Overlays ──────────────────────────────────────────────────────────
@@ -162,6 +162,15 @@ const light = {
   /** Text on the standby ground — light in both modes, per the above. */
   standbyText: '#F7F2EE',
   standbyTextMuted: '#B7A9A1',
+  // ── Pastels — the phone's *Light tokens (primaryLight / tealLight /
+  // amberLight / pinkLight) as solid fills, plus a lighter tint of each for
+  // the big container behind them. Used by the Chores board's status columns.
+  // Terracotta survives ONLY as this soft peach pastel (never a button or tab
+  // colour); `terracotta` is its readable foreground.
+  pastelPrimary: '#FDF1EB', pastelPrimaryCard: '#FADFD2', terracotta: '#B4532F',
+  pastelSage: '#EAF2ED', pastelSageCard: '#D1E3D9',
+  pastelAmber: '#FCF3E1', pastelAmberCard: '#F9E5C1',
+  pastelLav: '#F2EEF8', pastelLavCard: '#E3DAF0',
 };
 
 const dark: typeof light = {
@@ -178,10 +187,10 @@ const dark: typeof light = {
 
   // ── Accents (ratios vs. dark `bg` #14100F) ────────────────────────────
   /** Terracotta, lifted for contrast on a dark ground. 6.4:1 */
-  primary: '#F0714A',
-  primaryPress: '#D65C36',
-  primarySoft: 'rgba(240,113,74,0.14)',
-  primaryEdge: 'rgba(240,113,74,0.38)',
+  primary: '#8EA3DD',
+  primaryPress: '#6C84C8',
+  primarySoft: 'rgba(142,163,221,0.14)',
+  primaryEdge: 'rgba(142,163,221,0.38)',
 
   /** Sage, opened up — the light value is ~2.3:1 here, unreadable. 7.9:1 */
   sage: '#5FB585',
@@ -203,10 +212,10 @@ const dark: typeof light = {
   blueSoft: 'rgba(110,168,220,0.14)',
   blueEdge: 'rgba(110,168,220,0.36)',
 
-  /** Destructive. A hotter sibling of primary. 5.5:1 */
-  danger: '#EF6B57',
-  dangerSoft: 'rgba(239,107,87,0.14)',
-  dangerEdge: 'rgba(239,107,87,0.38)',
+  /** Destructive. A clear red, distinct from the blue primary. */
+  danger: '#EF7B7B',
+  dangerSoft: 'rgba(239,123,123,0.14)',
+  dangerEdge: 'rgba(239,123,123,0.38)',
 
   // ── Text ──────────────────────────────────────────────────────────────
   // Warm-tinted rather than pure white/grey, so type sits IN the warm
@@ -248,6 +257,10 @@ const dark: typeof light = {
   glassEdge: 'rgba(255,255,255,0.13)',
   standbyText: '#F7F2EE',
   standbyTextMuted: '#B7A9A1',
+  pastelPrimary: 'rgba(238,128,88,0.12)', pastelPrimaryCard: 'rgba(238,128,88,0.24)', terracotta: '#F0A07F',
+  pastelSage: 'rgba(95,163,125,0.12)', pastelSageCard: 'rgba(95,163,125,0.24)',
+  pastelAmber: 'rgba(245,168,90,0.12)', pastelAmberCard: 'rgba(245,168,90,0.24)',
+  pastelLav: 'rgba(167,139,201,0.12)', pastelLavCard: 'rgba(167,139,201,0.24)',
 };
 
 export type KioskColors = typeof light;
@@ -324,4 +337,14 @@ export function kioskTint(accent: string, isDark: boolean): {
     borderColor: accent + (isDark ? '4D' : '3D'),
     color: accent,
   };
+}
+
+/** The four mobile pastels as {column, card, fg} triples, in a stable order. */
+export function kioskPastels(k: KioskColors) {
+  return [
+    { col: k.pastelPrimary, card: k.pastelPrimaryCard, fg: k.terracotta },
+    { col: k.pastelSage, card: k.pastelSageCard, fg: k.sage },
+    { col: k.pastelAmber, card: k.pastelAmberCard, fg: k.gold },
+    { col: k.pastelLav, card: k.pastelLavCard, fg: k.purple },
+  ];
 }

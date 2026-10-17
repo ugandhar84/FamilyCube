@@ -83,7 +83,12 @@ export function CoupleProposalBubble({ payload, colors, isMe, onLongPress, onRes
   onRespond?: (response: 'confirmed' | 'declined') => void;
 }) {
   const accent = colors.pink ?? colors.accent;
-  const responded = !!payload.response;
+  // Local flag flips the instant either button is tapped, ahead of the
+  // async store write landing — closes the gap where a fast double-tap
+  // (or a slow network round-trip) could fire onRespond twice for one
+  // card before payload.response came back from the DB.
+  const [tapped, setTapped] = useState(false);
+  const responded = !!payload.response || tapped;
 
   return (
     <Pressable onLongPress={onLongPress} delayLongPress={350}
@@ -97,11 +102,11 @@ export function CoupleProposalBubble({ payload, colors, isMe, onLongPress, onRes
         <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{payload.label}</Text>
         {!isMe && !responded && (
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
-            <Pressable onPress={() => onRespond?.('confirmed')}
+            <Pressable onPress={() => { setTapped(true); onRespond?.('confirmed'); }}
               style={{ flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: accent, alignItems: 'center' }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Confirm</Text>
             </Pressable>
-            <Pressable onPress={() => onRespond?.('declined')}
+            <Pressable onPress={() => { setTapped(true); onRespond?.('declined'); }}
               style={{ flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>Can't tonight</Text>
             </Pressable>
@@ -174,7 +179,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   // Just Us proposal card's Confirm/Decline — posts a reply message via
   // ChatScreen's own sendMessage, same "callback out, not props in" shape
   // as onOpenSharedCard above.
-  onRespondProposal?: (msg: ChatMessage, response: 'confirmed' | 'declined') => void;
+  onRespondProposal?: (msg: ChatMessage, response: 'confirmed' | 'declined') => void | Promise<void>;
   // Only relevant when msg.status === 'failed' — retries the exact send
   // that failed (network drop, RLS error, etc.) using the args chatStore
   // captured at failure time.
@@ -192,9 +197,9 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   // own system blue / the actual Messages bubble color; a fixed literal
   // rather than colors.info since info is a shared semantic token used for
   // generic info states elsewhere, not specifically "my chat bubble."
-  const bubbleMe       = '#0A84FF';
-  const bubbleMeTxt    = '#FFFFFF';
-  const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
+  const bubbleMe       = isDark ? (colors.pink + 'CC') : '#e9edfb';
+  const bubbleMeTxt    = isDark ? '#FFFFFF' : colors.textPrimary;
+  const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : (isDark ? colors.card : '#FFFFFF');
   const bubbleOtherTxt = colors.textPrimary;
   // Was 'rgba(255,255,255,0.65)' for isMe — correct on white text sitting
   // ON the colored bubble, but the timestamp/read-status now render below
@@ -456,8 +461,11 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   overflow: 'hidden',
                   marginBottom: 8,
                   // Outgoing: a translucent white tint pops against the solid
-                  // primary bubble; incoming: colors.surface against the card.
-                  backgroundColor: isMe ? 'rgba(255,255,255,0.16)' : colors.surface,
+                  // dark-mode pink bubble; incoming/light-mode's pale "mine"
+                  // tint both use colors.surface instead — white-on-white
+                  // was invisible on light mode's own pale sent bubble
+                  // [live-reported via screenshot: washed-out reply quote].
+                  backgroundColor: isMe && isDark ? 'rgba(255,255,255,0.16)' : colors.surface,
                 }}>
                 {/* Accent strip — the QUOTED message's own sender's color
                     (not this message's sender), so it reads as "whose
@@ -469,7 +477,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                     {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
                   </Text>
                   <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
-                    color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
+                    color: isMe && isDark ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
                     {(msg.replyTo.text ? stripMentionBrackets(msg.replyTo.text) : null) || REPLY_KIND_LABEL[msg.replyTo.kind ?? 'voice']}
                   </Text>
                 </View>
@@ -478,7 +486,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
 
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (
-              <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />
+              <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} isDark={isDark} colors={colors} />
             ) : isVoice ? (
               <Text style={{ fontSize: 14, color: isMe ? bubbleMeTxt : bubbleOtherTxt }}>
                 🎙️ Voice note ({Math.round(msg.voiceDuration ?? 0)}s)
@@ -510,17 +518,22 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                     >
                       <Marker coordinate={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng }} />
                     </MapView>
-                    {/* Address footer */}
+                    {/* Address footer — isMe's dark/white tint only reads on
+                        dark mode's solid pink bubble; light mode's pale
+                        sent-bubble tint needs the same surface/textPrimary
+                        treatment as incoming messages
+                        [live-reported via screenshot: washed-out reply quote
+                        applied the same fix here]. */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                       paddingHorizontal: 10, paddingVertical: 8,
-                      backgroundColor: isMe ? 'rgba(0,0,0,0.28)' : colors.surface }}>
-                      <MapPin size={13} color={isMe ? '#fff' : colors.primary} />
+                      backgroundColor: isMe && isDark ? 'rgba(0,0,0,0.28)' : colors.surface }}>
+                      <MapPin size={13} color={isMe && isDark ? '#fff' : colors.primary} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 12, fontWeight: '700',
-                          color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={1}>
+                          color: isMe && isDark ? '#fff' : colors.textPrimary }} numberOfLines={1}>
                           {msg.locationPin.address}
                         </Text>
-                        <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.55)' : colors.textTertiary }}>
+                        <Text style={{ fontSize: 10, color: isMe && isDark ? 'rgba(255,255,255,0.55)' : colors.textTertiary }}>
                           Tap to open in Maps
                         </Text>
                       </View>
@@ -543,17 +556,17 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   <Pressable onPress={() => WebBrowser.openBrowserAsync(msg.documentUri!).catch(() =>
                     Alert.alert("Couldn't open document", 'Please try again.'))}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : colors.surface,
+                    backgroundColor: isMe && isDark ? 'rgba(0,0,0,0.2)' : colors.surface,
                     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 220 }}>
                     <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: colors.amber + '22',
                       alignItems: 'center', justifyContent: 'center' }}>
                       <FileText size={20} color={colors.amber} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={2}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isMe && isDark ? '#fff' : colors.textPrimary }} numberOfLines={2}>
                         {msg.documentName ?? 'Document'}
                       </Text>
-                      <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.6)' : colors.textTertiary }}>
+                      <Text style={{ fontSize: 10, color: isMe && isDark ? 'rgba(255,255,255,0.6)' : colors.textTertiary }}>
                         Tap to open
                       </Text>
                     </View>

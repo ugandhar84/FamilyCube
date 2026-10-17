@@ -117,7 +117,7 @@ export default function AppBottomSheet({
   const sheetHeight = Math.min(Math.max(chromeHeight + contentHeight + footerHeight, minPx), maxPx);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       {/* Live-reported ("form is hiding behind the keyboard litrally" /
           "weird grey gap instead of blending to the keyboard") on the
           hand-rolled sheets in EventFormModal.tsx/TaskFormShell.tsx traced

@@ -50,8 +50,14 @@
  * HealthTabComp itself renders or how it mutates data.
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
-import { Heart, Pill, Syringe, FolderOpen, Plus, ScanLine, History, Check, XCircle, Clock } from 'lucide-react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, TextInput, useWindowDimensions } from 'react-native';
+import { Pill, Syringe, FolderOpen, Plus, ScanLine, History, Check, XCircle, Clock, AlarmClock, Repeat, Mic, FileDown, Sparkles, Trash2, Search, FileText, Download } from 'lucide-react-native';
+import { Alert } from 'react-native';
+import { KioskAreaMenu, type AreaItem } from '../components/KioskAreaMenu';
+import { kioskPastels } from '../kioskPalette';
+import { shareVaccineRecordsPdf } from '@/features/vault/tabs/health/vaxPdfExport';
+import { useHealthAi } from '@/features/vault/tabs/health/useHealthAi';
+import { encodeTakenEntry, FREQ_LABELS } from '@/features/vault/tabs/health/types';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors } from '../kioskPalette';
 import { WidgetCard, WidgetHeader, PanelHead, TabTitle, Chip, EmptyNote, ActionButton } from '../components/KioskOS';
@@ -106,6 +112,8 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
   const [tab, setTab] = useState<Segment>('meds');
   const { width: winWidth } = useWindowDimensions();
   const isNarrowLayout = winWidth < 1080;
+  const role = (useFamilyStore.getState().members.find(m => m.id === useFamilyStore.getState().activeMemberId)?.role ?? 'parent') as string;
+  const own = role !== 'parent';
 
   // ROLE GATE (audit pass) — a kid sees Medications only. Unchanged by the
   // visual migration.
@@ -145,10 +153,10 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
 
   const loadSidebar = useCallback(async () => {
     if (familyId === 'family-1') return;
-    const medsQ = isKid && activeMember?.id
+    const medsQ = own && activeMember?.id
       ? supabase.from('family_medications').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
       : supabase.from('family_medications').select('*').eq('family_id', familyId);
-    const vaxQ = isKid && activeMember?.id
+    const vaxQ = own && activeMember?.id
       ? supabase.from('family_vaccines').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
       : supabase.from('family_vaccines').select('*').eq('family_id', familyId);
     // Records segment is parent-only (kids never reach it — same SEGMENTS
@@ -369,10 +377,18 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
         try {
           const ext = file.name.split('.').pop() ?? 'bin';
           const path = `${familyId}/${memberId}/${Date.now()}.${ext}`;
-          const blob = await fetch(file.uri).then(r => r.blob());
+          // Read the bytes with the file system, not fetch().blob(): on React Native a Blob can upload as 0 bytes
+          // (the phone's Records tab already works around this the same way).
+          const FS = await import('expo-file-system/legacy');
+          const b64 = await FS.readAsStringAsync(file.uri, { encoding: 'base64' as any });
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const { encryptFileBytes } = await import('@/lib/fileCrypto');
+          const sealed = await encryptFileBytes(familyId, bytes);
           const { data: up, error: upErr } = await supabase.storage
             .from('medical-records')
-            .upload(path, blob, { contentType: file.mimeType ?? 'application/octet-stream', upsert: false });
+            .upload(path, sealed, { contentType: 'application/octet-stream', upsert: false });
           if (upErr) console.warn('[KioskHealthTab] addRecord upload failed:', upErr);
           else if (up) { file_path = up.path; file_name = file.name; file_size = file.size ?? null; }
         } catch (uploadErr) {
@@ -525,466 +541,534 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
     });
     return flagged;
   }, [sideRecords, isKid]);
+  /* ───────── area-menu layout (Health & Records) ───────── */
+  const pastels = kioskPastels(k);
+  type HArea = 'today' | 'meds' | 'refills' | 'vax' | 'records' | 'visit' | 'bring' | 'ai' | 'export';
+  const [area, setArea] = useState<HArea>('today');
+  const [who, setWho] = useState<string>('all');
+  const [medStatus, setMedStatus] = useState<'active' | 'taken' | 'pending' | 'overdue' | 'all'>('active');
+  const [vaxStatus, setVaxStatus] = useState<'all' | 'pending' | 'done' | 'due'>('all');
+  const [medQuery, setMedQuery] = useState('');
+  const [recQuery, setRecQuery] = useState('');
+  const [recTag, setRecTag] = useState('all');
+  const [openRec, setOpenRec] = useState<MedRecord | null>(null);
+  const [openVax, setOpenVax] = useState<Vaccine | null>(null);
+  const [editMed, setEditMed] = useState<Medication | null>(null);
+  const ai = useHealthAi({ members, activeMemberId: activeMemberId ?? undefined });
+  const [exportIds, setExportIds] = useState<string[]>([]);
+  const today = todayStr();
+  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+  const mins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const t12 = (t: string) => formatDoseTime(t);
+  const people = own ? members.filter(m => m.id === activeMemberId) : members;
+  const inScope = <T extends { member_id: string }>(l: T[]) => l.filter(x => (!own || x.member_id === activeMemberId) && (who === 'all' || x.member_id === who));
+  const nameOf = (id: string) => members.find(m => m.id === id)?.name?.split(' ')[0] ?? 'Member';
+  const toneOf = (id: string) => pastels[Math.max(0, members.findIndex(m => m.id === id)) % 4];
 
-  return (
-    <View style={s.root}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.scroll}
-        onScrollBeginDrag={registerActivity}
-      >
-        <TabTitle
-          title="Health & Records"
-          subtitle="Medications, immunizations and the household's documents"
-          k={k}
-        />
+  const doseTaken = (m: Medication, t: string) => {
+    const multi = (m.frequency_times?.length ?? 1) > 1;
+    const set = new Set(m.taken_dates ?? []);
+    return set.has(encodeTakenEntry(today, multi ? t : null)) || (!multi && (m.taken_date === today || set.has(today)));
+  };
+  const dosesOf = (m: Medication) => (m.frequency_times?.length ? m.frequency_times : ['08:00']).map(t => {
+    const taken = doseTaken(m, t);
+    return { med: m, time: t, taken, od: !taken && mins(t) + (m.escalation_enabled ? m.escalation_after_min : 60) < nowMins && m.frequency !== 'as_needed' };
+  });
+  const activeMeds = inScope(sideMeds.filter(m => m.is_active));
+  const allDoses = activeMeds.flatMap(dosesOf);
+  const overdueCount = allDoses.filter(d => d.od).length;
 
-        <View style={[s.twoColRow, isNarrowLayout && s.twoColRowStacked]}>
-        <View style={[s.centerCol, isNarrowLayout && s.colFullWidth]}>
+  const markTaken = async (med: Medication, time: string | null) => {
+    const entry = encodeTakenEntry(today, time);
+    const was = (med.taken_dates ?? []).includes(entry);
+    const { error } = await supabase.rpc('toggle_medication_dose', { p_med_id: med.id, p_entry: entry, p_mark_taken: !was, p_today: today, p_modified_by: activeMemberId ?? null });
+    if (error) { showToast('Could not update the dose'); return; }
+    showToast(was ? 'Marked as not taken' : `${med.name} marked taken`); loadSidebar();
+  };
+  const confirmDelete = (title: string, run: () => PromiseLike<unknown>) => Alert.alert(title, 'This removes it for everyone in the family. It cannot be undone.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Delete', style: 'destructive', onPress: async () => { await run(); loadSidebar(); setOpenRec(null); setOpenVax(null); } },
+  ]);
+  const deleteMed = (m: Medication) => confirmDelete(`Delete ${m.name}?`, () => supabase.from('family_medications').delete().eq('id', m.id));
+  const deleteVax = (v: Vaccine) => confirmDelete(`Delete ${v.title}?`, () => supabase.from('family_vaccines').delete().eq('id', v.id));
+  const deleteRec = (r: MedRecord) => confirmDelete(`Delete ${r.title}?`, async () => {
+    // Remove the stored file too, not just the row, or it stays behind in storage with nothing pointing to it.
+    if (r.file_path) await supabase.storage.from(r.tag === 'visit_recording' ? 'medical-audio' : 'medical-records').remove([r.file_path]);
+    return supabase.from('medical_records').delete().eq('id', r.id);
+  });
+  // Multi-select delete for medications and vaccines (parents and teens only; kids never delete).
+  const [selecting, setSelecting] = useState(false);
+  const [selIds, setSelIds] = useState<Set<string>>(new Set());
+  const toggleSel = (id: string) => setSelIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const endSelect = () => { setSelecting(false); setSelIds(new Set()); };
+  useEffect(() => { endSelect(); }, [area]);
+  const deleteSelected = () => {
+    const ids = [...selIds];
+    if (ids.length === 0) return;
+    const table = area === 'vax' ? 'family_vaccines' : 'family_medications';
+    const noun = area === 'vax' ? 'vaccine' : 'medication';
+    Alert.alert(`Delete ${ids.length} ${noun}${ids.length > 1 ? 's' : ''}?`, 'This removes them for everyone in the family. It cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        if (table === 'family_medications') await supabase.from(table).update({ deleted_by: activeMemberId ?? null, notes: 'Removed from the kiosk', updated_at: new Date().toISOString() }).in('id', ids);
+        const { error } = await supabase.from(table).delete().in('id', ids);
+        if (error) { showToast('Could not delete them'); return; }
+        showToast(`${ids.length} ${noun}${ids.length > 1 ? 's' : ''} removed`);
+        endSelect(); loadSidebar();
+      } },
+    ]);
+  };
+  const selectBar = () => selecting ? (
+    <View style={[s.selBar, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+      <Text style={[s.dName, { color: k.text, flex: 1 }]}>{selIds.size} selected</Text>
+      <Btn kind="sec" label="Cancel" onPress={endSelect} />
+      <Btn kind="dg" label={selIds.size ? `Delete ${selIds.size}` : 'Delete'} Icon={Trash2} onPress={deleteSelected} />
+    </View>
+  ) : null;
+  const selectBtn = () => !isKid ? <Btn kind="sec" label={selecting ? 'Done selecting' : 'Select'} Icon={Check} onPress={() => (selecting ? endSelect() : setSelecting(true))} /> : null;
+  const selMark = (id: string) => selecting ? (
+    <Pressable onPress={() => toggleSel(id)} accessibilityRole="checkbox" accessibilityState={{ checked: selIds.has(id) }} accessibilityLabel="Select"
+      style={[StyleSheet.absoluteFill, { borderRadius: 24, borderWidth: selIds.has(id) ? 3 : 0, borderColor: k.primary, backgroundColor: selIds.has(id) ? 'rgba(88,114,196,0.10)' : 'transparent', alignItems: 'flex-end', padding: 12 }]}>
+      <View style={[s.selDot, { backgroundColor: selIds.has(id) ? k.primary : k.card, borderColor: k.primary }]}>{selIds.has(id) && <Check size={18} color={k.onPrimary} />}</View>
+    </Pressable>
+  ) : null;
+  const markRefilled = async (m: Medication) => {
+    const next = new Date(); next.setDate(next.getDate() + 30);
+    await supabase.from('family_medications').update({ pills_remaining: 60, refill_date: next.toISOString().slice(0, 10) }).eq('id', m.id);
+    showToast(`${m.name} refilled`); loadSidebar();
+  };
+  const [downloading, setDownloading] = useState(false);
+  const downloadRecs = async (recs: MedRecord[]) => {
+    const withFile = recs.filter(r => !!r.file_path);
+    if (withFile.length === 0) { showToast('No files attached to download'); return; }
+    setDownloading(true);
+    try {
+      const { downloadSingle, downloadZip } = await import('@/features/vault/records/recordsDownload');
+      if (withFile.length === 1) await downloadSingle(withFile[0]); else await downloadZip(withFile);
+    } catch (e: any) { showToast('Download failed: ' + (e?.message ?? 'please try again')); }
+    finally { setDownloading(false); }
+  };
+  // A visit recording's title is "<appointment title> — <date>"; look the appointment up for its time.
+  const apptTimeOf = (r: MedRecord): string | null => {
+    const ev = useEventStore.getState().events.find((e: any) => `${e.title} — ${e.date}` === r.title);
+    return ev?.time ? formatDoseTime(ev.time) : null;
+  };
+  const apptTitleOf = (r: MedRecord) => r.title.replace(/ — \d{4}-\d{2}-\d{2}$/, '');
+  const downloadAudio = async (r: MedRecord) => {
+    if (!r.file_path) return;
+    setDownloading(true);
+    try {
+      const { downloadVisitAudio } = await import('@/features/vault/records/recordsDownload');
+      await downloadVisitAudio(r);
+    } catch (e: any) { showToast('Download failed: ' + (e?.message ?? 'please try again')); }
+    finally { setDownloading(false); }
+  };
+  const markVaxDone = async (v: Vaccine) => { await supabase.from('family_vaccines').update({ done: !v.done }).eq('id', v.id); loadSidebar(); setOpenVax(null); };
+  const exportPdf = async () => {
+    const ms = people.filter(m => exportIds.includes(m.id)).map(m => ({ memberId: m.id, memberName: m.name, vaccines: sideVaxes.filter(v => v.member_id === m.id) }));
+    if (!ms.length) { showToast('Pick at least one person'); return; }
+    try { await shareVaccineRecordsPdf({ familyName: 'Family', members: ms }); } catch { showToast('Could not export the PDF'); }
+  };
 
-        {/* CubeAI as its own separate section, matching Chores' own
-            KioskAiChoresEngine placement [live-reported: "i want to move
-            the cube ai as a separate section similar to the chores"] —
-            was only ever available inline inside HealthTabComp's meds/vax
-            view before this. Same !kidView gate HealthAiAssistant's own
-            phone mount uses (kids don't get the AI pill there either). */}
-        {!isKid && (
-          <View style={{ marginBottom: KIOSK_SPACE.md }}>
-            <KioskHealthAiWidget members={members} activeMemberId={activeMemberId ?? undefined} isDark={kioskDark} k={k} />
-          </View>
-        )}
+  const lowRx = activeMeds.filter(m => (m.pills_remaining != null && m.pills_remaining <= 10) || refillsSoon.some(r => r.med.id === m.id));
+  const attn = inScope(sideRecords).filter(r => r.ai_analysis_json && (r.ai_analysis_json.urgency === 'urgent' || r.ai_analysis_json.urgency === 'attention'));
+  const pendingVax = inScope(sideVaxes).filter(v => !v.done).length;
 
-        {SEGMENTS.length > 1 && (
-          <View style={s.segmentRow} accessibilityRole="tablist">
-            {SEGMENTS.map(seg => {
-              const isActive = tab === seg.key;
+  const items: AreaItem<HArea>[] = isKid
+    ? [{ id: 'today', label: 'Today’s doses', Icon: AlarmClock, badge: overdueCount || undefined }, { id: 'meds', label: 'My medications', Icon: Pill }]
+    : [
+      { id: 'today', label: 'Today’s doses', Icon: AlarmClock, badge: overdueCount || undefined },
+      { id: 'meds', label: 'All medications', Icon: Pill },
+      { id: 'refills', label: 'Refills', Icon: Repeat, badge: lowRx.length || undefined },
+      { id: 'vax', label: 'Vaccines', Icon: Syringe, badge: pendingVax || undefined },
+      { id: 'records', label: 'All records', Icon: FolderOpen, badge: attn.length || undefined },
+      { id: 'visit', label: 'Record a visit', Icon: Mic },
+      { id: 'bring', label: 'Bring in a document', Icon: FileText },
+      { id: 'ai', label: 'Ask health AI', Icon: Sparkles },
+      ...(own ? [] : [{ id: 'export' as HArea, label: 'Export PDF', Icon: FileDown }]),
+    ];
+
+  const Pill2 = ({ t, tone }: { t: string; tone?: 'g' | 'a' | 'r' | 'l' }) => (
+    <View style={[s.pill, { backgroundColor: tone === 'r' ? k.danger : tone === 'g' ? k.pastelSageCard : tone === 'a' ? k.pastelAmberCard : tone === 'l' ? k.pastelLavCard : k.card }]}>
+      <Text style={[s.pillT, { color: tone === 'r' ? k.onAccent : tone === 'g' ? k.sage : tone === 'a' ? k.gold : tone === 'l' ? k.purple : k.textMuted }]}>{t}</Text>
+    </View>
+  );
+  const Btn = ({ label, onPress, kind = 'pri', Icon }: { label: string; onPress: () => void; kind?: 'pri' | 'sec' | 'ok' | 'dg'; Icon?: any }) => (
+    <Pressable onPress={() => { registerActivity(); onPress(); }} accessibilityRole="button" accessibilityLabel={label}
+      style={[s.btn, { backgroundColor: kind === 'pri' ? k.primary : kind === 'ok' ? k.sage : 'transparent', borderWidth: kind === 'dg' ? 1.5 : 0, borderColor: k.danger }, kind === 'sec' && { backgroundColor: k.well }]}>
+      {Icon && <Icon size={16} color={kind === 'pri' || kind === 'ok' ? k.onPrimary : kind === 'dg' ? k.danger : k.text} />}
+      <Text style={[s.btnT, { color: kind === 'pri' || kind === 'ok' ? k.onPrimary : kind === 'dg' ? k.danger : k.text }]}>{label}</Text>
+    </Pressable>
+  );
+  const Chip2 = ({ label, on, onPress, i }: { label: string; on: boolean; onPress: () => void; i: number }) => (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[s.chip2, { backgroundColor: on ? k.primary : pastels[i % 4].card }]}>
+      <Text style={[s.chipT2, { color: on ? k.onPrimary : pastels[i % 4].fg }]}>{label}</Text>
+    </Pressable>
+  );
+  const whoRow = own || people.length < 2 ? null : (
+    <View style={s.wrapRow}>
+      <Chip2 label="Everyone" on={who === 'all'} onPress={() => setWho('all')} i={1} />
+      {people.map((m, i) => <Chip2 key={m.id} label={m.name.split(' ')[0]} on={who === m.id} onPress={() => setWho(m.id)} i={i + 2} />)}
+    </View>
+  );
+  const Head = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+    <View style={s.head}><Text style={[s.h1, { color: k.text }]}>{title}</Text><View style={{ flex: 1 }} />{right}</View>
+  );
+
+  const content = () => {
+    if (area === 'today') {
+      const ids = (own ? [activeMemberId ?? ''] : people.map(m => m.id)).filter(id => who === 'all' || id === who);
+      return (
+        <>
+          <Head title="Today’s doses" right={!isKid ? <Btn label="Add medication" Icon={Plus} onPress={() => setShowAddMed(true)} /> : undefined} />
+          {whoRow}
+          <View style={s.grid}>
+            {ids.map(id => {
+              const ds = activeMeds.filter(m => m.member_id === id).flatMap(dosesOf).sort((a, b) => mins(a.time) - mins(b.time));
+              const tk = ds.filter(d => d.taken).length; const tone = toneOf(id);
               return (
-                <Pressable
-                  key={seg.key}
-                  onPress={() => { registerActivity(); setTab(seg.key); }}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: isActive }}
-                  accessibilityLabel={seg.label}
-                  style={({ pressed }) => [
-                    s.segment,
-                    {
-                      backgroundColor: isActive
-                        ? seg.tint + (kioskDark ? '24' : '1A')
-                        : pressed ? k.cardHover : k.card,
-                      borderColor: isActive ? seg.tint + (kioskDark ? '4D' : '3D') : k.cardBorder,
-                    },
-                  ]}
-                >
-                  <seg.Icon size={15} color={isActive ? seg.tint : k.textMuted} />
-                  <Text
-                    numberOfLines={1}
-                    style={[s.segmentLabel, { color: isActive ? seg.tint : k.textMuted }]}
-                  >
-                    {seg.label}
+                <View key={id} style={[s.mc, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                  <View style={s.mcTop}>
+                    <KioskAvatar name={nameOf(id)} size={46} bgColor={tone.card} k={k} />
+                    <View style={{ flex: 1 }}><Text style={[s.mcName, { color: k.text }]}>{nameOf(id)}</Text><Text style={[s.sm, { color: k.textMuted }]}>{tk} of {ds.length} doses taken today</Text></View>
+                    {ds.some(d => d.od) ? <Pill2 t="Overdue" tone="r" /> : ds.length > 0 && tk === ds.length ? <Pill2 t="All done ✓" tone="g" /> : null}
+                  </View>
+                  <View style={[s.bar, { backgroundColor: k.card }]}><View style={{ width: `${ds.length ? (tk / ds.length) * 100 : 0}%`, height: '100%', backgroundColor: k.sage, borderRadius: 5 }} /></View>
+                  {ds.length === 0 ? <Text style={[s.sm, { color: k.textMuted }]}>No medications scheduled.</Text> : ds.map((d, i) => (
+                    <View key={i} style={[s.dose, { backgroundColor: k.card }, d.od && { borderWidth: 2.5, borderColor: k.danger }, d.taken && { opacity: 0.75 }]}>
+                      <Text style={[s.tm, { color: k.textMuted }]}>{t12(d.time)}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{d.med.name} {d.med.dosage} {d.med.dosage_unit}</Text>
+                        {!!d.med.instructions && <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{d.med.instructions}</Text>}
+                      </View>
+                      {d.taken ? <Pill2 t="✓ Taken" tone="g" /> : <Btn kind="ok" label="Mark taken" onPress={() => markTaken(d.med, (d.med.frequency_times?.length ?? 1) > 1 ? d.time : null)} />}
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        </>
+      );
+    }
+    if (area === 'meds') {
+      const l = inScope(sideMeds).filter(m => {
+        const ds = dosesOf(m);
+        const okS = medStatus === 'all' ? true : medStatus === 'active' ? m.is_active : medStatus === 'taken' ? ds.every(d => d.taken) : medStatus === 'pending' ? ds.some(d => !d.taken) : ds.some(d => d.od);
+        return okS && (!medQuery || (m.name + (m.prescribing_doctor ?? '')).toLowerCase().includes(medQuery.toLowerCase()));
+      });
+      return (
+        <>
+          <Head title={isKid ? 'My medications' : 'All medications'} right={!isKid ? <View style={s.wrapRow}>{selectBtn()}<Btn kind="sec" label="Scan prescription" Icon={ScanLine} onPress={() => { setScanMode('rx'); setShowScanSheet(true); }} /><Btn label="Add medication" Icon={Plus} onPress={() => setShowAddMed(true)} /></View> : undefined} />
+          {whoRow}
+          <View style={s.wrapRow}>
+            <View style={[s.search, { backgroundColor: k.well }]}><Search size={16} color={k.textFaint} /><TextInput value={medQuery} onChangeText={setMedQuery} placeholder="Search medications" placeholderTextColor={k.textFaint} style={[s.searchIn, { color: k.text }]} accessibilityLabel="Search medications" /></View>
+            {([['active', 'Active'], ['taken', 'Taken today'], ['pending', 'Pending'], ['overdue', 'Overdue'], ['all', 'All']] as const).map(([key, t], i) => <Chip2 key={key} label={t} on={medStatus === key} onPress={() => setMedStatus(key)} i={i} />)}
+          </View>
+          <View style={s.grid}>
+            {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No medications match.</Text> : l.map(m => {
+              const tone = toneOf(m.member_id);
+              return (
+                <View key={m.id} style={[s.mc, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                  <View style={s.mcTop}>
+                    <KioskAvatar name={nameOf(m.member_id)} size={44} bgColor={tone.card} k={k} />
+                    <View style={{ flex: 1, minWidth: 0 }}><Text style={[s.mcName, { color: k.text }]} numberOfLines={1}>{m.name} {m.dosage} {m.dosage_unit}</Text>
+                      <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{nameOf(m.member_id)} · {FREQ_LABELS[m.frequency] ?? m.frequency} · {(m.frequency_times ?? []).map(t12).join(', ')}</Text></View>
+                    <Pill2 t={m.category === 'prescription' ? 'Rx' : m.category} tone="l" />
+                  </View>
+                  {!!m.instructions && <Text style={[s.sm, { color: k.textMuted }]}>{m.instructions}</Text>}
+                  <View style={s.wrapRow}>
+                    {!!m.prescribing_doctor && <Pill2 t={`🩺 ${m.prescribing_doctor}`} />}{!!m.pharmacy && <Pill2 t={`🏪 ${m.pharmacy}`} />}
+                    {m.escalation_enabled && <Pill2 t={`🔔 Alert after ${m.escalation_after_min} min`} tone="a" />}{!!m.end_date && <Pill2 t={`Ends ${fmtDateDisplay(new Date(m.end_date + 'T00:00:00'))}`} />}
+                  </View>
+                  {m.pills_remaining != null && (
+                    <View><Text style={[s.sm, { color: k.textMuted }]}>{m.pills_remaining} pills left{m.refill_date ? ` · refill ${fmtDateDisplay(new Date(m.refill_date + 'T00:00:00'))}` : ''}</Text>
+                      <View style={[s.bar, { backgroundColor: k.card }]}><View style={{ width: `${Math.min(100, m.pills_remaining * 3.3)}%`, height: '100%', borderRadius: 5, backgroundColor: m.pills_remaining <= 10 ? k.danger : k.sage }} /></View></View>
+                  )}
+                  <View style={s.wrapRow}>
+                    <Btn kind="ok" label="Taken" onPress={() => { const next = dosesOf(m).find(d => !d.taken) ?? dosesOf(m)[0]; markTaken(m, (m.frequency_times?.length ?? 1) > 1 ? next.time : null); }} />
+                    <Btn kind="sec" label="History" onPress={() => setHistoryMed(m)} />
+                    {!isKid && <Btn kind="sec" label="Edit" onPress={() => setEditMed(m)} />}
+                    {!isKid && <Btn kind="dg" label="Delete" onPress={() => deleteMed(m)} />}
+                  </View>
+                  {selMark(m.id)}
+                </View>
+              );
+            })}
+          </View>
+          {selectBar()}
+        </>
+      );
+    }
+    if (area === 'refills') {
+      return (
+        <>
+          <Head title="Refills" />{whoRow}
+          {lowRx.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>Nothing is running low. 🎉</Text> : lowRx.map(m => {
+            const tone = toneOf(m.member_id);
+            return (
+              <View key={m.id} style={[s.row, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                <KioskAvatar name={nameOf(m.member_id)} size={44} bgColor={tone.card} k={k} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.dName, { color: k.text }]}>{m.name} {m.dosage} {m.dosage_unit}</Text>
+                  <Text style={[s.sm, { color: k.textMuted }]}>{nameOf(m.member_id)} · {m.pills_remaining ?? '?'} pills left · refill {m.refill_date ? fmtDateDisplay(new Date(m.refill_date + 'T00:00:00')) : 'not set'}{m.pharmacy ? ` · ${m.pharmacy}` : ''}</Text>
+                </View>
+                <Btn kind="ok" label="Mark refilled" onPress={() => markRefilled(m)} />
+              </View>
+            );
+          })}
+        </>
+      );
+    }
+    if (area === 'vax') {
+      const l = inScope(sideVaxes).filter(v => vaxStatus === 'all' || (vaxStatus === 'done' && v.done) || (vaxStatus === 'pending' && !v.done) || (vaxStatus === 'due' && !v.done && v.next_due_date && (new Date(v.next_due_date).getTime() - Date.now()) / 86400000 <= 30));
+      return (
+        <>
+          <Head title="Vaccines" right={<View style={s.wrapRow}>{selectBtn()}<Btn kind="sec" label="Scan a vaccine record" Icon={ScanLine} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} /><Btn label="Add vaccine" Icon={Plus} onPress={() => setShowAddVax(true)} /></View>} />{whoRow}
+          <View style={s.wrapRow}>{([['all', 'All'], ['pending', 'Pending'], ['done', 'Done'], ['due', 'Due soon']] as const).map(([key, t], i) => <Chip2 key={key} label={t} on={vaxStatus === key} onPress={() => setVaxStatus(key)} i={i} />)}</View>
+          <View style={{ gap: 8 }}>
+            {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No vaccines match.</Text> : (() => {
+              // Grouped by month and year given (or due, when not given yet), newest first.
+              const keyOf = (v: Vaccine) => (v.date || v.next_due_date || '').slice(0, 7);
+              const groups = new Map<string, Vaccine[]>();
+              [...l].sort((a, b) => (b.date || b.next_due_date || '').localeCompare(a.date || a.next_due_date || '')).forEach(v => { const g = keyOf(v); groups.set(g, [...(groups.get(g) ?? []), v]); });
+              return [...groups.entries()].map(([g, list], gi) => (
+                <View key={g || 'none'} style={{ gap: 8 }}>
+                  <Text style={[s.eb, { color: k.textFaint, marginTop: gi ? 8 : 0 }]}>
+                    {g ? new Date(g + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase() : 'NO DATE'} · {list.length}
                   </Text>
+                  {list.map((v, i) => {
+                    const tone = pastels[i % 4];
+                    return (
+                      <Pressable key={v.id} onPress={() => (selecting ? toggleSel(v.id) : setOpenVax(v))} accessibilityRole="button" accessibilityLabel={`${v.title}, ${nameOf(v.member_id)}`} style={[s.vrow, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                  <KioskAvatar name={nameOf(v.member_id)} size={32} bgColor={tone.card} k={k} />
+                  <View style={{ flex: 1.4, minWidth: 0 }}><Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{v.title}</Text><Text style={[s.sm, { color: k.textMuted }]} numberOfLines={1}>{nameOf(v.member_id)}</Text></View>
+                  <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.date ? fmtDateDisplay(new Date(v.date + 'T00:00:00')) : 'Not given yet'}</Text>
+                  <Text style={[s.sm, { color: k.textMuted, width: 90 }]}>Dose {v.series_current}/{v.series_total}</Text>
+                  <Text style={[s.sm, { color: k.textMuted, flex: 1 }]} numberOfLines={1}>{v.next_due_date ? `Due ${fmtDateDisplay(new Date(v.next_due_date + 'T00:00:00'))}` : ''}</Text>
+                  <Pill2 t={v.done ? 'Done' : 'Pending'} tone={v.done ? 'g' : 'a'} />
+                  {selecting && <View style={[s.selDot, { backgroundColor: selIds.has(v.id) ? k.primary : k.card, borderColor: k.primary }]}>{selIds.has(v.id) && <Check size={18} color={k.onPrimary} />}</View>}
+                </Pressable>
+                    );
+                  })}
+                </View>
+              ));
+            })()}
+          </View>
+          {selectBar()}
+        </>
+      );
+    }
+    if (area === 'records') {
+      const TAGS: [string, string, string][] = [['lab', 'Lab', '🧪'], ['discharge', 'Discharge', '🏥'], ['prescription', 'Prescription', '💊'], ['imaging', 'Imaging', '🩻'], ['insurance', 'Insurance', '🛡️'], ['vaccination', 'Vaccination', '💉'], ['visit_recording', 'Visit Recording', '🎙️'], ['other', 'Other', '📄']];
+      const l = inScope(sideRecords).filter(r => (recTag === 'all' || r.tag === recTag) && (!recQuery || r.title.toLowerCase().includes(recQuery.toLowerCase())));
+      return (
+        <>
+          <Head title="All records" right={<View style={s.wrapRow}><Btn kind="sec" label={downloading ? 'Preparing…' : 'Download all'} Icon={Download} onPress={() => downloadRecs(l)} /><Btn label="Bring in a document" Icon={Plus} onPress={() => setArea('bring')} /></View>} />{whoRow}
+          <View style={[s.search, { backgroundColor: k.well }]}><Search size={16} color={k.textFaint} /><TextInput value={recQuery} onChangeText={setRecQuery} placeholder="Search records" placeholderTextColor={k.textFaint} style={[s.searchIn, { color: k.text }]} accessibilityLabel="Search records" /></View>
+          <View style={s.wrapRow}><Chip2 label="All" on={recTag === 'all'} onPress={() => setRecTag('all')} i={0} />{TAGS.map(([key, t, e], i) => <Chip2 key={key} label={`${e} ${t}`} on={recTag === key} onPress={() => setRecTag(key)} i={i + 1} />)}</View>
+          <View style={s.grid}>
+            {l.length === 0 ? <Text style={[s.empty, { color: k.textMuted }]}>No records match.</Text> : l.map((r, i) => {
+              const tone = pastels[i % 4]; const tg = TAGS.find(x => x[0] === r.tag) ?? TAGS[7]; const urg = r.ai_analysis_json?.urgency;
+              return (
+                <Pressable key={r.id} onPress={() => setOpenRec(r)} accessibilityRole="button" accessibilityLabel={r.title} style={[s.rec, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                  <View style={[s.recIc, { backgroundColor: tone.card }]}><Text style={{ fontSize: 22 }}>{tg[2]}</Text></View>
+                  <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                    <Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{r.title}</Text>
+                    <View style={s.wrapRow}><Pill2 t={tg[1]} /><Pill2 t={nameOf(r.member_id)} /><Pill2 t={fmtDateDisplay(new Date(r.record_date + 'T00:00:00'))} /><Pill2 t="🔒 Protected by family code" tone="g" />{urg && urg !== 'routine' && <Pill2 t={urg === 'urgent' ? 'Urgent' : 'Attention'} tone={urg === 'urgent' ? 'r' : 'a'} />}</View>
+                    {!!r.ai_summary && <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={3}>AI SUMMARY · {r.ai_summary}</Text>}
+                  </View>
                 </Pressable>
               );
             })}
           </View>
-        )}
-
-        <WidgetCard k={k} isDark={kioskDark}>
-          <WidgetHeader
-            Icon={Heart} eyebrow="Household" title={current.label}
-            accent={accent} k={k} isDark={kioskDark}
-            // Real "Add"/"Scan" entry points in the section heading's own
-            // right corner [live-reported: "there we should have add med
-            // add vax scan recod on the section heading right corner..
-            // get all the add form from the mobile equevalent.."] — the
-            // SAME real modals/save logic HealthTab.tsx/RecordsTab.tsx
-            // already use, mounted a second time here as a faster path;
-            // HealthTabComp/RecordsTabComp keep their own "+" affordances
-            // too. Parent-only, same as every other write action added to
-            // kiosk this session (e.g. Chores' "New Chore").
-            // Compact sizing (s.headerActionBtn), matching Chores' own
-            // header action buttons — the default ActionButton size
-            // (KIOSK_HIT.control/52px tall) read as way too loud for two
-            // buttons crammed into a header corner [live-reported: "we
-            // need to reduce the buttons add and scan sizes it is
-            // scremaing.. too much"]. Scan drops its text label to
-            // icon-only for the same reason (Add stays labeled since it's
-            // the primary action of the two).
-            right={!isKid ? (
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {tab === 'meds' && (
-                  <ActionButton
-                    label="" Icon={ScanLine} accent={k.danger}
-                    k={k} isDark={kioskDark} variant="soft"
-                    style={s.headerActionBtn}
-                    onPress={() => { registerActivity(); setScanMode('rx'); setShowScanSheet(true); }}
-                    accessibilityHint="Scan a prescription label with the camera"
-                  />
-                )}
-                {tab === 'vax' && (
-                  <ActionButton
-                    label="" Icon={ScanLine} accent={k.sage}
-                    k={k} isDark={kioskDark} variant="soft"
-                    style={s.headerActionBtn}
-                    onPress={() => { registerActivity(); setScanMode('vaccine'); setShowScanSheet(true); }}
-                    accessibilityHint="Scan a vaccine record with the camera"
-                  />
-                )}
-                <ActionButton
-                  label={tab === 'meds' ? 'Add Med' : tab === 'vax' ? 'Add Vax' : 'Add Record'}
-                  Icon={Plus} accent={accent}
-                  k={k} isDark={kioskDark} variant="solid"
-                  style={s.headerActionBtn}
-                  onPress={() => {
-                    registerActivity();
-                    if (tab === 'meds') setShowAddMed(true);
-                    else if (tab === 'vax') setShowAddVax(true);
-                    else setShowAddRecord(true);
-                  }}
-                  accessibilityHint={`Opens the ${tab === 'meds' ? 'add medication' : tab === 'vax' ? 'add immunization' : 'add record'} form`}
-                />
-              </View>
-            ) : undefined}
-          />
-          {tab === 'records'
-            ? <RecordsTabComp colors={colors} isDark={isDark} />
-            : <HealthTabComp colors={colors} isDark={isDark} kidView={isKid}
-                healthTab={tab === 'vax' ? 'vax' : 'meds'}
-                setHealthTab={t => setTab(t)}
-                // KioskHealthAiWidget above already mounts the same real
-                // useHealthAi hook as its own standalone card — without
-                // this, the AI pill would render a second time inline
-                // here too.
-                hideAiAssistant={!isKid}
-                onOpenHistory={med => setHistoryMed(med)} />}
-        </WidgetCard>
-
-        {/* Medication history — real day-by-day taken/missed/upcoming log
-            from medicationAdherenceHistory(), kiosk-native side drawer
-            (variant="drawer") instead of the phone's bottom Modal
-            [live-requested: "show that history side bar"], same pattern
-            as the Find page's own location-history drawer. */}
-        <KioskFormDrawer
-          visible={!!historyMed}
-          variant="drawer"
-          title={historyMed ? `${historyMed.name} History` : 'Medication History'}
-          subtitle={historyMed ? (members.find(m => m.id === historyMed.member_id)?.name ?? '') : undefined}
-          accent={k.danger}
-          Icon={History}
-          k={k}
-          onClose={() => setHistoryMed(null)}
-        >
-          {(() => {
-            const days = historyMed ? groupHistoryByDay(medicationAdherenceHistory(historyMed)) : [];
-            if (days.length === 0) return <EmptyNote text="No history yet." k={k} />;
+        </>
+      );
+    }
+    if (area === 'visit' || area === 'bring') {
+      const cfg = {
+        visit: { title: 'Record a visit', big: 'Capture the appointment', txt: 'Recorded visits and their AI summaries show here. Record the audio from a phone on the appointment’s page, or add the visit by hand.', btn: 'Add the visit record', Icon: Mic, run: () => setShowAddRecord(true) },
+        bring: { title: 'Bring in a document', big: 'Choose how to bring it in', txt: 'Add a photo or PDF of a lab, discharge paper, imaging or insurance card. You check the details before it is saved.', btn: 'Bring in a document', Icon: FileText, run: () => setShowAddRecord(true) },
+      }[area];
+      return (
+        <>
+          <Head title={cfg.title} />{whoRow}
+          <View style={[s.hero, { backgroundColor: k.pastelLav, borderColor: k.pastelLavCard }]}>
+            <View style={[s.heroIc, { backgroundColor: k.pastelLavCard }]}><cfg.Icon size={30} color={k.purple} /></View>
+            <View style={{ flex: 1 }}><Text style={[s.mcName, { color: k.text }]}>{cfg.big}</Text><Text style={[s.sm, { color: k.textMuted }]}>{cfg.txt}</Text></View>
+          </View>
+          {area === 'visit' && (() => {
+            const visits = inScope(sideRecords).filter(r => r.tag === 'visit_recording').sort((a, b) => b.record_date.localeCompare(a.record_date)).slice(0, 20);
             return (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {days.map(({ date, doses }) => (
-                  <View key={date} style={{ marginBottom: KIOSK_SPACE.md }}>
-                    <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: k.textFaint, marginBottom: 6 }}>
-                      {fmtDateDisplay(new Date(date + 'T00:00:00'))}
-                    </Text>
-                    {doses.map((dose: DoseAdherence, idx: number) => {
-                      const tint = dose.status === 'taken' ? k.sage
-                        : dose.status === 'missed' ? k.danger
-                        : k.textFaint;
-                      const Icon = dose.status === 'taken' ? Check : dose.status === 'missed' ? XCircle : Clock;
-                      return (
-                        <View key={idx} style={{
-                          flexDirection: 'row', alignItems: 'center', gap: 10,
-                          paddingVertical: 8,
-                          borderTopWidth: idx > 0 ? StyleSheet.hairlineWidth : 0, borderTopColor: k.cardBorder,
-                        }}>
-                          <Icon size={14} color={tint} />
-                          <Text style={{ flex: 1, fontSize: KIOSK_TYPO.body, color: k.textMuted }}>
-                            {dose.time ? formatDoseTime(dose.time) : 'Dose'}
-                          </Text>
-                          <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: tint }}>
-                            {dose.status === 'taken' ? 'Taken' : dose.status === 'missed' ? 'Missed' : 'Upcoming'}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                ))}
-              </ScrollView>
-            );
-          })()}
-        </KioskFormDrawer>
-
-        {/* Kiosk-native Add Med/Vax forms (KioskFormDrawer shell, matching
-            KioskGroceryItemSheet's own pattern), not the phone's stepper
-            modal [live-reported: "add model or edit models like a add
-            groceries model type.."] — same real fields, same real save
-            logic (addMed/addVax below), see each form's own header for
-            the exact rationale. */}
-        <KioskAddMedForm visible={showAddMed} onClose={() => setShowAddMed(false)}
-          onSave={addMed} members={members} colors={colors} isDark={isDark} />
-        <KioskAddVaxForm visible={showAddVax} onClose={() => setShowAddVax(false)}
-          onSave={addVax} members={members} colors={colors} isDark={isDark} />
-        <KioskAddRecordForm visible={showAddRecord} onClose={() => setShowAddRecord(false)}
-          onSave={addRecord} colors={colors} isDark={isDark}
-          members={members} activeMemberId={activeMemberId ?? null} />
-        {/* Kiosk-native narrow side drawer with its own 3-step stepper
-            (Choose source → Cover sensitive info → Review & save), matching
-            KioskFormDrawer's own drawer shape [live-reported: "instead
-            bottom sheet in the koisek show the narrow window side like
-            receipt scan style" → "with stepper"]. Same real scan/save
-            logic underneath — see KioskScanReviewForm.tsx's own header for
-            why this owns its own Modal instead of reusing KioskFormDrawer
-            directly (the redact step needs full-bleed rendering
-            KioskFormDrawer's fixed padded body can't give it). */}
-        <KioskScanReviewForm
-          visible={showScanSheet}
-          scanMode={scanMode}
-          activeMemberId={activeMember?.id ?? ''}
-          members={members}
-          colors={colors}
-          isDark={isDark}
-          onClose={() => setShowScanSheet(false)}
-          onSaveMed={saveScannedMed}
-          onSaveVax={saveScannedVax}
-        />
-
-        </View>
-
-        {/* ── Sidebar — matching Chores' own sideCol pattern exactly. Parent
-            only, same as Chores' roster panels always were, and shown
-            across all three segments since it summarizes the whole Health
-            area rather than tracking whichever segment happens to be
-            selected.
-
-            Every panel now ALWAYS renders (with an EmptyNote fallback)
-            instead of disappearing when its own list is empty — a panel
-            that vanishes on zero results is indistinguishable from a
-            panel that's missing or broken [live-reported: "i didn't find
-            these widgets" — turned out to be exactly this: an empty
-            household made every panel silently disappear] → "on lets show
-            the widgets with empty component to avoid confusion". */}
-        {!isKid && (
-          <View style={[s.sideCol, isNarrowLayout && s.colFullWidth]}>
-            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-              <PanelHead title="Who takes what" k={k} />
-              {medsByMember.length === 0 ? (
-                <EmptyNote text="No active medications yet." k={k} />
-              ) : medsByMember.map(({ member, meds, takenToday, overdue, overdueMeds }, i) => {
-                  const rs = assigneeStyle(member, colors, isDark);
-                  const clear = overdue === 0 && takenToday === meds.length;
-                  // Name the specific overdue medication instead of just a
-                  // count — "Amoxicillin overdue" tells a parent what to
-                  // actually go do, a bare red "1" doesn't. Falls back to
-                  // "N overdue" only when a member has more than one
-                  // overdue med at once (naming all of them would overflow
-                  // the row).
-                  const overdueLabel = overdue === 1
-                    ? `${overdueMeds[0].name} overdue`
-                    : overdue > 1
-                      ? `${overdue} meds overdue`
-                      : clear ? 'All taken today' : `${takenToday}/${meds.length} taken today`;
+              <View style={{ gap: 10, marginTop: 6 }}>
+                <Text style={[s.eb, { color: k.textFaint }]}>RECORDED VISITS · {visits.length}</Text>
+                {visits.length === 0 && <Text style={[s.empty, { color: k.textMuted }]}>No recorded visits yet. Record one from a phone on the appointment’s page.</Text>}
+                {visits.map((r, i) => {
+                  const tone = pastels[i % 4]; const tm = apptTimeOf(r);
                   return (
-                    <View
-                      key={member.id}
-                      style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                      accessibilityLabel={`${member.name.split(' ')[0]}: ${takenToday} of ${meds.length} taken today${overdue > 0 ? `, ${overdueMeds.map(m => m.name).join(', ')} overdue` : ''}`}
-                    >
-                      <KioskAvatar
-                        name={member.name}
-                        emoji={member.emoji}
-                        avatarUrl={member.avatarUrl}
-                        siblings={members.filter(x => x.id !== member.id).map(x => x.name)}
-                        size={36}
-                        ringWidth={1.5}
-                        ringColor={rs.dot}
-                        bgColor={rs.badge}
-                        k={k}
-                      />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{member.name.split(' ')[0]}</Text>
-                        <Text style={[s.jarMeta, { color: overdue > 0 ? k.danger : k.textFaint }]} numberOfLines={1}>
-                          {overdueLabel}
-                        </Text>
+                    <Pressable key={r.id} onPress={() => setOpenRec(r)} accessibilityRole="button" accessibilityLabel={apptTitleOf(r)} style={[s.rec, { backgroundColor: tone.col, borderColor: tone.card }]}>
+                      <View style={[s.recIc, { backgroundColor: tone.card }]}><Text style={{ fontSize: 22 }}>🎙️</Text></View>
+                      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                        <Text style={[s.dName, { color: k.text }]} numberOfLines={1}>{apptTitleOf(r)}</Text>
+                        <View style={s.wrapRow}><Pill2 t={nameOf(r.member_id)} /><Pill2 t={`${fmtDateDisplay(new Date(r.record_date + 'T00:00:00'))}${tm ? ` · ${tm}` : ''}`} />{r.ai_analyzed ? <Pill2 t="AI summary ready" tone="g" /> : <Pill2 t="Summary not approved yet" tone="a" />}</View>
+                        {!!r.ai_summary && <Text style={[s.sm, { color: k.textMuted }]} numberOfLines={2}>{r.ai_summary}</Text>}
                       </View>
-                      {overdue > 0 ? (
-                        <Text style={[s.jarAmt, { color: k.danger }]} numberOfLines={1}>!</Text>
-                      ) : (
-                        <Text style={[s.jarAmt, { color: k.sage }]} numberOfLines={1}>✓</Text>
-                      )}
-                    </View>
+                    </Pressable>
                   );
                 })}
-            </WidgetCard>
+              </View>
+            );
+          })()}
+          <View style={s.wrapRow}><Btn label={cfg.btn} Icon={cfg.Icon} onPress={cfg.run} />{area === 'visit' && <Btn kind="sec" label="Scan a document" Icon={ScanLine} onPress={() => setArea('bring')} />}{area === 'bring' && <Btn kind="sec" label="Scan a vaccine record" Icon={Syringe} onPress={() => { setScanMode('vaccine'); setShowScanSheet(true); }} />}</View>
+        </>
+      );
+    }
+    if (area === 'ai') {
+      return (
+        <>
+          <Head title="Ask health AI" right={<Pill2 t={`About ${who === 'all' ? 'the family' : nameOf(who)}`} tone="l" />} />{whoRow}
+          <KioskHealthAiWidget members={members} activeMemberId={activeMemberId ?? undefined} isDark={kioskDark} k={k} />
+        </>
+      );
+    }
+    // export
+    return (
+      <>
+        <Head title="Export PDF" right={<Pill2 t="Step 1 · before export" />} />
+        <Text style={[s.eb, { color: k.sage }]}>MEMBERS INCLUDED</Text>
+        <View style={s.wrapRow}>{people.map((m, i) => <Chip2 key={m.id} label={m.name.split(' ')[0]} on={exportIds.includes(m.id)} onPress={() => setExportIds(p => (p.includes(m.id) ? p.filter(x => x !== m.id) : [...p, m.id]))} i={i + 1} />)}</View>
+        <Text style={[s.sm, { color: k.textMuted }]}>Exports each person's immunization record as a printable PDF.</Text>
+        <View style={s.wrapRow}><Btn label="Export PDF" Icon={Download} onPress={exportPdf} /></View>
+      </>
+    );
+  };
 
-            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-              <PanelHead
-                title="Refills due soon"
-                k={k}
-                right={refillsSoon.length > 0 ? <Chip label={`${refillsSoon.length}`} accent={k.gold} isDark={kioskDark} k={k} /> : undefined}
-              />
-              {refillsSoon.length === 0 ? (
-                <EmptyNote text="No refills due in the next 7 days." k={k} />
-              ) : refillsSoon.map(({ med, daysLeft }, i) => {
-                const member = members.find(m => m.id === med.member_id);
+  return (
+    <View style={s.shell}>
+      <KioskAreaMenu title="Health & Records" items={items} area={area} onPick={a => { registerActivity(); setArea(a); }} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll2} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" onScrollBeginDrag={registerActivity}>
+        {content()}
+      </ScrollView>
+
+      {/* Medication history */}
+      <KioskFormDrawer visible={!!historyMed} variant="drawer" title={historyMed ? `${historyMed.name} history` : 'History'} subtitle={historyMed ? nameOf(historyMed.member_id) : undefined}
+        accent={k.danger} Icon={History} k={k} onClose={() => setHistoryMed(null)}>
+        {(() => {
+          const days = historyMed ? groupHistoryByDay(medicationAdherenceHistory(historyMed)) : [];
+          if (days.length === 0) return <EmptyNote text="No history yet." k={k} />;
+          return days.map(({ date, doses }) => (
+            <View key={date} style={{ marginBottom: KIOSK_SPACE.md }}>
+              <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: k.textFaint, marginBottom: 6 }}>{fmtDateDisplay(new Date(date + 'T00:00:00'))}</Text>
+              {doses.map((dose: DoseAdherence, idx: number) => {
+                const tint = dose.status === 'taken' ? k.sage : dose.status === 'missed' ? k.danger : k.textFaint;
+                const Icon = dose.status === 'taken' ? Check : dose.status === 'missed' ? XCircle : Clock;
                 return (
-                  <View
-                    key={med.id}
-                    style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                    // Name dropped from the visible row — the avatar
-                    // already identifies who, same as every other
-                    // avatar+name pattern in kiosk [live-reported: "on
-                    // medical card remove name as we already have
-                    // avtar"]. Still carried here for screen readers.
-                    accessibilityLabel={`${med.name}, ${member?.name.split(' ')[0] ?? 'someone'}, refill due ${daysLeft === 0 ? 'today' : `in ${daysLeft} days`}`}
-                  >
-                    <KioskAvatar
-                      name={member?.name ?? med.name}
-                      emoji={member?.emoji}
-                      avatarUrl={member?.avatarUrl}
-                      siblings={members.filter(x => x.id !== member?.id).map(x => x.name)}
-                      size={36}
-                      ringWidth={1.5}
-                      ringColor={k.goldEdge}
-                      bgColor={k.goldSoft}
-                      k={k}
-                    />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{med.name}</Text>
-                    </View>
-                    <Text style={[s.jarAmt, { color: k.gold, fontSize: 13 }]} numberOfLines={1}>
-                      {daysLeft === 0 ? 'Today' : `${daysLeft}d`}
-                    </Text>
+                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: idx > 0 ? StyleSheet.hairlineWidth : 0, borderTopColor: k.cardBorder }}>
+                    <Icon size={14} color={tint} />
+                    <Text style={{ flex: 1, fontSize: KIOSK_TYPO.body, color: k.textMuted }}>{dose.time ? formatDoseTime(dose.time) : 'Dose'}</Text>
+                    <Text style={{ fontSize: KIOSK_TYPO.caption, fontWeight: '800', color: tint }}>{dose.status === 'taken' ? 'Taken' : dose.status === 'missed' ? 'Missed' : 'Upcoming'}</Text>
                   </View>
                 );
               })}
-            </WidgetCard>
+            </View>
+          ));
+        })()}
+      </KioskFormDrawer>
 
-            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-              <PanelHead
-                title="Immunizations due"
-                k={k}
-                right={vaxDueSoon.length > 0 ? <Chip label={`${vaxDueSoon.length}`} accent={k.sage} isDark={kioskDark} k={k} /> : undefined}
-              />
-              {vaxDueSoon.length === 0 ? (
-                <EmptyNote text="No immunizations due in the next 30 days." k={k} />
-              ) : vaxDueSoon.map(({ vax, daysLeft }, i) => {
-                const member = members.find(m => m.id === vax.member_id);
-                return (
-                  <View
-                    key={vax.id}
-                    style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                    accessibilityLabel={`${vax.title}, ${member?.name.split(' ')[0] ?? 'someone'}, ${daysLeft <= 0 ? 'due now' : `due in ${daysLeft} days`}`}
-                  >
-                    <KioskAvatar
-                      name={member?.name ?? vax.title}
-                      emoji={member?.emoji}
-                      avatarUrl={member?.avatarUrl}
-                      siblings={members.filter(x => x.id !== member?.id).map(x => x.name)}
-                      size={36}
-                      ringWidth={1.5}
-                      ringColor={k.sageEdge}
-                      bgColor={k.sageSoft}
-                      k={k}
-                    />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{vax.title}</Text>
-                    </View>
-                    <Text style={[s.jarAmt, { color: k.sage, fontSize: 13 }]} numberOfLines={1}>
-                      {daysLeft <= 0 ? 'Due' : `${daysLeft}d`}
-                    </Text>
-                  </View>
-                );
-              })}
-            </WidgetCard>
+      {/* Record detail */}
+      <KioskFormDrawer visible={!!openRec} variant="drawer" title={openRec?.title ?? ''} subtitle={openRec ? `${nameOf(openRec.member_id)} · ${fmtDateDisplay(new Date(openRec.record_date + 'T00:00:00'))}` : undefined}
+        accent={k.purple} Icon={FileText} k={k} onClose={() => setOpenRec(null)}>
+        {openRec && (() => {
+          const a: any = openRec.ai_analysis_json;
+          const find: string[] = a?.key_findings ?? a?.discussion_topics?.map((d: any) => d.title) ?? [];
+          const fu: string[] = a?.follow_up_items ?? a?.next_steps?.map((n: any) => n.text) ?? [];
+          return (
+            <View style={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
+              {openRec.tag === 'visit_recording' && (
+                <View style={[s.tg, { backgroundColor: k.pastelLav }]}>
+                  <Text style={[s.dName, { color: k.text }]}>{apptTitleOf(openRec)}</Text>
+                  <Text style={[s.sm, { color: k.textMuted }]}>{nameOf(openRec.member_id)} · {fmtDateDisplay(new Date(openRec.record_date + 'T00:00:00'))}{apptTimeOf(openRec) ? ` · ${apptTimeOf(openRec)}` : ''}</Text>
+                  <Text style={[s.sm, { color: k.textMuted }]}>{openRec.file_path ? '🎙️ The raw audio is kept until the summary is approved.' : '🎙️ The raw audio was removed once the summary was approved. Only the encrypted summary is kept.'}</Text>
+                </View>
+              )}
+              <View style={s.wrapRow}><Pill2 t="🔒 Protected by family code" tone="g" />{a?.urgency && <Pill2 t={a.urgency === 'urgent' ? 'Urgent' : a.urgency === 'attention' ? 'Attention' : 'Routine'} tone={a.urgency === 'urgent' ? 'r' : a.urgency === 'attention' ? 'a' : undefined} />}</View>
+              {!!openRec.ai_summary && <><Text style={[s.eb, { color: k.purple }]}>AI SUMMARY</Text><View style={[s.tg, { backgroundColor: k.pastelLav }]}><Text style={[s.dName, { color: k.text }]}>{openRec.ai_summary}</Text></View></>}
+              {find.length > 0 && <><Text style={[s.eb, { color: k.gold }]}>KEY FINDINGS</Text>{find.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelAmber }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
+              {fu.length > 0 && <><Text style={[s.eb, { color: k.sage }]}>FOLLOW-UP ACTIONS</Text>{fu.map((f, i) => <View key={i} style={[s.tg, { backgroundColor: k.pastelSage }]}><Text style={[s.dName, { color: k.text }]}>{f}</Text></View>)}</>}
+              {!!openRec.notes && <><Text style={[s.eb, { color: k.textFaint }]}>NOTES</Text><Text style={[s.sm, { color: k.textMuted }]}>{openRec.notes}</Text></>}
+              {!!openRec.file_path && <Btn kind="sec" label={downloading ? 'Preparing…' : openRec.tag === 'visit_recording' ? 'Download audio' : 'Download file'} Icon={Download} onPress={() => (openRec.tag === 'visit_recording' ? downloadAudio(openRec) : downloadRecs([openRec]))} />}
+              {!own && <Btn kind="dg" label="Delete record" Icon={Trash2} onPress={() => deleteRec(openRec)} />}
+            </View>
+          );
+        })()}
+      </KioskFormDrawer>
 
-            <WidgetCard k={k} isDark={kioskDark} style={s.sidebarPanel}>
-              <PanelHead
-                title="Records needing attention"
-                k={k}
-                right={recordsNeedingAttention.length > 0 ? <Chip label={`${recordsNeedingAttention.length}`} accent={k.danger} isDark={kioskDark} k={k} /> : undefined}
-              />
-              {recordsNeedingAttention.length === 0 ? (
-                <EmptyNote text="Nothing flagged — everything's up to date." k={k} />
-              ) : recordsNeedingAttention.map(({ rec, urgency, followUps }, i) => {
-                const member = members.find(m => m.id === rec.member_id);
-                const urgent = urgency === 'urgent';
-                const statusText = urgency === 'urgent' ? 'Urgent' : urgency === 'attention' ? 'Needs review' : followUps > 0 ? `${followUps} follow-up${followUps > 1 ? 's' : ''}` : '';
-                return (
-                  <View
-                    key={rec.id}
-                    style={[s.jarRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: k.cardBorder }]}
-                    accessibilityLabel={`${rec.title}, ${member?.name.split(' ')[0] ?? 'someone'}${statusText ? `, ${statusText}` : ''}`}
-                  >
-                    <KioskAvatar
-                      name={member?.name ?? rec.title}
-                      emoji={member?.emoji}
-                      avatarUrl={member?.avatarUrl}
-                      siblings={members.filter(x => x.id !== member?.id).map(x => x.name)}
-                      size={36}
-                      ringWidth={1.5}
-                      ringColor={urgent ? k.dangerEdge : k.goldEdge}
-                      bgColor={urgent ? k.dangerSoft : k.goldSoft}
-                      k={k}
-                    />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[s.jarName, { color: k.text }]} numberOfLines={1}>{rec.title}</Text>
-                      {!!statusText && (
-                        <Text style={[s.jarMeta, { color: urgent ? k.danger : k.textFaint }]} numberOfLines={1}>
-                          {statusText}
-                        </Text>
-                      )}
-                    </View>
-                    <Text style={[s.jarAmt, { color: urgent ? k.danger : k.gold, fontSize: 13 }]} numberOfLines={1}>
-                      {urgent ? '!' : '·'}
-                    </Text>
-                  </View>
-                );
-              })}
-            </WidgetCard>
+      {/* Vaccine detail */}
+      <KioskFormDrawer visible={!!openVax} variant="drawer" title={openVax?.title ?? ''} subtitle={openVax ? nameOf(openVax.member_id) : undefined} accent={k.sage} Icon={Syringe} k={k} onClose={() => setOpenVax(null)}>
+        {openVax && (
+          <View style={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
+            <View style={s.wrapRow}><Pill2 t={`Dose ${openVax.series_current} of ${openVax.series_total}`} tone="g" /><Pill2 t={openVax.done ? 'Done' : 'Pending'} tone={openVax.done ? 'g' : 'a'} />{!!openVax.next_due_date && <Pill2 t={`Next due ${fmtDateDisplay(new Date(openVax.next_due_date + 'T00:00:00'))}`} />}</View>
+            {!!openVax.administered_by && <View style={[s.tg, { backgroundColor: k.well }]}><Text style={[s.sm, { color: k.textMuted }]}>Administered by</Text><Text style={[s.dName, { color: k.text }]}>{openVax.administered_by}</Text></View>}
+            {!!openVax.location && <View style={[s.tg, { backgroundColor: k.well }]}><Text style={[s.sm, { color: k.textMuted }]}>Location</Text><Text style={[s.dName, { color: k.text }]}>{openVax.location}</Text></View>}
+            {!!openVax.notes && <View style={[s.tg, { backgroundColor: k.pastelAmber }]}><Text style={[s.sm, { color: k.textMuted }]}>Notes</Text><Text style={[s.dName, { color: k.text }]}>{openVax.notes}</Text></View>}
+            {!own && <Btn kind="sec" label={openVax.done ? 'Mark as pending' : 'Mark dose given'} onPress={() => markVaxDone(openVax)} />}
+            {!isKid && <Btn kind="dg" label="Delete vaccine" Icon={Trash2} onPress={() => deleteVax(openVax)} />}
           </View>
         )}
+      </KioskFormDrawer>
 
-        </View>
-      </ScrollView>
+      <KioskAddMedForm visible={showAddMed || !!editMed} onClose={() => { setShowAddMed(false); setEditMed(null); }}
+        onSave={editMed ? (async (mid, form) => {
+          await supabase.from('family_medications').update({
+            member_id: mid, name: form.name.trim(), dosage: form.dosage.trim(), dosage_unit: form.dosage_unit, frequency: form.frequency,
+            frequency_times: form.reminder_times.length ? form.reminder_times : ['08:00'], category: form.category, prescribing_doctor: form.prescribing_doctor || null,
+            pharmacy: form.pharmacy || null, refill_date: form.refill_date || null, pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
+            instructions: form.instructions || null, end_date: form.end_date || null, escalation_enabled: form.escalation_enabled, escalation_after_min: parseInt(form.escalation_after_min) || 60,
+          }).eq('id', editMed.id);
+          showToast('Medication saved'); loadSidebar();
+        }) : addMed}
+        members={members} colors={colors} isDark={isDark} />
+      <KioskAddVaxForm visible={showAddVax} onClose={() => setShowAddVax(false)} onSave={addVax} members={members} colors={colors} isDark={isDark} />
+      <KioskAddRecordForm visible={showAddRecord} onClose={() => setShowAddRecord(false)} onSave={addRecord} colors={colors} isDark={isDark} members={members} activeMemberId={activeMemberId ?? null} />
+      <KioskScanReviewForm visible={showScanSheet} scanMode={scanMode} activeMemberId={activeMember?.id ?? ''} members={members} colors={colors} isDark={isDark}
+        onClose={() => setShowScanSheet(false)} onSaveMed={saveScannedMed} onSaveVax={saveScannedVax} />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
-  scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
-
-  // Compact header action buttons (Scan/Add), matching Chores' own
-  // s.headerActionBtn — the default ActionButton size (52px tall) read as
-  // too heavy for two buttons in a header corner [live-reported: "we need
-  // to reduce the buttons add and scan sizes it is scremaing.. too much"].
-  headerActionBtn: { paddingHorizontal: KIOSK_SPACE.sm, minHeight: 34 },
-
-  // Same twoColRow/centerCol/sideCol/colFullWidth values as
-  // KioskTasksTab.tsx/KioskOverviewTab.tsx, verbatim (same 1080px
-  // breakpoint, same stack-below-it behavior).
-  twoColRow: { flexDirection: 'row', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
-  twoColRowStacked: { flexDirection: 'column' },
-  colFullWidth: { flex: undefined, width: '100%' },
-  centerCol: { flex: 1, gap: KIOSK_SPACE.md, minWidth: 0 },
-  sideCol: { flex: undefined, width: 340, gap: KIOSK_SPACE.md, minWidth: 0 },
-  sidebarPanel: {},
-
-  // Same jar-row pattern Chores'/Overview's own sidebar panels use,
-  // verbatim values.
-  jarRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
-  jarAvatar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  jarName: { fontSize: 13.5, fontWeight: '700' },
-  jarMeta: { fontSize: 11.5, marginTop: 2 },
-  jarAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
-
-  // Same compact sizing as Chores' filter pills / Schedule's mode switch
-  // [live-reported: "follow the health also same design pattern like we
-  // did for chores and the schedule" → "AIso same like chores"] — was a
-  // much heavier control (KIOSK_HIT.control height, KIOSK_RADIUS.md,
-  // body-size text).
-  segmentRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, marginBottom: KIOSK_SPACE.md, flexWrap: 'wrap' },
-  segment: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1.5, minHeight: KIOSK_HIT.min - 10,
-    paddingHorizontal: KIOSK_SPACE.sm, flex: 1, minWidth: 140,
-  },
-  segmentLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  shell: { flex: 1, flexDirection: 'row', minHeight: 0 },
+  scroll2: { padding: KIOSK_SPACE.xl, paddingBottom: 120, gap: KIOSK_SPACE.md },
+  head: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  h1: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
+  wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.md, alignItems: 'flex-start' },
+  mc: { flexGrow: 1, flexBasis: 380, borderRadius: 24, borderWidth: 1.5, padding: 14, gap: 9 },
+  mcTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  mcName: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  sm: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  pill: { borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 },
+  pillT: { fontSize: 11.5, fontWeight: '800' },
+  bar: { height: 10, borderRadius: 5, overflow: 'hidden' },
+  dose: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 15, paddingHorizontal: 12, paddingVertical: 8 },
+  tm: { fontSize: 13, fontWeight: '800', minWidth: 76 },
+  dName: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 44, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 15 },
+  btnT: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  chip2: { minHeight: 42, borderRadius: 100, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center' },
+  chipT2: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 100, paddingHorizontal: 16, minHeight: 46, minWidth: 220 },
+  searchIn: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '600', paddingVertical: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, borderWidth: 1.5, padding: 12 },
+  rec: { flexGrow: 1, flexBasis: 380, flexDirection: 'row', gap: 12, borderRadius: 22, borderWidth: 1.5, padding: 14 },
+  recIc: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, borderRadius: 26, borderWidth: 1.5, padding: 16 },
+  heroIc: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  selBar: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, borderWidth: 1.5, padding: 14, marginTop: 10 },
+  selDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  vrow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8, minHeight: 56 },
+  vc: { flexGrow: 1, flexBasis: 230, maxWidth: '33%', borderRadius: 18, borderWidth: 1.5, padding: 10, gap: 6 },
+  tg: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
+  eb: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1 },
+  empty: { fontSize: KIOSK_TYPO.body, fontWeight: '700', textAlign: 'center', paddingVertical: KIOSK_SPACE.xl, width: '100%' },
 });

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { View, Alert } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Alert, Animated, Easing } from 'react-native';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
@@ -10,9 +10,9 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useDismissedHubItemsStore } from '@/store/dismissedHubItemsStore';
 import { withinLast24h } from '@/lib/dates';
-import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent, useCountdown, isWorkEvent } from './hubUtils';
+import { parseLocalDate } from '@/lib/dates';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 import { driverLabelByName } from '@/lib/format';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -20,8 +20,6 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
 import { SUPPLIES_PREFIX, encodeRideLate, decodeRideLate } from './KidModals';
-import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal, QuestProposalModal } from './KidModals';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 
 import { MedicationsCard } from './senior/MedicationsCard';
@@ -29,19 +27,17 @@ import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { KidHeroCard } from './kid/KidHeroCard';
 import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
 import { KidTodaySection } from './kid/KidTodaySection';
-import { MyQuestsSection } from './kid/MyQuestsSection';
-import { KidMoreRow } from './kid/KidMoreRow';
-import { KidLeaderboard } from './kid/KidLeaderboard';
-import { CheerSquadSection } from './kid/CheerSquadSection';
-import { PiggyBankSheet } from './kid/PiggyBankSheet';
-import { SubmitProofSheet } from './kid/SubmitProofSheet';
+import { KidChoresNeedsYouCard } from './kid/KidChoresNeedsYouCard';
+import { KidActionGrid, KidCheckinRow } from './kid/KidMoreRow';
+import { RideStatusCard } from './kid/RideStatusCard';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
-import { AskParentSheet } from './kid/AskParentSheet';
-import { KidChoreProposalModal } from './kid/KidChoreProposalModal';
-import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
+import { TonightMealCard } from './parent/TonightMealCard';
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
-export function KidView({ active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer }: {
+export function KidView({ focusKey, active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer, onMyChores, onOpenMyChoresTab, onPiggyBank, onAskParentTile, onAskForRide, onRideStatusOpen }: {
+  // Same staggered-entrance trigger ParentView.tsx uses — focusKey=0 means
+  // "subpage pop, show immediately," any other value replays the entrance.
+  focusKey?: number;
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   // Family-wide Pick-up Radar state, synced from tripStore — shown here
@@ -58,39 +54,42 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // KidView is itself scrolled content, not a positioned ancestor.
   composerVisible: boolean;
   onCloseComposer: () => void;
+  // My Chores / Piggy Bank / Ask Parent now render via KidOverlays, a
+  // top-level sibling HubScreen mounts OUTSIDE its own ScrollView (same
+  // reasoning as composerVisible above) — this view only owns the tile
+  // taps that open them.
+  onMyChores: () => void;
+  // Needs You card's tap target — opens My Chores landing directly on the
+  // given status tab (e.g. 'review' for a submitted item awaiting
+  // approval) instead of always defaulting to 'todo'.
+  onOpenMyChoresTab: (tab: 'todo' | 'review' | 'done' | 'bounty') => void;
+  onPiggyBank: () => void;
+  onAskParentTile: () => void;
+  // Ride also keeps its own full-width Quick Action card for fast access,
+  // opening AskParentUnifiedPage's ride pill directly (via
+  // setAskParentDestination('ride') in HubScreen.tsx) — the same
+  // destination the Ask Parent hub's own "Ask for a Ride" tile now also
+  // leads to (AskParentHubScreen.tsx).
+  onAskForRide: () => void;
+  // Opens RidesControlRoomScreen (same screen the parent uses for the
+  // family-wide fleet view: Active/Upcoming/History tabs, live trip
+  // progress, driver ETA) [live-requested: "ask for a ride full width
+  // card on the kids hub page should open like the parents page to see
+  // their open their ride status and the history progress etc"]. Only
+  // used once the kid has an actual ride to look at (pending or
+  // confirmed) — with nothing going on yet the card still opens the
+  // request form, same as before.
+  onRideStatusOpen: () => void;
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
   const { startGrandparentQuest } = useChoreStore();
   const { events, updateEvent }                           = useEventStore();
-  const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
-  const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
+  const { rewards, redeemReward, getEligibleRewards, redemptions } = useRewardStore();
+  const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests, expireStale: expireStaleRequests } = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
 
-  const [groceryModal,    setGroceryModal]    = useState(false);
-  const [suppliesModal,   setSuppliesModal]   = useState(false);
-  const [askModal,        setAskModal]        = useState<null | 'permission' | 'question' | 'medication'>(null);
-  const [historyModal,    setHistoryModal]    = useState(false);
-  const [piggyBankModal,  setPiggyBankModal]  = useState(false);
-  // "Ask Parent" tile below opens the same stacked picker the Hub-level FAB
-  // does (composerVisible/onCloseComposer, lifted to HubScreen.tsx so the
-  // FAB can float outside this view's scrolled content) — local state here
-  // only covers the tile's own trigger, not the FAB's.
-  const [askParentSheetFromTile, setAskParentSheetFromTile] = useState(false);
-  const askParentSheetOpen = composerVisible || askParentSheetFromTile;
-  const closeAskParentSheet = () => { onCloseComposer(); setAskParentSheetFromTile(false); };
-  const [addEventModal,   setAddEventModal]   = useState(false);
-  const [questProposalModal, setQuestProposalModal] = useState(false);
-  const [choreProposalModal, setChoreProposalModal] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [declineQuest,    setDeclineQuest]    = useState<ChoreTask | null>(null);
-  // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
-  // out on a bare tap; the photo IS the proof, so collect it before submitting.
-  const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
-  // Leaderboard/Cheer Squad used to be their own always-visible blocks;
-  // they're now reachable from KidMoreRow as sheets instead, so they don't
-  // permanently occupy scroll space.
-  const [leaderboardSheet, setLeaderboardSheet] = useState(false);
-  const [cheerSquadSheet,  setCheerSquadSheet]  = useState(false);
 
   // KidView can render without ParentView ever having mounted this session
   // (e.g. app opened straight into Kid Mode), so it must hydrate the kid
@@ -98,6 +97,19 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   useEffect(() => {
     if (!kidRequestsLoaded) loadKidRequests();
   }, [kidRequestsLoaded]);
+
+  // Lazy client-side sweep for checkin/question requests whose expiresAt
+  // has passed (set in kidRequestStore.sendRequest) — closes the gap
+  // between hourly server-side sweeps (kid-request-expire-sweep) so a
+  // stale request doesn't still show as "pending" on Hub open.
+  useEffect(() => {
+    if (kidRequestsLoaded) expireStaleRequests();
+  }, [kidRequestsLoaded]);
+
+  // My Chores / Piggy Bank / Ask Parent full-bleed + tab-bar handling now
+  // lives in HubScreen.tsx's own anyFullBleedOpen effect, alongside
+  // KidOverlays (which actually renders these screens, outside this
+  // view's ScrollView).
 
   // Dismiss state for the "Needs You" list — DB-backed (dismissed_hub_items
   // table), not AsyncStorage: survives reinstall and syncs across a
@@ -279,30 +291,35 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // a teenager. isOpenToTeens now means exactly that: excludes it from a
   // kid's own pool (still shows in TeenView's).
   const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval && !q.inviteGrandparents && !q.isOpenToTeens);
-  const todoQuests       = myQuests.filter(q => q.status === 'todo' && !q.isPool);
-  const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
+  const bountyQuests   = poolQuests.filter(q => q.questType === 'bounty');
+  // Includes 'declined' ("sent back") chores — a resubmission is still a
+  // to-do for the kid, and MyChoresScreen's own To Do tab/counter already
+  // folds declinedQuests in (MyChoresScreen.tsx groups:
+  // [...todoQuests, ...inProgressQuests, ...declinedQuests]) — the Hub's
+  // KidChoresNeedsYouCard "To Do" count/headline was missing them,
+  // undercounting vs. the screen it opens into.
+  const todoQuests       = myQuests.filter(q => (q.status === 'todo' || q.status === 'declined') && !q.isPool);
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
   const approvedQuests = myQuests.filter(q => ['approved', 'done'].includes(q.status));
-  const cancelledQuests = myQuests.filter(q => q.status === 'cancelled');
-  const cancelledQuestsToday = cancelledQuests.filter(q => (q.cancelledAt ?? '').startsWith(today));
   const doneToday      = myQuests.filter(q => ['approved','done'].includes(q.status)).length;
+  // Same isOverdue definition as KidQuestCard.tsx / QuestCard.tsx: date-only
+  // compare against the start of today, excluded once done/declined.
+  const overdueQuestsStart = new Date(); overdueQuestsStart.setHours(0, 0, 0, 0);
+  const overdueQuests = myQuests.filter(q => {
+    const dueMs = q.dueDate ? parseLocalDate(q.dueDate).getTime() : null;
+    return !!dueMs && dueMs < overdueQuestsStart.getTime() && !['approved','done'].includes(q.status) && q.status !== 'declined';
+  });
+  // Rewards quick-action tile's own stacked counters [live-requested:
+  // "pippy back [sic, meant Rewards] card should show the pending rewards
+  // request, approved requests today if available"].
+  const myRedemptions = redemptions.filter(r => r.memberId === active.id);
+  const pendingRedemptions = myRedemptions.filter(r => r.status === 'pending');
+  const approvedRedemptionsToday = myRedemptions.filter(r => r.status === 'approved' && r.respondedAt && withinLast24h(r.respondedAt));
   const questGoal      = Math.max(myQuests.filter(q => (q.status as string) !== 'pending_parent_approval').length, 3);
   const questPct       = Math.min(doneToday / questGoal, 1);
 
   const siblingKids = members.filter(m => m.role === 'kid' && m.id !== active.id);
-  const allKids     = [active, ...siblingKids].sort((a, b) => ((b as any).mainCoins ?? (b as any).coins ?? 0) - ((a as any).mainCoins ?? (a as any).coins ?? 0));
-
-  // Cheer Squad — today's sibling wins that still need a cheer from me.
-  // Once cheered (or once the day passes) it drops off — this is a to-do list
-  // of pending cheers, not a history feed.
-  const siblingCheerable = quests.filter(q => {
-    if (!['approved', 'done'].includes(q.status) || q.isAdultTask) return false;
-    if (!q.assignedToId || !siblingKids.some(s => s.id === q.assignedToId)) return false;
-    if ((q.cheers ?? []).some(c => c.memberId === active.id)) return false;
-    const when = q.approvedAt ?? q.completedAt;
-    return withinLast24h(when);
-  }).slice(0, 5);
 
   // Cheers landed on my own completed quests — surfaced as a celebration banner
   const cheersForMe = myQuests.flatMap(q => (q.cheers ?? []).map(c => ({ quest: q, cheer: c })));
@@ -413,12 +430,14 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
   };
 
-  // A quest without photoRequired submits immediately; one that requires it
-  // opens the capture sheet instead — "Take Photo to Get Paid" has to mean it.
-  const handleSubmitTap = (q: Quest) => {
-    if (q.photoRequired) setSubmitProofQuest(q);
-    else submitQuest(q.id, undefined, active.id);
-  };
+  // A photoRequired quest's "Take Photo to Get Paid" button is handled
+  // entirely inline inside KidQuestDetailScreen/KidQuestCard's own
+  // onOpenDetail routing now (a plain View compose block, not a Modal
+  // sheet) [live-corrected: "I said don't use bottom sheets use inline
+  // photo proof similar to parent" — the earlier SubmitProofSheet modal
+  // was the wrong shape]. This handler only ever reaches a non-photo
+  // submit, so it just calls submitQuest directly.
+  const handleSubmitTap = (q: Quest) => submitQuest(q.id, undefined, active.id);
 
   const recentReplies = myRequests.filter(r =>
     ['approved', 'declined'].includes(r.status) &&
@@ -434,20 +453,87 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     withinLast24h(r.respondedAt)
   );
 
+  // Same staggered-entrance pattern as ParentView.tsx — one Animated.Value
+  // pair per top-level section below (Hero / Needs You / Today / Quests /
+  // More+Games), driven by focusKey (0 = subpage pop, show immediately).
+  const CARD_COUNT = 7;
+  // Start barely-faded (opacity 0.4 / translateY 8), NOT fully invisible
+  // (0 / 18) — a PIN-switch mounts a brand-new KidView instance without any
+  // real tab-focus event (HubScreen's own useFocusEffect never fires for
+  // it), so if the mount-triggered Animated.start() below ever gets
+  // dropped/raced (confirmed happening in practice — native-driver
+  // animations queued right as a navigator stack swaps can silently no-op),
+  // the worst case is now cards sitting slightly faded/offset, never a
+  // fully blank screen [live-reported repeatedly, incl. "fucking killing
+  // the app"]. The real fade+slide-up bounce on load still plays normally
+  // every time the effect does fire.
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(1))).current;
+  const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(8))).current;
+  const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
+
+  const hasAnimatedIn = useRef(false);
+  useEffect(() => {
+    if (focusKey === 0 && hasAnimatedIn.current) return;
+    hasAnimatedIn.current = true;
+    opacities.forEach(v => v.setValue(1));
+    translateYs.forEach(v => v.setValue(8));
+    const anims = opacities.map((op, i) =>
+      Animated.parallel([
+        Animated.timing(op, { toValue: 1, duration: 280, delay: 60 + i * 55, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(translateYs[i], { toValue: 0, duration: 300, delay: 60 + i * 55, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ])
+    );
+    Animated.parallel(anims).start();
+    const failSafe = setTimeout(() => {
+      opacities.forEach(v => v.setValue(1));
+      translateYs.forEach(v => v.setValue(0));
+    }, 900);
+    return () => clearTimeout(failSafe);
+  }, [focusKey]);
+
   return (
     <>
       {/* 1. Hero — identity/progress at a glance, plus the single most
           time-sensitive fact (confirmed ride or next event countdown). */}
-      <KidHeroCard
-        active={active} colors={colors} isDark={isDark}
-        mainCoins={mainCoins} gpCoins={gpCoins} streak={streak} level={level}
-        xp={xp} xpIntoLevel={xpIntoLevel} xpForNext={xpForNext} xpPct={xpPct}
-        doneToday={doneToday} questGoal={questGoal} questPct={questPct}
-        confirmedRide={confirmedRide} rideCountdown={rideCountdown} members={members}
-        nextEvent={nextEvent} nextCountdown={nextCountdown}
-      />
+      <Animated.View style={{ opacity: cardAnims[0].opacity, transform: [{ translateY: cardAnims[0].translateY }] }}>
+        <KidHeroCard
+          active={active} colors={colors} isDark={isDark}
+          mainCoins={mainCoins} gpCoins={gpCoins} streak={streak} level={level}
+          doneToday={doneToday} questGoal={questGoal} questPct={questPct}
+          confirmedRide={confirmedRide} rideCountdown={rideCountdown} members={members}
+          nextEvent={nextEvent} nextCountdown={nextCountdown}
+        />
+      </Animated.View>
 
-      {/* 2. Needs You — merges what were 4 separate pieces (urgent alerts,
+      {/* 2. Today — timeline strip first, right under the hero, matching
+          the Parent Hub's own "what's next" rhythm (ride/next-up before
+          the inbox-style list below) — moved ahead of My Quests/Needs You
+          per the Figma-inspired reorder [live direction: "can we redesign
+          it with the inspiration the parents hub rhythm" — mockup's own
+          order is hero → ride/next-up → chores-inbox → needs-you]. */}
+      <Animated.View style={{ opacity: cardAnims[1].opacity, transform: [{ translateY: cardAnims[1].translateY }] }}>
+        <KidTodaySection
+          active={active} members={members} events={visibleEvents} updateEvent={updateEvent}
+          colors={colors} isDark={isDark}
+        />
+      </Animated.View>
+
+      {/* 3. Chores Needs You — single most-urgent chore card (submitted >
+          to do > unclaimed bounty), same compact rhythm as Parent's own
+          NeedsYouCard, replacing the old always-expanded MyQuestsSection
+          [live-requested: "lets build need needs you similar to the
+          parents needs you.. open the chores and it is todo, submitted,
+          approved, bounty etc"]. Tapping it opens My Chores landing
+          directly on that item's own status tab. */}
+      <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
+        <KidChoresNeedsYouCard
+          colors={colors} isDark={isDark}
+          todoQuests={todoQuests} reviewQuests={reviewQuests} bountyQuests={bountyQuests}
+          onOpenTab={onOpenMyChoresTab}
+        />
+      </Animated.View>
+
+      {/* 4. Needs You — merges what were 4 separate pieces (urgent alerts,
           confirmed-ride banner, awaiting-driver banner, live Pick-up Radar)
           into one list. Renders nothing when there's nothing to show.
           -180 (3hr), not -30, on the ride window — a pickup that ran late
@@ -460,124 +546,99 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
           persisted for the kid's Hub to read), so widening the schedule-
           based window is the fix instead of wiring a new signal. */}
       {dismissedLoaded && (
-        <KidNeedsYouSection
-          declinedRides={myDeclinedRides} pendingRides={myPendingRides}
-          declinedQuests={declinedQuests} approvedQuests={approvedQuests}
-          cheersForMe={cheersForMe} recentReplies={recentReplies}
-          confirmedRide={confirmedRide} rideCountdown={rideCountdown}
-          confirmedRideConflict={confirmedRideConflict}
-          confirmedRideDispatched={confirmedRideDispatched}
-          awaitingDriverRide={awaitingDriverRide} activeTrips={activeTrips}
-          active={active} members={members} colors={colors} isDark={isDark}
-          dismissedIds={dismissedIds} onDismiss={dismissItem}
-          onConfirmPickup={confirmPickup}
-          onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
+        <Animated.View style={{ opacity: cardAnims[3].opacity, transform: [{ translateY: cardAnims[3].translateY }] }}>
+          <KidNeedsYouSection
+            declinedRides={myDeclinedRides} pendingRides={myPendingRides}
+            declinedQuests={declinedQuests} approvedQuests={approvedQuests}
+            cheersForMe={cheersForMe} recentReplies={recentReplies}
+            confirmedRide={confirmedRide} rideCountdown={rideCountdown}
+            confirmedRideConflict={confirmedRideConflict}
+            confirmedRideDispatched={confirmedRideDispatched}
+            awaitingDriverRide={awaitingDriverRide} activeTrips={activeTrips}
+            active={active} members={members} colors={colors} isDark={isDark}
+            dismissedIds={dismissedIds} onDismiss={dismissItem}
+            onConfirmPickup={confirmPickup}
+            onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
+            onOpenHistory={() => onOpenMyChoresTab('review')}
+            hasChoresCard={todoQuests.length > 0 || bountyQuests.length > 0}
+          />
+        </Animated.View>
+      )}
+
+      {/* 5. Quick Actions — merged grid (check-ins + Ask Parent + Piggy
+          Bank + Rewards), then medication (moved after the action tiles,
+          matching the mockup's own "care checklist" placement below its
+          quick-actions row), then Family Games. Leaderboard, Cheer Squad,
+          My Requests, and Full Calendar were cut as top-level tiles
+          entirely [live direction: "need more simpler like the parents"]
+          — Calendar is one tab-tap away already, the other three weren't
+          essential daily actions. */}
+      <Animated.View style={{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }}>
+        <KidActionGrid
+          onMyChores={onMyChores}
+          onAskParent={onAskParentTile}
+          onPiggyBank={onPiggyBank}
+          choreStats={[
+            { label: 'To do',      value: todoQuests.length,     color: colors.amber },
+            { label: 'Review',     value: reviewQuests.length,   color: colors.danger },
+            { label: 'Approved',   value: doneToday,             color: colors.teal },
+            { label: 'Overdue',    value: overdueQuests.length,  color: colors.danger },
+          ]}
+          rewardStats={pendingRedemptions.length > 0 || approvedRedemptionsToday.length > 0 ? [
+            { label: 'Pending',       value: pendingRedemptions.length,       color: colors.amber },
+            { label: 'Approved today', value: approvedRedemptionsToday.length, color: colors.teal },
+          ].filter(s => s.value > 0) : undefined}
+          colors={colors} isDark={isDark}
         />
-      )}
+      </Animated.View>
 
-      {/* 3. Today — the timeline strip, with "I'm safe" check-ins and
-          Ask Parent folded in as an inline action instead of its own
-          standalone row — "Need a Ride?" was removed entirely (it opened
-          the identical KidRequestModal AskParentSheet's own "Ask for a
-          Ride" choice already does). */}
-      {meds.length > 0 && (
-        <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
-      )}
+      <Animated.View style={{ opacity: cardAnims[5].opacity, transform: [{ translateY: cardAnims[5].translateY }] }}>
+        <RideStatusCard
+          colors={colors} isDark={isDark}
+          pendingCount={myPendingRides.length}
+          confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
+          confirmedRideDate={confirmedRide?.date}
+          confirmedRideTime={confirmedRide?.time}
+          driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
+          onPress={confirmedRide || myPendingRides.length > 0 ? onRideStatusOpen : onAskForRide}
+        />
+        <KidCheckinRow onCheckin={sendCheckin} colors={colors} isDark={isDark} />
 
-      <KidTodaySection
-        active={active} members={members} events={visibleEvents} updateEvent={updateEvent}
-        colors={colors} isDark={isDark}
-        onCheckin={sendCheckin}
-        onAskParent={() => setAskParentSheetFromTile(true)}
-      />
+        {meds.length > 0 && (
+          <View style={{ marginTop: 14, marginBottom: 14 }}>
+            <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
+          </View>
+        )}
+      </Animated.View>
 
-      {/* 4. My Quests — the actual point of the screen; gets the most
-          visual weight now that everything above it is lighter. */}
-      <MyQuestsSection
-        todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
-        poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} declinedQuests={declinedQuests} allQuests={quests}
-        active={active} members={members} colors={colors} isDark={isDark}
-        onClaim={(id) => claimQuest(id, active.id, (reason) => {
-          // Spec 3.1/3.4 — a lost claim race gets a clear, specific
-          // explanation instead of the item just silently vanishing.
-          Alert.alert(
-            reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
-            reason === 'deleted'
-              ? 'This chore was just removed by a parent.'
-              : 'Someone else already claimed this chore — check the pool for others.',
-          );
-        })}
-        onStart={(id) => submitQuest(id, undefined, active.id)}
-        onSubmit={handleSubmitTap}
-        onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
-        onDeclineGpQuest={(q) => {
-          const chore = useChoreStore.getState().chores.find(c => c.id === q.id);
-          if (chore) setDeclineQuest(chore);
-        }}
-      />
+      {/* Dinner preview — same card/nav as the Parent Hub's "Tonight" slot
+          instead of the Play Games tile [live-requested: "instead of
+          playgames in the kids hub show the dinner card similar to the
+          parent.. and navigate to dinner landing page"]. Opens the
+          shared MealsScreen via setOpenMealsScreenRequested, same as
+          ParentView — no role-gating on that path, works identically
+          for kids. */}
+      <Animated.View style={{ opacity: cardAnims[6].opacity, transform: [{ translateY: cardAnims[6].translateY }] }}>
+        {/* TonightMealCard hardcodes marginHorizontal: 20 (Parent Hub's own
+            card inset) — Kid Hub uses 16 everywhere else, so this wrapper
+            pulls it back in by the 4px difference instead of editing the
+            shared component (would change Parent's own rhythm) ["dinner
+            card left and right paddins are too much to the frame"].
+            marginTop stays off this wrapper — TonightMealCard already
+            supplies its own. */}
+        <View style={{ marginHorizontal: -4 }}>
+          <TonightMealCard colors={colors} isDark={isDark} familyId={familyId} members={members} />
+        </View>
+      </Animated.View>
 
-      {/* 5. More — Piggy Bank / Rewards / My Requests / Full Calendar, plus
-          Leaderboard and Cheer Squad moved in as sheet-opening entries
-          instead of their own always-visible blocks. */}
-      <KidMoreRow
-        onPiggyBank={() => setPiggyBankModal(true)} onHistory={() => setHistoryModal(true)}
-        onLeaderboard={() => setLeaderboardSheet(true)} onCheerSquad={() => setCheerSquadSheet(true)}
-        cheerBadge={siblingCheerable.length}
-        colors={colors} isDark={isDark}
-      />
-
-      <FamilyGamesSection colors={colors} isDark={isDark} />
-
-      {/* 6. Leaderboard + Cheer Squad — same components as before, now
-          reachable one tap away from the More row instead of permanently
-          occupying scroll space. */}
-      <AppBottomSheet visible={leaderboardSheet} onClose={() => setLeaderboardSheet(false)} title="Family Leaderboard" accentColor={BRAND.purple}>
-        <KidLeaderboard activeId={active.id} kids={allKids} colors={colors} isDark={isDark} />
-      </AppBottomSheet>
-      <AppBottomSheet visible={cheerSquadSheet} onClose={() => setCheerSquadSheet(false)} title="Cheer Squad" accentColor="#10B981">
-        <CheerSquadSection cheerable={siblingCheerable} siblingKids={siblingKids} colors={colors} isDark={isDark}
-          onCheer={(id) => cheerQuest(id, active.id)} />
-      </AppBottomSheet>
-
-      <AskParentSheet
-        visible={askParentSheetOpen} onClose={closeAskParentSheet} colors={colors} isDark={isDark}
-        onPick={(choice) => {
-          closeAskParentSheet();
-          setTimeout(() => {
-            if (choice === 'ride') setAddEventModal(true);
-            else if (choice === 'grocery') setGroceryModal(true);
-            else if (choice === 'supplies') setSuppliesModal(true);
-            else if (choice === 'quest') setQuestProposalModal(true);
-            else if (choice === 'chore') setChoreProposalModal(true);
-            else setAskModal(choice);
-          }, 300);
-        }}
-      />
-      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
-      <KidChoreProposalModal
-        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
-        active={active} members={members} familyId={familyId ?? ''}
-      />
       <CantMakeItSheet
         target={declineQuest ? { kind: 'chore', item: declineQuest } : null}
         byMemberId={active.id} members={members}
         onClose={() => setDeclineQuest(null)}
       />
-      <SubmitProofSheet
-        quest={submitProofQuest} colors={colors} isDark={isDark}
-        onClose={() => setSubmitProofQuest(null)}
-        submitQuest={submitQuest}
-      />
-      <GroceryModal  visible={groceryModal}  onClose={() => setGroceryModal(false)}  active={active} />
-      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
-      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
-      <KidRequestHistoryModal visible={historyModal} onClose={() => setHistoryModal(false)} active={active} />
-      <PiggyBankSheet
-        visible={piggyBankModal} onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
-        mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
-        doneToday={doneToday} streak={streak} level={level} memberId={active.id}
-      />
-      <KidRequestModal visible={addEventModal} onClose={() => setAddEventModal(false)} activeMemberId={active.id} />
+      {/* My Chores / Piggy Bank / Ask Parent now render via KidOverlays,
+          mounted by HubScreen.tsx as a top-level sibling outside its own
+          ScrollView — see onMyChores/onPiggyBank/onAskParentTile props. */}
     </>
   );
 }

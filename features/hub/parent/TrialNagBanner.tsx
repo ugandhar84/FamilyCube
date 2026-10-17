@@ -15,6 +15,7 @@ import { View, Text, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RADIUS, TYPO } from '@/constants/theme';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 let shownThisSession = false;
 
@@ -33,10 +34,10 @@ export function TrialNagBanner({ colors, isDark }: { colors: any; isDark: boolea
     }}>
       <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
           Your free trial has ended
         </Text>
-        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
+        <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
           Subscribe to Family Plan to keep everything running smoothly.
         </Text>
       </View>

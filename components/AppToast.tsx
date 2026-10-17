@@ -5,6 +5,7 @@
  * to-dismiss modal — e.g. "Nudge sent!" after a fire-and-forget action
  * that previously gave no visible confirmation at all.
  */
+import { hideAiNames } from '@/lib/hideAiNames';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Animated, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +13,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
-type ToastKind = 'success' | 'info' | 'error';
+type ToastKind = 'success' | 'info' | 'error' | 'warning';
 
 interface ToastState {
   visible: boolean;
@@ -25,10 +26,11 @@ type ShowToastFn = (message: string, kind?: ToastKind) => void;
 let _showToast: ShowToastFn | null = null;
 
 export function showToast(message: string, kind: ToastKind = 'success') {
-  _showToast?.(message, kind);
+  _showToast?.(hideAiNames(message), kind);
 }
 
 const DURATION_MS = 2200;
+const WARNING_DURATION_MS = 5000;
 
 export default function AppToast() {
   const { colors, isDark } = useTheme();
@@ -55,7 +57,7 @@ export default function AppToast() {
         Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 70, friction: 9 }),
         Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
       ]).start();
-      hideTimer.current = setTimeout(hide, DURATION_MS);
+      hideTimer.current = setTimeout(hide, kind === 'warning' ? WARNING_DURATION_MS : DURATION_MS);
     };
     return () => { _showToast = null; if (hideTimer.current) clearTimeout(hideTimer.current); };
   }, [hide, translateY, opacity]);
@@ -71,13 +73,15 @@ export default function AppToast() {
           top: insets.top + 8,
           opacity,
           transform: [{ translateY }],
-          backgroundColor: isDark ? '#1E2640' : '#FFFFFF',
-          borderColor: (state.kind === 'error' ? colors.danger : colors.success) + '50',
+          backgroundColor: state.kind === 'warning' ? (isDark ? '#3A2B0E' : '#FFF4D6') : (isDark ? '#1E2640' : '#FFFFFF'),
+          borderColor: state.kind === 'warning' ? '#D9770680' : (state.kind === 'error' ? colors.danger : colors.success) + '50',
           shadowColor: isDark ? '#000' : 'rgba(0,0,0,0.15)',
         },
       ])}
     >
-      {state.kind === 'error'
+      {state.kind === 'warning'
+        ? <AlertCircle size={16} color="#D97706" />
+        : state.kind === 'error'
         ? <AlertCircle size={16} color={colors.danger} />
         : <CheckCircle2 size={16} color={colors.success} />}
       <Text style={[s.text, { color: colors.textPrimary }]} numberOfLines={2}>{state.message}</Text>

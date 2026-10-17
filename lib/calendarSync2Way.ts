@@ -135,7 +135,7 @@ async function ensureSyncCalendarId(forceCreate = false): Promise<string | null>
       }
       return await Calendar.createCalendarAsync({
         title: SYNC_CALENDAR_NAME,
-        color: '#DF613C',
+        color: '#5872C4',
         entityType: Calendar.EntityTypes.EVENT,
         sourceId: defaultCal.source.id,
         source: defaultCal.source,
@@ -154,7 +154,7 @@ async function ensureSyncCalendarId(forceCreate = false): Promise<string | null>
     }
     return await Calendar.createCalendarAsync({
       title: SYNC_CALENDAR_NAME,
-      color: '#DF613C',
+      color: '#5872C4',
       entityType: Calendar.EntityTypes.EVENT,
       sourceId: source.id,
       source,

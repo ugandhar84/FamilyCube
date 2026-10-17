@@ -116,7 +116,7 @@ export function QuestSearchBar({ query, onQueryChange, range, onRangeChange, col
         )}
       </View>
 
-      <Modal transparent animationType="fade" visible={pickerOpen} onRequestClose={() => setPickerOpen(false)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible={pickerOpen} onRequestClose={() => setPickerOpen(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 }}
           activeOpacity={1} onPress={() => setPickerOpen(false)}>
           <TouchableOpacity activeOpacity={1} style={{ borderRadius: 20, overflow: 'hidden', backgroundColor: colors.card, paddingBottom: 12 }}>

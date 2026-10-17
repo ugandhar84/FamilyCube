@@ -23,6 +23,11 @@ interface AvatarProps {
   ringWidth?: number;
   /** Background color behind initials. Defaults to ringColor + '22'. */
   bgColor?: string;
+  /** 'square' (default, app-wide as of this change) or 'circle' — kept as
+   * an override for any spot that still wants a true circle.
+   * [live-requested: "lets change it globally - i like that" after seeing
+   * the rounded-square shape on HealthPeoplePage.tsx's member rows]. */
+  shape?: 'circle' | 'square';
 }
 
 // ─── Initials logic ───────────────────────────────────────────────────────────
@@ -55,13 +60,17 @@ export default function FamilyAvatar({
   avatarUrl,
   siblings = [],
   size = 44,
-  ringColor = '#9261C7',
-  ringWidth = 2,
+  ringColor = '#5872C4',
+  // Was 2 — reads noticeably thicker on the new square shape than it did
+  // on a circle, especially on small task-card avatars [live-reported:
+  // "i see on these card border is too thick"].
+  ringWidth = 1,
   bgColor,
+  shape = 'square',
 }: AvatarProps) {
   const [imgError, setImgError] = useState(false);
   const bg = bgColor ?? ringColor + '25';
-  const radius = size / 2;
+  const radius = shape === 'square' ? size * 0.34 : size / 2;
   const fontScale = size < 36 ? 0.45 : 0.48;
 
   const containerStyle = {
@@ -87,13 +96,18 @@ export default function FamilyAvatar({
     );
   }
 
-  // Tier 2: remote image (with initials fallback on error)
+  // Tier 2: remote image (with initials fallback on error). resizeMode
+  // "cover" + an explicit matching borderRadius — a non-square source
+  // photo was letterboxing inside the square frame without "cover",
+  // showing the container's own bg tint as a thin ring around the image
+  // [live-reported: "why the avatar have the some white color borders"].
   if (avatarUrl && !imgError) {
     return (
       <View style={containerStyle}>
         <Image
           source={{ uri: avatarUrl }}
-          style={{ width: size, height: size }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          resizeMode="cover"
           onError={() => setImgError(true)}
         />
       </View>

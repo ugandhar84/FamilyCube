@@ -59,16 +59,30 @@
  * back to before AI suggestions load) covers create mode.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { ShoppingCart, Trash2 } from 'lucide-react-native';
+import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import { ShoppingCart, Trash2, Sparkles } from 'lucide-react-native';
+import { supabase } from '@/lib/supabase';
+import { useFamilyStore } from '@/store/familyStore';
+import { showToast } from '@/components/AppToast';
 import type { GroceryItem } from '@/store/groceryStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from '@/features/grocery/components/types';
-import { useKioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
-import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
+import { KioskFormDrawer, KioskFieldLabel, kioskInputStyle } from './KioskFormDrawer';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+
+/* Module-level so a re-render never remounts it (and drops the keyboard). */
+function PChip({ label, on, onPress, tone }: { label: string; on: boolean; onPress: () => void; tone: { card: string; fg: string } }) {
+  const { k } = useKioskColors();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label}
+      style={[s.pchip, { backgroundColor: on ? k.primary : tone.card }]}>
+      <Text style={[s.pchipT, { color: on ? k.onPrimary : tone.fg }]}>{label}</Text>
+    </Pressable>
+  );
+}
 
 export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, item }: {
   visible: boolean;
@@ -85,11 +99,16 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
   const pastStores = useGroceryStore(s => s.pastStores);
   const isEdit = !!item;
   const accent = k.sage;
+  const pastels = kioskPastels(k);
+  const members = useFamilyStore(st => st.members);
+  const pinned = useGroceryStore(st => st.pinnedStores);
+  const [staples, setStaples] = useState<{ name: string; cat: string; emoji: string }[]>([]);
 
   // Same store-pill source as KioskGroceryRequestSheet/AddItemSheet: real
   // past-run stores first (what this family actually shops at), the app's
   // generic defaults filling in the rest.
-  const storePool = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])].slice(0, 8);
+  const storePool = [...new Set([...Object.keys(pinned ?? {}), ...pastStores, ...DEFAULT_GROCERY_STORES])]
+    .sort((a, b) => Number(!!pinned?.[b]) - Number(!!pinned?.[a])).slice(0, 9);
 
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
@@ -121,6 +140,13 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
     setConfirmingDelete(false);
   }, [visible, item]);
 
+  useEffect(() => {
+    if (!visible || isEdit || !familyId) return;
+    Promise.resolve(supabase.from('grocery_staples').select('name, category, times_bought').eq('family_id', familyId).order('times_bought', { ascending: false }).limit(20))
+      .then(({ data }) => setStaples((data ?? []).map((x: any) => ({ name: x.name, cat: x.category ?? '', emoji: CAT_EMOJI[x.category ?? ''] ?? '🛒' }))))
+      .catch(() => {});
+  }, [visible, isEdit, familyId]);
+
   const input = kioskInputStyle(k);
   const canSubmit = name.trim().length > 0;
 
@@ -144,6 +170,7 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
         notes: notes.trim() || undefined,
       });
     }
+    showToast(isEdit ? 'Item updated' : 'Item added');
     onClose();
   });
 
@@ -156,16 +183,21 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
     onClose();
   };
 
+  const suggestionPool = (() => {
+    const seen = new Set(staples.map(x => x.name.toLowerCase()));
+    return [...staples, ...QUICK_SUGGESTIONS.filter(x => !seen.has(x.name.toLowerCase()))];
+  })();
   const filteredSuggestions = name.trim().length > 0
-    ? QUICK_SUGGESTIONS.filter(su => su.name.toLowerCase().startsWith(name.toLowerCase()))
-    : QUICK_SUGGESTIONS;
+    ? suggestionPool.filter(su => su.name.toLowerCase().startsWith(name.toLowerCase()))
+    : suggestionPool;
+  const adder = members.find(m => m.id === item?.addedBy);
 
   return (
     <KioskFormDrawer
       visible={visible}
       variant="drawer"
-      title={isEdit ? 'Edit Item' : 'Add to List'}
-      subtitle={isEdit ? 'Update item details' : 'Type a name or tap a suggestion'}
+      title={isEdit ? (item?.name ?? 'Edit item') : 'Add to List'}
+      subtitle={isEdit ? [item?.quantity, adder ? `added by ${adder.name.split(' ')[0]}` : ''].filter(Boolean).join(' · ') || 'Update item details' : 'Type a name or tap a suggestion'}
       accent={accent}
       Icon={ShoppingCart}
       k={k}
@@ -196,6 +228,16 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
         </Pressable>
       ) : undefined}
     >
+      {isEdit && item?.aiGenerated && (
+        <View style={[s.banner, { backgroundColor: k.pastelLavCard }]}>
+          <Sparkles size={18} color={k.purple} />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.bannerT, { color: k.purple }]}>Suggested by AI</Text>
+            <Text style={[s.bannerS, { color: k.textMuted }]}>From your staples and recent receipts</Text>
+          </View>
+        </View>
+      )}
+
       {/* ── Name ── */}
       <View style={s.section}>
         <KioskFieldLabel k={k}>ITEM NAME</KioskFieldLabel>
@@ -219,19 +261,11 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
       {!isEdit && filteredSuggestions.length > 0 && (
         <View style={s.section}>
           <KioskFieldLabel k={k}>QUICK ADD</KioskFieldLabel>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow} keyboardShouldPersistTaps="always">
-            {filteredSuggestions.slice(0, 14).map(su => (
-              <KioskPill
-                key={su.name}
-                label={`${su.emoji} ${su.name}`}
-                selected={name === su.name}
-                accent={accent}
-                k={k}
-                onPress={() => { setName(su.name); setCat(su.cat); }}
-                hint="Fills the item name and category"
-              />
+          <View style={s.chipRow}>
+            {filteredSuggestions.slice(0, 14).map((su, i) => (
+              <PChip key={su.name} label={`${su.emoji} ${su.name}`} on={name === su.name} tone={pastels[i % 4]} onPress={() => { setName(su.name); setCat(su.cat); }} />
             ))}
-          </ScrollView>
+          </View>
         </View>
       )}
 
@@ -265,37 +299,32 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
           picker — a real remembered/default store is one tap, typing
           stays available above for anything not in the pool. */}
       {storePool.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow} keyboardShouldPersistTaps="always">
-          {storePool.map(st => (
-            <KioskPill
-              key={st}
-              label={`🏪 ${st}`}
-              selected={store === st}
-              accent={accent}
-              k={k}
-              onPress={() => setStore(store === st ? '' : st)}
-              hint="Sets the preferred store — tap again to clear"
-            />
+        <View style={s.chipRow}>
+          {storePool.map((st, i) => (
+            <PChip key={st} label={`${pinned?.[st] ? '📍' : '🏪'} ${st}`} on={store === st} tone={pastels[(i + 1) % 4]} onPress={() => setStore(store === st ? '' : st)} />
           ))}
-        </ScrollView>
+        </View>
       )}
 
       {/* ── Category ── */}
       <View style={s.section}>
         <KioskFieldLabel k={k}>CATEGORY</KioskFieldLabel>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow} keyboardShouldPersistTaps="always">
-          {CATEGORIES.map(c => (
-            <KioskPill
-              key={c}
-              label={`${CAT_EMOJI[c] ?? '📦'} ${c}`}
-              selected={cat === c}
-              accent={accent}
-              k={k}
-              onPress={() => setCat(cat === c ? '' : c)}
-            />
+        <View style={s.chipRow}>
+          {CATEGORIES.map((c, i) => (
+            <PChip key={c} label={`${CAT_EMOJI[c] ?? '📦'} ${c}`} on={cat === c} tone={pastels[i % 4]} onPress={() => setCat(cat === c ? '' : c)} />
           ))}
-        </ScrollView>
+        </View>
       </View>
+
+      {isEdit && item?.estimatedPrice != null && (
+        <View style={s.section}>
+          <KioskFieldLabel k={k}>PRICE</KioskFieldLabel>
+          <View style={[s.banner, { backgroundColor: k.pastelSageCard, justifyContent: 'space-between' }]}>
+            <Text style={[s.priceBig, { color: k.text }]}>${item.estimatedPrice.toFixed(2)}</Text>
+            <View style={[s.pill2, { backgroundColor: k.card }]}><Text style={[s.bannerS, { color: k.textMuted, fontWeight: '800' }]}>{item.priceSource === 'receipt' ? 'From a receipt' : 'Estimated'}</Text></View>
+          </View>
+        </View>
+      )}
 
       {/* ── Notes ── */}
       <View style={s.section}>
@@ -317,7 +346,14 @@ export function KioskGroceryItemSheet({ visible, onClose, familyId, memberId, it
 const s = StyleSheet.create({
   section: { gap: KIOSK_SPACE.sm },
   row: { flexDirection: 'row', gap: KIOSK_SPACE.sm },
-  chipRow: { flexDirection: 'row', gap: KIOSK_SPACE.xs, paddingRight: KIOSK_SPACE.md },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.xs },
+  pchip: { minHeight: 44, borderRadius: 100, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center' },
+  pchipT: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, padding: 12 },
+  bannerT: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  bannerS: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
+  priceBig: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+  pill2: { borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5 },
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
     minHeight: KIOSK_HIT.min, paddingHorizontal: KIOSK_SPACE.sm,

@@ -54,10 +54,11 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications', 'family_vaccines', 'medical_records', 'family_memories', 'member_locations', 'calendar_events', 'kid_requests', 'chat_channels', 'chat_messages', 'chore_tasks']);
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
-  'rewards', 'reward_redemptions', 'grocery_items', 'kid_requests',
+  'rewards', 'reward_redemptions', 'grocery_items', 'kid_requests', 'medical_records',
   // Added for QA visibility into ask-cube's own turn-by-turn tool-call
   // trace (role/content/tool_calls/tool_name per row) — read-only, needed
   // to diagnose whether a hollow/odd reply came from the model skipping a
@@ -280,6 +281,14 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
+    // 'chore_patch' — set columns on one scratch chore (the service role), to stage cases like "created by a kid".
+    if (action === 'chore_patch') {
+      const { choreId, patch } = body;
+      if (!String(choreId ?? '').startsWith('qa_scratch_')) throw new Error('not a scratch chore');
+      const { error } = await admin.from('chore_tasks').update(patch).eq('id', choreId);
+      return json({ ok: !error, error: error?.message ?? null });
+    }
+
     if (action === 'rpc') {
       // resolve_active_member_id() only ever trusts a real auth.uid() match
       // (see its own migration — every path requires
@@ -316,6 +325,70 @@ serve(async (req) => {
       });
       if (error) throw new Error(`ask-cube invoke failed: ${error.message}`);
       return json({ ok: !data?.error, actingAs: actor.name, ...data });
+    }
+
+    // 'storage' — a storage operation AS a scratch member (bucket policies exercised exactly as the app hits them).
+    if (action === 'storage') {
+      const { actingMemberId, bucket, op, path, b64 } = body;
+      if (!['medical-records', 'medical-audio'].includes(bucket)) throw new Error('bucket not allowed');
+      const { scopedClient } = await mintScratchMemberSession(admin, actingMemberId);
+      const st = scopedClient.storage.from(bucket);
+      if (op === 'upload') {
+        const bytes = Uint8Array.from(atob(b64 ?? ''), c => c.charCodeAt(0));
+        const { error } = await st.upload(path, bytes, { contentType: 'application/octet-stream', upsert: false });
+        return json({ ok: !error, error: error?.message ?? null });
+      }
+      if (op === 'download') {
+        const { data, error } = await st.download(path);
+        return json({ ok: !error, error: error?.message ?? null, size: data ? data.size : 0 });
+      }
+      if (op === 'remove') {
+        const { data, error } = await st.remove([path]);
+        return json({ ok: !error, error: error?.message ?? null, removed: data?.length ?? 0 });
+      }
+      if (op === 'list') {
+        const { data, error } = await st.list(path);
+        return json({ ok: !error, error: error?.message ?? null, names: (data ?? []).map((o: any) => o.name) });
+      }
+      throw new Error('unknown storage op');
+    }
+
+    // 'seed_visits' — admin-side fixtures for the visit-audio sweeper test (stale, fresh and approved recordings).
+    if (action === 'seed_visits') {
+      const { familyId, memberId, uploaderId } = body;
+      await assertScratchFamily(admin, familyId);
+      const mk = async (label: string, extra: Record<string, unknown>, daysOld: number) => {
+        const path = `${familyId}/${memberId}/${label}.m4a`;
+        await admin.storage.from('medical-audio').upload(path, new Uint8Array([1, 2, 3]), { contentType: 'application/octet-stream', upsert: true });
+        const created = new Date(Date.now() - daysOld * 86400_000).toISOString();
+        const { data, error } = await admin.from('medical_records').insert({
+          family_id: familyId, member_id: memberId, uploaded_by: uploaderId, title: `QA ${label}`, tag: 'visit_recording',
+          record_date: created.slice(0, 10), file_path: path, file_name: `${label}.m4a`, file_size: 3, ai_tags: [], created_at: created, ...extra,
+        }).select('id').single();
+        if (error) throw new Error(`seed ${label}: ${error.message}`);
+        return { id: data.id, path };
+      };
+      return json({
+        ok: true,
+        stale: await mk('stale', { ai_analyzed: false }, 9),
+        fresh: await mk('fresh', { ai_analyzed: false }, 0),
+        approved: await mk('approved', { ai_analyzed: true }, 1),
+      });
+    }
+
+    // 'table' — a table operation AS a scratch member's real session, so row-level security is exercised exactly
+    // as the app hits it (the service role would bypass it). Only for a small allowlist of tables.
+    if (action === 'table') {
+      const { table, op, row, match, select, actingMemberId } = body;
+      if (!TABLE_OP_ALLOWLIST.has(table)) throw new Error(`table not allowed: ${table}`);
+      const { scopedClient, actor } = await mintScratchMemberSession(admin, actingMemberId);
+      let q: any;
+      if (op === 'insert') q = body.noReturn ? scopedClient.from(table).insert(row) : scopedClient.from(table).insert(row).select();
+      else if (op === 'update') { q = scopedClient.from(table).update(row).select(); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
+      else if (op === 'delete') { q = scopedClient.from(table).delete().select(); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
+      else { q = scopedClient.from(table).select(select ?? '*'); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
+      const { data, error } = await q;
+      return json({ ok: !error, data: data ?? null, error: error?.message ?? null, actingAs: actor.name });
     }
 
     if (action === 'read') {
@@ -403,6 +476,13 @@ async function deleteFamily(admin: ReturnType<typeof createClient>, familyId: st
   if (rewardIds.length) await admin.from('reward_redemptions').delete().in('reward_id', rewardIds);
   await admin.from('rewards').delete().eq('family_id', familyId);
   await admin.from('grocery_items').delete().eq('family_id', familyId);
+  await admin.from('family_sticky_notes').delete().eq('family_id', familyId);
+  await admin.from('family_vaccines').delete().eq('family_id', familyId);
+  await admin.from('medical_records').delete().eq('family_id', familyId);
+  await admin.from('family_memories').delete().eq('family_id', familyId);
+  await admin.from('family_meals').delete().eq('family_id', familyId);
+  await admin.from('family_recipes').delete().eq('family_id', familyId);
+  await admin.from('family_medications').delete().eq('family_id', familyId);
   await admin.from('kid_requests').delete().eq('family_id', familyId);
   await admin.from('trips').delete().eq('family_id', familyId);
   await admin.from('activity_log').delete().eq('family_id', familyId);

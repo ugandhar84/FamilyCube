@@ -355,10 +355,11 @@ export default function CategoryFields({
             <View style={{ gap: 10, marginTop: 4, marginBottom: 14 }}>
               {/* Grandparents Welcome. Border/track/toggle fill use colors.warning
                   (closest token to the amber highlight). The darker on-tint text
-                  shades (#92400E / #B45309) have no token equivalent — the
-                  semantic palette only defines one amber value per mode, not a
-                  separate darker "text on amber tint" shade — so those two stay
-                  documented hardcoded hex rather than guessing a mismatched token. */}
+                  shades have no token equivalent — the semantic palette only
+                  defines one amber value per mode, not a separate darker
+                  "text on amber tint" shade — so those two stay documented
+                  hardcoded hex (with an isDark-gated lighter pair for the
+                  near-black canvas) rather than guessing a mismatched token. */}
               <TouchableOpacity
                 onPress={() => { const v = !openToGrandparents; console.log(`[UserAction] FORM screen=Schedule toggled "Grandparents Welcome" on CategoryFields(${category}) Ride newValue=${v} [features/calendar/components/eventForm/CategoryFields.tsx:341]`); setGpTeenToggledByUser(true); setOpenToGrandparents(v); }}
                 activeOpacity={0.8}
@@ -369,10 +370,10 @@ export default function CategoryFields({
                   backgroundColor: openToGrandparents ? (isDark ? '#2D1800' : colors.warningLight) : (isDark ? colors.surface : '#F9FAFB'),
                 }}>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToGrandparents ? (isDark ? '#F5A85A' : '#92400E') : colors.textPrimary }}>
                     👴👵 Grandparents Welcome
                   </Text>
-                  <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? '#B45309' : colors.textSecondary }}>
+                  <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? (isDark ? '#F5A85A' : '#B45309') : colors.textSecondary }}>
                     {openToGrandparents ? 'GPs can claim this ride or pass, no pressure' : 'Off · only visible to parents'}
                   </Text>
                 </View>
@@ -389,8 +390,9 @@ export default function CategoryFields({
                   throughout this file. constants/colors.ts has no indigo/violet
                   token — only 6 semantic tokens (danger/warning/success/info/
                   primary/accent), none of which is a close hue match — so this
-                  stays a documented hardcoded swatch rather than guessing a
-                  wrong semantic color onto it. */}
+                  stays a documented hardcoded swatch (with an isDark-gated
+                  lighter text pair for the near-black canvas) rather than
+                  guessing a wrong semantic color onto it. */}
               {members.some(m => m.role === 'teen') && (
                 <TouchableOpacity
                   onPress={() => { const v = !openToTeens; console.log(`[UserAction] FORM screen=Schedule toggled "Teen Driver Welcome" on CategoryFields(${category}) Ride newValue=${v} [features/calendar/components/eventForm/CategoryFields.tsx:374]`); setGpTeenToggledByUser(true); setOpenToTeens(v); }}
@@ -402,10 +404,10 @@ export default function CategoryFields({
                     backgroundColor: openToTeens ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F9FAFB'),
                   }}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? '#3730A3' : colors.textPrimary }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? (isDark ? '#A78BC9' : '#3730A3') : colors.textPrimary }}>
                       🚗 Teen Driver Welcome
                     </Text>
-                    <Text style={{ fontSize: TYPO.label, color: openToTeens ? '#4338CA' : colors.textSecondary }}>
+                    <Text style={{ fontSize: TYPO.label, color: openToTeens ? (isDark ? '#A78BC9' : '#4338CA') : colors.textSecondary }}>
                       {openToTeens ? 'Teen can drive · set coins below' : 'Off · teen driver not offered'}
                     </Text>
                   </View>

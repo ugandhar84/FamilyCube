@@ -4,6 +4,7 @@ import { AudioModule, createAudioPlayer } from 'expo-audio';
 import { Play, Pause, Trash2, Send, Square } from 'lucide-react-native';
 import { VOICE_COLOR, WF_BARS, WF_H, formatDuration, seedWaveform } from './constants';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Live waveform (recording / playing) — sine-physics at ~30fps ────────────
 
@@ -107,8 +108,8 @@ export function FingerprintWaveform({ seed, progress, color, trackColor }: {
 
 // ─── Voice note bubble (in chat) ─────────────────────────────────────────────
 
-export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
-  uri: string; msgId: string; duration: number; isMine: boolean; colors: any;
+export function VoiceNoteBubble({ uri, msgId, duration, isMine, isDark, colors }: {
+  uri: string; msgId: string; duration: number; isMine: boolean; isDark: boolean; colors: any;
 }) {
   const [playing, setPlaying]   = useState(false);
   const [progress, setProgress] = useState(0);
@@ -145,8 +146,13 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
     playerRef.current?.remove();
   }, []);
 
-  const color      = isMine ? '#fff' : VOICE_COLOR;
-  const trackColor = isMine ? 'rgba(255,255,255,0.28)' : VOICE_COLOR + '30';
+  // "Mine" bubble is a solid pink in dark mode (white reads fine there) but
+  // only a pale lavender tint in light mode (bubbleMe '#e9edfb' in
+  // MessageBubble.tsx) — hardcoding white here made the play icon/waveform
+  // nearly invisible on light mode's own sent bubbles [live-reported via
+  // screenshot: washed-out white-on-pale-lavender voice bubble].
+  const color      = isMine && isDark ? '#fff' : VOICE_COLOR;
+  const trackColor = isMine && isDark ? 'rgba(255,255,255,0.28)' : VOICE_COLOR + '30';
   const elapsed    = playing ? progress * duration : duration;
 
   return (
@@ -154,7 +160,7 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
       style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2, paddingVertical: 4, minWidth: 200 }}>
       {/* Play / pause button */}
       <View style={{ width: 36, height: 36, borderRadius: 18,
-        backgroundColor: isMine ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
+        backgroundColor: isMine && isDark ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
         alignItems: 'center', justifyContent: 'center' }}>
         {playing ? <Pause size={18} color={color} /> : <Play size={18} color={color} />}
       </View>
@@ -164,7 +170,7 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
         : <FingerprintWaveform seed={msgId || uri} progress={progress} color={color} trackColor={trackColor} />
       }
       {/* Duration */}
-      <Text style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
+      <Text style={{ fontSize: 11, color: isMine && isDark ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
         minWidth: 34, textAlign: 'right', fontVariant: ['tabular-nums'] }}>
         {formatDuration(elapsed)}
       </Text>
@@ -174,13 +180,9 @@ export function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
 
 // ─── Voice review bar (after recording, before sending) ───────────────────────
 
-export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
+export function VoiceReviewProgress({ uri, duration, isDark, onSend, onDiscard }: {
   uri: string; duration: number; isDark: boolean; onSend: () => void; onDiscard: () => void;
 }) {
-  // colors.card / colors.primary + alpha, inlined per isDark since this
-  // component doesn't receive the theme object as a prop.
-  const bg     = isDark ? '#1E2640' : '#F0E8FA';
-  const border = isDark ? '#B98EDB55' : '#9261C755';
   const [playing, setPlaying]   = useState(false);
   const [progress, setProgress] = useState(0);
   const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
@@ -214,8 +216,7 @@ export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
   }, []);
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
-      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
       {/* Discard */}
       <Pressable onPress={onDiscard} style={{ width: 36, height: 36, borderRadius: 18,
         backgroundColor: '#EF444420', alignItems: 'center', justifyContent: 'center' }}>
@@ -245,14 +246,34 @@ export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
   );
 }
 
-// ─── Active recording bar ─────────────────────────────────────────────────────
+// Standalone card/border wrapper around VoiceReviewProgress — for callers
+// (kiosk) that don't have their own attach-sheet container to render into.
+export function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
+  uri: string; duration: number; isDark: boolean; onSend: () => void; onDiscard: () => void;
+}) {
+  const bg     = isDark ? '#1D1A24' : GEMINI.cardBg;
+  const border = isDark ? 'rgba(142,163,221,0.15)' : GEMINI.border;
+  return (
+    <View style={{ paddingHorizontal: 14, paddingVertical: 12,
+      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border }}>
+      <VoiceReviewProgress uri={uri} duration={duration} isDark={isDark} onSend={onSend} onDiscard={onDiscard} />
+    </View>
+  );
+}
 
-export function RecordingBar({ elapsed, isDark, onStop }: {
+// ─── Active recording progress ────────────────────────────────────────────────
+// Content-only — no outer card/border of its own. Rendered INSIDE the same
+// s.attachMenu sheet container the Camera/Photo/Video/Document/Location
+// options use, swapped in for that row when recording is active, so
+// tapping Mic reuses the exact same sheet instead of popping a separate bar
+// [live-requested: "when i open the attach it is opening the options
+// sheet.. if the user click the mic it should use for the mic recording
+// progress animations/components"].
+
+export function RecordingProgress({ elapsed, isDark, onStop }: {
   elapsed: number; isDark: boolean; onStop: () => void;
 }) {
-  const bg     = isDark ? '#0f0a1e' : '#fff0f0';
-  const border = isDark ? '#7f1d1d' : '#fecaca';
-  const MAX    = 10;
+  const MAX = 10;
   // Blink the red dot
   const blinkAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -268,30 +289,49 @@ export function RecordingBar({ elapsed, isDark, onStop }: {
   const showCountdown = remaining <= 3;
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
-      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
-      {/* Blinking REC dot */}
-      <Animated.View style={{ width: 10, height: 10, borderRadius: 5,
-        backgroundColor: '#EF4444', opacity: blinkAnim }} />
-      {/* Elapsed */}
-      <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444', minWidth: 38, fontVariant: ['tabular-nums'] }}>
-        {formatDuration(elapsed)}
-      </Text>
-      {/* Live sine waveform — red */}
-      <LiveWaveform active color='#EF4444' trackColor={isDark ? '#7f1d1d55' : '#fca5a555'} />
-      {/* Countdown warning */}
-      {showCountdown && (
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c', minWidth: 24 }}>
-          -{Math.ceil(remaining)}s
-        </Text>
-      )}
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+      {/* Pastel recording chip — same 52x52/radius-16 shape as attachIcon */}
+      <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: '#EF444422',
+        alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View style={{ width: 12, height: 12, borderRadius: 6,
+          backgroundColor: '#EF4444', opacity: blinkAnim }} />
+      </View>
+      <View style={{ flex: 1, gap: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444', minWidth: 38, fontVariant: ['tabular-nums'] }}>
+            {formatDuration(elapsed)}
+          </Text>
+          {showCountdown && (
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c' }}>
+              -{Math.ceil(remaining)}s
+            </Text>
+          )}
+        </View>
+        {/* Live sine waveform — red */}
+        <LiveWaveform active color='#EF4444' trackColor={isDark ? '#3a3440' : '#F0EDE6'} />
+      </View>
       {/* Stop button */}
       <Pressable onPress={onStop}
-        style={withAndroidShadowFix({ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
+        style={withAndroidShadowFix({ width: 44, height: 44, borderRadius: 22, backgroundColor: '#EF4444',
           alignItems: 'center', justifyContent: 'center',
           shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 })}>
-        <Square size={16} color="#fff" fill="#fff" />
+        <Square size={17} color="#fff" fill="#fff" />
       </Pressable>
+    </View>
+  );
+}
+
+// Standalone card/border wrapper around RecordingProgress — for callers
+// (kiosk) that don't have their own attach-sheet container to render into.
+export function RecordingBar({ elapsed, isDark, onStop }: {
+  elapsed: number; isDark: boolean; onStop: () => void;
+}) {
+  const bg     = isDark ? '#1D1A24' : GEMINI.cardBg;
+  const border = isDark ? 'rgba(142,163,221,0.15)' : GEMINI.border;
+  return (
+    <View style={{ paddingHorizontal: 14, paddingVertical: 12,
+      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border }}>
+      <RecordingProgress elapsed={elapsed} isDark={isDark} onStop={onStop} />
     </View>
   );
 }

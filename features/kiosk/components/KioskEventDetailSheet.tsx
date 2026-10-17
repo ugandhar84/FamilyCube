@@ -32,9 +32,9 @@
  * left for a later pass; kiosk's own card already shows a sync badge
  * elsewhere per KioskScheduleTab.tsx's showSync logic).
  */
-import { useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet, Alert } from 'react-native';
-import { Bell, Check, Repeat, User, Users, X, ChevronDown, MapPin, Calendar as CalendarIcon, Pencil } from 'lucide-react-native';
+import { Bell, Repeat, User, Users, ChevronDown, MapPin, Calendar as CalendarIcon, Pencil, Trash2 } from 'lucide-react-native';
 import { useEventStore, eventAssignee, type FamilyEvent } from '@/store/eventStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -43,71 +43,121 @@ import { hoursUntilEvent, isWorkEvent } from '@/features/hub/hubUtils';
 import { notifyTakeover } from '@/features/hub/hubComponents';
 import { LocationLink } from '@/features/calendar/components/EventCard';
 import { showToast } from '@/components/AppToast';
-import { fmtDateShort, fmtTime } from '@/lib/dates';
+import { fmtTime, parseDbTime, localDateStr } from '@/lib/dates';
+import { fmtHumanDate } from '@/features/hub/hubUtils';
+import { fetchActivityLog, type ActivityLogRow } from '@/lib/activityLog';
+import { useTheme } from '@/lib/ThemeContext';
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { useKioskColors, type KioskColors } from '../kioskPalette';
-import { kioskCatAccent } from '../tabs/KioskScheduleTab';
+import { useKioskColors, kioskPastels, type KioskColors } from '../kioskPalette';
+import { Eyebrow } from './KioskHomeParts';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer } from './KioskFormDrawer';
+
+/** Category → one of the four mobile pastels (index into kioskPastels). */
+const CAT_TONE: Record<string, number> = { Medical: 0, Birthday: 0, Sports: 1, Event: 1, School: 2, Ride: 2, Work: 3, Study: 3 };
+const CAT_EMOJI: Record<string, string> = {
+  Medical: '🏥', Work: '💼', Sports: '⚽', School: '📚', Study: '📖', Event: '📅', Ride: '🚗', Birthday: '🎂',
+};
+const RECUR_LABEL: Record<string, string> = { daily: 'Every day', weekly: 'Every week', monthly: 'Every month' };
+const LOG_META: Record<string, { icon: string; label: string }> = {
+  created: { icon: '✨', label: 'Created' }, driver_assigned: { icon: '🚗', label: 'Driver assigned' },
+  driver_reassigned: { icon: '🔀', label: 'Driver reassigned' }, driver_removed: { icon: '✕', label: 'Driver removed' },
+  reassigned: { icon: '↔', label: 'Reassigned' }, date_changed: { icon: '📅', label: 'Date changed' },
+  time_changed: { icon: '🕐', label: 'Time changed' }, confirmed: { icon: '✅', label: 'Confirmed' },
+  declined: { icon: '❌', label: 'Declined' }, notes_changed: { icon: '📝', label: 'Notes updated' },
+};
+const minOf = (t?: string | null) => { const m = t ? /^(\d{1,2}):(\d{2})/.exec(t) : null; return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+const stamp = (iso?: string | null) => {
+  if (!iso) return '';
+  const d = parseDbTime(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+};
+const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
 export function KioskEventDetailSheet({ event, active, members, onClose, onEditFull }: {
   event: FamilyEvent | null;
   active: FamilyMember;
   members: FamilyMember[];
   onClose: () => void;
-  /** Opens the full KioskEventEditor drawer — same real "Edit full details"
-      pencil EventDetailSheet.tsx offers a parent, parity for the same
-      long-press-elsewhere-only path this whole file exists to surface. */
+  /** Opens the full KioskEventEditor drawer (parent "Edit" pencil). */
   onEditFull: () => void;
 }) {
   const { k } = useKioskColors();
+  const { colors, isDark } = useTheme();
   const [changeOpen, setChangeOpen] = useState(false);
   const [cancelledSelfName, setCancelledSelfName] = useState<string | undefined>(undefined);
-  // Live-crashed: "Rendered more hooks than during the previous render" —
-  // this hook used to sit AFTER the `if (!event) return null` early return
-  // below, so it was skipped entirely on a null-event render and then
-  // suddenly present the next time an event was passed in, violating
-  // Rules of Hooks. Every hook in this component must run unconditionally
-  // on every render regardless of `event`, same as the two useState calls
-  // right above already correctly do.
+  const [viewId, setViewId] = useState<string | null>(null); // "View other leg"
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
+  const [log, setLog] = useState<ActivityLogRow[]>([]);
+  const [alertCall, setAlertCall] = useState(false);
+  const [leadMin, setLeadMin] = useState(10);
+  // Every hook runs unconditionally above the `!event` return (rules of hooks).
   const updateEvent = useEventStore(s => s.updateEvent);
+  const stored = useEventStore(s => s.events);
+  const ranged = useEventStore(s => s.rangeEvents);
+  const targetId = viewId ?? event?.id ?? null;
+  const liveEv: FamilyEvent | null = targetId
+    ? (stored.find(e => e.id === targetId) ?? ranged.find(e => e.id === targetId) ?? (event && event.id === targetId ? event : null))
+    : null;
 
-  if (!event) return null;
-  const ev = event;
+  useEffect(() => { setViewId(null); setEditingNotes(false); setChangeOpen(false); setCancelledSelfName(undefined); }, [event?.id]);
+  useEffect(() => {
+    if (!liveEv) return;
+    setAlertCall(liveEv.alertCall ?? false);
+    setLeadMin(liveEv.alertCallLeadMinutes ?? 10);
+  }, [liveEv?.id, liveEv?.alertCall, liveEv?.alertCallLeadMinutes]);
+  const refreshLog = () => { if (liveEv) fetchActivityLog('event', liveEv.id, 20).then(setLog).catch(() => {}); };
+  useEffect(() => { refreshLog(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [liveEv?.id, liveEv?.helperStatus, liveEv?.driverStatus]);
+
+  const conflicts = useMemo(() => {
+    if (!liveEv || liveEv.conflictAcknowledged) return [] as FamilyEvent[];
+    const dur = (liveEv as any).durationMinutes ?? 60;
+    const st = minOf(liveEv.time);
+    if (st == null) return [];
+    const en = st + dur;
+    const idsOf = (e: FamilyEvent) => [
+      ...(e.memberIds ?? (e.memberId ? [e.memberId] : [])),
+      ...(e.helperId ? [e.helperId] : []), ...((e as any).driverId ? [(e as any).driverId] : []),
+    ];
+    const mine = idsOf(liveEv);
+    const seen = new Set<string>();
+    return [...stored, ...ranged].filter(o => {
+      if (seen.has(o.id)) return false; seen.add(o.id);
+      if (o.id === liveEv.id || o.date !== liveEv.date) return false;
+      const os = minOf(o.time); if (os == null) return false;
+      const oe = os + ((o as any).durationMinutes ?? 60);
+      if (os >= en || st >= oe) return false;
+      return idsOf(o).some(id => mine.includes(id));
+    });
+  }, [liveEv, stored, ranged]);
+
+  if (!event || !liveEv) return null;
+  const ev = liveEv;
+  const linked = ev.linkedLegId ? [...stored, ...ranged].find(e => e.id === ev.linkedLegId) : undefined;
   const cat = ev.category ?? 'Event';
+  const pastels = kioskPastels(k);
+  const tone = pastels[CAT_TONE[cat] ?? 1];
   const hours = hoursUntilEvent(ev.date, ev.time);
   const isPast = hours < 0;
-  const cc = kioskCatAccent(cat, k).fg;
+  const isViewerParent = active.role === 'parent';
+  const duration = (ev as any).durationMinutes as number | undefined;
+  const recur = (ev as any).recurrence as string | undefined;
 
   const allAssignees = ev.memberIds?.length
     ? members.filter(m => ev.memberIds!.includes(m.id))
     : ev.memberId ? members.filter(m => m.id === ev.memberId) : [];
-
   const forLabel =
-    cat === 'Medical' ? 'Patient' :
-    cat === 'Sports' ? 'Athlete' :
-    cat === 'Study' ? 'Student' :
-    cat === 'School' ? 'Student' :
-    cat === 'Ride' ? 'Attending' :
-    cat === 'Work' ? null : 'For';
-
+    cat === 'Medical' ? 'Patient' : cat === 'Sports' ? 'Athlete' : cat === 'Study' ? 'Student' :
+    cat === 'School' ? 'Student' : cat === 'Ride' ? 'Attending' : cat === 'Work' ? 'Attending' : 'Attending';
   const helperLabel =
-    cat === 'Medical' ? 'Accompanied by' :
-    cat === 'Study' ? 'Tutored by' :
-    cat === 'School' ? 'Dropped off by' :
-    cat === 'Sports' ? 'Dropped off by' :
-    cat === 'Ride' ? 'Driven by' :
-    'Organised by';
-
+    cat === 'Medical' ? 'Accompanied by' : cat === 'Study' ? 'Tutored by' : cat === 'School' ? 'Dropped off by' :
+    cat === 'Sports' ? 'Dropped off by' : cat === 'Ride' ? 'Driven by' : 'Organised by';
   const helperQuestion =
-    cat === 'Medical' ? "Who's accompanying?" :
-    cat === 'Study' ? "Who's tutoring?" :
-    cat === 'School' ? "Who's dropping off?" :
-    cat === 'Sports' ? "Who's dropping off?" :
-    cat === 'Ride' ? "Who's driving?" :
-    "Who's organising?";
+    cat === 'Medical' ? "Who's accompanying?" : cat === 'Study' ? "Who's tutoring?" : cat === 'School' ? "Who's dropping off?" :
+    cat === 'Sports' ? "Who's dropping off?" : cat === 'Ride' ? "Who's driving?" : "Who's organising?";
 
-  const isViewerParent = active.role === 'parent';
   const {
     assignee, assigneeRole, isSelfAssigned,
     showRemind, showReassign, showAssignToMe, showOverride, showCantMakeIt, showConfirm,
@@ -118,366 +168,381 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
   const isPending = assignee.status === 'pending';
   const showAlarm = isRejected && isViewerParent;
   const hadPriorHelper = !!assignee.name;
-  const borderCol = showAlarm ? k.dangerEdge : isPending ? k.goldEdge : isRejected ? k.cardBorder : k.sageEdge;
-  const bgCol = showAlarm ? k.dangerSoft : isPending ? k.goldSoft : k.well;
+  const needsDriver = !assignee.name && (!!ev.rideRequired || cat === 'Ride' || log.some(r => String(r.action).startsWith('driver_')));
+
+  const status = isPast ? { label: 'Past', fg: k.textMuted, bg: k.well }
+    : needsDriver ? { label: 'Needs a driver', fg: k.gold, bg: k.pastelAmberCard }
+    : isRejected ? { label: 'Assignment declined', fg: k.danger, bg: k.pastelPrimaryCard }
+    : isPending ? { label: 'Needs confirmation', fg: k.gold, bg: k.pastelAmberCard }
+    : { label: 'Scheduled', fg: k.sage, bg: k.pastelSageCard };
+
+  let timeStr = ev.time ? fmtTime(ev.time) : 'All day';
+  if (ev.time && duration) { const st = minOf(ev.time)!; timeStr += ` → ${fmtTime(hhmm(st + duration))}`; }
+  else if (ev.time && ev.endTime) timeStr += ` → ${fmtTime(ev.endTime)}`;
+
+  const myAck = ev.acknowledgedBy?.includes(active.id) ?? false;
+  const amAttendee = allAssignees.some(m => m.id === active.id);
+  const amDriverOrHelper = ev.driverId === active.id || ev.helperId === active.id;
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const isNowOrPast = isPast || (ev.date === localDateStr() && ev.time ? (minOf(ev.time) ?? 0) <= nowMin : false);
+  const canConfirmPickup = isNowOrPast && amDriverOrHelper && !ev.pickupConfirmedAt;
+  const rsvps = ev.rsvps ?? {};
+  const rsvpCounts = Object.values(rsvps).reduce((acc: Record<string, number>, v) => { acc[v] = (acc[v] ?? 0) + 1; return acc; }, {});
+
+  const setAlert = (v: boolean | ((p: boolean) => boolean)) => {
+    const next = typeof v === 'function' ? v(alertCall) : v;
+    setAlertCall(next);
+    if (ev.seriesId) useEventStore.getState().updateEventScoped(ev.id, { alertCall: next }, 'following');
+    else updateEvent(ev.id, { alertCall: next });
+  };
+  const setLead = (v: number) => {
+    setLeadMin(v);
+    if (ev.seriesId) useEventStore.getState().updateEventScoped(ev.id, { alertCallLeadMinutes: v }, 'following');
+    else updateEvent(ev.id, { alertCallLeadMinutes: v });
+  };
+  const saveNotes = async () => { await updateEvent(ev.id, { notes: notesText.trim() || undefined }); setEditingNotes(false); refreshLog(); };
+  const confirmDelete = () => Alert.alert('Delete event', `Delete "${ev.title}"? This can't be undone.`, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Delete', style: 'destructive', onPress: () => { useEventStore.getState().deleteEvent(ev.id); showToast('Event deleted'); onClose(); } },
+  ]);
+
+  const block = (label: string, accent: string, children: ReactNode, right?: ReactNode) => (
+    <View style={s.block}>
+      <View style={s.blockHead}><Eyebrow label={label} accent={accent} k={k} />{right}</View>
+      {children}
+    </View>
+  );
+  const chip = (text: string, bg: string, fg: string) => (
+    <View key={text} style={[s.pill, { backgroundColor: bg }]}><Text style={[s.pillText, { color: fg }]}>{text}</Text></View>
+  );
+  const bigBtn = (label: string, onPress: () => void, bg: string, fg: string, flex?: boolean) => (
+    <Pressable key={label} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
+      style={({ pressed }) => [s.bigBtn, { backgroundColor: bg }, flex && { flex: 1 }, pressed && { opacity: 0.75 }]}>
+      <Text style={[s.bigBtnText, { color: fg }]}>{label}</Text>
+    </Pressable>
+  );
+  const personRow = (m: FamilyMember, sub: string, pill?: ReactNode) => (
+    <View key={m.id + sub} style={[s.personRow, { backgroundColor: tone.card }]}>
+      <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={38} ringColor={tone.fg} ringWidth={2} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[s.personName, { color: k.text }]} numberOfLines={1}>{m.name}{m.id === active.id ? ' (you)' : ''}</Text>
+        <Text style={[s.personSub, { color: k.textMuted }]}>{sub}</Text>
+      </View>
+      {pill}
+    </View>
+  );
+
+  const showYourActions = canConfirmPickup || (amAttendee && !myAck && !isPast && !ev.isOptionalRsvp);
+  const showAssignActions = !isPast && (showConfirm || showCantMakeIt || showReassign || showOverride || (changeOpen && !!cancelledSelfName));
 
   return (
     <KioskFormDrawer
       visible={!!event}
-      // [dialog->drawer audit] Re-checked: despite the name, this is not a
-      // read-only peek — RSVP going/maybe/not-going, Acknowledge, Confirm/
-      // Can't Make It, and the full driver-reassign flow (chip picker +
-      // optional reason TextInput + Confirm) all live here, sized and
-      // interacted with exactly like every other real kiosk form. A fixed
-      // 85%-of-screen dialog was clipping/cramping that action set on a
-      // real event with several of these sections visible at once; drawer
-      // gives it the same full-height room KioskEventEditor already gets.
       variant="drawer"
       title={ev.title}
-      accent={cc}
+      subtitle={`${cat} · ${fmtHumanDate(ev.date)}`}
+      accent={tone.fg}
       Icon={CalendarIcon}
       k={k}
       onClose={onClose}
       headerRight={isViewerParent ? (
-        <Pressable onPress={onEditFull} hitSlop={10} style={[s.editBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityRole="button" accessibilityLabel="Edit full details">
-          <Pencil size={16} color={k.textMuted} />
-        </Pressable>
+        <View style={s.headRight}>
+          <Pressable onPress={onEditFull} hitSlop={10} style={[s.editBtn, { backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityRole="button" accessibilityLabel="Edit full details">
+            <Pencil size={16} color={k.textMuted} />
+          </Pressable>
+          <Pressable onPress={confirmDelete} hitSlop={10} style={[s.editBtn, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge }]} accessibilityRole="button" accessibilityLabel="Delete event">
+            <Trash2 size={16} color={k.danger} />
+          </Pressable>
+        </View>
       ) : undefined}
     >
-      <View style={s.catRow}>
-        <View style={[s.catPill, { backgroundColor: cc + '20', borderColor: cc + '45' }]}>
-          <Text style={[s.catPillText, { color: cc }]}>{cat}</Text>
-        </View>
-      </View>
-
-      <View style={s.row}>
-        <CalendarIcon size={14} color={cc} />
-        <Text style={[s.dateText, { color: k.text }]}>
-          {fmtDateShort(ev.date)} · {ev.time ? fmtTime(ev.time) : 'All day'}
-        </Text>
-        {isPast && (
-          <View style={[s.donePill, { backgroundColor: k.sageSoft }]}>
-            <Text style={[s.donePillText, { color: k.sage }]}>Done</Text>
+      <View style={s.body}>
+        {/* Hero */}
+        <View style={[s.hero, { backgroundColor: tone.col }]}>
+          <View style={[s.heroEmoji, { backgroundColor: tone.card }]}><Text style={{ fontSize: 30 }}>{CAT_EMOJI[cat] ?? '📅'}</Text></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <View style={s.chipRow}>{chip(status.label, status.bg, status.fg)}</View>
+            <Text style={[s.heroTime, { color: k.text }]}>{timeStr}</Text>
+            <Text style={[s.personSub, { color: k.textMuted }]}>{fmtHumanDate(ev.date)}</Text>
           </View>
-        )}
-      </View>
-
-      {/* Live-requested: "small letters the created by and date time if
-          available" — real EventDetailSheet.tsx has no equivalent (this
-          is a genuinely new addition, not a parity port); createdBy/
-          createdAt are real columns already mapped in eventStore.ts, just
-          never surfaced in any UI before this. Quiet, secondary — smaller
-          than every other line on the sheet, only rendered when the data
-          actually exists rather than showing a blank/placeholder line for
-          an older event created before these columns existed. */}
-      {(ev.createdBy || ev.createdAt) && (
-        <Text style={[s.createdMeta, { color: k.textFaint }]}>
-          {ev.createdBy ? `Created by ${members.find(m => m.id === ev.createdBy)?.name.split(' ')[0] ?? 'someone'}` : 'Created'}
-          {ev.createdAt ? ` · ${new Date(ev.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
-        </Text>
-      )}
-
-      {forLabel && allAssignees.length > 0 && (
-        <View style={s.section}>
-          <View style={s.row}>
-            <Text style={[s.label, { color: k.textMuted }]}>{forLabel}:</Text>
-            {allAssignees.map(m => {
-              const acked = ev.acknowledgedBy?.includes(m.id);
-              return (
-                <View key={m.id} style={{ position: 'relative' }}>
-                  <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={acked ? k.sage : cc} ringWidth={1.5} />
-                  {acked && (
-                    <View style={[s.ackBadge, { backgroundColor: k.sage, borderColor: k.card }]}>
-                      <Check size={7} color="#fff" />
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-          {!isPast && allAssignees.some(m => m.id === active.id) && !ev.acknowledgedBy?.includes(active.id) && !ev.isOptionalRsvp && (
-            <Pressable
-              onPress={() => updateEvent(ev.id, { acknowledgedBy: [...(ev.acknowledgedBy ?? []), active.id] })}
-              style={[s.ackBtn, { borderColor: cc + '50', backgroundColor: cc + '12' }]}
-              accessibilityRole="button" accessibilityLabel="Acknowledge you saw this"
-            >
-              <Check size={12} color={cc} />
-              <Text style={[s.ackBtnText, { color: cc }]}>Acknowledge</Text>
-            </Pressable>
-          )}
         </View>
-      )}
-
-      {ev.isOptionalRsvp && (
-        <View style={s.section}>
-          <Text style={[s.label, { color: k.textMuted }]}>
-            RSVP{' '}
-            <Text style={{ fontWeight: '400', color: k.textFaint }}>
-              {(() => {
-                const responses = Object.values(ev.rsvps ?? {});
-                const going = responses.filter(r => r === 'going').length;
-                const maybe = responses.filter(r => r === 'maybe').length;
-                return `${going} going${maybe > 0 ? `, ${maybe} maybe` : ''}`;
-              })()}
-            </Text>
+        <View style={s.chipRow}>
+          {chip(cat, tone.card, tone.fg)}
+          {!!recur && !!RECUR_LABEL[recur] && chip(`🔄 ${RECUR_LABEL[recur]}`, k.pastelLavCard, k.purple)}
+          {!!ev.pickupConfirmedAt && chip('✓ Pickup confirmed', k.pastelSageCard, k.sage)}
+          {!!duration && chip(`${Math.floor(duration / 60) ? `${Math.floor(duration / 60)}h ` : ''}${duration % 60 ? `${duration % 60}m` : ''}`.trim(), k.well, k.textMuted)}
+          {isPast && chip('Done', k.pastelSageCard, k.sage)}
+        </View>
+        {(ev.createdBy || ev.createdAt) && (
+          <Text style={[s.createdMeta, { color: k.textFaint }]}>
+            {ev.createdBy ? `Created by ${members.find(m => m.id === ev.createdBy)?.name.split(' ')[0] ?? 'someone'}` : 'Created'}
+            {ev.createdAt ? ` · ${stamp(ev.createdAt)}` : ''}
           </Text>
-          {!isPast && (
-            <View style={s.rsvpRow}>
+        )}
+
+        {/* Where */}
+        {(!!ev.location || !!ev.pickupLocation || !!ev.dropLocation || (cat === 'Medical' && !!ev.doctorName) || (cat === 'Study' && !!ev.subject) || (cat === 'Sports' && !!ev.coachName)) && block('WHERE & WHO', k.sage, (
+          <View style={[s.panel, { backgroundColor: k.pastelSage }]}>
+            {!!ev.location && <View style={s.row}><MapPin size={16} color={k.sage} /><LocationLink addr={ev.location} color={k.sage} fontSize={KIOSK_TYPO.body} /></View>}
+            {!!ev.pickupLocation && <View style={s.row}><Text style={[s.metaKey, { color: k.textMuted }]}>Pick up</Text><LocationLink addr={ev.pickupLocation} color={k.sage} fontSize={KIOSK_TYPO.caption} /></View>}
+            {!!ev.dropLocation && <View style={s.row}><Text style={[s.metaKey, { color: k.textMuted }]}>Drop off</Text><LocationLink addr={ev.dropLocation} color={k.sage} fontSize={KIOSK_TYPO.caption} /></View>}
+            {cat === 'Medical' && !!ev.doctorName && <Text style={[s.meta, { color: k.text }]}>🩺 Doctor: <Text style={s.bold}>{ev.doctorName}</Text></Text>}
+            {cat === 'Study' && !!ev.subject && <Text style={[s.meta, { color: k.text }]}>📖 Subject: <Text style={s.bold}>{ev.subject}</Text></Text>}
+            {cat === 'Sports' && !!ev.coachName && <Text style={[s.meta, { color: k.text }]}>🏅 Coach: <Text style={s.bold}>{ev.coachName}</Text></Text>}
+          </View>
+        ))}
+
+        {linked && (
+          <Pressable onPress={() => setViewId(linked.id)} accessibilityRole="button" style={[s.linked, { backgroundColor: k.pastelLav }]}>
+            <Repeat size={16} color={k.purple} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.metaKey, { color: k.textMuted }]}>LINKED LEG</Text>
+              <Text style={[s.meta, { color: k.text }]} numberOfLines={1}>{linked.title}{linked.time ? ` · ${fmtTime(linked.time)}` : ''}</Text>
+            </View>
+            <Text style={[s.bold, { color: k.purple }]}>View →</Text>
+          </Pressable>
+        )}
+
+        {/* Notes (inline edit) */}
+        {block('NOTES', k.gold, editingNotes ? (
+          <View style={{ gap: KIOSK_SPACE.sm }}>
+            <TextInput
+              value={notesText} onChangeText={setNotesText} multiline autoFocus
+              placeholder="Add a note for the family…" placeholderTextColor={k.textFaint}
+              style={[s.notesInput, { color: k.text, backgroundColor: k.card, borderColor: k.goldEdge }]}
+            />
+            <View style={s.row}>
+              {bigBtn('Cancel', () => setEditingNotes(false), k.well, k.text, true)}
+              {bigBtn('Save note', saveNotes, k.primary, k.onPrimary, true)}
+            </View>
+          </View>
+        ) : (
+          <View style={[s.panel, { backgroundColor: k.pastelAmber }]}>
+            <Text style={[s.meta, { color: ev.notes ? k.text : k.textMuted, fontStyle: ev.notes ? 'normal' : 'italic' }]}>{ev.notes || 'No notes yet.'}</Text>
+          </View>
+        ), !editingNotes && !isPast ? (
+          <Pressable onPress={() => { setNotesText(ev.notes ?? ''); setEditingNotes(true); }} hitSlop={10} accessibilityRole="button">
+            <Text style={[s.bold, { color: k.sage }]}>{ev.notes ? 'Edit' : '+ Add note'}</Text>
+          </Pressable>
+        ) : undefined)}
+
+        {/* Reminder */}
+        {!isPast && block('REMINDER', k.purple, (
+          <View style={[s.panel, { backgroundColor: k.pastelLav }]}>
+            <CallReminderToggle
+              alertCall={alertCall} setAlertCall={setAlert as any}
+              alertCallLeadMinutes={leadMin} setAlertCallLeadMinutes={setLead}
+              accentColor={tone.fg} colors={colors} isDark={isDark} variant="icon"
+            />
+          </View>
+        ))}
+
+        {/* Your actions */}
+        {(showYourActions || showAssignActions) && block('YOUR ACTIONS', k.primary, (
+          <View style={{ gap: KIOSK_SPACE.sm }}>
+            {canConfirmPickup && bigBtn('🚗  Confirm pickup happened', () => updateEvent(ev.id, { pickupConfirmedAt: new Date().toISOString(), pickupConfirmedBy: active.id }), k.pastelSageCard, k.sage)}
+            {amAttendee && !myAck && !isPast && !ev.isOptionalRsvp && bigBtn('👀  Mark as seen. I know about this', () => updateEvent(ev.id, { acknowledgedBy: [...(ev.acknowledgedBy ?? []), active.id] }), k.pastelLavCard, k.purple)}
+            {showAssignActions && (
+              <View style={{ gap: KIOSK_SPACE.sm }}>
+                {(showConfirm || (showCantMakeIt && !changeOpen)) && (
+                  <View style={s.row}>
+                    {showConfirm && bigBtn('Confirm', () => useEventStore.getState().confirmEventAssignment(ev.id, active.id, assigneeRole).then(refreshLog), k.pastelSageCard, k.sage, true)}
+                    {showCantMakeIt && !changeOpen && bigBtn("Can't Make It", () => { setCancelledSelfName(active.name); setChangeOpen(true); }, k.pastelPrimaryCard, k.danger, true)}
+                  </View>
+                )}
+                {(showReassign || showOverride || (changeOpen && !!cancelledSelfName)) && (!hadPriorHelper ? true : changeOpen) && (
+                  <View style={s.section}>
+                    {changeOpen && (
+                      <Pressable
+                        onPress={async () => {
+                          if (cancelledSelfName) {
+                            const ok = await useEventStore.getState().declineEventAssignment(ev.id, active.id, assigneeRole);
+                            if (!ok) return;
+                            showToast("Marked — you're off this one ✓");
+                          }
+                          setChangeOpen(false); setCancelledSelfName(undefined); refreshLog();
+                        }}
+                        style={s.cancelRow}
+                      >
+                        <ChevronDown size={14} color={k.textFaint} />
+                        <Text style={[s.metaKey, { color: k.textFaint }]}>{cancelledSelfName ? "I can't make it — no replacement yet" : 'Cancel'}</Text>
+                      </Pressable>
+                    )}
+                    <Text style={[s.personName, { color: k.text }]}>{(!hadPriorHelper || cancelledSelfName) ? helperQuestion : 'Reassign to'}</Text>
+                    <KioskDriverChipRow
+                      ev={ev} members={members} k={k} active={active}
+                      excludeName={cancelledSelfName ?? assignee.name}
+                      excludeId={cancelledSelfName ? active.id : assignee.id}
+                      allowGpTeen={cat !== 'Work'}
+                      onOpenPool={(kind) => {
+                        const doneToast = () => showToast(kind === 'gp' ? 'Opened to Grandparents ✓' : 'Opened to Teens ✓');
+                        if (cancelledSelfName) {
+                          useEventStore.getState().declineEventAssignment(ev.id, active.id, assigneeRole).then(ok => { if (!ok) return; doneToast(); onClose(); });
+                          return;
+                        }
+                        updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
+                        doneToast(); onClose();
+                      }}
+                      onAssign={(name, reason, memberId) => {
+                        notifyTakeover(ev, name, members, active.name, active.id);
+                        const target = memberId ? members.find(m => m.id === memberId) : members.find(m => m.name === name);
+                        if (target) {
+                          useEventStore.getState().reassignEvent(ev.id, target.id, assigneeRole, active.id);
+                        } else {
+                          updateEvent(ev.id, assigneeRole === 'driver'
+                            ? { driverName: name, driverId: undefined, driverStatus: name === active.name ? 'confirmed' as const : 'pending' as const }
+                            : { helper: name, helperId: undefined, helperStatus: name === active.name ? 'confirmed' as const : 'pending' as const });
+                          showToast(`Assigned to ${name.split(' ')[0]} ✓`);
+                        }
+                        if (reason) updateEvent(ev.id, { notes: `${cancelledSelfName ?? active.name} can't do "${helperLabel}" — "${reason}"` });
+                        setChangeOpen(false); setCancelledSelfName(undefined); onClose();
+                      }}
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        ))}
+
+        {/* RSVP */}
+        {ev.isOptionalRsvp && !isPast && block('RSVP', k.gold, (
+          <View style={{ gap: KIOSK_SPACE.sm }}>
+            {Object.keys(rsvpCounts).length > 0 && (
+              <View style={s.chipRow}>
+                {!!rsvpCounts.going && chip(`✓ Going ${rsvpCounts.going}`, k.pastelSageCard, k.sage)}
+                {!!rsvpCounts.maybe && chip(`? Maybe ${rsvpCounts.maybe}`, k.pastelAmberCard, k.gold)}
+                {!!rsvpCounts.not_going && chip(`✕ Can't ${rsvpCounts.not_going}`, k.pastelPrimaryCard, k.danger)}
+              </View>
+            )}
+            <View style={s.row}>
               {([
-                { key: 'going', label: 'Going', color: k.sage },
-                { key: 'maybe', label: 'Maybe', color: k.gold },
-                { key: 'not_going', label: 'Not Going', color: k.danger },
-              ] as const).map(opt => {
-                const mine = ev.rsvps?.[active.id] === opt.key;
+                { key: 'going', label: '✓ Going', fg: k.sage, bg: k.pastelSageCard },
+                { key: 'maybe', label: '? Maybe', fg: k.gold, bg: k.pastelAmberCard },
+                { key: 'not_going', label: "✕ Can't", fg: k.danger, bg: k.pastelPrimaryCard },
+              ] as const).map(o => {
+                const mine = rsvps[active.id] === o.key;
                 return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => updateEvent(ev.id, { rsvps: { ...(ev.rsvps ?? {}), [active.id]: opt.key } })}
-                    style={[s.rsvpBtn, { backgroundColor: mine ? opt.color + '20' : k.well, borderColor: mine ? opt.color : k.cardBorder }]}
-                    accessibilityRole="button" accessibilityLabel={opt.label} accessibilityState={{ selected: mine }}
-                  >
-                    <Text style={[s.rsvpBtnText, { color: mine ? opt.color : k.text }]}>{opt.label}</Text>
+                  <Pressable key={o.key} onPress={() => updateEvent(ev.id, { rsvps: { ...rsvps, [active.id]: o.key } })}
+                    accessibilityRole="button" accessibilityState={{ selected: mine }}
+                    style={[s.bigBtn, { flex: 1, backgroundColor: mine ? o.fg : o.bg }]}>
+                    <Text style={[s.bigBtnText, { color: mine ? k.onAccent : o.fg }]}>{o.label}</Text>
                   </Pressable>
                 );
               })}
             </View>
-          )}
-        </View>
-      )}
+          </View>
+        ))}
 
-      {!!ev.location && (
-        <View style={s.row}>
-          <MapPin size={14} color={k.sage} />
-          <LocationLink addr={ev.location} color={k.sage} fontSize={KIOSK_TYPO.body} />
-        </View>
-      )}
-
-      {cat === 'Medical' && !!ev.doctorName && (
-        <Text style={[s.metaLine, { color: k.textMuted }]}>🩺 Doctor: <Text style={{ fontWeight: '700', color: k.text }}>{ev.doctorName}</Text></Text>
-      )}
-      {cat === 'Study' && !!ev.subject && (
-        <Text style={[s.metaLine, { color: k.textMuted }]}>📖 Subject: <Text style={{ fontWeight: '700', color: k.text }}>{ev.subject}</Text></Text>
-      )}
-      {cat === 'Sports' && !!ev.coachName && (
-        <Text style={[s.metaLine, { color: k.textMuted }]}>🏅 Coach: <Text style={{ fontWeight: '700', color: k.text }}>{ev.coachName}</Text></Text>
-      )}
-      {(cat === 'Ride' || cat === 'Sports') && (!!ev.pickupLocation || !!ev.dropLocation) && (
-        <View style={s.section}>
-          {!!ev.pickupLocation && (
-            <View style={s.row}>
-              <MapPin size={13} color={k.sage} />
-              <Text style={[s.metaLabel, { color: k.textMuted }]}>From:</Text>
-              <LocationLink addr={ev.pickupLocation} color={k.sage} fontSize={KIOSK_TYPO.label} />
-            </View>
-          )}
-          {!!ev.dropLocation && (
-            <View style={s.row}>
-              <MapPin size={13} color={k.sage} />
-              <Text style={[s.metaLabel, { color: k.textMuted }]}>To:</Text>
-              <LocationLink addr={ev.dropLocation} color={k.sage} fontSize={KIOSK_TYPO.label} />
-            </View>
-          )}
-        </View>
-      )}
-
-      {assignee.name && !ev.approvalPending && (
-        <View style={[s.helperCard, { backgroundColor: bgCol, borderColor: borderCol }]}>
-          <View style={s.row}>
-            {/* Role label FIRST, then the avatar [live-reported: "show like
-                Driven by + Avtar"] — was avatar-then-label. Name text
-                dropped — the avatar already identifies who this is, same
-                as every other avatar+name pattern in kiosk [live-reported:
-                "remove names only keep avatars related persons"].
-                accessibilityLabel below carries the name for screen
-                readers. helperLabel ("Driver"/"Helper") stays — it's a
-                ROLE label, not a redundant name. */}
-            <Text style={[s.helperLabel, { color: k.textMuted }]}>{helperLabel}</Text>
-            <View style={{ position: 'relative' }} accessible accessibilityLabel={`${helperLabel}: ${assignee.name}`}>
-              <FamilyAvatar
-                name={assignee.name} emoji={helperMember?.emoji} avatarUrl={(helperMember as any)?.avatarUrl}
-                siblings={members.map(m => m.name)} size={36}
-                ringColor={showAlarm ? k.danger : isPending ? k.gold : isRejected ? k.cardBorder : k.sage}
-                ringWidth={2}
-              />
-              {showAlarm && (
-                <View style={[s.alarmBadge, { backgroundColor: k.danger, borderColor: k.card }]}>
-                  <Text style={s.alarmBadgeText}>!</Text>
+        {/* Who's involved */}
+        {(allAssignees.length > 0 || !!assignee.name || needsDriver) && block("WHO'S INVOLVED", k.gold, (
+          <View style={{ gap: KIOSK_SPACE.sm }}>
+            {allAssignees.map(m => personRow(m, forLabel, ev.acknowledgedBy?.includes(m.id) ? <View key="a" style={[s.pill, { backgroundColor: k.pastelSageCard }]}><Text style={[s.pillText, { color: k.sage }]}>Seen ✓</Text></View> : undefined))}
+            {!!assignee.name && !ev.approvalPending && (
+              <View style={[s.panel, { backgroundColor: showAlarm ? k.pastelPrimary : isPending ? k.pastelAmber : k.pastelSage, gap: KIOSK_SPACE.sm }]}>
+                <View style={s.row}>
+                  <Text style={[s.metaKey, { color: k.textMuted }]}>{helperLabel}</Text>
+                  <FamilyAvatar
+                    name={assignee.name} emoji={helperMember?.emoji} avatarUrl={(helperMember as any)?.avatarUrl}
+                    siblings={members.map(m => m.name)} size={38}
+                    ringColor={showAlarm ? k.danger : isPending ? k.gold : isRejected ? k.cardBorder : k.sage} ringWidth={2}
+                  />
+                  <Text style={[s.personName, { color: k.text, flex: 1 }]} numberOfLines={1}>{assignee.name}</Text>
+                  {assignee.status === 'confirmed' && <StatusPill k={k} label="Confirmed ✓" color={k.sage} bg={k.pastelSageCard} />}
+                  {isPending && <StatusPill k={k} label="⏳ Awaiting" color={k.gold} bg={k.pastelAmberCard} />}
+                  {isRejected && !showAlarm && <StatusPill k={k} label="No driver yet" color={k.textFaint} bg={k.well} />}
+                  {showAlarm && <StatusPill k={k} label="Declined ✕" color={k.danger} bg={k.pastelPrimaryCard} />}
                 </View>
-              )}
-            </View>
-            {showAlarm && !!ev.declineReason && (
-              <View style={{ flex: 1 }}>
-                <Text style={[s.declineReason, { color: k.danger }]} numberOfLines={2}>"{ev.declineReason}"</Text>
+                {showAlarm && !!ev.declineReason && <Text style={[s.meta, { color: k.danger }]} numberOfLines={2}>"{ev.declineReason}"</Text>}
+                {!isPast && !isSelfAssigned && (showRemind || showAssignToMe || showReassign || showOverride) && (
+                  <View style={s.row}>
+                    {showRemind && (
+                      <Pressable onPress={() => { if (assignee.id) useEventStore.getState().remindEventAssignee(ev.id, assignee.id, assignee.name ?? 'Driver', active.id); onClose(); }}
+                        style={[s.chipBtn, { backgroundColor: k.pastelAmberCard }]} accessibilityRole="button">
+                        <Bell size={14} color={k.gold} /><Text style={[s.chipBtnText, { color: k.gold }]}>Remind</Text>
+                      </Pressable>
+                    )}
+                    {(showAssignToMe || showReassign) && (
+                      <Pressable onPress={() => setChangeOpen(v => !v)} style={[s.chipBtn, { backgroundColor: isRejected ? k.pastelPrimaryCard : k.pastelLavCard }]} accessibilityRole="button">
+                        {isRejected ? <Repeat size={14} color={k.danger} /> : <User size={14} color={k.purple} />}
+                        <Text style={[s.chipBtnText, { color: isRejected ? k.danger : k.purple }]}>{isRejected ? 'Swap' : 'Take Over'}</Text>
+                      </Pressable>
+                    )}
+                    {showOverride && (
+                      <Pressable
+                        onPress={() => Alert.alert('Override Confirmed Ride?', `${assignee.name?.split(' ')[0] ?? 'Driver'} already confirmed this. Only change it if there's a real problem.`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Yes, Reassign', style: 'destructive', onPress: () => setChangeOpen(true) },
+                        ])}
+                        style={[s.chipBtn, { backgroundColor: k.pastelPrimaryCard }]} accessibilityRole="button">
+                        <Repeat size={14} color={k.danger} /><Text style={[s.chipBtnText, { color: k.danger }]}>Override</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
               </View>
             )}
-            {assignee.status === 'confirmed' && <StatusPill k={k} label="Confirmed ✓" color={k.sage} bg={k.sageSoft} />}
-            {isPending && <StatusPill k={k} label="⏳ Awaiting" color={k.gold} bg={k.goldSoft} />}
-            {isRejected && !showAlarm && <StatusPill k={k} label="No driver yet" color={k.textFaint} bg={k.well} />}
-            {showAlarm && <StatusPill k={k} label="Declined ✕" color={k.danger} bg={k.dangerSoft} />}
+            {needsDriver && !assignee.name && (
+              <View style={[s.panel, { backgroundColor: k.pastelAmber }]}>
+                <View style={s.row}>
+                  <Text style={{ fontSize: 22 }}>🚗</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.personName, { color: k.text }]}>No driver yet</Text>
+                    <Text style={[s.personSub, { color: k.gold }]}>Someone needs to take this ride</Text>
+                  </View>
+                  {isViewerParent && !isPast && (
+                    <Pressable onPress={() => setChangeOpen(true)} style={[s.chipBtn, { backgroundColor: k.gold }]} accessibilityRole="button">
+                      <Text style={[s.chipBtnText, { color: k.onAccent }]}>Assign driver</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            )}
           </View>
+        ))}
 
-          {!isPast && !isSelfAssigned && (showRemind || showAssignToMe || showReassign || showOverride) && (
-            <View style={[s.helperActionsRow, { borderTopColor: borderCol }]}>
-              {showRemind && (
-                <Pressable
-                  onPress={() => {
-                    if (assignee.id) {
-                      useEventStore.getState().remindEventAssignee(ev.id, assignee.id, assignee.name ?? 'Driver', active.id);
-                    }
-                    onClose();
-                  }}
-                  style={[s.chipBtn, { backgroundColor: k.goldSoft }]}
-                >
-                  <Bell size={13} color={k.gold} />
-                  <Text style={[s.chipBtnText, { color: k.gold }]}>Remind</Text>
-                </Pressable>
-              )}
-              {(showAssignToMe || showReassign) && (
-                <Pressable onPress={() => setChangeOpen(v => !v)} style={[s.chipBtn, { backgroundColor: isRejected ? k.dangerSoft : k.primarySoft }]}>
-                  {isRejected ? <Repeat size={13} color={k.danger} /> : <User size={13} color={k.primary} />}
-                  <Text style={[s.chipBtnText, { color: isRejected ? k.danger : k.primary }]}>{isRejected ? 'Swap' : 'Take Over'}</Text>
-                </Pressable>
-              )}
-              {showOverride && (
-                <Pressable
-                  onPress={() => {
-                    Alert.alert(
-                      'Override Confirmed Ride?',
-                      `${assignee.name?.split(' ')[0] ?? 'Driver'} already confirmed this. Only change it if there's a real problem.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Yes, Reassign', style: 'destructive', onPress: () => setChangeOpen(true) },
-                      ],
-                    );
-                  }}
-                  style={[s.chipBtn, { backgroundColor: k.dangerSoft }]}
-                >
-                  <Repeat size={13} color={k.danger} />
-                  <Text style={[s.chipBtnText, { color: k.danger }]}>Override</Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-        </View>
-      )}
+        {/* Conflicts */}
+        {conflicts.length > 0 && block('⚠ SCHEDULE CONFLICTS', k.danger, (
+          <View style={[s.panel, { backgroundColor: k.pastelPrimary, gap: KIOSK_SPACE.sm }]}>
+            {conflicts.map(o => (
+              <View key={o.id} style={[s.personRow, { backgroundColor: k.pastelPrimaryCard, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }]}>
+                <Text style={[s.personName, { color: k.text }]}>{o.title}</Text>
+                <Text style={[s.personSub, { color: k.textMuted }]}>{o.time ? `${fmtTime(o.time)} · ` : ''}{fmtHumanDate(o.date)}</Text>
+              </View>
+            ))}
+            {bigBtn('Not a conflict', () => updateEvent(ev.id, { conflictAcknowledged: true }), k.card, k.textMuted)}
+          </View>
+        ))}
 
-      {!!ev.linkedLegId && (
-        <View style={[s.linkedLegBanner, { backgroundColor: k.blueSoft }]}>
-          <Repeat size={13} color={k.blue} />
-          <Text style={[s.linkedLegText, { color: k.blue }]}>
-            {ev.title.includes('Pickup') ? "This is the Pickup half of a both-ways ride — there's a Drop-off event too."
-              : ev.title.includes('Drop-off') ? "This is the Drop-off half of a both-ways ride — there's a Pickup event too."
-              : 'This is paired with another ride leg.'}
-          </Text>
-        </View>
-      )}
-
-      {!!ev.notes && (
-        <View style={[s.notesBox, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
-          <Text style={[s.notesText, { color: k.textMuted }]}>📝 "{ev.notes}"</Text>
-        </View>
-      )}
-
-      {!isPast && (showConfirm || showCantMakeIt || showReassign || showOverride || (changeOpen && !!cancelledSelfName)) && (
-        <View style={[s.actionsSection, { borderTopColor: k.cardBorder }]}>
-          {(showConfirm || (showCantMakeIt && !changeOpen)) && (
-            <View style={s.row}>
-              {showConfirm && (
-                <Pressable
-                  onPress={() => useEventStore.getState().confirmEventAssignment(ev.id, active.id, assigneeRole)}
-                  style={[s.primaryActionBtn, { backgroundColor: k.sageSoft, borderColor: k.sageEdge, flex: 1 }]}
-                >
-                  <Text style={[s.primaryActionText, { color: k.sage }]}>Confirm</Text>
-                </Pressable>
-              )}
-              {showCantMakeIt && !changeOpen && (
-                <Pressable
-                  onPress={() => { setCancelledSelfName(active.name); setChangeOpen(true); }}
-                  // flex:1 always, not only when paired with Confirm — a
-                  // lone action in this row previously sized to its own
-                  // content width (no paddingHorizontal on primaryActionBtn
-                  // either, compounding it), rendering as a small, cramped
-                  // pill floating at the row's left edge instead of filling
-                  // it the way the sheet's other full-row actions do
-                  // [live-reported: "the can't make it button is not good"].
-                  style={[s.primaryActionBtn, { backgroundColor: k.dangerSoft, borderColor: k.dangerEdge, flex: 1 }]}
-                >
-                  <X size={15} color={k.danger} />
-                  <Text style={[s.primaryActionText, { color: k.danger }]}>Can't Make It</Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-
-          {(showReassign || showOverride || (changeOpen && !!cancelledSelfName)) && (!hadPriorHelper ? true : changeOpen) && (
-            <View style={s.section}>
-              {changeOpen && (
-                <Pressable
-                  onPress={async () => {
-                    if (cancelledSelfName) {
-                      const ok = await useEventStore.getState().declineEventAssignment(ev.id, active.id, assigneeRole);
-                      if (!ok) return;
-                      showToast("Marked — you're off this one ✓");
-                      setChangeOpen(false);
-                      setCancelledSelfName(undefined);
-                      return;
-                    }
-                    setChangeOpen(false);
-                    setCancelledSelfName(undefined);
-                  }}
-                  style={s.cancelRow}
-                >
-                  <ChevronDown size={14} color={k.textFaint} />
-                  <Text style={[s.cancelRowText, { color: k.textFaint }]}>
-                    {cancelledSelfName ? "I can't make it — no replacement yet" : 'Cancel'}
-                  </Text>
-                </Pressable>
-              )}
-              <Text style={[s.label, { color: k.textMuted }]}>
-                {(!hadPriorHelper || cancelledSelfName) ? helperQuestion : 'Reassign to'}
-              </Text>
-              <KioskDriverChipRow
-                ev={ev} members={members} k={k} active={active}
-                excludeName={cancelledSelfName ?? assignee.name}
-                excludeId={cancelledSelfName ? active.id : assignee.id}
-                allowGpTeen={cat !== 'Work'}
-                onOpenPool={(kind) => {
-                  const doneToast = () => showToast(kind === 'gp' ? 'Opened to Grandparents ✓' : 'Opened to Teens ✓');
-                  if (cancelledSelfName) {
-                    useEventStore.getState().declineEventAssignment(ev.id, active.id, assigneeRole).then(ok => {
-                      if (!ok) return;
-                      doneToast();
-                      onClose();
-                    });
-                    return;
-                  }
-                  updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
-                  doneToast();
-                  onClose();
-                }}
-                onAssign={(name, reason, memberId) => {
-                  notifyTakeover(ev, name, members, active.name, active.id);
-                  const targetMember = memberId ? members.find(m => m.id === memberId) : members.find(m => m.name === name);
-                  if (targetMember) {
-                    useEventStore.getState().reassignEvent(ev.id, targetMember.id, assigneeRole, active.id);
-                  } else {
-                    updateEvent(ev.id, assigneeRole === 'driver'
-                      ? { driverName: name, driverId: undefined, driverStatus: name === active.name ? 'confirmed' as const : 'pending' as const }
-                      : { helper: name, helperId: undefined, helperStatus: name === active.name ? 'confirmed' as const : 'pending' as const });
-                    showToast(`Assigned to ${name.split(' ')[0]} ✓`);
-                  }
-                  if (reason) {
-                    updateEvent(ev.id, { notes: `${cancelledSelfName ?? active.name} can't do "${helperLabel}" — "${reason}"` });
-                  }
-                  setChangeOpen(false);
-                  setCancelledSelfName(undefined);
-                  onClose();
-                }}
-              />
-            </View>
-          )}
-        </View>
-      )}
+        {/* Activity & history */}
+        {block('ACTIVITY & HISTORY', k.textFaint, log.length === 0 ? (
+          <Text style={[s.meta, { color: k.textMuted, fontStyle: 'italic' }]}>No history yet.</Text>
+        ) : (
+          <View style={[s.panel, { backgroundColor: k.well }]}>
+            {log.map((r, i) => {
+              const meta = LOG_META[r.action] ?? { icon: '•', label: String(r.action).replace(/_/g, ' ') };
+              const actor = members.find(m => m.id === r.actorId);
+              const from = r.oldValue ? members.find(m => m.id === r.oldValue) : null;
+              const to = r.newValue ? members.find(m => m.id === r.newValue) : null;
+              const change = from && to ? `${from.name.split(' ')[0]} → ${to.name.split(' ')[0]}` : r.oldValue && r.newValue ? `${r.oldValue} → ${r.newValue}` : '';
+              return (
+                <View key={`${r.createdAt}-${i}`} style={s.logRow}>
+                  <View style={s.logRail}>
+                    <View style={[s.logDot, { backgroundColor: tone.card }]}><Text style={{ fontSize: 12 }}>{meta.icon}</Text></View>
+                    {i < log.length - 1 && <View style={[s.logLine, { backgroundColor: k.cardBorder }]} />}
+                  </View>
+                  <View style={{ flex: 1, paddingBottom: 12 }}>
+                    <Text style={[s.personName, { color: k.text }]}>{meta.label}{actor ? <Text style={[s.personSub, { color: k.textMuted }]}>{`  by ${actor.name.split(' ')[0]}`}</Text> : null}</Text>
+                    {!!change && <Text style={[s.personSub, { color: k.textMuted }]}>{change}</Text>}
+                    <Text style={[s.personSub, { color: k.textFaint }]}>{stamp(r.createdAt)}</Text>
+                    {!!r.note && <Text style={[s.personSub, { color: k.textMuted, fontStyle: 'italic' }]}>"{r.note}"</Text>}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </View>
     </KioskFormDrawer>
   );
 }
@@ -591,6 +656,31 @@ function KioskDriverChipRow({ ev, members, k, active, excludeName, excludeId, al
 }
 
 const s = StyleSheet.create({
+  body: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl },
+  block: { gap: KIOSK_SPACE.sm },
+  blockHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md, borderRadius: KIOSK_RADIUS.xl, padding: KIOSK_SPACE.md },
+  heroEmoji: { width: 62, height: 62, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', justifyContent: 'center' },
+  heroTime: { fontSize: KIOSK_TYPO.heading, fontWeight: '800', letterSpacing: -0.3 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pill: { borderRadius: 9, paddingHorizontal: 11, paddingVertical: 5 },
+  pillText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  panel: { borderRadius: KIOSK_RADIUS.lg, padding: KIOSK_SPACE.md, gap: KIOSK_SPACE.xs },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.lg, paddingHorizontal: KIOSK_SPACE.md, paddingVertical: 10 },
+  personName: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  personSub: { fontSize: KIOSK_TYPO.label, fontWeight: '600' },
+  meta: { fontSize: KIOSK_TYPO.body, fontWeight: '600', lineHeight: 21 },
+  metaKey: { fontSize: KIOSK_TYPO.label, fontWeight: '800', letterSpacing: 0.4 },
+  bold: { fontWeight: '800', fontSize: KIOSK_TYPO.body },
+  linked: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.lg, padding: KIOSK_SPACE.md },
+  notesInput: { minHeight: 90, borderRadius: KIOSK_RADIUS.md, borderWidth: 1.5, padding: 12, fontSize: KIOSK_TYPO.body, textAlignVertical: 'top' },
+  bigBtn: { minHeight: 52, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: KIOSK_SPACE.lg, alignItems: 'center', justifyContent: 'center' },
+  bigBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  headRight: { flexDirection: 'row', gap: 8 },
+  logRow: { flexDirection: 'row', gap: KIOSK_SPACE.sm },
+  logRail: { width: 30, alignItems: 'center' },
+  logDot: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  logLine: { width: 2, flex: 1, marginTop: 3 },
   section: { gap: KIOSK_SPACE.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, flexWrap: 'wrap' },
   editBtn: { width: 36, height: 36, borderRadius: KIOSK_RADIUS.full, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

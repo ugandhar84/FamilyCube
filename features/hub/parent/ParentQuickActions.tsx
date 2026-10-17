@@ -1,6 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
 import { Sparkles, ListPlus, ShoppingCart, ChefHat } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { useUIStore } from '@/store/uiStore';
 import { TYPO } from '@/constants/theme';
 
 export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, onAddTask }: {
@@ -29,7 +29,7 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
     // and Scan Flyer/Add Task already claim accent/parent, so Grocery takes
     // the one remaining unclaimed hue (primary/terracotta) instead of
     // colliding with Meals.
-    { key: 'grocery', label: 'Grocery', icon: ShoppingCart, tint: colors.primary, badge: groceryCount, onPress: () => router.push('/(tabs)/grocery' as any) },
+    { key: 'grocery', label: 'Grocery', icon: ShoppingCart, tint: colors.primary, badge: groceryCount, onPress: () => useUIStore.getState().setOpenGroceryScreenRequested(true) },
     // Re-added per explicit direction — was previously pulled from both the
     // Apps grid and this row (see VaultScreen.tsx's FEATURES comment).
     // Links straight to its own route (app/(tabs)/meals.tsx), same pattern
@@ -40,7 +40,7 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
     // three calm tiles. amber reads as "food" without borrowing the app's
     // one alert color. Kept as amber (not moved) — Grocery moved instead,
     // since amber/food is a stronger, more legible pairing than terracotta/food.
-    { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.amber, onPress: () => { router.push('/(tabs)/meals' as any); } },
+    { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.amber, onPress: () => useUIStore.getState().setOpenMealsScreenRequested(true) },
   ];
 
   return (

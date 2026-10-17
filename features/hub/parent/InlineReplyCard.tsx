@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
 import { ChevronUp, ChevronDown, Pill, Unlock, HelpCircle, MessageSquare, Check, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "approve/allow" accent for this card's action button,
 // distinct from brand teal used elsewhere in the hub. Not colors.success
@@ -34,7 +35,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent }}>{typeLabel} — {kidName}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }} numberOfLines={1}>
             {req.detail.length > 55 ? req.detail.slice(0, 55) + '…' : req.detail}
           </Text>
         </View>
@@ -51,7 +52,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
           <View style={{ marginHorizontal: 14, marginTop: 10, borderRadius: 12, padding: 12,
             backgroundColor: isDark ? '#1e293b' : '#fff',
             borderLeftWidth: 3, borderLeftColor: accent }}>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary, lineHeight: 19 }}>
+            <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor), lineHeight: 19 }}>
               "{req.detail}"
             </Text>
           </View>
@@ -62,7 +63,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
             flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10 }}>
             <MessageSquare size={14} color={reply.trim() ? accent : colors.textTertiary} style={{ marginTop: 2 }} />
             <TextInput
-              style={{ flex: 1, fontSize: TYPO.caption, color: colors.textPrimary, minHeight: 36 }}
+              style={{ flex: 1, fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor), minHeight: 36 }}
               placeholder={isQuestion ? 'Type your reply… (required)' : 'Add a reply (optional)'}
               placeholderTextColor={colors.textTertiary}
               value={reply}

@@ -80,6 +80,7 @@
  * doesn't need this — it's already height:'100%' inside the same shrinking
  * KeyboardAvoidingView box, so there's no separate percentage to reclamp.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   Modal, View, Text, Pressable, ScrollView,
@@ -91,6 +92,21 @@ import { KioskModalHost } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import type { KioskColors } from '../kioskPalette';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+
+/** A drawer slides in from the RIGHT edge it is anchored to; a centered dialog
+ *  has no edge to slide from, so it fades. */
+function ModalShell({ isDialog, visible, onRequestClose, children }: {
+  isDialog: boolean; visible: boolean; onRequestClose: () => void; children: ReactNode;
+}) {
+  if (isDialog) {
+    return (
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
+        {children}
+      </Modal>
+    );
+  }
+  return <KioskSlideModal visible={visible} onRequestClose={onRequestClose}>{children}</KioskSlideModal>;
+}
 
 export function KioskFormDrawer({
   visible, title, subtitle, accent, Icon, k, onClose, children,
@@ -166,12 +182,9 @@ export function KioskFormDrawer({
   }, []);
 
   return (
-    <Modal
+    <ModalShell
+      isDialog={isDialog}
       visible={visible}
-      transparent
-      // A drawer slides in from the edge it's anchored to; a centered card
-      // has no edge to slide from, so it fades like a dialog should.
-      animationType={isDialog ? 'fade' : 'slide'}
       onRequestClose={onClose}
     >
       <KioskModalHost style={s.host}>
@@ -345,7 +358,7 @@ export function KioskFormDrawer({
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+    </ModalShell>
   );
 }
 

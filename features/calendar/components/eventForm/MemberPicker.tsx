@@ -90,7 +90,7 @@ export default function MemberPicker({ label, hint, selectedIds, members, onTogg
                 <FamilyAvatar
                   name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
                   siblings={siblings} size={44}
-                  ringColor={sel ? BRAND.purple : (isDark ? '#64748B' : '#94A3B8')}
+                  ringColor={sel ? BRAND.amber : (isDark ? BRAND.teal : BRAND.teal)}
                   ringWidth={sel ? 2.5 : 0}
                   bgColor={sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9')}
                 />

@@ -1,30 +1,49 @@
 /**
- * PersonaSwitcherDropdown — inline "Select Family Profile" panel that drops
- * down directly beneath AppHeader, replacing the old bottom-sheet pattern.
- * Square gradient-initial avatar tiles, single-column list, checkmark on
- * the active row, PIN gate reused from the family store's existing pin
- * flow for locked non-active profiles.
+ * PersonaSwitcherDropdown — "Select Family Profile" panel, visually
+ * restyled to read as a dropdown anchored under AppHeader (tight radius/
+ * shadow, light scrim instead of a heavy dim, Gemini rhythm tokens)
+ * [live-requested: "make the switcher like a figma rhythm... like a
+ * proper dropdown instead of the sheet pop up"].
+ *
+ * Still rendered inside a Modal, NOT a true in-tree absolute-positioned
+ * sibling — an in-tree version was tried and reproduced the exact bug
+ * this was a Modal for in the first place: unrelated sibling content
+ * elsewhere (Hub's own ScrollView content, confirmed live with a
+ * screenshot showing it bleeding through and overlapping the open
+ * dropdown) doesn't reliably respect zIndex against a DISTANT sibling in
+ * the tree; only a Modal's own top-level native layer guarantees correct
+ * stacking. Kept Modal per explicit follow-up after seeing that
+ * regression ("put Modal back, but style it to look like a dropdown").
+ *
+ * Gemini rhythm — warm cream card instead of colors.card, GEMINI
+ * titleColor/bodyColor instead of colors.textPrimary/textSecondary, no
+ * raw BRAND.* hex for role accents (now mapped through the real theme
+ * tokens: colors.teal/amber/pink/accent).
  */
 import React, { useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import FullPageOverlay from './FullPageOverlay';
+import { PageHeading } from './PageHeading';
+import { Lock } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore, FamilyMember } from '@/store/familyStore';
-import { BRAND } from './FamilyCubeLogo';
+import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import { showAlert } from './AppAlert';
 import FamilyAvatar from './FamilyAvatar';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/chatCrypto';
+import { GEMINI } from '@/constants/geminiRhythm';
 
-const ROLE_ACCENT: Record<string, string> = {
-  parent: BRAND.teal,
-  kid:    BRAND.amber,
-  teen:   BRAND.pink,
-  senior: BRAND.purple,
-};
+function accent(role: string, colors: any): string {
+  return role === 'parent' ? colors.teal
+    : role === 'kid'    ? colors.amber
+    : role === 'teen'   ? colors.pink
+    : colors.accent; // senior
+}
 
 const ROLE_LABEL: Record<string, string> = {
   parent: 'Parent',
@@ -32,8 +51,6 @@ const ROLE_LABEL: Record<string, string> = {
   teen:   'Teen',
   senior: 'Grandparent',
 };
-
-function accent(role: string) { return ROLE_ACCENT[role] ?? BRAND.purple; }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 function CheckIcon({ c, size = 13 }: { c: string; size?: number }) {
@@ -70,9 +87,9 @@ function ArrowLeftIcon({ c }: { c: string }) {
 // ── PIN pad (compact, reused for locked profile switch) ────────────────────────
 const PIN_LENGTH = 4;
 
-function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
+function PinPad({ member, isDark, onSuccess, onCancel, siblings, fullPage = false }: {
   member: FamilyMember; isDark: boolean; onSuccess: () => void; onCancel: () => void;
-  siblings: string[];
+  siblings: string[]; fullPage?: boolean;
 }) {
   const { colors } = useTheme();
   const [digits, setDigits] = useState('');
@@ -80,7 +97,7 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
   const [errorMsg, setErrorMsg] = useState('');
   const [verifying, setVerifying] = useState(false);
   const shake = useRef(new RNAnimated.Value(0)).current;
-  const ac = accent(member.role);
+  const ac = accent(member.role, colors);
 
   const triggerShake = () => {
     RNAnimated.sequence([
@@ -155,8 +172,8 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
   const KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
   return (
-    <View style={{ paddingHorizontal: 18, paddingVertical: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+    <View style={{ paddingHorizontal: fullPage ? 24 : 18, paddingVertical: fullPage ? 8 : 16 }}>
+      {!fullPage && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <TouchableOpacity onPress={onCancel} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <ArrowLeftIcon c={colors.textSecondary} />
         </TouchableOpacity>
@@ -171,10 +188,10 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
           bgColor={ac + '22'}
         />
         <View>
-          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>{member.name}</Text>
-          <Text style={{ fontSize: 10, color: colors.textTertiary }}>Enter PIN to switch</Text>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{member.name}</Text>
+          <Text style={{ fontSize: 10, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>Enter PIN to switch</Text>
         </View>
-      </View>
+      </View>}
 
       <RNAnimated.View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 18, transform: [{ translateX: shake }] }}>
         {Array.from({ length: PIN_LENGTH }).map((_, i) => (
@@ -192,12 +209,29 @@ function PinPad({ member, isDark, onSuccess, onCancel, siblings }: {
         </Text>
       )}
 
-      <View style={{ gap: 8 }}>
+      <View style={{ gap: fullPage ? 14 : 8, alignItems: fullPage ? 'center' : undefined }}>
         {[0, 3, 6, 9].map(row => (
-          <View key={row} style={{ flexDirection: 'row', gap: 8 }}>
+          <View key={row} style={{ flexDirection: 'row', gap: fullPage ? 24 : 8 }}>
             {KEYS.slice(row, row + 3).map((k, ci) => {
-              if (k === '') return <View key={ci} style={{ flex: 1 }} />;
               const isBackspace = k === '⌫';
+              if (fullPage) {
+                // iOS passcode keypad: round keys with the letters under each digit; no key where the blank is.
+                const LETTERS: Record<string, string> = { '2': 'ABC', '3': 'DEF', '4': 'GHI', '5': 'JKL', '6': 'MNO', '7': 'PQRS', '8': 'TUV', '9': 'WXYZ' };
+                if (k === '') return <View key={ci} style={{ width: 78, height: 78 }} />;
+                return (
+                  <TouchableOpacity key={ci} onPress={() => isBackspace ? del() : press(k)} activeOpacity={0.55}
+                    style={{ width: 78, height: 78, borderRadius: 39, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: isBackspace ? 'transparent' : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.07)') }}>
+                    {isBackspace
+                      ? <BackspaceIcon c={colors.textPrimary} />
+                      : <>
+                          <Text style={{ fontSize: 32, fontWeight: '400', color: colors.textPrimary, lineHeight: 36 }}>{k}</Text>
+                          {!!LETTERS[k] && <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textSecondary, marginTop: -2 }}>{LETTERS[k]}</Text>}
+                        </>}
+                  </TouchableOpacity>
+                );
+              }
+              if (k === '') return <View key={ci} style={{ flex: 1 }} />;
               return (
                 <TouchableOpacity key={ci}
                   style={{ flex: 1, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
@@ -223,7 +257,7 @@ function MemberRow({ member, isActive, onPress, isDark, siblings }: {
   siblings: string[];
 }) {
   const { colors } = useTheme();
-  const ac = accent(member.role);
+  const ac = accent(member.role, colors);
   const subLabel = member.subRole ?? ROLE_LABEL[member.role] ?? member.role;
 
   return (
@@ -250,8 +284,8 @@ function MemberRow({ member, isActive, onPress, isDark, siblings }: {
         bgColor={ac + '22'}
       />
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{member.name}</Text>
-        <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>{subLabel}</Text>
+        <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>{member.name}</Text>
+        <Text style={{ fontSize: 12, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 1 }}>{subLabel}</Text>
       </View>
       {isActive ? (
         <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: ac, alignItems: 'center', justifyContent: 'center' }}>
@@ -287,6 +321,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
   const [switchingFamily, setSwitchingFamily] = useState(false);
   const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   // Was a flat maxHeight:380 regardless of screen size — clipped the list
   // (a 6th+ member cut off mid-row) even on tall phones with plenty of
   // room below. Sizes against the actual available space under the panel
@@ -302,23 +337,30 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
       showAlert('Not joined yet', `${m.name} hasn't accepted their invite yet — ask them to enter their invite code first.`);
       return;
     }
-    if (m.pinEnabled && m.id !== activeMemberId) {
+    const me = members.find(x => x.id === activeMemberId);
+    if (needsPinToSwitch(me, m)) {
       setPinTarget(m);
     } else {
+      if (m.pinEnabled && m.id !== activeMemberId) markEnteredByParent(m.id);
       setActiveMember(m.id);
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for
       // the PREVIOUS member is rarely where the person who just switched
-      // in wants to land.
-      router.replace('/(tabs)');
+      // in wants to land. Was `router.replace`, which tears down and
+      // remounts the entire (tabs) navigator — racing against the
+      // just-fired setActiveMember and intermittently landing on a blank
+      // Hub (no header) [live-reported: "still same white hub.. this is
+      // fucking killing the app"]. `navigate` re-uses the existing (tabs)
+      // instance and just focuses the Hub tab instead.
+      router.navigate('/(tabs)');
     }
   };
 
   const handlePinSuccess = () => {
-    if (pinTarget) setActiveMember(pinTarget.id);
+    if (pinTarget) { clearEnteredByParent(pinTarget.id); setActiveMember(pinTarget.id); }
     setPinTarget(null);
     onClose();
-    router.replace('/(tabs)');
+    router.navigate('/(tabs)');
   };
 
   const handleClose = () => {
@@ -342,78 +384,105 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
     router.replace('/(tabs)');
   };
 
+  if (!visible) return null;
+
+  const cardBg = isDark ? colors.card : GEMINI.cardBg;
+  const border = isDark ? colors.border : GEMINI.border;
+  const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const bodyC  = isDark ? colors.textSecondary : GEMINI.bodyColor;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
-      <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} activeOpacity={1} onPress={handleClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+      {/* Light scrim, not a heavy dim — reads as a dropdown rather than a
+          sheet, while Modal's own top-level layer still guarantees
+          correct stacking above every screen's content. */}
+      <TouchableOpacity style={{ flex: 1, backgroundColor: isDark ? 'rgba(0,0,0,0.45)' : 'rgba(44,39,34,0.2)' }}
+        activeOpacity={1} onPress={handleClose}>
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
-          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-            <View style={withAndroidShadowFix({
-              marginTop: HEADER_OFFSET, marginHorizontal: 12, borderRadius: 22, overflow: 'hidden',
-              backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-              shadowColor: '#000', shadowOpacity: isDark ? 0.4 : 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 16,
+          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}
+            style={withAndroidShadowFix({
+              marginTop: HEADER_OFFSET, marginHorizontal: 12, borderRadius: 20, overflow: 'hidden',
+              backgroundColor: cardBg, borderWidth: 1, borderColor: border,
+              shadowColor: '#000', shadowOpacity: isDark ? 0.3 : 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 12,
             })}>
-              {/* Multi-family membership — only renders at all when
-                  myFamilies has more than one entry, which itself only
-                  happens for a member switched-in via their own real
-                  device auth session (see familyStore's own comment).
-                  Hidden entirely for the overwhelming majority of
-                  accounts, exactly as requested — no switcher, no hint
-                  one could ever exist, when there's nothing to switch. */}
-              {!pinTarget && myFamilies.length > 1 && (
-                <View style={{
-                  paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
-                  borderBottomWidth: 1, borderBottomColor: colors.border, gap: 8,
-                }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: colors.textSecondary, textTransform: 'uppercase' }}>
-                    Family
-                  </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {myFamilies.map(f => {
-                      const isCurrent = (activeFamilyId ?? members[0]?.familyId) === f.id;
-                      return (
-                        <TouchableOpacity key={f.id} onPress={() => handleSelectFamily(f.id)} disabled={switchingFamily}
-                          style={{
-                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12,
-                            borderWidth: 1.5, borderColor: isCurrent ? colors.primary : colors.border,
-                            backgroundColor: isCurrent ? colors.primary + '18' : 'transparent',
-                            opacity: switchingFamily ? 0.6 : 1,
-                          }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: isCurrent ? colors.primary : colors.textSecondary }}>
-                            {f.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+            {/* Multi-family membership — only renders at all when
+                myFamilies has more than one entry, which itself only
+                happens for a member switched-in via their own real
+                device auth session (see familyStore's own comment).
+                Hidden entirely for the overwhelming majority of
+                accounts, exactly as requested — no switcher, no hint
+                one could ever exist, when there's nothing to switch. */}
+            {!pinTarget && myFamilies.length > 1 && (
+              <View style={{
+                paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
+                borderBottomWidth: 1, borderBottomColor: border, gap: 8,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: bodyC, textTransform: 'uppercase' }}>
+                  Family
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {myFamilies.map(f => {
+                    const isCurrent = (activeFamilyId ?? members[0]?.familyId) === f.id;
+                    return (
+                      <TouchableOpacity key={f.id} onPress={() => handleSelectFamily(f.id)} disabled={switchingFamily}
+                        style={{
+                          paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12,
+                          borderWidth: 1.5, borderColor: isCurrent ? colors.primary : border,
+                          backgroundColor: isCurrent ? colors.primary + '18' : 'transparent',
+                          opacity: switchingFamily ? 0.6 : 1,
+                        }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: isCurrent ? colors.primary : bodyC }}>
+                          {f.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              )}
+              </View>
+            )}
 
-              {!pinTarget && (
-                <View style={{
-                  paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
-                  borderBottomWidth: 1, borderBottomColor: colors.border,
-                }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: colors.textSecondary, textTransform: 'uppercase' }}>
-                    Select Family Profile
-                  </Text>
-                </View>
-              )}
+            {!pinTarget && (
+              <View style={{
+                paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
+                borderBottomWidth: 1, borderBottomColor: border,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: bodyC, textTransform: 'uppercase' }}>
+                  Select Family Profile
+                </Text>
+              </View>
+            )}
 
-              {pinTarget ? (
-                <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)}
-                  siblings={members.map(mb => mb.name)} />
-              ) : (
-                <ScrollView style={{ maxHeight: listMaxHeight }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
-                  {members.map(m => (
-                    <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark}
-                      siblings={members.map(mb => mb.name)} />
-                  ))}
-                </ScrollView>
-              )}
-            </View>
+            {pinTarget ? null : (
+              <ScrollView style={{ maxHeight: listMaxHeight }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
+                {members.map(m => (
+                  <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark}
+                    siblings={members.map(mb => mb.name)} />
+                ))}
+              </ScrollView>
+            )}
           </TouchableOpacity>
         </SafeAreaView>
       </TouchableOpacity>
+
+      {/* PIN entry is a full page (same shell as the other pages: heading, X to close, slide-in, swipe back). */}
+      <FullPageOverlay visible={!!pinTarget} onDismiss={() => setPinTarget(null)} zIndex={100} backgroundColor={isDark ? colors.background : GEMINI.canvas}>
+        {(requestClose) => pinTarget ? (
+          <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · SWITCH PROFILE" title="Enter PIN" subtitle={`Switching to ${pinTarget.name}`}
+              accent="primary" Icon={Lock} onTitlePress={requestClose} topInset={insets.top} />
+            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+              <FamilyAvatar name={pinTarget.name} emoji={pinTarget.emoji} avatarUrl={pinTarget.avatarUrl} siblings={members.map(mb => mb.name)} size={72}
+                ringColor={accent(pinTarget.role, colors)} ringWidth={3} bgColor={accent(pinTarget.role, colors) + '22'} />
+            </View>
+            <PinPad fullPage member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={requestClose}
+              siblings={members.map(mb => mb.name)} />
+            <TouchableOpacity onPress={requestClose} accessibilityRole="button" accessibilityLabel="Cancel"
+              style={{ alignSelf: 'flex-end', marginRight: 40, marginTop: 18, padding: 10 }}>
+              <Text style={{ fontSize: 18, fontWeight: '500', color: colors.textPrimary }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </FullPageOverlay>
     </Modal>
   );
 }

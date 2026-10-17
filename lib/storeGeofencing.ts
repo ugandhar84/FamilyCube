@@ -15,6 +15,7 @@
  */
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, withSuppressedNetworkBanner } from './supabase';
 import { isFeatureEnabled } from './featureFlags';
 
@@ -24,6 +25,21 @@ export const STORE_GEOFENCE_TASK_NAME = 'family-cube-store-geofence';
 // feature request; wide enough to catch someone driving past without
 // needing to be right at the storefront.
 const GEOFENCE_RADIUS_METERS = 1609;
+const REGISTERED_KEY = '@familycube_store_geofence_key_v1';
+const COOLDOWN_KEY_PREFIX = '@familycube_store_geofence_last_';
+const COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const MAX_FIX_AGE_MS = 2 * 60 * 1000;
+const MAX_FIX_ACCURACY_M = 200;
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 type TaskManagerAPI = typeof import('expo-task-manager');
 let _tm: TaskManagerAPI | null | undefined = undefined;
@@ -62,6 +78,7 @@ function getNotifications(): NotificationsAPI | null {
 // locationTracking.ts.
 let regionStoreMap: Record<string, { store: string; familyId: string }> = {};
 let activeMemberIdRef: string | null = null;
+let lastRegisteredKey: string | null = null;
 
 // Once per region per "episode" (until the device leaves and re-enters) —
 // otherwise lingering just inside the radius could re-fire repeatedly as
@@ -81,6 +98,28 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     if (!meta) return;
     if (alreadyNotified.has(region.identifier)) return;
 
+    // The OS Enter event can fire off a stale/cached last-known fix right
+    // after startGeofencingAsync re-registers (every PIN-switch/app-load
+    // calls registerStoreGeofences) — confirmed live-reported as a "near
+    // Walmart" notification while nowhere near the store. Require a FRESH
+    // GPS fix that's actually within the geofence radius before trusting
+    // the event, rather than trusting the OS's own membership check alone.
+    try {
+      const fix = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const distance = haversineMeters(
+        fix.coords.latitude, fix.coords.longitude,
+        region.latitude, region.longitude,
+      );
+      const ageMs = Date.now() - fix.timestamp;
+      if (ageMs > MAX_FIX_AGE_MS || (fix.coords.accuracy ?? 0) > MAX_FIX_ACCURACY_M) return;
+      if (distance > GEOFENCE_RADIUS_METERS) return;
+      const last = Number(await AsyncStorage.getItem(COOLDOWN_KEY_PREFIX + region.identifier).catch(() => null)) || 0;
+      if (Date.now() - last < COOLDOWN_MS) return;
+    } catch (e) {
+      console.warn('[storeGeofencing] fresh-fix check failed, skipping notify', e);
+      return;
+    }
+
     try {
       // count(exact) for the real total, but only fetch 2 names — the
       // notification should read as a quick, glanceable nudge ("Milk, Eggs
@@ -97,6 +136,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       if (!pending || pending.length === 0) return;
 
       alreadyNotified.add(region.identifier);
+      await AsyncStorage.setItem(COOLDOWN_KEY_PREFIX + region.identifier, String(Date.now())).catch(() => {});
 
       const notifs = getNotifications();
       const total = count ?? pending.length;
@@ -156,6 +196,16 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
   taskDefined = true;
 }
 
+// Define at import time, not just inside registerStoreGeofences — otherwise
+// a cold-start/background wake can deliver a geofence event for a region the
+// OS still remembers from a prior session before this module's JS has had a
+// chance to call registerStoreGeofences, and the task fires against an
+// undefined name: "Task 'family-cube-store-geofence' not found for app ID"
+// [live-reported, same class of race already fixed for placeGeofencing.ts/
+// locationTracking.ts by defining their tasks eagerly at module load].
+const _boot = getTaskManager();
+if (_boot) ensureTaskDefined(_boot);
+
 /** True once expo-task-manager's native module is actually available (post-rebuild). */
 export function isStoreGeofencingSupported(): boolean {
   return getTaskManager() !== null;
@@ -204,7 +254,6 @@ export async function registerStoreGeofences(familyId: string, memberId: string)
   if (bg.status !== 'granted') return;
 
   ensureTaskDefined(tm);
-  alreadyNotified.clear();
 
   const regions: Location.LocationRegion[] = locations.map((loc: any) => {
     const identifier = `${familyId}:${loc.store}`;
@@ -219,6 +268,22 @@ export async function registerStoreGeofences(familyId: string, memberId: string)
     };
   });
 
+  // Skip re-arming when this exact region set is already registered —
+  // every PIN-switch/app-load was calling startGeofencingAsync again with
+  // an unchanged region list, which re-evaluates membership against
+  // whatever cached fix the OS has and can fire a false Enter event for a
+  // region the device isn't actually near [live-reported: "everytime in
+  // pinswitch and the load the app im getting this push near walmart"].
+  const regionsKey = regions.map(r => r.identifier).sort().join('|');
+  const persistedKey = lastRegisteredKey ?? await AsyncStorage.getItem(REGISTERED_KEY).catch(() => null);
+  if (regionsKey === persistedKey && await Location.hasStartedGeofencingAsync(STORE_GEOFENCE_TASK_NAME).catch(() => false)) {
+    lastRegisteredKey = regionsKey;
+    return;
+  }
+  lastRegisteredKey = regionsKey;
+  await AsyncStorage.setItem(REGISTERED_KEY, regionsKey).catch(() => {});
+  alreadyNotified.clear();
+
   await Location.startGeofencingAsync(STORE_GEOFENCE_TASK_NAME, regions);
 }
 
@@ -228,4 +293,6 @@ export async function stopStoreGeofences(): Promise<void> {
   if (started) await Location.stopGeofencingAsync(STORE_GEOFENCE_TASK_NAME);
   regionStoreMap = {};
   alreadyNotified.clear();
+  lastRegisteredKey = null;
+  await AsyncStorage.removeItem(REGISTERED_KEY).catch(() => {});
 }

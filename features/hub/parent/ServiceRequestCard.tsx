@@ -6,6 +6,7 @@ import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "GP Welcome" confirmed-state accent, distinct from brand
 // teal used for this card's main styling. Not colors.success (which IS
@@ -62,7 +63,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }}>{kidName} — {typeLabel}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={2}>{req.detail}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }} numberOfLines={2}>{req.detail}</Text>
           {req.scheduledDate || req.scheduledTime ? (
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
               {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
@@ -73,11 +74,11 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
       <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isGPOpen ? 'GP Welcome' : 'Offer to GP'}" on "${typeLabel}" for ${kidName} (id=${req.id}) → toggleGPWelcome [features/hub/parent/ServiceRequestCard.tsx:60]`); toggleGPWelcome(req.id, !isGPOpen); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
-          backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F1F5F9'),
-          borderWidth: 1, borderColor: isGPOpen ? GP_GREEN : (isDark ? colors.border : '#CBD5E1') }}>
-        <HeartHandshake size={14} color={isGPOpen ? GP_GREEN : colors.textSecondary} />
+          backgroundColor: isGPOpen ? colors.tealLight : colors.surface,
+          borderWidth: 1, borderColor: isGPOpen ? GP_GREEN : colors.border }}>
+        <HeartHandshake size={14} color={isGPOpen ? GP_GREEN : (isDark ? colors.textSecondary : GEMINI.bodyColor)} />
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700',
-          color: isGPOpen ? GP_GREEN : colors.textSecondary }}>
+          color: isGPOpen ? GP_GREEN : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
           {isGPOpen ? 'GP Welcome — grandparent can take this' : 'Offer to GP (grandparent can help)'}
         </Text>
         {isGPOpen && <CheckCircle2 size={13} color={GP_GREEN} />}
@@ -85,9 +86,9 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
       {canOfferCoins && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
-          backgroundColor: isDark ? colors.surface2 : '#F1F5F9', borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+          backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
           <Coins size={14} color={colors.kid} />
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Offer coins (optional):</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Offer coins (optional):</Text>
           <TextInput
             value={coinOffer}
             onChangeText={t => {
@@ -104,7 +105,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
             placeholder="0"
             placeholderTextColor={colors.textTertiary}
             style={{ flex: 1, textAlign: 'right', fontSize: TYPO.label, fontWeight: '800',
-              color: colors.textPrimary, paddingVertical: 2 }}
+              color: (isDark ? colors.textPrimary : GEMINI.titleColor), paddingVertical: 2 }}
           />
         </View>
       )}

@@ -35,3 +35,13 @@ modules/*/android/.gradle/
 *.log
 *.ipa
 build-*.ipa
+
+# Editor
+.idea/
+.vscode/
+
+# Session scratch files — not part of the app
+scratchpad/
+
+# Standalone Figma Make design scaffold (own package.json/lockfile, not app code)
+Design/Scrollable Content Design/

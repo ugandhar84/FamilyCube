@@ -16,6 +16,7 @@ import { decryptLocationText } from '@/lib/locationCrypto';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 interface RadarRow {
   member_id: string;
@@ -95,7 +96,17 @@ export function FamilyRadarSection({ members, colors, isDark }: {
       title="Family Radar"
       accent={colors.teal}
       badge={liveCount} badgeLabel="Live" badgeColor={colors.teal}
-      seeAll={() => router.push('/(tabs)/gps' as any)}
+      // router.navigate (not push/replace) — this targets a sibling tab
+      // inside the (tabs) group. push/replace go through the stack
+      // navigator and can land a beat behind the bottom-tab navigator's
+      // own state.index, leaving CustomTabBar's highlight pointing at the
+      // PREVIOUS tab while this screen's content is already visible
+      // [live-reported: "bottom tab ... stuck on the different pages
+      // sometimes", screenshot showed Chat highlighted while Family/GPS
+      // content was on screen]. navigate() reuses the tab navigator's own
+      // transition, same as CustomTabBar's own tap handler, keeping the
+      // highlight in sync with what's rendered.
+      seeAll={() => router.navigate('/(tabs)/gps' as any)}
       seeAllLabel="Open Map"
       collapsible defaultExpanded={false}
       colors={colors} isDark={isDark}>
@@ -112,10 +123,10 @@ export function FamilyRadarSection({ members, colors, isDark }: {
               <FamilyAvatar name={member.name} emoji={member.emoji} avatarUrl={member.avatarUrl}
                 siblings={members.map(m => m.name)} ringColor={rc} size={34} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                   {member.name.split(' ')[0]}
                 </Text>
-                <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
+                <Text style={{ fontSize: TYPO.caption, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 1 }} numberOfLines={1}>
                   {isLive ? (loc?.address ?? 'Location unavailable') : 'Not sharing location'}
                 </Text>
               </View>

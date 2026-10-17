@@ -56,6 +56,7 @@
  *     through kiosk's Schedule tab, not this drawer. Nothing on kiosk
  *     passes editEvent today, so the branch would be dead code.
  */
+import { KioskAddressInput } from './KioskAddressInput';
 import { useState } from 'react';
 import { View, Text, TextInput, Pressable, Switch, StyleSheet, Platform } from 'react-native';
 import { Car, Check, Phone, ChevronLeft } from 'lucide-react-native';
@@ -427,14 +428,7 @@ export function KioskRideRequestSheet({ visible, onClose, activeMemberId }: {
 
               <View style={s.section}>
                 <KioskFieldLabel k={k}>WHERE? (OPTIONAL)</KioskFieldLabel>
-                <TextInput
-                  style={input}
-                  placeholder="e.g. Riverside Park"
-                  placeholderTextColor={k.textFaint}
-                  value={location}
-                  onChangeText={setLocation}
-                  accessibilityLabel="Where"
-                />
+                <KioskAddressInput value={location} onChange={setLocation} placeholder="Search an address or place" />
               </View>
 
               {siblings.length > 0 && (

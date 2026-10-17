@@ -109,7 +109,7 @@ import { useGroceryStore, type GroceryRun } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadChoreReceiptPhoto } from '@/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { decryptLocationText } from '@/lib/locationCrypto';
 import { fmtTime, localDateStr } from '@/lib/dates';
@@ -124,6 +124,10 @@ import { KioskRecipeDrawer } from '../components/KioskRecipeDrawer';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { useKioskMeals, todayMealDay, daysFromToday } from '../useKioskMeals';
 import { KioskKidCheckInTile, KioskKidMineTile, KidRequestsSheet } from '../components/KioskKidQuickActions';
+import { KioskHomeParent } from '../components/KioskHomeParent';
+import { KioskHomeKid } from '../components/KioskHomeKid';
+import { KioskHomeBoard } from '../components/KioskHomeBoard';
+import { KioskSimpleChecklist } from '../components/KioskSimpleChecklist';
 import { KidChoresWidget, KioskMyStuffPanel, KioskMyRequestsPanel, KioskUpForGrabsPanel, KioskCheerSquadPanel, requestDisplayTitle } from '../components/KioskKidWidgets';
 import { KioskDisputeApprovalWidget } from '../components/KioskDisputeApprovalWidget';
 import { KioskEventEditor } from '../components/KioskEventEditor';
@@ -200,8 +204,11 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function KioskOverviewTab({
-  active, members, onNavigate, onIntercom, colors, isDark: phoneDark,
+  active, members, onNavigate, onIntercom, onAskFam, onLock, familyName, colors, isDark: phoneDark,
 }: {
+  onAskFam?: () => void;
+  onLock?: () => void;
+  familyName?: string;
   active: FamilyMember;
   members: FamilyMember[];
   /** Jump to another kiosk tab — the mockup's quick-action buttons. */
@@ -489,6 +496,7 @@ export function KioskOverviewTab({
   const rejectRedemption = useRewardStore(s => s.rejectRedemption);
   const kidRequests = useKidRequestStore(s => s.requests);
   const approveRequest = useKidRequestStore(s => s.approveRequest);
+  const completeRequest = useKidRequestStore(s => s.completeRequest);
   const declineRequest = useKidRequestStore(s => s.declineRequest);
   const approveItems = useKidRequestStore(s => s.approveItems);
   const rejectItems = useKidRequestStore(s => s.rejectItems);
@@ -1087,12 +1095,7 @@ export function KioskOverviewTab({
     if (receiptPhotoUri) {
       setIsSubmittingReceipt(true);
       try {
-        const path = `chore-proofs/${familyId ?? 'unknown'}/receipt-${receiptChoreId}-${Date.now()}.jpg`;
-        const blob = await (await fetch(receiptPhotoUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-        receiptPhotoUrl = urlData.publicUrl;
+        receiptPhotoUrl = await uploadChoreReceiptPhoto(familyId ?? 'unknown', receiptChoreId, receiptPhotoUri);
       } catch (e) {
         console.warn('[KioskOverviewTab] receipt photo upload failed', e);
         setIsSubmittingReceipt(false);
@@ -1405,9 +1408,28 @@ export function KioskOverviewTab({
     return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   }, []);
 
+  // New landscape Home — replaces the old widget wall. One screen: the
+  // household board, plus the two things that need a human: the kid's
+  // tap-to-finish day and a parent's single "Needs you" row. Everything
+  // else lives on its own tab. (Old body below is unreachable and slated
+  // for removal once the new Home is signed off.)
+  // The old widget wall below is unreachable and slated for deletion; the
+  // non-literal flag keeps TS from narrowing its hook-derived values to never.
+  const NEW_HOME: boolean = Boolean(1);
+  if (NEW_HOME) {
+    if (isParent) return <KioskHomeParent active={active} members={members} onNavigate={onNavigate} onIntercom={onIntercom} onAskFam={onAskFam} />;
+    if (isKid || isTeen) return <KioskHomeKid active={active} members={members} onNavigate={onNavigate} />;
+    // Senior keeps the simple household board.
+    return (
+      <View style={{ flex: 1, padding: 20 }}>
+        <KioskHomeBoard active={active} members={members} onIntercom={onIntercom} onLock={onLock} familyName={familyName} />
+      </View>
+    );
+  }
   return (
     <>
     <ScrollView ref={rootScrollRef} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+      <KioskHomeBoard members={members} onIntercom={onIntercom} onLock={onLock} familyName={familyName} />
       {/* Greeting hero — senior-only now. Kid/teen moved onto the same
           twoColRow/centerCol/sideCol layout parent already uses (see that
           block's own header comment below), which has no greeting hero at
@@ -1625,7 +1647,6 @@ export function KioskOverviewTab({
           applied to KioskEventEditor et al. */}
       <PushbackSheet
         target={pushbackTarget}
-        colors={colors} isDark={phoneDark}
         onClose={() => setPushbackTarget(null)}
         respondToParentQuest={respondToParentQuest}
       />
@@ -1633,7 +1654,7 @@ export function KioskOverviewTab({
       <DelegateSheet
         target={delegateTarget}
         questPool={questPool}
-        members={members} active={active} colors={colors} isDark={phoneDark}
+        members={members} active={active}
         onClose={() => setDelegateTarget(null)}
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}
@@ -1858,7 +1879,13 @@ export function KioskOverviewTab({
                 widget's placement in the same column. Kid AND teen both
                 get this (teen's own real "chore" vocabulary — Quest —
                 already flows through the identical store/component). */}
-            {(isKid || isTeen) && (
+            {isKid && (
+              <KioskSimpleChecklist
+                active={active} members={members} k={k} isDark={isDark}
+                onOpenTasks={() => onNavigate('tasks')}
+              />
+            )}
+            {isTeen && (
               <KidChoresWidget
                 active={active} members={members} k={k} isDark={isDark}
                 onOpenTasks={() => onNavigate('tasks')}
@@ -1933,6 +1960,7 @@ export function KioskOverviewTab({
               onRejectRedemption={(id) => rejectRedemption(id, active.id)}
               onApproveRequest={(id, note) => approveRequest(id, active.id, note)}
               onDeclineRequest={(id, note) => declineRequest(id, active.id, note)}
+              onCompleteCheckin={(id, note) => completeRequest(id, active.id, note)}
               onApproveQuestProposal={(id, coins) => {
                 const req = pendingKidRequestsForAction.find(r => r.id === id);
                 if (req) approveQuestProposalHandler(req, coins);
@@ -3046,7 +3074,7 @@ function PulseDot({ color }: { color: string }) {
 
 function ParentApprovalsWidget({
   approvals, k, isDark, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption,
-  onApproveRequest, onDeclineRequest, onApproveQuestProposal, active, members, scrollRef,
+  onApproveRequest, onDeclineRequest, onCompleteCheckin, onApproveQuestProposal, active, members, scrollRef,
 }: {
   approvals: ApprovalItem[];
   k: KioskColors;
@@ -3062,6 +3090,13 @@ function ParentApprovalsWidget({
    *  optional text and mandatory text while replying inline"]. */
   onApproveRequest: (id: string, note?: string) => void;
   onDeclineRequest: (id: string, note?: string) => void;
+  /** A check-in ("I'm home"/"running late") has no "approved" state to
+   *  sit in — acking it IS done, so its "Got it" tap must land the
+   *  request straight at 'completed' (History), not 'approved' (which
+   *  HelpDispatchQueue buckets as "In progress" forever since nothing
+   *  else ever completes a check-in from there) [live-reported: acked
+   *  check-ins stuck under "In progress"]. */
+  onCompleteCheckin: (id: string, note?: string) => void;
   /** Opens the coin-amount sheet instead of a plain Approve — a
    *  quest_proposal (kid's own "chore idea" ask) needs a chosen coin
    *  reward AND a real chore row created, not just a status flip
@@ -3164,6 +3199,7 @@ function ParentApprovalsWidget({
               onRejectRedemption={onRejectRedemption}
               onApproveRequest={onApproveRequest}
               onDeclineRequest={onDeclineRequest}
+              onCompleteCheckin={onCompleteCheckin}
               onOpenQuestProposalCoinSheet={() => setCoinTarget({ id: item.id.slice(item.id.indexOf(':') + 1), title: item.title })}
               scrollRef={scrollRef}
             />
@@ -3226,7 +3262,7 @@ function ParentApprovalsWidget({
  * is a small grid card; this panel is a list, so its rows are list rows.
  */
 function ApprovalRow({
-  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest, onOpenQuestProposalCoinSheet, scrollRef,
+  item, k, isDark, isFirst, onApproveChore, onDeclineChore, onApproveRedemption, onRejectRedemption, onApproveRequest, onDeclineRequest, onCompleteCheckin, onOpenQuestProposalCoinSheet, scrollRef,
 }: {
   item: ApprovalItem;
   k: KioskColors;
@@ -3239,6 +3275,9 @@ function ApprovalRow({
   onRejectRedemption: (id: string) => void;
   onApproveRequest: (id: string, note?: string) => void;
   onDeclineRequest: (id: string, note?: string) => void;
+  /** Check-in "Got it" taps go here, not onApproveRequest — see
+   *  ParentApprovalsWidget's own onCompleteCheckin comment. */
+  onCompleteCheckin: (id: string, note?: string) => void;
   /** Opens the shared coin-amount sheet — a quest_proposal's own Approve
    *  never fires directly (see QuestProposalCoinSheet's own comment). */
   onOpenQuestProposalCoinSheet: () => void;
@@ -3295,10 +3334,12 @@ function ApprovalRow({
   // question REQUIRES a reply before it can be sent; every other type's
   // note is optional. Not shown for chore/redemption (those have their
   // own real flows: chore decline opens the shared redo-reason sheet,
-  // redemption has no reply concept at all), for a check-in (a single
-  // acknowledgment, nothing to say back), or for a quest_proposal (its own
-  // coin-amount sheet is the real flow, not a plain note).
-  const showsReply = item.kind === 'request' && !isCheckin && !isQuestProposal;
+  // redemption has no reply concept at all) or for a quest_proposal (its
+  // own coin-amount sheet is the real flow, not a plain note). A check-in
+  // DOES show this box — an optional note on the ack itself
+  // [live-requested: "also we should have option notes inline"] — it just
+  // never requires one and is threaded through onCompleteCheckin instead.
+  const showsReply = item.kind === 'request' && !isQuestProposal;
   const [reply, setReply] = useState('');
   const replyRequired = isQuestion;
   const canApprove = !replyRequired || reply.trim().length > 0;
@@ -3312,6 +3353,10 @@ function ApprovalRow({
     // chore's own redo-reason sheet uses.
     if (isQuestProposal) { onOpenQuestProposalCoinSheet(); return; }
     setBusy(true);
+    // A check-in has no "approved" state to sit in — acking it must land
+    // directly at 'completed' via completeRequest, not approveRequest,
+    // which would leave it stuck under "In progress" forever.
+    if (isCheckin) { onCompleteCheckin(rawId, reply.trim() || undefined); return; }
     onApproveRequest(rawId, showsReply ? reply.trim() || undefined : undefined);
   };
   const decline = () => {
@@ -3418,7 +3463,10 @@ function RedoReasonSheet({ target, k, onClose, onSend }: {
         {REJECTION_PRESETS.map(p => (
           <KioskPill
             key={p.key} label={p.label} selected={preset === p.key}
-            onPress={() => setPreset(p.key)} accent={k.danger} k={k}
+            onPress={() => {
+              if (p.key === 'CUSTOM') { setPreset(p.key); return; }
+              onSend(p.label, p.key); setPreset(null); setCustomMsg('');
+            }} accent={k.danger} k={k}
           />
         ))}
       </View>
@@ -3537,7 +3585,7 @@ function SeniorTasksWidget({ active, quests, k, isDark, onOpenTasks, style }: {
               <View style={[s.seniorTaskDot, { backgroundColor: q.status === 'pending_approval' ? k.gold : k.purple }]} />
               <Text style={[s.seniorTaskTitle, { color: k.text }]} numberOfLines={1}>{q.title}</Text>
               {q.status === 'pending_approval' && (
-                <Text style={[s.seniorTaskMeta, { color: k.gold }]}>Awaiting review</Text>
+                <Text style={[s.seniorTaskMeta, { color: k.gold }]}>Waiting on a grown-up</Text>
               )}
             </View>
           ))}

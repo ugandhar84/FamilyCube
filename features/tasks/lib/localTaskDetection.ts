@@ -305,6 +305,93 @@ export interface ExtractedDateTime {
   // LOCATION was filled in, which this exact sentence (a named class, no
   // street address) never had. Null when the sentence only has one time.
   returnTime: string | null;
+  // A later time that is when the ride should ARRIVE ("pick her up at 9 from work to soccer at 10"), not a second ride.
+  arrivalTime?: string | null;
+}
+
+
+// ── Clock times, read the way people actually say them ─────────────────────────────────────────────────────
+// "5:30 PM", "5.30pm", "530pm", "17:30", "at 6", "around 5", "noon", "half past 4", "quarter to 6". A bare hour with no
+// am/pm ("pick up Jaswi at 6") is resolved from context: a word like morning/afternoon/evening/tonight, a neighbouring time
+// that does say am/pm ("from 3 to 5pm"), or otherwise the next time that hour comes round (later today if no day was given;
+// 1-6 means PM and 7-11 means AM for a future day).
+function to24(h: number, m: number): string { return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); }
+
+function extractTimes(input: string, resolvedDate: string | null): string[] {
+  type Hit = { idx: number; h: number; m: number; mer: 'am' | 'pm' | null };
+  const hits: Hit[] = [];
+  const used: Array<[number, number]> = [];
+  const overlaps = (i: number, n: number) => used.some(([a, b]) => i < b && i + n > a);
+  const push = (idx: number, len: number, h: number, m: number, mer: 'am' | 'pm' | null) => {
+    if (overlaps(idx, len)) return;
+    used.push([idx, idx + len]);
+    hits.push({ idx, h, m, mer });
+  };
+  let mt: RegExpExecArray | null;
+
+  // explicit am/pm: 5pm, 5:30 pm, 5.30pm, 530pm, 5 p.m.
+  const withMer = /\b(\d{1,2})(?:[:.](\d{2})|(\d{2}))?\s?(a\.?m\.?|p\.?m\.?)(?![a-z])/gi;
+  while ((mt = withMer.exec(input))) {
+    const h = parseInt(mt[1], 10); const m = mt[2] ? parseInt(mt[2], 10) : mt[3] ? parseInt(mt[3], 10) : 0;
+    if (h >= 1 && h <= 12 && m < 60) push(mt.index, mt[0].length, h, m, mt[4].toLowerCase().startsWith('a') ? 'am' : 'pm');
+  }
+  // 24-hour: 17:30, 07:15
+  const h24 = /\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s?(?:a\.?m|p\.?m))/gi;
+  while ((mt = h24.exec(input))) {
+    const h = parseInt(mt[1], 10); const m = parseInt(mt[2], 10);
+    if (mt[1].length === 2 && h >= 13) push(mt.index, mt[0].length, h, m, null); // unambiguous 24h
+    else push(mt.index, mt[0].length, h, m, null);                                // 5:30 with no am/pm
+  }
+  // words
+  const noon = /\b(noon|midday)\b/gi; while ((mt = noon.exec(input))) push(mt.index, mt[0].length, 12, 0, 'pm');
+  const midn = /\bmidnight\b/gi; while ((mt = midn.exec(input))) push(mt.index, mt[0].length, 12, 0, 'am');
+  const half = /\bhalf\s+past\s+(\d{1,2})\b/gi; while ((mt = half.exec(input))) push(mt.index, mt[0].length, parseInt(mt[1], 10), 30, null);
+  const qpast = /\bquarter\s+past\s+(\d{1,2})\b/gi; while ((mt = qpast.exec(input))) push(mt.index, mt[0].length, parseInt(mt[1], 10), 15, null);
+  const qto = /\bquarter\s+(?:to|till)\s+(\d{1,2})\b/gi;
+  while ((mt = qto.exec(input))) { const hh = parseInt(mt[1], 10); push(mt.index, mt[0].length, hh === 1 ? 12 : hh - 1, 45, null); }
+  // "o'clock" and bare hours after a time preposition: at 6, around 5, by 4, from 3, until 5
+  const oclock = /\b(\d{1,2})\s?o'?clock\b/gi; while ((mt = oclock.exec(input))) push(mt.index, mt[0].length, parseInt(mt[1], 10), 0, null);
+  const bare = /\b(?:at|around|by|@|from|until|till|before|after)\s+(\d{1,2})(?![\d:.]|\s?(?:%|\$|st|nd|rd|th|minutes?|mins?|hours?|hrs?|people|kids|items?|coins?|points?|dollars?))/gi;
+  while ((mt = bare.exec(input))) {
+    const h = parseInt(mt[1], 10);
+    if (h >= 1 && h <= 12) push(mt.index + mt[0].length - mt[1].length, mt[1].length, h, 0, null);
+  }
+
+  hits.sort((a, b) => a.idx - b.idx);
+  if (hits.length === 0) return [];
+
+  // context for resolving a missing am/pm
+  const morning = /\b(morning|am\b|breakfast|before school|early)\b/.test(input);
+  const evening = /\b(afternoon|evening|tonight|night|dinner|after school|lunch)\b/.test(input);
+  const now = new Date();
+  const todayStr = localDateStr(now);
+  const isToday = !resolvedDate || resolvedDate === todayStr;
+
+  const out: string[] = [];
+  hits.forEach((hit, i) => {
+    let { h } = hit; const { m } = hit;
+    let mer = hit.mer;
+    if (!mer && h <= 12 && !(h === 0)) {
+      // inherit from the nearest time in the sentence that does say am/pm ("from 3 to 5pm" -> 3pm)
+      const neighbour = hits.find((x, j) => j !== i && x.mer && Math.abs(j - i) === 1) ?? hits.find(x => x.mer);
+      if (neighbour?.mer) mer = neighbour.mer;
+      else if (morning && !evening) mer = 'am';
+      else if (evening && !morning) mer = 'pm';
+      else if (h === 12) mer = 'pm';
+      else if (isToday) {
+        // the next time this hour comes round, today
+        const am = new Date(now); am.setHours(h % 12, m, 0, 0);
+        const pm = new Date(now); pm.setHours((h % 12) + 12, m, 0, 0);
+        mer = am.getTime() > now.getTime() ? 'am' : 'pm';
+        if (mer === 'pm' && pm.getTime() < now.getTime() && h >= 7) mer = 'am'; // already past both today: show the morning slot
+      } else mer = h >= 7 && h <= 11 ? 'am' : 'pm';
+    }
+    if (mer === 'pm' && h < 12) h += 12;
+    if (mer === 'am' && h === 12) h = 0;
+    const t = to24(h, m);
+    if (!out.includes(t)) out.push(t);
+  });
+  return out;
 }
 
 // "today"/"tonight"/"tomorrow"/"day after tomorrow", weekday names (with
@@ -343,39 +430,18 @@ export function extractDateTime(input: string): ExtractedDateTime {
   // still requiring am/pm, since a bare 1-4 digit number with no meridiem
   // is too ambiguous against other numbers already in the sentence (a
   // dollar amount, a coin count) to safely treat as a time at all.
-  const TIME_RE = /\b(\d{1,2})(?:[:.](\d{2})|(\d{2}))?\s?(am|pm)\b/i;
-  const timeMatch = input.match(TIME_RE);
-  if (timeMatch) {
-    let h = parseInt(timeMatch[1], 10);
-    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
-    const mer = timeMatch[4].toLowerCase();
-    if (mer === 'pm' && h < 12) h += 12;
-    if (mer === 'am' && h === 12) h = 0;
-    result.time = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-  }
-  // Return/pickup time — only meaningful once the sentence already named a
-  // real drop-off verb earlier ("drop off"/"drop-off"), so this doesn't
-  // fire on an unrelated later "pick up" in a sentence that was never a
-  // both-ways ride to begin with (e.g. "pick up milk" as a second, separate
-  // errand clause). Scoped to "pick up/collect/return... at TIME" appearing
-  // AFTER the drop-off phrase, which is how this is naturally phrased.
-  if (/\b(?:drop(?:ping)?[\s-]?off|dropped off)\b/i.test(input)) {
-    const dropIdx = input.search(/\b(?:drop(?:ping)?[\s-]?off|dropped off)\b/i);
-    const afterDrop = input.slice(dropIdx);
-    const returnMatch = afterDrop.match(/\b(?:pick(?:ing)?\s?up|collect(?:ing)?|return(?:ing)?)\b[^.,;]{0,40}?\b(\d{1,2})(?:[:.](\d{2})|(\d{2}))?\s?(am|pm)\b/i);
-    if (returnMatch) {
-      let rh = parseInt(returnMatch[1], 10);
-      const rm = returnMatch[2] ? parseInt(returnMatch[2], 10) : returnMatch[3] ? parseInt(returnMatch[3], 10) : 0;
-      const rmer = returnMatch[4].toLowerCase();
-      if (rmer === 'pm' && rh < 12) rh += 12;
-      if (rmer === 'am' && rh === 12) rh = 0;
-      const candidate = String(rh).padStart(2, '0') + ':' + String(rm).padStart(2, '0');
-      // Only a genuine SECOND time — if the drop-off time regex above
-      // already matched this exact same clock time (nothing else in the
-      // sentence), there's no real return time, just one time mentioned
-      // twice in different phrasing.
-      if (candidate !== result.time) result.returnTime = candidate;
-    }
+  const times = extractTimes(input, result.date);
+  if (times.length > 0) result.time = times[0];
+  // A SECOND, different time is the return half of a both-ways ride ("take Jaswi to dance at 5 and pick her up at 6:30").
+  // Needs a drop-off style verb AND a pick-up verb so an unrelated second time ("dinner at 6, movie at 8") is not misread.
+  const hasDrop = /\b(?:drop(?:ping)?[\s-]?(?:off|in)?|dropped off|take|taking|bring|drive)\b/i.test(input);
+  const hasPick = /\b(?:pick(?:ing)?\s?(?:me|him|her|them|\w+)?\s?up|collect(?:ing)?|return(?:ing)?|get\s+(?:me|him|her|them)\s+back)\b/i.test(input);
+  if (times.length > 1 && hasDrop && hasPick) {
+    const second = times.find(t => t !== times[0]);
+    if (second) result.returnTime = second;
+  } else if (times.length > 1 && hasPick && !hasDrop) {
+    const second = times.find(t => t > times[0]);
+    if (second) result.arrivalTime = second;
   }
   return result;
 }
@@ -398,7 +464,30 @@ export interface ExtractedLocations { pickup: string | null; dropoff: string | n
 // right after the ride's own subject, "pick up Leo from X") keeps this
 // scoped to language that's actually describing a ride, not any "from"
 // in the sentence.
-const PICKUP_CONTEXT_RE = /\b(?:pick(?:ing)?\s?up|picked up|collect(?:ing)?|leaving|coming)\b[^.,;]{0,40}\bfrom\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,;]|$)/i;
+// "pick(?:ing)? ?up" alone missed the single most common kid phrasing,
+// "pick ME up" / "pick HIM up" / "pick THEM up" — the object sits BETWEEN
+// pick and up, not adjacent to it like "pickup"/"pick up" are. Without the
+// optional (?:me|him|her|them|\w+)\s+ in the middle, "pick me up from
+// soccer" matched neither this regex nor PICKUP/DROPOFF verb detection
+// below, silently leaving pickup location AND rideDirection both unfilled
+// despite the sentence being an unambiguous pickup request.
+const PICKUP_CONTEXT_RE = /\b(?:pick(?:ing)?\s?(?:me|him|her|them)?\s?up|picked (?:me|him|her|them)?\s?up|collect(?:ing)?|leaving|coming)\b[^.,;]{0,40}\bfrom\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after|every|daily|weekly|monthly)\b|[.,;]|$)/i;
+
+// No-preposition fallback: "pick me up soccer" / "drop me off dance class"
+// names the place right after the verb with no "from"/"to"/"at" at all —
+// live-reported phrasing, not hypothetical. Only fires when the "from"/"to"
+// forms above found nothing, so a sentence that DID use a preposition still
+// prefers that more explicit match.
+// Negative lookahead right after the verb stops "pick me up at 10 pm" (pure
+// time, no place at all) from having its cutoff keyword itself captured as
+// the location — the lazy `+?` group has nothing to stop on BEFORE "at" when
+// "at" is the very next word, so it swallowed "at 10 pm" whole as a bogus
+// pickup location (live bug: kid's "Pickup location" field filled with
+// "At 10 pm"). Requiring the captured text not START with a cutoff keyword
+// forces the regex to fail (and location stays null) instead of matching a
+// location-shaped string that's actually just the time.
+const PICKUP_NO_PREP_RE = /\b(?:pick(?:ing)?\s?(?:me|him|her|them)?\s?up|picked (?:me|him|her|them)?\s?up)\b\s+(?!(?:at|on|by|before|after|every|daily|weekly|monthly)\b)([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after|every|daily|weekly|monthly)\b|[.,;]|$)/i;
+const DROPOFF_NO_PREP_RE = /\b(?:drop(?:ping)?\s?(?:me|him|her|them)?\s?off|dropped (?:me|him|her|them)?\s?off)\b\s+(?!(?:at|on|by|before|after|every|daily|weekly|monthly)\b)([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after|every|daily|weekly|monthly)\b|[.,;]|$)/i;
 
 export function extractLocations(rawInput: string): ExtractedLocations {
   let pickup: string | null = null, dropoff: string | null = null;
@@ -416,6 +505,14 @@ export function extractLocations(rawInput: string): ExtractedLocations {
     // instead of populating a real dropoff location.
     m = rawInput.match(/\b(?:drop(?:ping)?(?:\s|-)?off(?:\s+\w+)?\s+(?:at|to)|take (?:her|him|them) to)\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
     if (m) dropoff = m[1].trim();
+    if (!pickup) {
+      m = rawInput.match(PICKUP_NO_PREP_RE);
+      if (m) pickup = m[1].trim();
+    }
+    if (!dropoff) {
+      m = rawInput.match(DROPOFF_NO_PREP_RE);
+      if (m) dropoff = m[1].trim();
+    }
   }
   const clean = (s: string | null) => s ? s.replace(/\s+/g, ' ').trim().replace(/^\w/, c => c.toUpperCase()) : null;
   return { pickup: clean(pickup), dropoff: clean(dropoff) };
@@ -502,6 +599,12 @@ export interface LocalDetectionResult {
   amount: number | null;
   recurrence: 'once' | 'daily' | 'weekly' | 'monthly';
   recurrenceDays: number[]; // 0=Sun..6=Sat, only meaningful when recurrence==='weekly'
+  // Which leg(s) of a ride the sentence actually asked for — null when
+  // neither a pickup nor a drop-off verb appears, so the ride form can
+  // leave its own chip default untouched instead of guessing wrong.
+  rideDirection: 'dropoff' | 'pickup' | 'both' | null;
+  // For a both-ways ride: which leg was spoken first.
+  firstLeg?: 'pickup' | 'dropoff' | null;
   urgent: boolean;
   // Category-vote kind can be wrong for phrasing the keyword list alone
   // can't disambiguate — "remind me to call the dentist" is a to-do
@@ -545,7 +648,7 @@ function suggestTitle(rawInput: string, entry: CategoryEntry, person: string | n
     if (locs.pickup) return (person ? `Pickup ${person}` : 'Pickup') + ` from ${locs.pickup}`;
   }
   t = t.replace(LEADING_FRAME_RE, '');
-  const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately|(?:enable\s+)?call\s+(?:reminder|notification|alert)s?)\b/i;
+  const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|everyday|each\s+day|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately|(?:enable\s+)?call\s+(?:reminder|notification|alert)s?)\b/i;
   const m = cutoffRe.exec(t);
   if (m) t = m.index > 0 ? t.slice(0, m.index) : t.slice(m[0].length);
   t = t.replace(/\s+/g, ' ').trim().replace(/^[,.\-—]+|[,.\-—]+$/g, '').trim();
@@ -585,6 +688,47 @@ const DAY_TOKEN_MAP: Record<string, number> = {
   thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6,
 };
 
+// The location parser can mistake the PERSON or a date word for a place ("pick up Cherry at 5:30" -> pickup "Cherry", "pick up
+// Jaswi today" -> "Jaswi today"). Drop those, and when nothing real is left but the sentence says where ("... to dance class",
+// "... from school") use that as the venue.
+function cleanLocations(locs: ExtractedLocations, rawInput: string, members: { name: string }[]): ExtractedLocations {
+  const firsts = members.map(m => m.name.split(' ')[0].toLowerCase()).filter(Boolean);
+  const DATE_WORDS = /\b(today|tonight|tomorrow|morning|afternoon|evening|now)\b/gi;
+  const clean = (v: string | null): string | null => {
+    if (!v) return null;
+    let t = v.replace(DATE_WORDS, ' ').replace(/\s+/g, ' ').trim();
+    const lower = t.toLowerCase();
+    if (!t || firsts.includes(lower) || /^(her|him|them|me|us|school bus)$/.test(lower)) return null;
+    for (const f of firsts) if (lower === f || lower.startsWith(f + ' ')) { t = t.slice(f.length).trim(); break; }
+    return t && !firsts.includes(t.toLowerCase()) ? t : null;
+  };
+  const notTime = (v: string | null) => (v && !/^\d/.test(v.trim()) ? v : null);
+  let pickup = notTime(clean(locs.pickup));
+  let dropoff = notTime(clean(locs.dropoff));
+  const saidDrop = /\bdrop(?:ping)?\b|\b(?:take|bring|drive)\s+(?:me|her|him|them|[a-z]+)\s+to\b/i.test(rawInput);
+  const saidPick = /\bpick(?:ing)?\s?(?:me|him|her|them|[a-z]+)?\s?up|collect/i.test(rawInput);
+  if (saidDrop && !dropoff) {
+    let t = ' ' + rawInput.toLowerCase() + ' ';
+    for (const f of firsts) t = t.replace(new RegExp('\\b' + escapeRegex(f) + '\\b', 'g'), ' ');
+    const dm = t.match(/\b(?:drop(?:ping)?|take|bring|drive)\b[^.,;]*?\b(?:in|at|to|off at|off to)\s+(?:the\s+)?([a-z][a-z' ]{1,30}?)(?=\s+(?:at|on|by|and|today|tomorrow|tonight|every|for)\b|\s*[.,;]|\s*$)/);
+    const place = dm ? notTime(clean(dm[1])) : null;
+    if (place) dropoff = place;
+  }
+  // Both ways at one venue: "take Jaswi to dance at 5 and pick her up at 6:30" -> drop at dance, pick up from dance.
+  if (saidDrop && saidPick && dropoff && !pickup) pickup = dropoff;
+  if (!pickup && !dropoff && (saidPick || saidDrop)) {
+    let text = ' ' + rawInput.toLowerCase() + ' ';
+    for (const f of firsts) text = text.replace(new RegExp('\\b' + escapeRegex(f) + '\\b', 'g'), ' ');
+    const m = text.match(/\b(?:from|to|at)\s+(?:the\s+)?([a-z][a-z' ]{1,30}?)(?=\s+(?:at|on|by|today|tomorrow|tonight|every|and|for)\b|\s*[.,;]|\s*$)/);
+    const place = m ? clean(m[1].replace(/\b\d.*$/, '').trim()) : null;
+    if (place && !/^(\d|noon|midnight)/.test(place)) {
+      const pickingUp = /\bpick(?:ing)?\s?(?:me|him|her|them|[a-z]+)?\s?up|collect/i.test(rawInput);
+      if (pickingUp) pickup = place; else dropoff = place;
+    }
+  }
+  return { pickup, dropoff };
+}
+
 export function detectLocalTask(rawInput: string, members: { id: string; name: string; role: string }[]): LocalDetectionResult | null {
   const input = rawInput.toLowerCase().trim();
   if (!input) return null;
@@ -604,12 +748,20 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // a named family member or her/him/them, and previously fell through to
   // the discounted generic-errand branch below, misclassifying "pick me up
   // at 4pm" as a low-confidence chore instead of a Ride.
-  const pickupTargetsSelf = /\b(?:pick(?:ing)?\s?up|drop(?:ping)?\s?off)\s+(?:me|myself)\b/.test(input);
+  // "pick up me" (object after "up") is not how anyone actually phrases
+  // this — real phrasing puts the object BETWEEN pick/drop and up/off
+  // ("pick me up", "drop me off"), which the original regex never matched
+  // at all, silently discounting the ride category's score on the most
+  // common ride-request sentence shape a kid would type.
+  const pickupTargetsSelf = /\b(?:pick(?:ing)?\s?(?:me|myself)\s?up|drop(?:ping)?\s?(?:me|myself)\s?off)\b/.test(input);
   const pickupTargetsPerson = pickupTargetsSelf || members.some(m => {
     const first = m.name.split(' ')[0].toLowerCase();
     return new RegExp('\\b(?:pick(?:ing)?\\s?up|drop(?:ping)?\\s?off)\\s+' + escapeRegex(first) + '\\b').test(input)
-      || new RegExp('\\b(?:pick(?:ing)?\\s?up|drop(?:ping)?\\s?off)\\s+(?:her|him|them)\\b').test(input);
-  });
+      || new RegExp('\\b(?:pick(?:ing)?\\s?up|drop(?:ping)?\\s?off)\\s+(?:her|him|them)\\b').test(input)
+      // "take Jaswi to dance", "bring Cherry to school", "drive Maya to practice", "pick Jaswi up"
+      || new RegExp('\\b(?:take|taking|bring|bringing|drive|driving|drop|run)\\s+' + escapeRegex(first) + '\\s+(?:to|at|over)\\b').test(input)
+      || new RegExp('\\bpick\\s+' + escapeRegex(first) + '\\s+up\\b').test(input);
+  }) || /\b(?:take|bring|drive)\s+(?:me|her|him|them)\s+to\b/.test(input);
 
   let bestKey: string | null = null;
   let bestScore = 0;
@@ -629,6 +781,10 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
     if (score > bestScore) { bestScore = score; bestKey = entry.key; }
   });
 
+  // "pick up milk" (an item, not a person, and no from/to place) is an errand to do, never a ride.
+  if (bestKey === 'ride' && !pickupTargetsPerson && !/\b(?:from|to)\b/.test(input) && CATEGORY_DB.errand) {
+    bestKey = 'errand'; bestScore = Math.max(bestScore, MIN_CONFIDENT_SCORE + 0.2);
+  }
   const confidence = bestScore < MIN_CONFIDENT_SCORE ? 0 : scoreToConfidence(bestScore);
   // A below-threshold match still displaying its specific category chip
   // ("🚗 Ride" at 22% confidence) contradicts the "wasn't totally clear"
@@ -636,12 +792,19 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // entry for anything not confident enough to act on.
   const entry = (bestKey && confidence > 0) ? CATEGORY_DB[bestKey] : CATEGORY_DB.general_task;
 
+  // A sentence with a clock time and an event-style noun ("meeting at 3", "dinner at 7 tonight", "recital Friday 6pm") is an
+  // event on the calendar, not a to-do, even when no category keyword matched strongly.
+  const EVENT_NOUN_RE = /\b(meeting|appointment|dinner|lunch|brunch|party|recital|concert|game|match|practice|rehearsal|class|lesson|visit|call|interview|play ?date|sleepover|checkup|check-up|show|ceremony|graduation|reunion|wedding|trip)\b/;
+  let entryFinal = entry;
+  if (entry.kind === 'quest' && !QUEST_VERB_RE.test(input) && extractDateTime(input).time && EVENT_NOUN_RE.test(input)) {
+    entryFinal = CATEGORY_DB.event_social ?? entry;
+  }
   let kindOverride: DetectionKind | null = null;
   if (QUEST_VERB_RE.test(input)) kindOverride = 'quest';
   else if (EVENT_VERB_RE.test(input)) kindOverride = 'event';
 
   const when = extractDateTime(input);
-  const locations = extractLocations(rawInput);
+  const locations = cleanLocations(extractLocations(rawInput), rawInput, members);
   const person = extractPerson(rawInput);
   const driver = extractDriver(rawInput, members);
   const driverName = driver?.name ?? null;
@@ -688,27 +851,66 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // otherwise need to avoid a false daily match too — matching first
   // instead is simpler and avoids that ordering trap entirely.
   const weekdayRe = /\bevery\s+weekday|\bweekdays?\b(?!\s*and\s*weekend)/i;
-  if (weekdayRe.test(input)) {
+  // "every other day"/"alternate days"/"every alternate day" has no bucket
+  // of its own in the once/daily/weekly/monthly model both this form and
+  // the ride/quest forms share — closest real bucket is 'daily', since it's
+  // still a day-granularity repeat rather than a specific weekday list.
+  // Checked first since "every other day" would otherwise also satisfy
+  // weeklyDayRe's day-token scan (false positive: "other" isn't a day, but
+  // plain "daily"/"every day" checks below it DO literally contain "day").
+  const alternateDaysRe = /\bevery\s+other\s+day\b|\balternate\s+days?\b|\bevery\s+alternate\s+day\b/;
+  // A bare list/pair of weekday names with no "every"/"weekly" framing at
+  // all — "Tue and Thu pickups", "Mon Wed Fri practice" — is still real
+  // recurrence, just phrased as a day-list instead of "every <day>". Require
+  // at least 2 distinct day tokens so a single bare day name ("Thursday
+  // 2pm", a one-time event) is never misread as recurring.
+  const bareDayListMatches = Object.entries(DAY_TOKEN_MAP)
+    .filter(([token]) => new RegExp('\\b' + token + '\\b').test(input));
+  const bareDayListDays = new Set(bareDayListMatches.map(([, num]) => num));
+  if (alternateDaysRe.test(input)) {
+    recurrence = 'daily';
+  } else if (weekdayRe.test(input)) {
     recurrence = 'weekly';
     recurrenceDays.push(1, 2, 3, 4, 5);
-  } else if (/\bdaily\b|\bevery day\b/.test(input)) {
+  } else if (/\bdaily\b|\bevery\s+day\b|\beveryday\b|\beach\s+day\b/.test(input)) {
     recurrence = 'daily';
   } else if (/\bmonthly\b|\bevery month\b/.test(input)) {
     recurrence = 'monthly';
-  } else if (/\bweekly\b|\bevery week\b/.test(input) || weeklyDayRe.test(input)) {
+  } else if (/\bweekly\b|\bevery week\b/.test(input) || weeklyDayRe.test(input) || bareDayListDays.size >= 2) {
     recurrence = 'weekly';
-    Object.entries(DAY_TOKEN_MAP).forEach(([token, num]) => {
-      if (new RegExp('\\b' + token + '\\b').test(input) && !recurrenceDays.includes(num)) recurrenceDays.push(num);
-    });
+    bareDayListDays.forEach(num => { if (!recurrenceDays.includes(num)) recurrenceDays.push(num); });
   }
 
+  // A kid describing a ride shouldn't also have to manually tap the
+  // "Ride needed?" dropoff/pickup/both chip row afterward — "drop me off
+  // at X"/"take me to X" means Drop-off, "pick me up from X"/"get me from
+  // X" means Pickup, and if a sentence names both verbs it's genuinely
+  // Both. Independent of whether extractLocations actually captured a
+  // location string, since the verb itself is the real signal here.
+  // Same "pick ME up" gap as PICKUP_CONTEXT_RE above — the object (me/him/
+  // her/them) sits between "pick" and "up", not adjacent to it.
+  const hasPickupVerb = /\b(?:pick(?:ing)?\s?(?:me|him|her|them|[a-z]+)?\s?up|picked (?:me|him|her|them)?\s?up|collect(?:ing)?|get(?:ting)?\s+me)\b/.test(input);
+  const hasDropoffVerb = /\bdrop(?:ping)?(?:\s|-)?off\b|\bdrop\s+(?:me|her|him|them|[a-z]+)\s+(?:at|to)\b|\b(?:take|bring|drive)\s+(?:me|her|him|them|[a-z]+)\s+to\b/.test(input);
+  const rideDirection: LocalDetectionResult['rideDirection'] =
+    hasPickupVerb && hasDropoffVerb ? 'both' : hasDropoffVerb ? 'dropoff' : hasPickupVerb ? 'pickup' : null;
+
+  const pickIdx = input.search(/\bpick(?:ing)?\s?(?:me|him|her|them|[a-z]+)?\s?up|\bcollect/);
+  const dropIdx = input.search(/\bdrop(?:ping)?(?:\s|-)?off\b|\bdrop\s|\b(?:take|bring|drive)\s/);
+  const firstLeg: LocalDetectionResult['firstLeg'] = rideDirection === 'both' && pickIdx >= 0 && dropIdx >= 0
+    ? (pickIdx < dropIdx ? 'pickup' : 'dropoff') : null;
+
+  // Places only mean something for a ride-shaped sentence; a stray "to call mom" is not a drop-off address.
+  const rideShaped = hasPickupVerb || hasDropoffVerb;
+  const locationsOut = rideShaped ? locations : { pickup: null, dropoff: null };
   return {
-    category: entry,
-    confidence,
-    title: suggestTitle(rawInput, entry, person, locations),
+    category: entryFinal,
+    confidence: entryFinal === entry ? confidence : Math.max(confidence, 0.7),
+    title: suggestTitle(rawInput, entryFinal, person, locationsOut),
     when,
-    locations,
+    locations: locationsOut,
     memberNames,
+    rideDirection,
+    firstLeg,
     amount,
     recurrence,
     recurrenceDays,

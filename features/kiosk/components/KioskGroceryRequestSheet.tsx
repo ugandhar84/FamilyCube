@@ -13,15 +13,12 @@
  *     shape: id `item-${Date.now()}-${i}`, trimmed name/qty, category
  *     falling back to the global category, store trimmed-or-undefined,
  *     emoji, status 'pending', requestedBy active.id.
- *   • looks for an existing PENDING delegation request from this member
- *     that has items and is NOT a supplies request (same predicate,
- *     including the SUPPLIES_PREFIX exclusion) and appendItems() onto it
- *     rather than opening a second one.
- *   • otherwise sendRequest({ type:'delegation', urgency:'normal',
- *     detail: encodeGroceryRequest({ name: joined names, qty:'',
- *     category:'Multi', notes }), items }) — the same encoder the parent's
- *     HelpDispatchQueue/history decode with, so a kiosk request is
- *     indistinguishable from a phone one in the approval flow.
+ *   • looks for an existing PENDING 'grocery'-type request from this
+ *     member and appendItems() onto it rather than opening a second one.
+ *   • otherwise sendRequest({ type:'grocery', urgency:'normal',
+ *     detail: joined item names, items }) — same real RequestType the
+ *     parent's HelpDispatchQueue/history render natively, so a kiosk
+ *     request is indistinguishable from a phone one in the approval flow.
  *   • approval-pending semantics unchanged: items go out as 'pending' and
  *     a parent still approves each one.
  *
@@ -64,18 +61,6 @@ import { useKioskColors } from '../kioskPalette';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT } from '../kioskTheme';
 import { KioskFormDrawer, KioskFieldLabel, KioskPill, kioskInputStyle } from './KioskFormDrawer';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
-
-// Same prefix constant KidModals.tsx defines. Duplicated rather than
-// imported so kiosk carries no import edge into the phone modal module;
-// the value is a wire format shared with the parent's decoders, so it must
-// stay byte-identical to KidModals.tsx's SUPPLIES_PREFIX.
-const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
-const GROCERY_PREFIX = 'GROCERY_REQUEST:';
-
-/** Byte-identical to KidModals.tsx's encodeGroceryRequest. */
-function encodeGroceryRequest(p: { name: string; qty: string; category: string; notes: string }) {
-  return `${GROCERY_PREFIX}${JSON.stringify(p)}`;
-}
 
 const CATEGORIES = ['Snacks', 'Produce', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Bakery', 'Household', 'Other'];
 
@@ -186,9 +171,7 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
     }));
     // Same append-to-existing predicate GroceryModal uses.
     const existing = requests.find(r =>
-      r.fromMemberId === active.id && r.status === 'pending' &&
-      r.type === 'delegation' && (r.items?.length ?? 0) > 0 &&
-      !r.detail.startsWith(SUPPLIES_PREFIX)
+      r.fromMemberId === active.id && r.status === 'pending' && r.type === 'grocery'
     );
     const n = newItems.length;
     const plural = n > 1 ? 's' : '';
@@ -199,15 +182,10 @@ export function KioskGroceryRequestSheet({ visible, onClose, active }: {
         Alert.alert('Added! 🛒', `${n} item${plural} added to your existing grocery request.`);
       } else {
         await sendRequest({
-          type: 'delegation',
+          type: 'grocery',
           fromMemberId: active.id,
           urgency: 'normal',
-          detail: encodeGroceryRequest({
-            name: validLines.map(l => l.name.trim()).join(', '),
-            qty: '',
-            category: 'Multi',
-            notes: notes.trim(),
-          }),
+          detail: validLines.map(l => l.name.trim()).join(', ') + (notes.trim() ? ` — ${notes.trim()}` : ''),
           items: newItems,
         });
         dismiss();

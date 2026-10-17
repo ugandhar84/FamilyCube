@@ -1,12 +1,10 @@
-import { useState, useMemo } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { Clock } from 'lucide-react-native';
-import { TimelineCard, LiveDot, SectionCard } from './hubComponents';
-import { TYPO } from '@/constants/theme';
+import { useMemo } from 'react';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
 import { isEventSensitive, eventAssignee, useEventStore } from '@/store/eventStore';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
+import { NextUpTimeline } from './parent/NextUpCard';
+import { HubMyList } from './HubMyList';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -19,12 +17,10 @@ import type { FamilyEvent } from '@/store/eventStore';
 // same day — those stay hidden unless a parent explicitly flips
 // sharedWithSiblings on that one event. Parents keep the full household view
 // via ParentView/TodayView, which doesn't use this component.
-export function HubTimelineSection({ active, members, events, updateEvent, colors, isDark }: {
+export function HubTimelineSection({ active, members, events, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; events: FamilyEvent[];
-  updateEvent: (id: string, patch: Partial<FamilyEvent>) => Promise<void>;
   colors: any; isDark: boolean;
 }) {
-  const [showPast, setShowPast] = useState(false);
   // Read directly from the store rather than threading a new prop through
   // every caller (TeenView/KidTodaySection/KidView/SeniorView) — was:
   // "Nothing on the calendar today" rendered the instant events was
@@ -34,9 +30,7 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
   // list (live-reported: "events not showing afterwards it is coming
   // back"). Same fix as TodayView's own dayLoading check just above.
   const dayLoading = useEventStore(s => s.dayLoading);
-  const allNames = members.map(m => m.name);
   const today = localDateStr(new Date());
-  const now = new Date();
   // Same assignee-double-booked signal ParentView/TodayView show a
   // parent — computed over ALL events (not just belongsToMe-filtered
   // ones below), since the conflict is about the DRIVER/helper's own
@@ -77,104 +71,23 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
     [events, today, active.id, active.name]
   );
 
+  // Up to 3 upcoming (not-yet-passed) events — same slice NextUpTimeline
+  // itself applies for Parent's Hub, kept here too so the loading/empty
+  // states below can tell "nothing left today" apart from "still loading."
   const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);
-  const past     = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) <= -0.5);
+
+  if (todayEvents.length === 0 && dayLoading) {
+    return null; // same instant-empty-flash guard TodayView/ParentView apply — just don't render until the real data is in.
+  }
 
   return (
-    <View style={{ paddingHorizontal: 16 }}>
-      {/* Same collapsible SectionCard shell Parent's TodayView uses — Kid's
-          Today previously had its own fixed (non-collapsible) header,
-          reported live as inconsistent with Parent's Hub. */}
-      <SectionCard
-        icon={<Clock size={16} color={colors.primary} />}
-        title="Today"
-        subtitle={now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        accent={colors.primary}
-        badge={upcoming.length} badgeLabel={upcoming.length === 1 ? 'Event' : 'Events'} badgeColor={colors.primary}
-        collapsible defaultExpanded={todayEvents.length > 0}
-        colors={colors} isDark={isDark}>
-      {todayEvents.length === 0 && dayLoading ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-          Loading today's schedule…
-        </Text>
-      ) : todayEvents.length === 0 ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-          Nothing on the calendar today — enjoy the breathing room.
-        </Text>
-      ) : (
-        <>
-          {/* "Live now" marker — sits above the next upcoming event, i.e.
-              where "now" actually falls in the day's schedule. Only shown
-              once there's something left today; a day that's entirely
-              past just falls straight into the "completed" section. */}
-          {upcoming.length > 0 && (
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 8,
-              marginBottom: 10,
-            }}>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: colors.success + '18', borderRadius: 20,
-                paddingVertical: 5, paddingHorizontal: 10,
-              }}>
-                <LiveDot color={colors.success} />
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.success, letterSpacing: 0.3 }}>
-                  LIVE NOW · {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                </Text>
-              </View>
-              <View style={{ flex: 1, height: 1, backgroundColor: colors.success + '30' }} />
-            </View>
-          )}
-
-          {upcoming.length === 0 ? (
-            <View style={{
-              backgroundColor: isDark ? colors.card : '#f0fdf4',
-              borderRadius: 14, padding: 14, marginBottom: 8,
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-            }}>
-              <Text style={{ fontSize: 18 }}>✅</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#10B981' }}>
-                All done for today!
-              </Text>
-            </View>
-          ) : upcoming.map((ev, idx) => (
-            <TimelineCard
-              key={ev.id} ev={ev} members={members} allNames={allNames}
-              colors={colors} isDark={isDark}
-              updateEvent={updateEvent} activeName={active.name} activeMemberId={active.id}
-              isFirst={idx === 0} isLast={idx === upcoming.length - 1}
-              conflictReason={conflictReasons.get(ev.id)}
-            />
-          ))}
-
-          {/* Completed events stay out of the way once there's something
-              still ahead today — no point scrolling past what's done to
-              get to what's next. Only surfaced (via the toggle) once the
-              day has nothing left upcoming. */}
-          {past.length > 0 && upcoming.length === 0 && (
-            <>
-              <Pressable
-                onPress={() => setShowPast(v => !v)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 4 }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>
-                  {showPast ? 'Hide' : `${past.length} completed`} {showPast ? '▴' : '▾'}
-                </Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-              </Pressable>
-              {showPast && past.map((ev, idx) => (
-                <TimelineCard
-                  key={ev.id} ev={ev} members={members} allNames={allNames}
-                  colors={colors} isDark={isDark}
-                  updateEvent={updateEvent} activeName={active.name} activeMemberId={active.id}
-                  isFirst={idx === 0} isLast={idx === past.length - 1}
-                />
-              ))}
-            </>
-          )}
-        </>
-      )}
-      </SectionCard>
-    </View>
+    <>
+      <NextUpTimeline
+        colors={colors} isDark={isDark}
+        events={upcoming}
+        conflictReasons={conflictReasons}
+      />
+      <HubMyList active={active} colors={colors} isDark={isDark} />
+    </>
   );
 }

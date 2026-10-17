@@ -26,7 +26,7 @@ export default function PickerOverlay({
 }) {
   if (!showDate && !showTime) return null;
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={onDone}>
+    <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={onDone}>
       <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={onDone}>
         <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>

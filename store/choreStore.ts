@@ -125,6 +125,8 @@ export interface ChoreTask {
   // for the claimant's Accept/Hand-back card. See propose_terms_change RPC.
   pendingTerms?: { old: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string; dueTime?: string }; changedBy: string; changedAt: string };
   requiresPhotoProof: boolean;
+  /** Parent-marked "trusted" chore: submit auto-approves and pays, no review. */
+  trustedAutoApprove?: boolean;
   difficulty?: 'easy' | 'medium' | 'hard' | 'hero';
   recurrenceRule: RecurrenceRule;
   instanceDate?: string;
@@ -504,6 +506,51 @@ const getActiveMemberId = (): string | null => {
 // notification in the app (rewardStore/helpStore/kidRequestStore/
 // groceryStore, quest-event-notifier's fire()) — best-effort, never blocks
 // the actual handoff state change.
+// ── Duplicate-create guard ───────────────────────────────────────────────────
+// Two creates of the same chore (same title, assignee, due date/time) within a
+// few seconds are a double-tap / double-submit, not two intentions — the second
+// call returns the first call's promise instead of inserting a second row.
+const _inflightCreates = new Map<string, Promise<any>>();
+const OPEN_CHORE_STATUSES_EXCLUDED = ['approved', 'auto_approved', 'completed', 'declined', 'cancelled', 'archived'];
+
+function choreCreateSig(c: { title?: string; assignedToId?: string | null; dueDate?: string | null; dueTime?: string | null }): string {
+  return [
+    (c.title ?? '').trim().toLowerCase().replace(/\s+/g, ' '),
+    c.assignedToId ?? 'pool', c.dueDate ?? '', c.dueTime ?? '',
+  ].join('|');
+}
+
+/** An existing, still-open chore with the same title + assignee + due date/time (recurring instances excluded). */
+export function findLikelyDuplicateChore(
+  chores: ChoreTask[],
+  draft: { title?: string; assignedToId?: string | null; dueDate?: string | null; dueTime?: string | null },
+): ChoreTask | undefined {
+  if (!(draft.title ?? '').trim()) return undefined;
+  const sig = choreCreateSig(draft);
+  return chores.find(c =>
+    !c.instanceDate && !OPEN_CHORE_STATUSES_EXCLUDED.includes(c.status) && choreCreateSig(c) === sig,
+  );
+}
+
+export type DisputeResult = { ok: boolean; error?: string; executed?: boolean };
+const STALE_DISPUTE = 'This approval just changed — pull to refresh and try again.';
+
+function disputeErrorMessage(raw: string): string {
+  if (/own approval/i.test(raw)) return "You can't dispute your own approval.";
+  if (/only a parent/i.test(raw)) return 'Only a parent can do that.';
+  if (/original approver or the parent who raised/i.test(raw)) return "Only the approving parent or the parent who raised this can close it.";
+  if (/original approver/i.test(raw)) return 'Only the parent who approved this can co-sign.';
+  if (/already has an open dispute|already requested/i.test(raw)) return 'This approval already has an open dispute.';
+  if (/no open dispute/i.test(raw)) return 'This dispute was already resolved — refresh to see the latest status.';
+  if (/window to dispute/i.test(raw)) return 'The 24-hour window to dispute this approval has passed — it’s final.';
+  if (/window to co-sign/i.test(raw)) return 'The 24-hour window to co-sign this reversal has passed.';
+  if (/not approved/i.test(raw)) return 'This chore is no longer approved, so there is nothing to change.';
+  if (/not found/i.test(raw)) return 'This chore no longer exists.';
+  if (/not in the same family/i.test(raw)) return 'This chore belongs to a different family than your session — switch profiles and try again.';
+  if (/caller is not member/i.test(raw)) return 'Your session changed — switch back to your profile and try again.';
+  return `Couldn't update the approval: ${raw}`;
+}
+
 function memberName(memberId: string | undefined | null): string {
   if (!memberId) return 'Someone';
   try {
@@ -739,6 +786,7 @@ function choreFromRow(row: any): ChoreTask {
     isPrivateParent:         row.category_type === 'parent_only_quest',
     updatedAt:               row.updated_at ?? undefined,
     requiresPhotoProof:      row.requires_photo ?? row.requires_photo_proof ?? false,
+    trustedAutoApprove:      row.trusted_auto_approve ?? false,
     recurrenceRule:          (typeof row.recurrence_rule === 'object' && row.recurrence_rule)
                                ? row.recurrence_rule
                                : { frequency: 'once' as const },
@@ -935,8 +983,11 @@ interface ChoreState {
 
   // ── Chore CRUD ─────────────────────────────────────────────────────────────
   addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
+  _addChoreImpl:       (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
   updateChore:         (id: string, updates: Partial<ChoreTask>) => Promise<void>;
   deleteChore:         (id: string) => Promise<void>;
+  /** Repeating chore: drop only the current time (move to the next due date, clear any submission) and keep repeating. Returns false when the chore doesn't repeat. */
+  skipChoreOccurrence: (id: string) => Promise<boolean>;
 
   // ── Child actions ──────────────────────────────────────────────────────────
   // onLost — scenarios 3.1/3.4: the claim's optimistic local write can lose
@@ -974,6 +1025,13 @@ interface ChoreState {
   // One-time chores and on/after-due-date recurring chores always succeed.
   submitChore:              (choreId: string, opts?: { photoUrl?: string; note?: string }) => boolean;
   resubmitChore:            (choreId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
+  // Corrects an already-submitted, still pending_approval proof (retake
+  // photo / fix the comment) WITHOUT starting a new redo cycle. Routes
+  // through edit_pending_chore_submission (migration
+  // 20261014210000_edit_pending_chore_submission.sql), which snapshots the
+  // correction into chore_submissions before patching chore_tasks — unlike
+  // a plain updateChore() patch, this preserves full submission history.
+  editPendingSubmission:    (choreId: string, memberId: string, opts?: { photoUrl?: string; note?: string }) => Promise<void>;
   // Internal — shared by submitChore/resubmitChore, calls the submit_chore
   // RPC (server-side redo-cap/self-assigned-parent branch + coin payout).
   // Not part of the public store API surface, not called by UI directly.
@@ -1064,10 +1122,10 @@ interface ChoreState {
   // flagApprovalForDiscussion: soft flag, no financial effect — notifies the
   // approving parent that a co-parent wants to discuss it. Never visible to
   // the kid (spec: "no visibility into the parents' disagreement").
-  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => Promise<void>;
+  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // standByApproval: the approving parent dismisses a flag/reversal request
   // without reversing — clears disputeStatus, no financial effect.
-  standByApproval:           (choreId: string, byParentId: string) => Promise<void>;
+  standByApproval:           (choreId: string, byParentId: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // acknowledgeRecentApproval: a parent clears one chore from their own
   // "Recently Approved" Hub list. Per-viewer (adds byParentId to
   // reviewAckIds) so it doesn't cut short the 7-day dispute window for a
@@ -1080,13 +1138,13 @@ interface ChoreState {
   // trail). Otherwise sets disputeStatus: 'reversal_requested' and waits for
   // the ORIGINAL approving parent's coSignReversal — never a silent,
   // unilateral clawback by default.
-  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string) => Promise<void>;
+  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // coSignReversal: the original approving parent (chore.reviewedById)
   // agrees with a pending reversal request — executes the clawback.
-  coSignReversal:            (choreId: string, coSigningParentId: string) => Promise<void>;
+  coSignReversal:            (choreId: string, coSigningParentId: string, opts?: { inline?: boolean }) => Promise<DisputeResult>;
   // Internal — the actual clawback logic shared by the unilateral-allowed
   // and co-signed paths. Not intended to be called directly from UI.
-  _executeReversal:          (choreId: string, byParentId: string, reason: string) => Promise<void>;
+  _applyReversalLocally:     (chore: ChoreTask, byParentId: string, reason: string, coinsRemoved: number) => void;
 
   // ── Points economy ────────────────────────────────────────────────────────
   awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => Promise<void>;
@@ -1330,10 +1388,28 @@ function ensureRealtime(
             setState({ chores: state.chores.filter(c => c.id !== chore.id) });
             return;
           }
+          // Live-confirmed race: this used to unconditionally replace the
+          // local chore with whatever this event carried, with no ordering
+          // guard. Postgres realtime delivers UPDATE events in commit order,
+          // but the client can still process them out of order relative to
+          // its OWN just-finished writes — e.g. QuestDetailModal's reassign-
+          // then-coin-patch sequence fires two updateChore calls back to
+          // back; the realtime echo for the FIRST write can arrive and
+          // apply here in between the two, and since it carries that
+          // earlier updated_at, it silently regressed local state's
+          // updatedAt backward. The second updateChore call then built
+          // update_chore_task_checked's p_expected_updated_at from this
+          // rolled-back timestamp and the server correctly rejected it as
+          // stale_write — even though nothing else had touched the row.
+          // Only apply an incoming row when it's not older than what's
+          // already local, so a local write's own realtime echo can never
+          // clobber a newer local write that landed right after it.
           setState({
-            chores: state.chores.map(c =>
-              c.id === String(newRow.id) ? chore : c
-            ),
+            chores: state.chores.map(c => {
+              if (c.id !== String(newRow.id)) return c;
+              if (c.updatedAt && chore.updatedAt && chore.updatedAt < c.updatedAt) return c;
+              return chore;
+            }),
           });
         } else if (eventType === 'DELETE') {
           setState({ chores: state.chores.filter(c => c.id !== String(oldRow.id)) });
@@ -1567,7 +1643,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // CHORE CRUD
   // ─────────────────────────────────────────────────────────────────────────
 
-  addChore: async (partial) => {
+  addChore: (partial) => {
+    const sig = choreCreateSig(partial as any);
+    const inflight = _inflightCreates.get(sig);
+    if (inflight) return inflight;
+    const p = get()._addChoreImpl(partial);
+    _inflightCreates.set(sig, p);
+    p.then(() => setTimeout(() => _inflightCreates.delete(sig), 8000), () => _inflightCreates.delete(sig));
+    return p;
+  },
+
+  _addChoreImpl: async (partial) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
 
@@ -1664,6 +1750,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       invite_grandparents:      chore.inviteGrandparents ?? false,
       is_open_to_teens:         chore.isOpenToTeens ?? false,
       requires_photo:           chore.requiresPhotoProof,
+      trusted_auto_approve:     chore.trustedAutoApprove ?? false,
       recurrence_rule:          chore.recurrenceRule,
       instance_date:            chore.instanceDate,
       due_date:                 chore.dueDate,
@@ -1751,7 +1838,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // through calendar_events rather than giving chores their own push
     // path). linkedEventId already existed as a column but was previously
     // always null — this is the first real writer of it.
-    if (confirmed.dueDate && confirmed.dueTime && !confirmed.linkedEventId) {
+    // A personal task is a private reminder: it gets no calendar event (and so no reminder pushes).
+    const isPersonalTask = !!confirmed.createdById && confirmed.createdById === confirmed.assignedToId && !!(confirmed as any).trustedAutoApprove
+      && ((confirmed as any).basePoints || (confirmed as any).coinsReward || 0) + ((confirmed as any).bonusCoins || 0) === 0;
+    if (confirmed.dueDate && confirmed.dueTime && !confirmed.linkedEventId && !isPersonalTask) {
       // addEvent is async (eventStore.ts's DB-is-truth conversion) — was a
       // real bug here: this fire-and-forget block never awaited it, so
       // linkedEventId was a Promise object, not a real event id, silently
@@ -1796,7 +1886,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // coinsReward edit fall through to the general propose_terms_change
       // path instead, an inconsistent lock on the same underlying "how
       // much does this quest pay" concept.
-      const editableFields = ['title', 'description', 'basePoints', 'coinsReward', 'targetChildIds', 'questMode', 'requiresPhotoProof'];
+      const editableFields = ['title', 'description', 'basePoints', 'coinsReward', 'targetChildIds', 'questMode', 'requiresPhotoProof', 'trustedAutoApprove'];
       if (editableFields.some(f => f in rawUpdates)) {
         console.warn(`[choreStore] blocked edit to grandparent_quest ${id} — status is ${prevChore.status}, not pending_parent_approval`);
         showToast("This chore has already been reviewed — it can't be edited anymore", 'error');
@@ -1958,7 +2048,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const CHECKED_FIELDS = ['title', 'description', 'parentNote', 'dueDate', 'dueTime', 'coinsReward', 'basePoints'] as const;
     const updateKeys = Object.keys(updates);
     if (prevChore && updateKeys.length > 0 && updateKeys.every(k => (CHECKED_FIELDS as readonly string[]).includes(k))) {
-      const { error } = await supabase.rpc('update_chore_task_checked', {
+      const callChecked = (expectedUpdatedAt: string | null) => supabase.rpc('update_chore_task_checked', {
         p_chore_id: id,
         p_title: 'title' in updates ? (updates as any).title ?? null : null,
         p_has_title: 'title' in updates,
@@ -1974,8 +2064,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         p_has_coins_reward: 'coinsReward' in updates,
         p_base_points: 'basePoints' in updates ? (updates as any).basePoints ?? null : null,
         p_has_base_points: 'basePoints' in updates,
-        p_expected_updated_at: prevChore.updatedAt ?? null,
+        p_expected_updated_at: expectedUpdatedAt,
       });
+      let { error } = await callChecked(prevChore.updatedAt ?? null);
+      // A stale_write here is very often spurious, not a real conflict — the
+      // realtime-echo race fixed above in ensureRealtime's UPDATE handler is
+      // one source, and a caller firing two checked writes back to back
+      // (e.g. QuestDetailModal reassign-then-coin-patch) in the same tick
+      // before this function's own local updatedAt stamp (below) has
+      // propagated is another. Rather than fail the whole write and leave
+      // the user's edit silently undone (confirmed live: a coin-add during
+      // reassign got rejected this way and the chore was stuck at 0 coins
+      // with nothing to retry it), re-read the row's REAL current
+      // updated_at and retry once against that — a genuine third-party
+      // conflict will still fail the second time and surface the toast, but
+      // the common spurious case now just succeeds silently instead of
+      // requiring the user to redo the edit from scratch.
+      if (error?.message?.includes('stale_write')) {
+        const { data: freshRow } = await supabase.from('chore_tasks').select('updated_at').eq('id', id).maybeSingle();
+        if (freshRow?.updated_at) {
+          ({ error } = await callChecked(freshRow.updated_at));
+        }
+      }
       if (error) {
         console.warn('[choreStore] update_chore_task_checked FAILED', error.message);
         const isStale = error.message?.includes('stale_write');
@@ -2040,6 +2150,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('alertCall'          in updates) patch.alert_call               = updates.alertCall ?? false;
     if ('alertCallLeadMinutes' in updates) patch.alert_call_lead_minutes = updates.alertCallLeadMinutes ?? 10;
     if ('requiresPhotoProof' in updates) patch.requires_photo           = updates.requiresPhotoProof;
+    if ('trustedAutoApprove' in updates) patch.trusted_auto_approve     = updates.trustedAutoApprove;
     if ('inviteGrandparents' in updates) patch.invite_grandparents      = updates.inviteGrandparents;
     if ('isOpenToTeens'      in updates) patch.is_open_to_teens         = updates.isOpenToTeens;
     if ('recurrenceRule'     in updates) patch.recurrence_rule          = updates.recurrenceRule;
@@ -2083,7 +2194,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         showToast("Couldn't save — check your connection and try again", 'error');
         return;
       }
-      set(s => ({ chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c) }));
+      // Live-confirmed bug: this write never refreshed local updatedAt after
+      // a successful write, even though the DB row's own updated_at moves
+      // on every UPDATE (trigger-stamped). A caller firing two sequential
+      // updateChore calls in a row (e.g. QuestDetailModal's reassign-with-
+      // coins-and-note flow: reassignQuest's own write, then a follow-up
+      // coin/note patch) had its SECOND call build update_chore_task_
+      // checked's p_expected_updated_at from this now-stale local value —
+      // the server correctly rejected it as 'stale_write' even though
+      // nothing else had actually touched the row in between; the local
+      // snapshot was just never told the first write had happened.
+      // Stamping a fresh local updatedAt here keeps every subsequent
+      // checked-write call in this same tick correctly in sync.
+      const nowIso = new Date().toISOString();
+      set(s => ({ chores: s.chores.map(c => c.id === id ? { ...c, ...updates, updatedAt: nowIso } : c) }));
       AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     }
     // Keep a chore's linked calendar_events row (addChore's materialization,
@@ -2122,6 +2246,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         );
       }
     }
+  },
+
+  skipChoreOccurrence: async (id) => {
+    const chore = get().chores.find(c => c.id === id);
+    const rule = chore?.recurrenceRule;
+    if (!chore || !rule || rule.frequency === 'once') return false;
+    const from = chore.dueDate ?? localDateStr(new Date());
+    const next = nextDueDate(from, rule.frequency, rule.days, rule.dayOfMonth) ?? undefined;
+    await get().updateChore(id, {
+      status: 'todo',
+      submittedAt: undefined, submissionPhotoUrl: undefined, submissionNote: undefined,
+      approvedAt: undefined, reviewedAt: undefined, rejectionReason: undefined,
+      redoCount: 0,
+      dueDate: next,
+    });
+    // Take just this day's reminder off the calendar; the series keeps going.
+    if (chore.linkedEventId) {
+      try {
+        const { data } = await supabase.from('calendar_events').select('id')
+          .eq('series_id', chore.linkedEventId).eq('date', from).is('deleted_at', null).limit(1).maybeSingle();
+        const occId = (data as any)?.id;
+        if (occId) {
+          const { useEventStore } = require('./eventStore');
+          await useEventStore.getState().deleteEventScoped(occId, 'this');
+        }
+      } catch (e) { console.warn('[choreStore] skipChoreOccurrence calendar cleanup failed', e); }
+    }
+    return true;
   },
 
   deleteChore: async (id) => {
@@ -2586,16 +2738,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !['todo', 'in_progress'].includes(chore.status)) return false;
 
-    // A recurring chore can't be submitted for a cycle that hasn't started
-    // yet (e.g. tapping today on next month's instance) — on-time and late
-    // (overdue/catch-up) submission are both fine, matching how "overdue"
-    // is already defined elsewhere (dueDate <= today). One-time chores
-    // (frequency 'once', or no recurrenceRule) are never gated by this.
-    // Purely a UX pre-check (no exploit in submitting "early" — the RPC
-    // below doesn't re-derive this), left client-side.
+    // Recurring chores block submitting a cycle whose dueDate is still in
+    // the future — but the ORIGINAL version blocked ANY early completion,
+    // even "finish this week's chore a day or two before its due date,"
+    // which is a completely normal thing to do. Live direction: "we
+    // should click the same day as soon as we complete this week — give a
+    // grace time for each recurring [type]." Fixed by giving each
+    // frequency a grace window scoped to its own interval instead of a
+    // flat "due date or later" requirement — a weekly chore can be
+    // completed any day within the week leading up to its due date, a
+    // monthly one any day that month, daily chores were never affected
+    // (their due date IS today, by construction). Submitting for a cycle
+    // further out than that (e.g. tapping today on a due-date three weeks
+    // from now) still correctly blocks — this only widens "early" to mean
+    // "within the current cycle," not "anytime."
     const freq = chore.recurrenceRule?.frequency;
-    if (freq && freq !== 'once' && chore.dueDate && chore.dueDate > localDateStr(new Date())) {
-      return false;
+    if (freq && freq !== 'once' && chore.dueDate) {
+      const graceDays = freq === 'weekly' ? 7 : freq === 'monthly' ? 31 : 0;
+      const dueMs = new Date(chore.dueDate + 'T00:00:00').getTime();
+      const graceStartMs = dueMs - graceDays * 24 * 60 * 60 * 1000;
+      const todayMs = new Date(localDateStr(new Date()) + 'T00:00:00').getTime();
+      if (todayMs < graceStartMs) return false;
     }
     if (chore.requiresPhotoProof && !opts?.photoUrl && !chore.submissionPhotoUrl) return false;
 
@@ -2672,7 +2835,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       dbInsert('point_transactions', {
         id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
         transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
-        notes: result.auto_approved ? 'Chore auto-approved (redo cap reached)' : 'Chore approved', created_at: now, wallet,
+        notes: result.auto_approved ? 'Chore auto-approved' : 'Chore approved', created_at: now, wallet,
       });
     }
     if (newStatus === 'pending_approval') notifyQuestSubmitted(chore);
@@ -2692,6 +2855,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       note: opts?.note ?? chore.submissionNote,
       photoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
     });
+  },
+
+  editPendingSubmission: async (choreId, memberId, opts) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'pending_approval') return;
+    if (chore.requiresPhotoProof && !opts?.photoUrl) return;
+
+    const { data, error } = await supabase.rpc('edit_pending_chore_submission', {
+      p_chore_id: choreId,
+      p_member_id: memberId,
+      p_note: opts?.note ?? null,
+      p_photo_url: opts?.photoUrl ?? null,
+    });
+    if (error) {
+      console.warn('[choreStore] editPendingSubmission RPC failed on', choreId, ':', error.message);
+      showToast("Couldn't save — please try again", 'error');
+      return;
+    }
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c,
+        submissionNote: data?.submission_note ?? opts?.note ?? c.submissionNote,
+        submissionPhotoUrl: data?.submission_photo_url ?? opts?.photoUrl ?? c.submissionPhotoUrl,
+      } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    showToast('Submission updated ✓');
   },
 
   // QA punch list #5 — the kid's own "I did do it — ask [a parent]" path,
@@ -2724,9 +2915,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         // needed" push alongside everyone else, which isn't a clean
         // escalation to someone new and could read as the app asking
         // that same parent to reconsider their own decision.
-        const approverIds = (useFamilyStore.getState().members as any[])
+        //
+        // Live direction: "if no other parent then it will just go to
+        // same parent" — the RPC-side guard (resolve_redo_dispute) now
+        // has the matching fallback (migration
+        // 20260989000000_redo_dispute_single_parent_fallback.sql). This
+        // was the client-side half of the same gap: a single-parent
+        // family (no senior either) had approverIds.length === 0, so the
+        // whole notify call was skipped — nobody, including the reviewing
+        // parent themself, was ever told the dispute existed. Fall back to
+        // the reviewing parent when there's genuinely no one else.
+        const otherApprovers = (useFamilyStore.getState().members as any[])
           .filter(m => (m.role === 'parent' || m.role === 'senior') && m.id !== memberId && m.id !== chore.reviewedById)
           .map(m => m.id);
+        const approverIds = otherApprovers.length > 0
+          ? otherApprovers
+          : (chore.reviewedById && chore.reviewedById !== memberId ? [chore.reviewedById] : []);
         if (approverIds.length) {
           supabase.functions.invoke('family-notifier', {
             body: {
@@ -3897,6 +4101,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) return;
     if ((chore.cheers ?? []).some(c => c.memberId === fromMemberId)) return; // one cheer per person
+    if (chore.assignedToId === fromMemberId) return; // can't cheer your own chore
     const entry: ChoreCheer = {
       memberId: fromMemberId, at: new Date().toISOString(),
       ...(opts?.coins ? { coins: opts.coins } : {}),
@@ -4125,17 +4330,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // SCENARIO 4.7 — DISPUTED APPROVAL (TWO PARENTS DISAGREE)
   // ─────────────────────────────────────────────────────────────────────────
 
-  flagApprovalForDiscussion: async (choreId, byParentId, note) => {
+  // Server-authoritative dispute actions (20260997000000_approval_dispute_rpcs.sql):
+  // status, co-sign rule, the unilateral-reversal setting and the coin
+  // clawback are all decided and committed atomically in the RPC — the
+  // client only patches its local copy from the returned row.
+  flagApprovalForDiscussion: async (choreId, byParentId, note, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
-    if (byParentId === chore.reviewedById) return; // can't dispute your own approval
-
-    await get().updateChore(choreId, {
-      disputeStatus: 'flagged',
-      disputeReason: note,
-      disputedById:  byParentId,
-      disputedAt:    new Date().toISOString(),
+    if (!chore) return { ok: false, error: STALE_DISPUTE };
+    const { error } = await supabase.rpc('flag_approval', {
+      p_chore_id: choreId, p_by_parent_id: byParentId, p_note: note ?? null,
     });
+    if (error) {
+      console.warn('[choreStore] flag_approval failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? {
+      ...c, disputeStatus: 'flagged', disputeReason: note, disputedById: byParentId, disputedAt: new Date().toISOString(),
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
 
     // Notify the original approving parent — never the kid (spec: a kid
     // should have no visibility into the parents' disagreement).
@@ -4148,28 +4362,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] flagApprovalForDiscussion notification failed', e);
     }
+    return { ok: true };
   },
 
-  standByApproval: async (choreId, byParentId) => {
+  standByApproval: async (choreId, byParentId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !chore.disputeStatus) return;
-
-    await get().updateChore(choreId, {
-      disputeStatus: undefined,
-      disputeReason: undefined,
-      disputedById:  undefined,
-      disputedAt:    undefined,
-    });
+    if (!chore || !chore.disputeStatus) return { ok: false, error: STALE_DISPUTE };
+    const { error } = await supabase.rpc('stand_by_approval', { p_chore_id: choreId, p_by_parent_id: byParentId });
+    if (error) {
+      console.warn('[choreStore] stand_by_approval failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? {
+      ...c, disputeStatus: undefined, disputeReason: undefined, disputedById: undefined, disputedAt: undefined,
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
 
     try {
       const { useChatStore } = require('./chatStore');
       if (chore.disputedById) {
         useChatStore.getState().sendMessage(chore.disputedById, byParentId,
-          `${chore.title}" was reviewed again and the approval stands — no changes made.`);
+          `"${chore.title}" was reviewed again and the approval stands — no changes made.`);
       }
     } catch (e) {
       console.warn('[choreStore] standByApproval notification failed', e);
     }
+    return { ok: true };
   },
 
   acknowledgeRecentApproval: async (choreId, byParentId) => {
@@ -4188,90 +4408,78 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // called from requestApprovalReversal (unilateral-allowed path) or
   // coSignReversal (co-signed path) — never exposed directly to UI, so
   // every reversal always has disputeReason/disputedById/reversedById set.
-  _executeReversal: async (choreId, byParentId, reason) => {
-    const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !chore.assignedToId) return;
-    if (!['approved', 'auto_approved'].includes(chore.status)) return;
-
-    const pointsPaid = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-    const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+  _applyReversalLocally: (chore, byParentId, reason, coinsRemoved) => {
     const now = new Date().toISOString();
-
-    await get().updateChore(choreId, {
-      status:         'declined',
-      declinedAt:     now,
-      disputeStatus:  undefined,
-      disputeReason:  reason,
-      disputedById:   chore.disputedById ?? byParentId,
-      disputedAt:     chore.disputedAt ?? now,
-      reversedAt:     now,
-      reversedById:   byParentId,
-    });
-
-    // Claw back the payout — a real negative transaction, not a silent
-    // balance edit; awardPoints already writes both the point_transactions
-    // audit row and the live members balance patch for a negative amount.
-    if (pointsPaid > 0) {
-      await get().awardPoints(chore.assignedToId, choreId, -pointsPaid, 0, wallet);
+    const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+    set(s => ({ chores: s.chores.map(c => c.id === chore.id ? {
+      ...c, status: 'declined', declinedAt: now, disputeStatus: undefined, disputeReason: reason,
+      disputedById: c.disputedById ?? byParentId, disputedAt: c.disputedAt ?? now,
+      reversedAt: now, reversedById: byParentId,
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    if (coinsRemoved > 0 && chore.assignedToId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        useFamilyStore.setState((s: any) => ({
+          members: s.members.map((m: any) => m.id === chore.assignedToId
+            ? wallet === 'gpCoins'
+              ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) - coinsRemoved) }
+              : { ...m, coins: Math.max(0, (m.coins ?? 0) - coinsRemoved), mainCoins: Math.max(0, (m.mainCoins ?? 0) - coinsRemoved) }
+            : m),
+        }));
+      } catch { /* familyStore not mounted yet — server balance already updated */ }
     }
 
     try {
       const { useChatStore } = require('./chatStore');
       useChatStore.getState().sendMessage(chore.assignedToId, byParentId,
-        `⚠️ The approval for "${chore.title}" was reversed by a parent${reason ? ` — "${reason}"` : ''}. ${pointsPaid > 0 ? `${pointsPaid} coins were removed from your balance.` : ''}`);
+        `⚠️ The approval for "${chore.title}" was reversed by a parent${reason ? ` — "${reason}"` : ''}. ${coinsRemoved > 0 ? `${coinsRemoved} coins were removed from your balance.` : ''}`);
     } catch (e) {
       console.warn('[choreStore] reversal notification (assignee) failed', e);
     }
-    // Real push/bell notification alongside the chat message above (kept as
-    // the in-thread record) — mirrors this file's other "add a real
-    // notification alongside the existing chat DM" upgrades.
     if (chore.familyId) {
       supabase.functions.invoke('family-notifier', {
         body: {
           type: 'approval_reversed', familyId: chore.familyId, memberIds: [chore.assignedToId], persist: true,
           excludeMemberId: byParentId,
-          payload: { questId: choreId, questTitle: chore.title, byName: memberName(byParentId), reason },
+          payload: { questId: chore.id, questTitle: chore.title, byName: memberName(byParentId), reason },
         },
       }).catch(e => console.warn('[choreStore] reversal notify (assignee) failed', e?.message));
     }
-    // Audit finding — when this runs via the UNILATERAL path (household
-    // setting allows a single parent to reverse without a co-sign), the
-    // ORIGINAL approving parent (whose approval is being overridden) never
-    // learned about it at all — only the co-signed path (requestApprovalReversal,
-    // below) notified them, and only that a request existed, not that it
-    // executed. byParentId === chore.reviewedById can't happen in practice
-    // (requestApprovalReversal's own guard blocks disputing your own
-    // approval before reaching here) but is excluded defensively anyway.
     if (chore.familyId && chore.reviewedById && chore.reviewedById !== byParentId) {
       supabase.functions.invoke('family-notifier', {
         body: {
           type: 'approval_reversed', familyId: chore.familyId, memberIds: [chore.reviewedById], persist: true,
           excludeMemberId: byParentId,
-          payload: { questId: choreId, questTitle: chore.title, byName: memberName(byParentId), reason },
+          payload: { questId: chore.id, questTitle: chore.title, byName: memberName(byParentId), reason },
         },
       }).catch(e => console.warn('[choreStore] reversal notify (approver) failed', e?.message));
     }
   },
 
-  requestApprovalReversal: async (choreId, byParentId, reason) => {
+  requestApprovalReversal: async (choreId, byParentId, reason, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
-    if (byParentId === chore.reviewedById) return; // can't dispute your own approval
-
-    if (get().householdSettings.allowUnilateralReversal) {
-      await get()._executeReversal(choreId, byParentId, reason);
-      return;
-    }
-
-    // Default, safe path — needs the original approver's co-sign. No
-    // financial effect happens here; the chore stays approved/paid until
-    // coSignReversal actually executes it.
-    await get().updateChore(choreId, {
-      disputeStatus: 'reversal_requested',
-      disputeReason: reason,
-      disputedById:  byParentId,
-      disputedAt:    new Date().toISOString(),
+    if (!chore) return { ok: false, error: STALE_DISPUTE };
+    const { data, error } = await supabase.rpc('request_reversal', {
+      p_chore_id: choreId, p_by_parent_id: byParentId, p_reason: reason,
     });
+    if (error) {
+      console.warn('[choreStore] request_reversal failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (result?.executed) {
+      // Household allows unilateral reversal — the server already reversed it.
+      get()._applyReversalLocally(chore, byParentId, reason, result.coins_removed ?? 0);
+      return { ok: true, executed: true };
+    }
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? {
+      ...c, disputeStatus: 'reversal_requested', disputeReason: reason, disputedById: byParentId, disputedAt: new Date().toISOString(),
+    } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
 
     try {
       const { useChatStore } = require('./chatStore');
@@ -4282,23 +4490,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] requestApprovalReversal notification failed', e);
     }
+    return { ok: true };
   },
 
-  coSignReversal: async (choreId, coSigningParentId) => {
+  coSignReversal: async (choreId, coSigningParentId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || chore.disputeStatus !== 'reversal_requested') return;
-    // Only the ORIGINAL approving parent can co-sign — the requester
-    // already agreed by definition, and this must be a second, independent
-    // parent's sign-off, not the same person confirming their own request.
-    if (coSigningParentId !== chore.reviewedById) return;
-
-    // Snapshot before _executeReversal's own updateChore call clears
-    // disputedById/disputeStatus as part of executing the reversal.
+    if (!chore || chore.disputeStatus !== 'reversal_requested') return { ok: false, error: STALE_DISPUTE };
     const requesterId = chore.disputedById;
-    await get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
-    // Audit finding — the parent who originally REQUESTED the reversal
-    // never learned it was actually co-signed and executed; they'd only
-    // find out by reopening the chore and noticing it flipped to declined.
+    const reason = chore.disputeReason ?? '';
+    const { data, error } = await supabase.rpc('cosign_reversal', {
+      p_chore_id: choreId, p_cosigner_id: coSigningParentId,
+    });
+    if (error) {
+      console.warn('[choreStore] cosign_reversal failed', error.message);
+      if (!opts?.inline) showToast(disputeErrorMessage(error.message), 'error');
+      return { ok: false, error: disputeErrorMessage(error.message) };
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    get()._applyReversalLocally(chore, coSigningParentId, reason, result?.coins_removed ?? 0);
+    // The parent who originally REQUESTED the reversal never learned it was
+    // actually co-signed and executed without this.
     if (chore.familyId && requesterId && requesterId !== coSigningParentId) {
       supabase.functions.invoke('family-notifier', {
         body: {
@@ -4308,6 +4519,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         },
       }).catch(e => console.warn('[choreStore] coSignReversal notify', e?.message));
     }
+    return { ok: true };
   },
 
   // G1 — an approved recurring chore only resets to an unassigned 'todo'

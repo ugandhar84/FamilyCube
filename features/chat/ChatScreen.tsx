@@ -2,21 +2,23 @@
  * ChatScreen — v2 bubbles, @mentions, long-press action sheet, double-tap emoji,
  * swipe-to-reply, per-channel context, search, photo/video, grocery convert, E2E.
  *
- * E2E key architecture (Option 1 — passcode-wrapped):
- *   - AES-256-GCM data key lives in expo-secure-store locally.
- *   - On first launch the key is generated and wrapped with the family passcode
- *     (PBKDF2 → AES-KW) → blob stored in Supabase `families.encrypted_key`.
- *   - DB admin sees only ciphertext; no raw key is ever sent to the server.
- *   - New device/reinstall: user enters passcode → fetch blob → unwrapKeyWithPasscode().
- *   - Implementation: @/lib/chatCrypto (wrapKeyWithPasscode / unwrapKeyWithPasscode).
+ * E2E key architecture — one shared AES-256 key per family, derived from a
+ * user-visible code, stored only in local SecureStore on each device (see
+ * lib/chatCrypto.ts's encryptWithFamilyKey/decryptWithFamilyKey and
+ * lib/familyKeyRotation.ts for rotation). A device with no key, or a stale
+ * one after a rotation, is blocked from sending/reading here — see
+ * familyKeyLocked below, which reuses the same lock-screen pattern as
+ * coupleChannelLocked/parentLocked.
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, FlatList, Pressable, StyleSheet, TextInput,
   KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard, ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PageHeading } from '@/components/PageHeading';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { InteractionManager } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
@@ -32,7 +34,7 @@ import {
   Send, Search, X, XCircle,
   ChevronDown, ChevronUp, CornerUpLeft, Pencil,
   Paperclip, Mic, Lock, ShieldCheck, Video,
-  Camera, Image as ImageIcon, MapPin, FileText, AudioLines,
+  Camera, Image as ImageIcon, MapPin, FileText, AudioLines, MessageCircle,
   type LucideIcon,
 } from 'lucide-react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -43,6 +45,8 @@ import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useChatStore, ChatMessage, dmChannelId, coupleChannelId } from '@/store/chatStore';
+import { useUIStore } from '@/store/uiStore';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useCoupleChannelStore } from '@/store/coupleChannelStore';
 import CouplePinModal from '@/components/CouplePinModal';
 import { useFeatureFlag } from '@/lib/featureFlags';
@@ -57,7 +61,7 @@ import { showToast } from '@/components/AppToast';
 import { MessageBubble } from './components/MessageBubble';
 import { MessageActionSheet } from './components/MessageActionSheet';
 import { GroceryModal } from './components/GroceryModal';
-import { RecordingBar, VoiceReviewBar } from './components/VoiceComponents';
+import { RecordingProgress, VoiceReviewProgress } from './components/VoiceComponents';
 import { formatDay, QUICK_REACTIONS, buildGroupChannels, REPLY_KIND_LABEL } from './components/constants';
 import { stripMentionBrackets } from './components/MentionText';
 import { s } from './components/styles';
@@ -65,16 +69,21 @@ import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/c
 import { Pin, PinOff, Trash2 } from 'lucide-react-native';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { getActiveFamilyKey } from '@/lib/chatCrypto';
+import { isFamilyKeyStale } from '@/lib/familyKeyRotation';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const {
     channels, loadChannel, sendMessage, addReaction, deleteMessage, retryMessage, clearChannel,
     lastActivity, loadLastActivity, unreadCounts, loadUnreadCounts, markChannelRead,
-    readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId,
+    readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId, respondToProposal,
   } = useChatStore();
   const { addItem: addGrocery } = useGroceryStore();
 
@@ -88,6 +97,10 @@ export default function ChatScreen() {
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [channelId, setChannelId]         = useState('all');
+  // Inbox view: false = show channel list, true = show thread. Declared
+  // here (moved up from its original spot near openChannel further down)
+  // because the markChannelRead effect above openChannel now needs it too.
+  const [threadOpen, setThreadOpen]       = useState(false);
   const [pinnedChannels, setPinnedChannels] = useState<string[]>([]);
   const [text, setText]                   = useState('');
   // Dictation into the text box — distinct from the separate voice-NOTE mic
@@ -148,6 +161,26 @@ export default function ChatScreen() {
     if (!activeMemberId) return;
     loadPinnedChannels(activeMemberId).then(setPinnedChannels);
   }, [activeMemberId]);
+
+  // Whole-tab lock gate — mirrors coupleChannelLocked/parentLocked below,
+  // but for the shared family encryption key rather than a PIN. No key
+  // entered yet, or this device's key predates the family's latest
+  // rotation: block sending/reading everywhere in chat until the current
+  // code is entered (see lib/chatCrypto.ts / lib/familyKeyRotation.ts).
+  const [familyKeyLocked, setFamilyKeyLocked] = useState(false);
+  const activeFamilyId = members.find(m => m.id === activeMemberId)?.familyId;
+  useEffect(() => {
+    if (!activeFamilyId) { setFamilyKeyLocked(false); return; }
+    let cancelled = false;
+    (async () => {
+      const [key, stale] = await Promise.all([
+        getActiveFamilyKey(activeFamilyId),
+        isFamilyKeyStale(activeFamilyId),
+      ]);
+      if (!cancelled) setFamilyKeyLocked(!key || stale);
+    })();
+    return () => { cancelled = true; };
+  }, [activeFamilyId]);
   // Inverted FlatList starts at bottom — no scroll-to-end needed.
   // Only reset scroll position on channel switch.
   const prevChannelRef = useRef<string | null>(null);
@@ -341,6 +374,25 @@ export default function ChatScreen() {
     loadChannel(channelId);
   }, [channelId, isSenior, !!activeMember]);
 
+  // The inbox rows show each conversation's latest message. Fetch just that one message per channel, one channel at a
+  // time, after the screen has finished animating in and only while the tab is focused, so opening or leaving Chat
+  // never competes with the tab switch for the JS thread. Just Us stays unloaded until its PIN is entered.
+  const loadChannelPreview = useChatStore(st => st.loadChannelPreview);
+  const inboxChannelKey = allChannels.filter((c: any) => !c.isCoupleChannel && !(c.lock && !isParent)).map(c => c.id).join(',');
+  useFocusEffect(useCallback(() => {
+    if (!activeMember || !inboxChannelKey) return;
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(async () => {
+      for (const id of inboxChannelKey.split(',')) {
+        if (cancelled) return;
+        if (id === 'all' && isSenior) continue;
+        await loadChannelPreview(id);
+        await new Promise(r => setTimeout(r, 40)); // yield between channels so taps stay responsive
+      }
+    });
+    return () => { cancelled = true; task.cancel(); };
+  }, [inboxChannelKey, !!activeMember, isSenior]));
+
   // One cheap query for last-activity + unread counts across every channel
   // this member can see, so the strip can sort/badge correctly even for
   // tabs never opened yet.
@@ -357,11 +409,26 @@ export default function ChatScreen() {
   // subscription which channel is currently visible, so a message
   // arriving on it while open doesn't flash the badge on right before
   // markChannelRead's own zero-out lands.
+  // Gated on threadOpen — channelId defaults to 'all' and stays 'all'
+  // while the user is just looking at the inbox list (threadOpen false),
+  // so without this gate simply opening the Chat tab silently marked the
+  // 'all' channel as read before the user ever viewed it, zeroing its row
+  // badge while chatUnreadCounts' tab-level sum (computed from the same
+  // unreadCounts map before this fired) stayed stuck showing the old
+  // total [live-reported: "see nothing showing on threads but the over
+  // all showing the 9+"].
   useEffect(() => {
+    if (!threadOpen) return;
     if (activeMemberId) markChannelRead(channelId, activeMemberId);
     setOpenChannelId(channelId);
     return () => setOpenChannelId(null);
-  }, [channelId, activeMemberId]);
+  }, [channelId, activeMemberId, threadOpen]);
+  // Leaving the Chat tab with a thread open must stop that thread's background refresh (it would otherwise keep
+  // polling and re-rendering a frozen screen), and resume when the tab is focused again.
+  useFocusEffect(useCallback(() => {
+    if (threadOpen) setOpenChannelId(channelId);
+    return () => setOpenChannelId(null);
+  }, [threadOpen, channelId]));
 
   const isPinned = pinnedChannels.includes(channelId);
   const togglePin = () => {
@@ -846,32 +913,276 @@ export default function ChatScreen() {
     return () => {
       if (openCoupleChannel) {
         useCoupleChannelStore.getState().lock(channelId);
+        // Leave the private channel too, so coming back to the Chat tab lands on the normal list instead of
+        // re-opening Just Us and asking for its PIN straight away.
+        setThreadOpen(false);
+        setChannelId('all');
       }
     };
   }, [openCoupleChannel, channelId]));
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
+  const openChannel = (id: string) => {
+    switchChannel(id);
+    setThreadOpen(true);
+  };
+
+  // A thread is a dedicated full-page conversation, not a tab destination —
+  // hide the bottom nav bar while one is open, same as every other
+  // FullPageOverlay screen (FamilyTreePage, GroceryScreen, MealsScreen).
+  useEffect(() => {
+    if (!threadOpen) return;
+    hideTabBar();
+    return () => showTabBar();
+  }, [threadOpen]);
+
+  const pendingChatChannelId = useUIStore(st => st.pendingChatChannelId);
+  useEffect(() => {
+    if (!pendingChatChannelId) return;
+    useUIStore.getState().setPendingChatChannelId(null);
+    openChannel(pendingChatChannelId);
+  }, [pendingChatChannelId]);
+
+  // ── Inbox list view ────────────────────────────────────────────────────────
+  if (!threadOpen) {
+    const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: canvas }} edges={['top']}>
+        <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+
+        {/* Header + Channel / DM list — header now scrolls with the content
+            instead of being pinned, and bottom padding clears the floating
+            tab bar (~insets.bottom + 74 tall, see HubScreen/QuestsScreen). */}
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · CHAT"
+            title="Messages"
+            subtitle={`${members.length} people · tap a name to start a thread`}
+            accent="pink"
+            Icon={MessageCircle}
+            topInset={0}
+          />
+
+          {/* Presence card — Figma: pinkLight rounded card with family faces */}
+          {members.length > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+              marginHorizontal: 20, marginTop: 12, marginBottom: 4,
+              padding: 12, borderRadius: 18,
+              backgroundColor: isDark ? colors.surface : colors.pinkLight }}>
+              <View style={{ flexDirection: 'row' }}>
+                {members.slice(0, 5).map((m, i) => (
+                  <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i,
+                    width: 28, height: 28, borderRadius: 10,
+                    borderWidth: 2, borderColor: isDark ? colors.surface : colors.pinkLight, overflow: 'hidden' }}>
+                    <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+                      siblings={[]} size={24}
+                      ringColor={m.role === 'parent' ? colors.teal : colors.amber}
+                      ringWidth={0} bgColor={(m.role === 'parent' ? colors.teal : colors.amber) + '44'} />
+                  </View>
+                ))}
+              </View>
+              <Text style={{ fontSize: 11, color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '500' }}>
+                {members.length} people active today
+              </Text>
+            </View>
+          )}
+          {/* Group channels section */}
+          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, letterSpacing: 0.7,
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 }}>CHANNELS</Text>
+          <View style={{ paddingHorizontal: 16, gap: 10 }}>
+          {(() => {
+            // Distinct pastel per row, cycling through the full brand set
+            // instead of bucketing by category — "seniors"-prefixed ids
+            // (Grandparents Grands, #the-grand-squad) previously all fell
+            // into the same `startsWith('seniors')` amber branch and
+            // rendered as identical cards [live-reported: "give distinct
+            // color cards"]. Special-cased channels (couple/all/parents)
+            // keep their meaningful color; everything else cycles by index
+            // so no two rows in a row share a tint.
+            const CYCLE = [
+              { fg: colors.teal, bg: colors.tealLight },
+              { fg: colors.amber, bg: colors.amberLight },
+              { fg: colors.pink, bg: colors.pinkLight },
+              { fg: colors.primary, bg: colors.primaryLight },
+            ];
+            let cycleIdx = 0;
+            return allChannels.filter(ch => !(ch as any).isDM).map(ch => {
+            const chAny = ch as any;
+            if (chAny.lock && !isParent) return null;
+            const unread = unreadCounts[ch.id] ?? 0;
+            const isPinned = pinnedChannels.includes(ch.id);
+            // Just Us is PIN-locked for privacy — its last-message preview
+            // must stay hidden on the inbox row too, not just behind the
+            // PIN when opening it, or the "private" channel leaks its
+            // content to anyone looking at the list [live-reported:
+            // "i still see it displaying the last chat from just us as
+            // preview dont do that it is adults matter"].
+            const isLockedCouple = chAny.isCoupleChannel && !isCoupleChannelUnlocked(ch.id);
+            const lastMsg = isLockedCouple ? null : (() => { const l = channels[ch.id]?.messages ?? []; return l[l.length - 1]; })();
+            const lastSender = lastMsg ? (memberMap[lastMsg.senderId]?.name?.split(' ')[0] ?? '') : null;
+            const lastText = lastMsg?.text
+              ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
+              : lastMsg?.voiceUri ? '🎤 Voice note'
+              : lastMsg?.imageUri ? '📷 Photo'
+              : lastMsg?.documentUri ? '📄 Document'
+              : lastMsg?.locationPin ? '📍 Location'
+              : lastMsg ? 'Message'
+              : null;
+            const lastTime = lastActivity[ch.id]
+              ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              : null;
+            const isSpecial = chAny.isCoupleChannel || ch.id === 'all' || ch.id === 'parents';
+            const special = chAny.isCoupleChannel ? { fg: colors.pink, bg: colors.pinkLight }
+              : ch.id === 'all' ? { fg: colors.teal, bg: colors.tealLight }
+              : { fg: colors.primary, bg: colors.primaryLight }; // parents
+            const cycled = CYCLE[cycleIdx % CYCLE.length];
+            if (!isSpecial) cycleIdx++;
+            const chAccent = isSpecial ? special.fg : cycled.fg;
+            const chAccentLight = isSpecial ? special.bg : cycled.bg;
+
+            return (
+              <Pressable key={ch.id} onPress={() => openChannel(ch.id)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                  padding: 14, borderRadius: 18,
+                  backgroundColor: isDark ? colors.card : chAccentLight }}>
+                {/* Icon circle — white on pastel card */}
+                <View style={{ width: 48, height: 48, borderRadius: 16,
+                  backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {isPinned
+                    ? <Pin size={18} color={chAccent} fill={chAccent} />
+                    : <Text style={{ fontSize: 22 }}>
+                        {chAny.isCoupleChannel ? '💑'
+                          : ch.id === 'all' ? '🏠'
+                          : ch.id.startsWith('seniors') ? '👴'
+                          : ch.id === 'parents' ? '👨‍👩‍👧'
+                          : '#'}
+                      </Text>
+                  }
+                </View>
+                {/* Text */}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : chAccent }} numberOfLines={1}>
+                      {ch.label}
+                    </Text>
+                    {isPinned && <Pin size={10} color={chAccent} fill={chAccent} />}
+                  </View>
+                  {isLockedCouple
+                    ? <Text style={{ fontSize: 13, color: colors.textTertiary, marginTop: 2 }}>🔒 PIN required to view</Text>
+                    : lastText
+                    ? <Text style={{ fontSize: 13, color: unread > 0 ? colors.textPrimary : colors.textSecondary,
+                        fontWeight: unread > 0 ? '600' : '400', marginTop: 2 }} numberOfLines={1}>
+                        {lastSender ? `${lastSender}: ` : ''}{lastText}
+                      </Text>
+                    : <Text style={{ fontSize: 13, color: colors.textTertiary, marginTop: 2 }}>No messages yet</Text>
+                  }
+                </View>
+                {/* Right: time + unread badge */}
+                <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  {lastTime && <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : chAccent + 'BB' }}>{lastTime}</Text>}
+                  {unread > 0 && (
+                    <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5,
+                      backgroundColor: chAccent, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
+                    </View>
+                  )}
+                </View>
+              </Pressable>
+            );
+          });
+          })()}
+          </View>
+
+          {/* DMs section */}
+          {allChannels.some(ch => (ch as any).isDM) && (
+            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, letterSpacing: 0.7,
+              paddingHorizontal: 20, paddingTop: 24, paddingBottom: 10 }}>DIRECT MESSAGES</Text>
+          )}
+          <View style={{ paddingHorizontal: 16, gap: 10 }}>
+          {(() => {
+            // Same distinct-per-row cycling as the Channels section above
+            // — was only 2 colors (teal for a parent, amber for everyone
+            // else), so 2+ DMs with the same role rendered identically
+            // [live-reported: "give distinct color cards"].
+            const DM_CYCLE = [
+              { fg: colors.teal, bg: colors.tealLight },
+              { fg: colors.amber, bg: colors.amberLight },
+              { fg: colors.pink, bg: colors.pinkLight },
+              { fg: colors.primary, bg: colors.primaryLight },
+            ];
+            let dmCycleIdx = 0;
+            return allChannels.filter(ch => (ch as any).isDM).map(ch => {
+            const chAny = ch as any;
+            const other = memberMap[chAny.otherId];
+            const unread = unreadCounts[ch.id] ?? 0;
+            const lastMsg = (() => { const l = channels[ch.id]?.messages ?? []; return l[l.length - 1]; })();
+            const lastText = lastMsg?.text
+              ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
+              : lastMsg?.voiceUri ? '🎤 Voice note'
+              : lastMsg?.imageUri ? '📷 Photo'
+              : lastMsg?.documentUri ? '📄 Document'
+              : lastMsg?.locationPin ? '📍 Location'
+              : lastMsg ? 'Message'
+              : null;
+            const lastTime = lastActivity[ch.id]
+              ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              : null;
+            const dmTint = DM_CYCLE[dmCycleIdx % DM_CYCLE.length];
+            dmCycleIdx++;
+            const dmAccent = dmTint.fg;
+            const dmLight = dmTint.bg;
+
+            return (
+              <Pressable key={ch.id} onPress={() => openChannel(ch.id)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                  padding: 14, borderRadius: 18,
+                  backgroundColor: isDark ? colors.card : dmLight }}>
+                {/* Avatar in white circle */}
+                <View style={{ width: 48, height: 48, borderRadius: 16,
+                  backgroundColor: isDark ? colors.surface : '#FFFFFF', overflow: 'hidden', flexShrink: 0,
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <FamilyAvatar name={other?.name ?? ch.label} emoji={other?.emoji}
+                    avatarUrl={other?.avatarUrl} siblings={[]} size={44}
+                    ringColor={dmAccent} ringWidth={0} bgColor={dmAccent + '44'} />
+                </View>
+                {/* Text */}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : dmAccent }} numberOfLines={1}>
+                    {other?.name ?? ch.label}
+                  </Text>
+                  {lastText
+                    ? <Text style={{ fontSize: 13, color: unread > 0 ? colors.textPrimary : colors.textSecondary,
+                        fontWeight: unread > 0 ? '600' : '400', marginTop: 2 }} numberOfLines={1}>
+                        {lastText}
+                      </Text>
+                    : <Text style={{ fontSize: 13, color: colors.textTertiary, marginTop: 2 }}>Say hello 👋</Text>
+                  }
+                </View>
+                {/* Right */}
+                <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  {lastTime && <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : dmAccent + 'BB' }}>{lastTime}</Text>}
+                  {unread > 0 && (
+                    <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5,
+                      backgroundColor: dmAccent, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
+                    </View>
+                  )}
+                </View>
+              </Pressable>
+            );
+          });
+          })()}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Was a scroll-direction-collapsing header (hide on scroll-up toward
-          older messages, reveal on scroll-down) — removed entirely rather
-          than fixed a third time. It had already gone through two live-
-          reported bug rounds (janky JS-thread animation, then getting
-          permanently stuck collapsed at the top of history with no way
-          back) before this; a fixed, always-visible header can't glitch,
-          bounce, or get stuck, because there's no collapse state machine
-          left to misbehave. */}
+    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }} edges={['top']}>
       <View>
-        <AppHeader
-          memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-          memberRole={activeMember?.role ?? 'parent'}
-          memberEmoji={activeMember?.emoji}
-          memberAvatarUrl={activeMember?.avatarUrl}
-          notifCount={unreadNotifCount}
-          onPersonaPress={() => setSwitcherOpen(true)}
-          onBellPress={() => setNotifPanelOpen(true)}
-        />
         <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
         {couplePinModal && (
@@ -893,61 +1204,6 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* ── Channel strip ──
-            Was a per-scroll-event Animated.Value collapse (see the removed-
-            feature comment above) — that's what kept glitching. This reuses
-            showScrollBtn instead: the SAME plain boolean, flipped once at a
-            fixed 200px threshold (see onScroll below), already used for the
-            scroll-to-bottom button. Hiding the strip while it's true reclaims
-            reading space the moment the user has scrolled away from the
-            latest message, with no separate collapse state, no animation,
-            and no way to get stuck — it can only ever be exactly in sync
-            with whatever showScrollBtn already is. */}
-        {!showScrollBtn && (
-        <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
-          <View style={[s.strip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2, alignItems: 'center' }}>
-              {allChannels.map(ch => {
-                if ((ch as any).lock && !isParent) return null;
-                const act = channelId === ch.id;
-                const pinned = !(ch as any).isDM && pinnedChannels.includes(ch.id);
-                const unread = act ? 0 : (unreadCounts[ch.id] ?? 0);
-                return (
-                  <Pressable key={ch.id} onPress={() => switchChannel(ch.id)}
-                    style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                      {(ch as any).isDM && (
-                        <View style={{ width: 16, height: 16 }}>
-                          <FamilyAvatar
-                            name={memberMap[(ch as any).otherId]?.name ?? ch.label}
-                            emoji={memberMap[(ch as any).otherId]?.emoji}
-                            avatarUrl={memberMap[(ch as any).otherId]?.avatarUrl}
-                            siblings={[]}
-                            size={16}
-                            ringColor={accentColor((ch as any).otherId)}
-                            ringWidth={0}
-                            bgColor={accentColor((ch as any).otherId) + '44'}
-                          />
-                        </View>
-                      )}
-                      {pinned && <Pin size={10} color={act ? '#fff' : colors.textTertiary} fill={act ? '#fff' : colors.textTertiary} />}
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
-                        {ch.label}
-                      </Text>
-                      {unread > 0 && (
-                        <View style={{ minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4,
-                          backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-        )}
       </View>
 
       {/* ── Channel sub-header: label + member avatars ──
@@ -957,10 +1213,30 @@ export default function ChatScreen() {
           parent's zIndex alone doesn't guarantee ordering against a
           sibling subtree without matching zIndex/elevation of its own,
           especially on Android. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : colors.border, zIndex: 0, elevation: 0 }}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <ShieldCheck size={12} color="#10b981" />
-          <Text style={{ fontSize: 12, fontWeight: '800', color: openCoupleChannel ? (colors.pink ?? colors.accent) : colors.primary }} numberOfLines={1}>{channelLabel}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8, backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '12' : (isDark ? colors.background : GEMINI.canvas), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '30' : (isDark ? colors.border : GEMINI.border), zIndex: 0, elevation: 0 }}>
+        {/* Back to inbox — tap target now covers the chevron AND the
+            channel-name row (was chevron-only, ~24px wide, too small to
+            reliably hit [live-reported: "touch area too less"]). */}
+        <Pressable
+          onPress={() => {
+            // Re-lock Just Us on returning to the inbox list too — the two
+            // existing re-lock triggers (switchChannel, useFocusEffect blur)
+            // only fire on an explicit channel switch or leaving the Chat
+            // TAB entirely; closing the thread back to the inbox while
+            // staying on this tab with the same channelId selected tripped
+            // neither, so the inbox's privacy preview re-lock check
+            // (isLockedCouple, below) saw isCoupleChannelUnlocked still
+            // true and leaked the last-message preview again [live-
+            // reported: "once user closes the chat and came back to the
+            // main chat landing page it is showing the preview"].
+            if (openCoupleChannel) useCoupleChannelStore.getState().lock(channelId);
+            setThreadOpen(false);
+          }}
+          hitSlop={8}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: isDark ? GEMINI.blue : GEMINI.linkBlue }}>‹</Text>
+          <ShieldCheck size={13} color="#10b981" />
+          <Text style={{ fontSize: 17, fontWeight: '800', letterSpacing: -0.2, color: openCoupleChannel ? (colors.pink ?? colors.accent) : (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>{channelLabel}</Text>
           {/* A DM's participant count/avatars must be scoped to the 2
               people actually in it, not the whole family — this
               previously showed members.length/members unconditionally,
@@ -971,8 +1247,8 @@ export default function ChatScreen() {
               currentChannelMemberIds is empty, which flashed "· 0 members"
               for a moment on a fresh app open before settling to the real
               count. */}
-          {!dmOtherId && loaded && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {currentChannelMemberIds.length} members</Text>}
-        </View>
+          {!dmOtherId && loaded && <Text style={{ fontSize: 10, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }}>· {currentChannelMemberIds.length} members</Text>}
+        </Pressable>
 
         {/* Avatar cluster — solid separator border so no ring bleed */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -980,7 +1256,7 @@ export default function ChatScreen() {
             ? [activeMember, memberMap[dmOtherId]].filter(Boolean)
             : currentChannelMemberIds.map(id => memberMap[id]).filter(Boolean)
           ).slice(0, 5).map((m: any, i: number) => {
-            const sep = colors.card;
+            const sep = isDark ? colors.background : GEMINI.canvas;
             return (
               <View key={m.id} style={{
                 marginLeft: i === 0 ? 0 : -10,
@@ -1006,11 +1282,11 @@ export default function ChatScreen() {
             <View style={{
               marginLeft: -10, zIndex: 0,
               width: 26, height: 26, borderRadius: 13,
-              backgroundColor: colors.surface,
+              backgroundColor: isDark ? colors.surface : '#F0EDE6',
               alignItems: 'center', justifyContent: 'center',
-              borderWidth: 2, borderColor: colors.card,
+              borderWidth: 2, borderColor: isDark ? colors.background : GEMINI.canvas,
             }}>
-              <Text style={{ fontSize: 8, fontWeight: '900', color: colors.textSecondary }}>
+              <Text style={{ fontSize: 8, fontWeight: '900', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>
                 +{currentChannelMemberIds.length - 5}
               </Text>
             </View>
@@ -1019,59 +1295,45 @@ export default function ChatScreen() {
 
         {groupChannels.some(ch => ch.id === channelId) && (
           <Pressable onPress={togglePin}
-            style={[s.iconBtn, { backgroundColor: isPinned ? colors.primaryLight : colors.surface, borderColor: isPinned ? colors.primary : colors.border }]}>
-            {isPinned ? <PinOff size={15} color={colors.primary} /> : <Pin size={15} color={colors.textSecondary} />}
+            style={[s.iconBtn, { backgroundColor: isPinned ? colors.primaryLight : (isDark ? colors.surface : '#F0EDE6'), borderColor: isPinned ? colors.primary : (isDark ? colors.border : GEMINI.border) }]}>
+            {isPinned ? <PinOff size={15} color={colors.primary} /> : <Pin size={15} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />}
           </Pressable>
         )}
 
-        {/* Just Us — "Clear all messages" in one shot, per explicit
-            request. Irreversible (real DB delete, not a local hide), so
-            gated behind a confirm dialog. Deliberately not offered on any
-            other channel — a shared family/DM history isn't "mine alone"
-            to wipe the way a private 2-person thread reasonably can be. */}
-        {openCoupleChannel && (
-          <Pressable
-            onPress={() => Alert.alert(
-              'Clear all messages?',
-              'This deletes every message in Just Us for both of you. This can\'t be undone.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Clear All', style: 'destructive',
-                  onPress: () => clearChannel(channelId).catch((e: any) => {
-                    // Was a fixed "check your connection" message regardless
-                    // of the real error — made this genuinely undiagnosable
-                    // from the field [live-reported: "clear all messages is
-                    // not working on this just us could not clear messages
-                    // check your connection error"]. Surface the real
-                    // Postgres/Supabase error text instead.
-                    console.warn('[ChatScreen] clearChannel failed', e);
-                    Alert.alert('Could not clear messages', e?.message ?? 'Check your connection and try again.');
-                  }),
-                },
-              ],
-            )}
-            style={[s.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Trash2 size={15} color={colors.danger} />
-          </Pressable>
-        )}
+        {/* Clear chat for me: hides the history up to now on this account only; the other people keep theirs. */}
+        <Pressable
+          onPress={() => Alert.alert(
+            'Clear this chat?',
+            'This only clears your view. Everyone else in the chat keeps their messages.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Clear for me', style: 'destructive',
+                onPress: () => useChatStore.getState().clearChannelForMe(channelId, activeMemberId ?? '').catch((e: any) => {
+                  Alert.alert('Could not clear the chat', e?.message ?? 'Check your connection and try again.');
+                }) },
+            ],
+          )}
+          accessibilityRole="button" accessibilityLabel="Clear chat for me"
+          style={[s.iconBtn, { backgroundColor: isDark ? colors.surface : '#F0EDE6', borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Trash2 size={15} color={colors.danger} />
+        </Pressable>
 
         <Pressable onPress={() => setSearchOpen(v => !v)}
-          style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : colors.surface, borderColor: searchOpen ? colors.primary : colors.border }]}>
-          {searchOpen ? <X size={15} color={colors.primary} /> : <Search size={15} color={colors.textSecondary} />}
+          style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : (isDark ? colors.surface : '#F0EDE6'), borderColor: searchOpen ? colors.primary : (isDark ? colors.border : GEMINI.border) }]}>
+          {searchOpen ? <X size={15} color={colors.primary} /> : <Search size={15} color={isDark ? colors.textSecondary : GEMINI.bodyColor} />}
         </Pressable>
       </View>
 
       {/* ── Search bar ── */}
       <Animated.View style={{ height: searchHeight, overflow: 'hidden', paddingHorizontal: 14 }}>
-        <View style={[s.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Search size={14} color={colors.textTertiary} />
+        <View style={[s.searchWrap, { backgroundColor: isDark ? colors.surface : GEMINI.cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Search size={14} color={isDark ? colors.textTertiary : GEMINI.bodyColorLight} />
           <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder="Search messages…"
             placeholderTextColor={colors.placeholder} autoFocus={searchOpen}
-            style={{ flex: 1, fontSize: 13, color: colors.textPrimary, paddingVertical: 0 }} />
+            style={{ flex: 1, fontSize: 13, color: isDark ? colors.textPrimary : GEMINI.titleColor, paddingVertical: 0 }} />
           {searchQuery.length > 0 && msgs.length > 0 && (
             <>
-              <Text style={{ fontSize: 11, color: colors.textTertiary, marginHorizontal: 4 }}>
+              <Text style={{ fontSize: 11, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginHorizontal: 4 }}>
                 {searchMatchIdx + 1}/{msgs.length}
               </Text>
               <Pressable onPress={() => {
@@ -1086,28 +1348,44 @@ export default function ChatScreen() {
                 const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                 if (idx >= 0) flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
               }}><ChevronDown size={18} color={colors.primary} /></Pressable>
-              <Pressable onPress={() => setSearchQuery('')}><XCircle size={16} color={colors.textTertiary} /></Pressable>
+              <Pressable onPress={() => setSearchQuery('')}><XCircle size={16} color={isDark ? colors.textTertiary : GEMINI.bodyColorLight} /></Pressable>
             </>
           )}
         </View>
       </Animated.View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {parentLocked ? (
+        {familyKeyLocked ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.primaryLight, borderWidth: 2, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={30} color={colors.primary} />
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>🔒 Chat Locked</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, textAlign: 'center', lineHeight: 20 }}>
+              Enter your family's security code to read and send messages.
+            </Text>
+            <Pressable
+              onPress={() => router.push('/profile-settings/data-recovery')}
+              style={{ marginTop: 4, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: colors.primary }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Enter Code</Text>
+            </Pressable>
+          </View>
+        ) : parentLocked ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.amberLight, borderWidth: 2, borderColor: colors.amber, alignItems: 'center', justifyContent: 'center' }}>
               <Lock size={30} color={colors.amber} />
             </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>🔒 Parents Vault</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>🔒 Parents Vault</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
           </View>
         ) : coupleChannelLocked ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: (colors.pink ?? colors.accent) + '22', borderWidth: 2, borderColor: colors.pink ?? colors.accent, alignItems: 'center', justifyContent: 'center' }}>
               <Lock size={30} color={colors.pink ?? colors.accent} />
             </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>💕 Just Us</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Enter the PIN to open this channel.</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, textAlign: 'center' }}>💕 Just Us</Text>
+            <Text style={{ fontSize: 13, color: isDark ? colors.textSecondary : GEMINI.bodyColor, textAlign: 'center', lineHeight: 20 }}>Enter the PIN to open this channel.</Text>
             {/* The auto-open useEffect only fires once, when the lock
                 first flips true — if that modal was cancelled/dismissed,
                 nothing re-opens it without this — [live-reported: "it
@@ -1144,11 +1422,11 @@ export default function ChatScreen() {
             {channelLoading && reversedItems.length > 0 && (
               <View pointerEvents="none" style={withAndroidShadowFix({ position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5,
                 flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
-                borderWidth: 1, borderColor: colors.border,
+                backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+                borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
                 shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 })}>
                 <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>Syncing…</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>Syncing…</Text>
               </View>
             )}
             <FlatList
@@ -1161,7 +1439,7 @@ export default function ChatScreen() {
               // background — a deliberately different feel from the
               // businesslike family chat, per request ("it is going to
               // be romantic"). Purely cosmetic — no behavior change.
-              style={{ backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '08' : colors.background }}
+              style={{ backgroundColor: openCoupleChannel ? (colors.pink ?? colors.accent) + '08' : (isDark ? colors.background : GEMINI.canvas) }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               // No tuning at all previously — FlatList's defaults render
@@ -1217,9 +1495,9 @@ export default function ChatScreen() {
                 if (item.type === 'day') {
                   return (
                     <View style={[s.dayRow, { marginHorizontal: 20 }]}>
-                      <View style={[s.dayLine, { backgroundColor: colors.border }]} />
-                      <Text style={[s.dayLabel, { color: colors.textTertiary, backgroundColor: isDark ? colors.background : '#f5f7ff' }]}>{item.label}</Text>
-                      <View style={[s.dayLine, { backgroundColor: colors.border }]} />
+                      <View style={[s.dayLine, { backgroundColor: isDark ? colors.border : GEMINI.border }]} />
+                      <Text style={[s.dayLabel, { color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, backgroundColor: isDark ? colors.background : GEMINI.canvas }]}>{item.label}</Text>
+                      <View style={[s.dayLine, { backgroundColor: isDark ? colors.border : GEMINI.border }]} />
                     </View>
                   );
                 }
@@ -1274,7 +1552,16 @@ export default function ChatScreen() {
                     onOpenImage={setLightboxUri}
                     onOpenVideo={setVideoLightboxUri}
                     onOpenSharedCard={setSharedCardPayload}
-                    onRespondProposal={(msg, response) => {
+                    onRespondProposal={async (msg, response) => {
+                      // Marks the original proposal card answered (so its
+                      // buttons disappear for everyone) before posting the
+                      // reply — if the mark-answered write is refused
+                      // because another tap already answered it, skip the
+                      // reply instead of posting a second one for the same
+                      // proposal [live-reported: confirming once produced
+                      // two answers].
+                      const ok = await respondToProposal(channelId, msg.id, response);
+                      if (!ok) return;
                       const label = msg.systemEvent?.payload?.label ?? 'the plan';
                       const text = response === 'confirmed' ? `Confirmed: ${label}` : `Can't tonight: ${label}`;
                       sendMessage(channelId, activeMemberId ?? '', text, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
@@ -1363,17 +1650,6 @@ export default function ChatScreen() {
               </View>
             )}
 
-            {/* ── Active recording bar ── */}
-            {recording && (
-              <RecordingBar elapsed={recordingElapsed} isDark={isDark} onStop={doStopRecording} />
-            )}
-
-            {/* ── Voice review bar ── */}
-            {reviewing && reviewUri && (
-              <VoiceReviewBar uri={reviewUri} duration={reviewDur} isDark={isDark}
-                onSend={sendVoiceNote} onDiscard={discardVoice} />
-            )}
-
             {/* ── Mention picker — grows upward from just above input bar ── */}
             {mentionSuggestions.length > 0 && (
               <View style={withAndroidShadowFix({ backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border,
@@ -1397,23 +1673,35 @@ export default function ChatScreen() {
               </View>
             )}
 
-            {/* ── Attach menu popup ── */}
-            {showAttachMenu && (
+            {/* ── Attach menu popup — also hosts the recording progress and
+                voice-review UI when Mic is tapped/recording finishes,
+                reusing this exact sheet container instead of separate bars
+                [live-requested: "when i open the attach it is opening the
+                options sheet.. if the user click the mic it should use for
+                the mic recording progress animations/components"]. ── */}
+            {(showAttachMenu || recording || (reviewing && reviewUri)) && (
               <View style={[s.attachMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                {([
-                  { Icon: Camera,    label: 'Camera',   color: colors.accent,  onPress: () => { setShowAttachMenu(false); pickCamera(); } },
-                  { Icon: ImageIcon, label: 'Photo',    color: colors.success, onPress: () => { setShowAttachMenu(false); pickImage(); } },
-                  { Icon: Video,     label: 'Video',    color: colors.danger,  onPress: () => { setShowAttachMenu(false); recordVideo(); } },
-                  { Icon: FileText,  label: 'Document', color: colors.warning, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
-                  { Icon: MapPin,    label: 'Location', color: colors.info,    onPress: () => { setShowAttachMenu(false); sendLocation(); } },
-                ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
-                  <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
-                    <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
-                      <item.Icon size={24} color={item.color} />
-                    </View>
-                    <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
-                  </Pressable>
-                ))}
+                {recording ? (
+                  <RecordingProgress elapsed={recordingElapsed} isDark={isDark} onStop={doStopRecording} />
+                ) : reviewing && reviewUri ? (
+                  <VoiceReviewProgress uri={reviewUri} duration={reviewDur} isDark={isDark}
+                    onSend={sendVoiceNote} onDiscard={discardVoice} />
+                ) : (
+                  ([
+                    { Icon: Camera,    label: 'Camera',   color: colors.accent,  onPress: () => { setShowAttachMenu(false); pickCamera(); } },
+                    { Icon: ImageIcon, label: 'Photo',    color: colors.success, onPress: () => { setShowAttachMenu(false); pickImage(); } },
+                    { Icon: Video,     label: 'Video',    color: colors.danger,  onPress: () => { setShowAttachMenu(false); recordVideo(); } },
+                    { Icon: FileText,  label: 'Document', color: colors.warning, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
+                    { Icon: MapPin,    label: 'Location', color: colors.info,    onPress: () => { setShowAttachMenu(false); sendLocation(); } },
+                  ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
+                    <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
+                      <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
+                        <item.Icon size={24} color={item.color} />
+                      </View>
+                      <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
+                    </Pressable>
+                  ))
+                )}
               </View>
             )}
 
@@ -1465,15 +1753,15 @@ export default function ChatScreen() {
 
             {/* ── Input bar ── */}
             {!reviewing && !recording && (
-              <View style={[s.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+              <View style={[s.inputBar, { backgroundColor: isDark ? colors.background : GEMINI.canvas, borderTopColor: isDark ? colors.border : GEMINI.border }]}>
                 {/* Attach */}
-                <Pressable onPress={handleAttach} style={s.bareIconBtn}>
-                  <Paperclip size={20} color={colors.textSecondary} />
+                <Pressable onPress={handleAttach} style={[s.bareIconBtn, { backgroundColor: isDark ? colors.pinkLight : (colors.pink ?? colors.accent) + '1A', borderRadius: 999 }]}>
+                  <Paperclip size={18} color={colors.pink ?? colors.accent} />
                 </Pressable>
 
                 {/* Text input */}
-                <View style={[s.inputBubble, { backgroundColor: colors.surface,
-                  borderColor: dictation.state === 'listening' ? colors.teal : colors.borderMed }]}>
+                <View style={[s.inputBubble, { backgroundColor: isDark ? colors.surface : GEMINI.cardBg,
+                  borderColor: dictation.state === 'listening' ? colors.teal : (isDark ? colors.borderMed : GEMINI.border) }]}>
                   <TextInput
                     ref={inputRef}
                     value={dictation.state === 'listening' ? (preDictationText.current + dictation.liveTranscript) : text}
@@ -1484,7 +1772,7 @@ export default function ChatScreen() {
                     maxLength={1000}
                     scrollEnabled
                     editable={dictation.state !== 'listening'}
-                    style={[s.input, { color: colors.textPrimary }]}
+                    style={[s.input, { color: isDark ? colors.textPrimary : GEMINI.titleColor }]}
                   />
                   {/* Dictation — transcribes into the text field itself, distinct
                       from the outer Mic (records a separate voice-note attachment).
@@ -1509,8 +1797,8 @@ export default function ChatScreen() {
                 {canSend ? (
                   <Pressable onPress={handleSend} disabled={sendingMessage}
                     style={withAndroidShadowFix([s.sendBtn, {
-                      backgroundColor: colors.primary,
-                      shadowColor: colors.primary,
+                      backgroundColor: colors.pink,
+                      shadowColor: colors.pink,
                       shadowOpacity: 0.35, shadowRadius: 8,
                       shadowOffset: { width: 0, height: 3 }, elevation: 5,
                       opacity: sendingMessage ? 0.6 : 1,
@@ -1518,8 +1806,8 @@ export default function ChatScreen() {
                     <Send size={17} color="#fff" />
                   </Pressable>
                 ) : (
-                  <Pressable onPress={startRecording} style={s.bareIconBtn}>
-                    <Mic size={22} color={colors.textSecondary} />
+                  <Pressable onPress={startRecording} style={[s.bareIconBtn, { backgroundColor: isDark ? colors.tealLight : (colors.teal + '1A'), borderRadius: 999 }]}>
+                    <Mic size={20} color={colors.teal} />
                   </Pressable>
                 )}
               </View>
@@ -1537,7 +1825,7 @@ export default function ChatScreen() {
       />
 
       {/* ── Quick emoji (double-tap) ── */}
-      <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
         <Pressable style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setQuickEmojiFor(null)}>
           <View style={withAndroidShadowFix({ flexDirection: 'row', backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 })}>
             {QUICK_REACTIONS.map(e => (
@@ -1584,7 +1872,7 @@ export default function ChatScreen() {
       />
 
       {/* ── Image lightbox ── */}
-      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}
           onPress={() => setLightboxUri(null)}>
           {/* Was height: '80%' — a fixed shrink on top of resizeMode
@@ -1604,7 +1892,7 @@ export default function ChatScreen() {
       </Modal>
 
       {/* ── Video lightbox ── */}
-      <Modal visible={!!videoLightboxUri} transparent animationType="fade"
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!videoLightboxUri} transparent animationType="fade"
         onRequestClose={() => setVideoLightboxUri(null)}>
         <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
           {/* Was height: '55%' — a small fixed-height window floating in a

@@ -16,6 +16,8 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
 import { dedupeRideSeries } from '../lib/dedupeRideSeries';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 
 // Money-green — "grocery request" accent, distinct from brand teal used
 // elsewhere for confirmed/assigned state. Not colors.success (which IS
@@ -23,7 +25,7 @@ import { dedupeRideSeries } from '../lib/dedupeRideSeries';
 const MONEY_GREEN = '#10B981';
 // Indigo — "school supplies" accent, distinct from brand purple; kept as
 // one local constant instead of a repeated bare hex.
-const INDIGO_ACCENT = '#6366F1';
+const INDIGO_ACCENT = '#4A7FA5' // sky;
 
 // ─── Priority ranking ───────────────────────────────────────────────────────
 // A parent glances at this list for seconds between tasks — it has to read
@@ -58,25 +60,24 @@ function UrgencyRail({ severity, colors, children }: { severity: Severity; color
 
 // A pending check-in ("I'm home" / "running late") — an acknowledgment, not
 // an approval, so it's a single tap-and-done row rather than a full card.
-function CheckinRow({ req, kidName, colors, isDark, active, approveRequest }: {
+function CheckinRow({ req, kidName, colors, isDark, active }: {
   req: any; kidName: string; colors: any; isDark: boolean; active: FamilyMember;
-  approveRequest: (id: string, by: string) => void;
 }) {
   const CheckinIcon = req.detail.includes('late') || req.detail.includes('Late') ? Footprints
     : req.detail.includes('home') || req.detail.includes('Home') ? Home : Backpack;
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-      backgroundColor: isDark ? '#1e293b' : '#F0FDF4', borderRadius: 14, padding: 12,
+      backgroundColor: colors.tealLight, borderRadius: 14, padding: 12,
       borderLeftWidth: 3, borderLeftColor: colors.parent }}>
       <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.parent + '20', alignItems: 'center', justifyContent: 'center' }}>
         <CheckinIcon size={17} color={colors.parent} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }}>{kidName}</Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>{req.detail}</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }} numberOfLines={2}>{req.detail}</Text>
       </View>
-      <Pressable onPress={() => approveRequest(req.id, active.id)}
+      <Pressable onPress={() => useKidRequestStore.getState().acknowledgeCheckin(req.id, active.id)}
         style={{ backgroundColor: colors.parent, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Got it</Text>
       </Pressable>
@@ -261,7 +262,7 @@ export function ActionNeededSection({
       ranked.push({
         key: `req-${req.id}`, age,
         severity: 'normal', score: SEVERITY.normal,
-        node: <CheckinRow key={req.id} req={req} kidName={kidName} colors={colors} isDark={isDark} active={active} approveRequest={approveRequest} />,
+        node: <CheckinRow key={req.id} req={req} kidName={kidName} colors={colors} isDark={isDark} active={active} />,
       });
       continue;
     }

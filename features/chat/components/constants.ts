@@ -22,11 +22,13 @@ export function formatDuration(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// Matches colors.primary's light-mode value — these voice subcomponents
-// (VoiceNoteBubble/VoiceReviewBar/RecordingBar) don't receive the colors
-// object as a prop, so this stays a direct brand-purple constant rather
-// than threading colors through every one of them for this pass.
-export const VOICE_COLOR     = '#9261C7';
+// Darker blue instead of the old brand-purple — was reading as washed-out/
+// invisible on the pale sent-bubble tint in light mode [live-requested:
+// "put more darker animated colors blue", applied everywhere: recording
+// progress, review/send bar, and the sent voice-note bubble]. These voice
+// subcomponents don't receive the colors object as a prop, so this stays a
+// direct constant rather than threading colors through every one of them.
+export const VOICE_COLOR     = '#1D4ED8';
 export const QUICK_REACTIONS = ['❤️', '👍', '😋', '🙌', '🌟', '😂'];
 export type GroupChannel = { id: string; label: string; isDM: false; lock: boolean; seniorOnly?: boolean };
 
@@ -66,21 +68,10 @@ export function buildGroupChannels(members: FamilyMember[]): GroupChannel[] {
     { id: 'parents', label: '🔒 #parents-vault', isDM: false, lock: true },
   ];
 
-  const labelA = sideLabel(parents[0]);
-  const labelB = sideLabel(parents[1]);
-  if (sideA.length > 0) {
-    channels.push({ id: 'seniors_a', label: `👶 ${labelA ?? 'Grandparents'} Grands`, isDM: false, lock: false, seniorOnly: true });
-  }
-  if (sideB.length > 0) {
-    channels.push({ id: 'seniors_b', label: `👶 ${labelB ?? 'Grandparents'} Grands`, isDM: false, lock: false, seniorOnly: true });
-  }
-  // Unlinked seniors (no side determined) fold into whichever side channel
-  // exists, or get their own fallback channel if neither side is set up yet.
-  if (unlinked.length > 0 && sideA.length === 0 && sideB.length === 0) {
-    channels.push({ id: 'seniors_a', label: '👵 Grandparents', isDM: false, lock: false, seniorOnly: true });
-  }
+  // One shared grandparent channel for every grandparent plus the whole family (the old per-side
+  // channels were retired). seniors_a / seniors_b ids stay valid in the database for old messages only.
   if (seniors.length > 0) {
-    channels.push({ id: 'seniors_all', label: '#the-grand-squad', isDM: false, lock: false, seniorOnly: true });
+    channels.push({ id: 'seniors_all', label: '👵 Grandparent squad', isDM: false, lock: false });
   }
   return channels;
 }
@@ -90,7 +81,7 @@ export const GROCERY_STORES: GroceryStore[]   = ['Costco','Supermarket',"Trader 
 // ─── Waveform helpers ─────────────────────────────────────────────────────────
 
 export const WF_BARS = 36;
-export const WF_H    = 36; // container height px
+export const WF_H    = 48; // container height px
 
 /** Deterministic "fingerprint" waveform from a seed string (uri / msgId). */
 export function seedWaveform(seed: string): number[] {

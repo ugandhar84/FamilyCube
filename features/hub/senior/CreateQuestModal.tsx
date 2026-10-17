@@ -51,7 +51,7 @@ export function CreateQuestModal({
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />

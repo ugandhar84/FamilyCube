@@ -6,6 +6,7 @@
 // Deploy: supabase functions deploy analyze-medical-record
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { decryptStoredFile } from '../_shared/fileDecrypt.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CORS = {
@@ -58,7 +59,12 @@ async function callGemini(
       generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const raw = await res.text();
+    let msg = `Gemini error ${res.status}`;
+    try { const j = JSON.parse(raw); msg = j?.error?.message ?? msg; } catch { /* keep msg */ }
+    throw new Error(msg);
+  }
   const data = await res.json();
   const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   if (!text) throw new Error('Gemini returned empty response');
@@ -76,7 +82,12 @@ async function callGeminiText(prompt: string): Promise<string> {
       generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini text ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const raw = await res.text();
+    let msg = `Gemini error ${res.status}`;
+    try { const j = JSON.parse(raw); msg = j?.error?.message ?? msg; } catch { /* keep msg */ }
+    throw new Error(msg);
+  }
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
@@ -173,9 +184,10 @@ serve(async (req) => {
   const svcClient = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
   try {
-    const { record_id, member_name = 'Patient' } = await req.json() as {
+    const { record_id, member_name = 'Patient', family_keys } = await req.json() as {
       record_id: string;
       member_name?: string;
+      family_keys?: string[];
     };
     if (!record_id) return json({ error: 'record_id is required' }, 400);
 
@@ -226,7 +238,9 @@ serve(async (req) => {
                      : 'image/jpeg';
 
       const buf  = await fileBytes.arrayBuffer();
-      const b64  = toBase64(new Uint8Array(buf));
+      // Files are stored encrypted with the family key; the caller sends the key for this request only.
+      const plain = await decryptStoredFile(new Uint8Array(buf), family_keys);
+      const b64  = toBase64(plain);
       const imageParts: GeminiImagePart[] = [{ inlineData: { mimeType, data: b64 } }];
       rawText = await callGemini(contextPrompt, imageParts);
     } catch (visionErr: any) {

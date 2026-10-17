@@ -54,6 +54,9 @@ import { Animated, StyleSheet, Text, View, Easing } from 'react-native';
 import { CalendarDays, ClipboardCheck, Moon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_AMBIENT_FADE_MS } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
+import { KioskPhotoFade } from './components/KioskPhotoFade';
+import { useKioskPhotos } from './useKioskPhotos';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export interface AmbientNextUp {
   /** Display time, already formatted ("4:45 PM") or undefined for all-day. */
@@ -113,6 +116,9 @@ export function KioskAmbientOverlay({
     return () => { loop.stop(); };
   }, [mounted, drift]);
 
+  const { photos } = useKioskPhotos();
+  // With memories to show, the idle screen is a bright photo frame with a small clock.
+  const frame = photos.length > 0;
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!mounted) return;
@@ -144,6 +150,24 @@ export function KioskAmbientOverlay({
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
+      {/* Photo-frame mode: the family's memories fill the screen in a framed print, the clock is small. */}
+      {frame ? (
+        <View style={s.frameWrap} pointerEvents="none">
+          {/* A gilded wooden frame: a bright gold outer rail, a darker bevel, a thin inner gold lip, then a cream mat. */}
+          <LinearGradient colors={['#F3D98B', '#C9A24B', '#8F6B1F', '#D9B45B', '#F3D98B']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.goldOuter}>
+            <View style={s.goldBevel}>
+              <LinearGradient colors={['#B98A2E', '#F0D27A', '#A57A22']} start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }} style={s.goldLip}>
+                <View style={s.matte}>
+                  <KioskPhotoFade style={s.framePhoto} active={visible} caption />
+                </View>
+              </LinearGradient>
+            </View>
+          </LinearGradient>
+        </View>
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />
+      )}
+
       {/* ── Corner label ── */}
       <View style={s.corner}>
         <Moon size={16} color={k.gold} />
@@ -152,8 +176,15 @@ export function KioskAmbientOverlay({
         </Text>
       </View>
 
-      {/* ── The clock ── */}
-      <Animated.View style={[s.center, { transform: [{ translateY }] }]}>
+      {/* ── The clock ── (small pill over the photo frame; large on its own) */}
+      {frame && (
+        <View style={s.clockPill}>
+          <Text style={s.pillClock}>{clock}</Text>
+          <Text style={s.pillDate}>{date}</Text>
+          {!!nextUp && <Text style={s.pillNext} numberOfLines={1}>Next · {nextUp.time ? `${nextUp.time} ` : ''}{nextUp.title}</Text>}
+        </View>
+      )}
+      {!frame && <Animated.View style={[s.center, { transform: [{ translateY }] }]}>
         <Text
           style={[s.clock, { color: k.standbyText }]}
           numberOfLines={1}
@@ -168,10 +199,10 @@ export function KioskAmbientOverlay({
         >
           {date}
         </Text>
-      </Animated.View>
+      </Animated.View>}
 
       {/* ── Glass status panel ── */}
-      {(nextUp || eventCount > 0 || choreCount > 0) && (
+      {!frame && (nextUp || eventCount > 0 || choreCount > 0) && (
         <View style={[s.glass, { backgroundColor: k.glass, borderColor: k.glassEdge }]}>
           {nextUp ? (
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -223,6 +254,16 @@ export function KioskAmbientOverlay({
 
 const s = StyleSheet.create({
   root: { alignItems: 'center', justifyContent: 'center', padding: KIOSK_SPACE.xxl },
+  frameWrap: { ...StyleSheet.absoluteFillObject, padding: 56, paddingTop: 84, paddingBottom: 96, alignItems: 'center', justifyContent: 'center' },
+  goldOuter: { flex: 1, alignSelf: 'stretch', padding: 14, borderRadius: 10, shadowColor: '#000', shadowOpacity: 0.65, shadowRadius: 34, shadowOffset: { width: 0, height: 18 }, elevation: 14 },
+  goldBevel: { flex: 1, borderRadius: 4, borderWidth: 3, borderColor: 'rgba(90,60,10,0.55)', padding: 4, backgroundColor: 'rgba(90,60,10,0.25)' },
+  goldLip: { flex: 1, padding: 5, borderRadius: 2 },
+  matte: { flex: 1, backgroundColor: '#F7F2EA', padding: 16, borderWidth: 2, borderColor: 'rgba(120,90,30,0.35)' },
+  framePhoto: { flex: 1, borderRadius: 2 },
+  clockPill: { position: 'absolute', right: 70, bottom: 118, backgroundColor: 'rgba(10,9,16,0.62)', borderRadius: 18, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'flex-end' },
+  pillClock: { color: '#FFFFFF', fontSize: 40, fontWeight: '300', fontVariant: ['tabular-nums'] },
+  pillNext: { color: '#E8C375', fontSize: 14, fontWeight: '800', marginTop: 4, maxWidth: 320 },
+  pillDate: { color: 'rgba(255,255,255,0.8)', fontSize: 15, fontWeight: '600' },
   corner: {
     position: 'absolute', top: KIOSK_SPACE.xxl, left: KIOSK_SPACE.xxl,
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,

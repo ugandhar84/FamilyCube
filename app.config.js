@@ -24,7 +24,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.familycube.ios",
-    buildNumber: "106",
+    buildNumber: "108",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
@@ -46,6 +46,8 @@ const config = {
       tinted: "./assets/icon-dark.png",
     },
     infoPlist: {
+      // Lets the app ask whether Google Maps is installed (opens addresses there, else Apple Maps).
+      LSApplicationQueriesSchemes: ["comgooglemaps"],
       // Phones stay portrait-only (unchanged). iPads — including a wall-mounted
       // "kitchen hub" scenario — can rotate to landscape. iOS reads the
       // idiom-suffixed key for iPad and falls back to the base key for iPhone,
@@ -54,7 +56,6 @@ const config = {
       // idioms to the same single value.
       UISupportedInterfaceOrientations: ["UIInterfaceOrientationPortrait"],
       "UISupportedInterfaceOrientations~ipad": [
-        "UIInterfaceOrientationPortrait",
         "UIInterfaceOrientationLandscapeLeft",
         "UIInterfaceOrientationLandscapeRight",
       ],
@@ -259,7 +260,9 @@ const config = {
         },
       },
     ],
-    "expo-audio",
+    // enableBackgroundRecording: a visit recording keeps running if the phone locks or the app goes to the background
+    // (adds the iOS "audio" background mode and the Android foreground-service permissions).
+    ["expo-audio", { enableBackgroundRecording: true }],
     [
       "@react-native-voice/voice",
       {
@@ -284,7 +287,7 @@ const config = {
       "expo-notifications",
       {
         icon: "./assets/notification-icon.png",
-        color: "#CD7B57",
+        color: "#5872C4",
         androidMode: "default",
         androidCollapsedTitle: "Family Cube",
         // Required for the background-notification TaskManager task

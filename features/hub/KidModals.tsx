@@ -74,9 +74,9 @@ export function decodeRideLate(detail: string): RideLatePayload | null {
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-const GROCERY_CATEGORIES = ['Snacks', 'Produce', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Bakery', 'Household', 'Other'];
+export const GROCERY_CATEGORIES = ['Snacks', 'Produce', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Bakery', 'Household', 'Other'];
 
-const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }[] = [
+export const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }[] = [
   // Snacks
   { name: 'Oreos',               emoji: '🍪', category: 'Snacks' },
   { name: 'Chips',               emoji: '🍟', category: 'Snacks' },
@@ -161,9 +161,9 @@ const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }
   { name: 'Ziploc Bags',         emoji: '📦', category: 'Household' },
 ];
 
-const QTY_PICKS = ['1', '2', '3', '6', '1 pack', '1 box', '1 bag', '1 bottle', '1 dozen', '1 lb'];
+export const QTY_PICKS = ['1', '2', '3', '6', '1 pack', '1 box', '1 bag', '1 bottle', '1 dozen', '1 lb'];
 
-const SUPPLIES_SUGGESTIONS: { name: string; emoji: string }[] = [
+export const SUPPLIES_SUGGESTIONS: { name: string; emoji: string }[] = [
   { name: 'Pencils',             emoji: '✏️' },
   { name: 'Pens',                emoji: '🖊️' },
   { name: 'Eraser',              emoji: '🧹' },
@@ -220,7 +220,7 @@ const f = StyleSheet.create({
 // list) so tapping row 2's mic never clobbers row 1's in-progress speech —
 // a kid adding multiple items by voice needs each row's mic to be its own
 // independent session.
-function ItemNameField({ value, onChangeText, onFocus, onBlur, style, flex = 2.5, placeholder = 'Item name', accent, colors, isDark }: {
+export function ItemNameField({ value, onChangeText, onFocus, onBlur, style, flex = 2.5, placeholder = 'Item name', accent, colors, isDark }: {
   value: string; onChangeText: (t: string) => void;
   onFocus?: () => void; onBlur?: () => void; style: any; flex?: number; placeholder?: string;
   accent: string; colors: any; isDark: boolean;
@@ -306,9 +306,7 @@ export function GroceryModal({ visible, onClose, active }: {
     }));
     // Append to existing pending grocery request if one exists
     const existing = requests.find(r =>
-      r.fromMemberId === active.id && r.status === 'pending' &&
-      r.type === 'delegation' && (r.items?.length ?? 0) > 0 &&
-      !r.detail.startsWith(SUPPLIES_PREFIX)
+      r.fromMemberId === active.id && r.status === 'pending' && r.type === 'grocery'
     );
     if (existing) {
       appendItems(existing.id, newItems);
@@ -316,10 +314,10 @@ export function GroceryModal({ visible, onClose, active }: {
       Alert.alert('Added! 🛒', `${newItems.length} item${newItems.length > 1 ? 's' : ''} added to your existing grocery request.`);
     } else {
       sendRequest({
-        type: 'delegation',
+        type: 'grocery',
         fromMemberId: active.id,
         urgency: 'normal',
-        detail: encodeGroceryRequest({ name: validLines.map(l => l.name.trim()).join(', '), qty: '', category: 'Multi', notes: notes.trim() }),
+        detail: validLines.map(l => l.name.trim()).join(', ') + (notes.trim() ? ` — ${notes.trim()}` : ''),
         items: newItems,
       });
       dismiss();
@@ -333,7 +331,7 @@ export function GroceryModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -349,7 +347,7 @@ export function GroceryModal({ visible, onClose, active }: {
               <TouchableOpacity
                 onPress={dismiss}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                style={{ padding: 8, borderRadius: 20, backgroundColor: colors.surface }}>
                 <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -369,8 +367,8 @@ export function GroceryModal({ visible, onClose, active }: {
                       <TouchableOpacity key={c} onPress={() => setGlobalCat(c)}
                         style={{ borderRadius: 16, borderWidth: 2, paddingHorizontal: 12, paddingVertical: 8,
                           alignItems: 'center', gap: 3, minWidth: 56,
-                          backgroundColor: active2 ? BRAND.teal + '18' : (isDark ? colors.surface : '#F5F4FA'),
-                          borderColor: active2 ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                          backgroundColor: active2 ? BRAND.teal + '18' : (colors.surface),
+                          borderColor: active2 ? BRAND.teal : (colors.border) }}>
                         <Text style={{ fontSize: TYPO.label, fontWeight: '800',
                           color: active2 ? BRAND.teal : colors.textSecondary }}>{c}</Text>
                       </TouchableOpacity>
@@ -435,8 +433,8 @@ export function GroceryModal({ visible, onClose, active }: {
                               return (
                                 <Pressable key={st} onPress={() => updateLine(idx, { store: picked ? '' : st })}
                                   style={{ borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4,
-                                    backgroundColor: picked ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
-                                    borderWidth: 1, borderColor: picked ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                                    backgroundColor: picked ? BRAND.teal + '20' : (colors.surface),
+                                    borderWidth: 1, borderColor: picked ? BRAND.teal : (colors.border) }}>
                                   <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: picked ? BRAND.teal : colors.textSecondary }}>🏪 {st}</Text>
                                 </Pressable>
                               );
@@ -455,9 +453,9 @@ export function GroceryModal({ visible, onClose, active }: {
                               {nameSuggs.map(s => (
                                 <Pressable key={s.name}
                                   onPress={() => updateLine(idx, { name: s.name, emoji: s.emoji, category: s.category })}
-                                  style={{ backgroundColor: line.name === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                                  style={{ backgroundColor: line.name === s.name ? BRAND.teal + '20' : (colors.surface),
                                     borderRadius: 20, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1.5,
-                                    borderColor: line.name === s.name ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                                    borderColor: line.name === s.name ? BRAND.teal : (colors.border) }}>
                                   <Text style={{ fontSize: TYPO.micro, color: line.name === s.name ? BRAND.teal : colors.textSecondary, fontWeight: '700' }}>
                                     {s.emoji} {s.name}
                                   </Text>
@@ -482,7 +480,7 @@ export function GroceryModal({ visible, onClose, active }: {
               />
 
               <TouchableOpacity onPress={submit} disabled={!canSubmit}
-                style={[f.submitBtn, { marginTop: 16, backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                style={[f.submitBtn, { marginTop: 16, backgroundColor: canSubmit ? BRAND.teal : (colors.surface) }]}>
                 <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
                   {canSubmit ? `Send ${validLines.length} item${validLines.length > 1 ? 's' : ''} to Parent →` : 'Add at least one item'}
                 </Text>
@@ -530,8 +528,7 @@ export function SuppliesModal({ visible, onClose, active }: {
     }));
     // Append to existing pending supplies request if one exists
     const existing = requests.find(r =>
-      r.fromMemberId === active.id && r.status === 'pending' &&
-      r.type === 'delegation' && r.detail.startsWith(SUPPLIES_PREFIX)
+      r.fromMemberId === active.id && r.status === 'pending' && r.type === 'supplies'
     );
     if (existing) {
       appendToRequest(existing.id, newItems);
@@ -539,8 +536,8 @@ export function SuppliesModal({ visible, onClose, active }: {
       Alert.alert('Added! 📚', `${newItems.length} item${newItems.length > 1 ? 's' : ''} added to your existing supplies request.`);
     } else {
       sendRequest({
-        type: 'delegation', fromMemberId: active.id, urgency,
-        detail: `${SUPPLIES_PREFIX}${JSON.stringify({ items: validItems, notes: notes.trim(), urgency })}`,
+        type: 'supplies', fromMemberId: active.id, urgency,
+        detail: validItems.map(i => i.name.trim()).join(', ') + (notes.trim() ? ` — ${notes.trim()}` : ''),
         items: newItems,
       });
       dismiss();
@@ -551,12 +548,12 @@ export function SuppliesModal({ visible, onClose, active }: {
   const inp = {
     borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
     fontSize: 14, color: colors.textPrimary,
-    backgroundColor: isDark ? colors.surface : '#F9FAFB',
+    backgroundColor: colors.surface,
     borderColor: colors.border,
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -565,14 +562,14 @@ export function SuppliesModal({ visible, onClose, active }: {
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>
                 <Text style={[f.title, { color: colors.textPrimary }]}>📚 School Supplies</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: '#6366F1' }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: colors.sky }}>
                   Parent approves and picks these up for you
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={dismiss}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                style={{ padding: 8, borderRadius: 20, backgroundColor: colors.surface }}>
                 <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -587,10 +584,10 @@ export function SuppliesModal({ visible, onClose, active }: {
                 {(['normal', 'soon'] as const).map(u => (
                   <TouchableOpacity key={u} onPress={() => setUrgency(u)}
                     style={{ flex: 1, borderRadius: 14, paddingVertical: 11, alignItems: 'center', borderWidth: 1.5,
-                      backgroundColor: urgency === u ? (u === 'soon' ? '#EF444418' : '#6366F118') : (isDark ? colors.surface : '#F5F4FA'),
-                      borderColor: urgency === u ? (u === 'soon' ? '#EF4444' : '#6366F1') : (isDark ? colors.border : '#E2E8F0') }}>
+                      backgroundColor: urgency === u ? (u === 'soon' ? '#EF444418' : '${colors.sky}18') : (colors.surface),
+                      borderColor: urgency === u ? (u === 'soon' ? '#EF4444' : colors.sky) : (colors.border) }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
-                      color: urgency === u ? (u === 'soon' ? '#EF4444' : '#6366F1') : colors.textSecondary }}>
+                      color: urgency === u ? (u === 'soon' ? '#EF4444' : colors.sky) : colors.textSecondary }}>
                       {u === 'soon' ? '🔴 Need Soon' : '📋 No Rush'}
                     </Text>
                   </TouchableOpacity>
@@ -617,7 +614,7 @@ export function SuppliesModal({ visible, onClose, active }: {
                         style={[inp, { flex: 1 }]} />
                       {items.length > 1 && (
                         <TouchableOpacity onPress={() => removeRow(idx)} style={{ padding: 6 }}>
-                          <Text style={{ fontSize: 18, color: '#EF4444' }}>✕</Text>
+                          <Text style={{ fontSize: 18, color: colors.danger }}>✕</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -631,12 +628,12 @@ export function SuppliesModal({ visible, onClose, active }: {
                             {filtered.map(s => (
                               <TouchableOpacity key={s.name} onPress={() => updateItem(idx, 'name', s.name)}
                                 style={[f.pill, {
-                                  backgroundColor: item.name === s.name ? '#6366F120' : (isDark ? colors.surface : '#F5F4FA'),
-                                  borderColor: item.name === s.name ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                                  backgroundColor: item.name === s.name ? '${colors.sky}20' : (colors.surface),
+                                  borderColor: item.name === s.name ? colors.sky : (colors.border),
                                 }]}>
                                 <Text style={{ fontSize: TYPO.micro }}>{s.emoji}</Text>
                                 <Text style={{ fontSize: TYPO.micro, fontWeight: '700', marginLeft: 4,
-                                  color: item.name === s.name ? '#6366F1' : colors.textSecondary }} numberOfLines={1}>{s.name}</Text>
+                                  color: item.name === s.name ? colors.sky : colors.textSecondary }} numberOfLines={1}>{s.name}</Text>
                               </TouchableOpacity>
                             ))}
                           </View>
@@ -647,8 +644,8 @@ export function SuppliesModal({ visible, onClose, active }: {
                 );
               })}
               <TouchableOpacity onPress={addRow}
-                style={{ borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#6366F150', paddingVertical: 10, alignItems: 'center', marginBottom: 8 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#6366F1' }}>+ Add another item</Text>
+                style={{ borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '${colors.sky}50', paddingVertical: 10, alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.sky }}>+ Add another item</Text>
               </TouchableOpacity>
 
               {/* Note */}
@@ -659,7 +656,7 @@ export function SuppliesModal({ visible, onClose, active }: {
                 placeholderTextColor={colors.textTertiary} multiline />
 
               <TouchableOpacity onPress={submit} disabled={!canSubmit}
-                style={[f.submitBtn, { marginTop: 16, backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                style={[f.submitBtn, { marginTop: 16, backgroundColor: canSubmit ? colors.sky : (colors.surface) }]}>
                 <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
                   Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''}) →
                 </Text>
@@ -798,7 +795,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <TouchableOpacity onPress={() => { setPickingEnd(false); setPickingStart(true); }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5,
-                  borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#F1F5F9',
+                  borderColor: colors.border, backgroundColor: colors.surface,
                   paddingHorizontal: 10, paddingVertical: 8 }}>
                 <Calendar size={13} color={colors.textSecondary} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{fmtDate(localDateStr(rangeStart))}</Text>
@@ -806,7 +803,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
               <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>–</Text>
               <TouchableOpacity onPress={() => { setPickingStart(false); setPickingEnd(true); }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5,
-                  borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#F1F5F9',
+                  borderColor: colors.border, backgroundColor: colors.surface,
                   paddingHorizontal: 10, paddingVertical: 8 }}>
                 <Calendar size={13} color={colors.textSecondary} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{fmtDate(localDateStr(rangeEnd))}</Text>
@@ -819,7 +816,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
             </View>
 
             {(pickingStart || pickingEnd) && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => { setPickingStart(false); setPickingEnd(false); }}>
+              <Modal supportedOrientations={['portrait', 'landscape']} transparent animationType="fade" visible onRequestClose={() => { setPickingStart(false); setPickingEnd(false); }}>
                 <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
                   activeOpacity={1} onPress={() => { setPickingStart(false); setPickingEnd(false); }}>
                   <TouchableOpacity activeOpacity={1}
@@ -851,8 +848,8 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
               {HISTORY_FILTERS.map(f => (
                 <TouchableOpacity key={f.key} onPress={() => setHistoryFilter(f.key)}
                   style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5,
-                    backgroundColor: historyFilter === f.key ? BRAND.purple : (isDark ? colors.surface : '#F1F5F9'),
-                    borderColor: historyFilter === f.key ? BRAND.purple : (isDark ? colors.border : '#E2E8F0') }}>
+                    backgroundColor: historyFilter === f.key ? BRAND.purple : (colors.surface),
+                    borderColor: historyFilter === f.key ? BRAND.purple : (colors.border) }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700',
                     color: historyFilter === f.key ? '#fff' : colors.textSecondary }}>{f.label}</Text>
                 </TouchableOpacity>
@@ -873,27 +870,27 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
               </View>
             ) : myRequests.map(req => {
               const isExpanded  = expanded.has(req.id);
-              const isSupplies  = req.detail.startsWith(SUPPLIES_PREFIX);
-              const isGrocery   = req.type === 'delegation' && !isSupplies;
+              // TODO: once pre-migration delegation-typed rows have aged out
+              // of the DB, the legacy SUPPLIES_PREFIX/decodeGroceryRequest
+              // fallback branches below can be deleted — grocery/supplies
+              // are now real RequestTypes, not detail-string-encoded.
+              const isLegacySupplies = req.type === 'delegation' && req.detail.startsWith(SUPPLIES_PREFIX);
+              const isLegacyGrocery  = req.type === 'delegation' && !isLegacySupplies && !!decodeGroceryRequest(req.detail);
+              const isSupplies  = req.type === 'supplies' || isLegacySupplies;
+              const isGrocery   = req.type === 'grocery' || isLegacyGrocery;
               const isRideLate  = req.detail.startsWith(RIDE_LATE_PREFIX);
               const hasItems    = (req.items?.length ?? 0) > 0;
               const approvedCount = req.items?.filter(i => i.status === 'approved').length ?? 0;
               const rejectedCount = req.items?.filter(i => i.status === 'rejected').length ?? 0;
               const pendingCount  = req.items?.filter(i => i.status === 'pending').length ?? 0;
 
-              // Every request type whose `detail` is a JSON-encoded internal
-              // payload (SUPPLIES_REQUEST:/GROCERY_REQUEST:/RIDE_LATE:) needs
-              // decoding for display here — this list previously only
-              // decoded the Supplies case, so Grocery requests and "driver
-              // hasn't arrived" alerts both rendered their literal encoded
-              // string instead of readable text.
-              const suppliesDetail = isSupplies ? (() => {
+              const suppliesDetail = isLegacySupplies ? (() => {
                 try {
                   const p = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length));
                   const names = (p.items as { name: string }[]).map(i => i.name).join(', ');
                   return names || req.detail;
                 } catch { return req.detail; }
-              })() : isGrocery ? (() => {
+              })() : isLegacyGrocery ? (() => {
                 const g = decodeGroceryRequest(req.detail);
                 if (!g) return req.detail;
                 return [g.name, g.notes].filter(Boolean).join(' — ');
@@ -929,8 +926,8 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
 
                       {hasItems && (
                         <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
-                          {approvedCount > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#10B981' }}>✅ {approvedCount} approved</Text>}
-                          {rejectedCount > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#EF4444' }}>❌ {rejectedCount} rejected</Text>}
+                          {approvedCount > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.teal }}>✅ {approvedCount} approved</Text>}
+                          {rejectedCount > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.danger }}>❌ {rejectedCount} rejected</Text>}
                           {pendingCount  > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#94A3B8' }}>⏳ {pendingCount} waiting</Text>}
                         </View>
                       )}
@@ -959,7 +956,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                           ])}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           style={{ padding: 4, borderRadius: 8, backgroundColor: '#EF444415' }}>
-                          <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '700' }}>✕</Text>
+                          <Text style={{ fontSize: 11, color: colors.danger, fontWeight: '700' }}>✕</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1013,13 +1010,13 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                               </Text>
                             )}
                             {item.approvedBy && (
-                              <Text style={{ fontSize: TYPO.micro, color: '#10B981', marginTop: 2 }}>
+                              <Text style={{ fontSize: TYPO.micro, color: colors.teal, marginTop: 2 }}>
                                 Approved by {memberName(item.approvedBy)}
                                 {item.approvedAt ? ` · ${fmtDateTime(item.approvedAt)}` : ''}
                               </Text>
                             )}
                             {item.rejectedBy && (
-                              <Text style={{ fontSize: TYPO.micro, color: '#EF4444', marginTop: 2 }}>
+                              <Text style={{ fontSize: TYPO.micro, color: colors.danger, marginTop: 2 }}>
                                 Rejected by {memberName(item.rejectedBy)}
                                 {item.rejectedAt ? ` · ${fmtDateTime(item.rejectedAt)}` : ''}
                               </Text>
@@ -1047,7 +1044,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
 
 const ASK_META = {
   permission: { emoji: '🔓', label: 'Ask Permission',  hint: "e.g. Can I go to Jake's house?",          accent: BRAND.purple },
-  question:   { emoji: '❓', label: 'Ask a Question',   hint: 'e.g. Can you bring money for the field trip?', accent: '#3B82F6' },
+  question:   { emoji: '❓', label: 'Ask a Question',   hint: 'e.g. Can you bring money for the field trip?', accent: '#4A7FA5' },
   medication: { emoji: '💊', label: 'Medication Alert', hint: "e.g. I didn't take my morning pill yet",   accent: '#EF4444' },
 } as const;
 
@@ -1070,7 +1067,7 @@ export function AskModal({ visible, onClose, type, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -1086,7 +1083,7 @@ export function AskModal({ visible, onClose, type, active }: {
               <TouchableOpacity
                 onPress={dismiss}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                style={{ padding: 8, borderRadius: 20, backgroundColor: colors.surface }}>
                 <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -1101,7 +1098,7 @@ export function AskModal({ visible, onClose, type, active }: {
                 colors={colors} isDark={isDark} accent={meta.accent} minHeight={120}
               />
               <TouchableOpacity onPress={submit} disabled={!text.trim()}
-                style={[f.submitBtn, { marginTop: 16, backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                style={[f.submitBtn, { marginTop: 16, backgroundColor: text.trim() ? meta.accent : (colors.surface) }]}>
                 <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
                   Send to Parent →
                 </Text>
@@ -1151,7 +1148,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
@@ -1167,7 +1164,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
               <TouchableOpacity
                 onPress={dismiss}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                style={{ padding: 8, borderRadius: 20, backgroundColor: colors.surface }}>
                 <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -1195,7 +1192,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
                 style={{
                   borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
                   fontSize: 15, color: colors.textPrimary, fontWeight: '800',
-                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
+                  backgroundColor: colors.surface,
                   borderColor: colors.border, width: 120,
                 }}
                 placeholder="15"
@@ -1203,7 +1200,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
               />
 
               <TouchableOpacity onPress={submit} disabled={!title.trim()}
-                style={[f.submitBtn, { marginTop: 20, backgroundColor: title.trim() ? accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                style={[f.submitBtn, { marginTop: 20, backgroundColor: title.trim() ? accent : (colors.surface) }]}>
                 <Text style={{ fontSize: 15, fontWeight: '900', color: title.trim() ? '#fff' : colors.textTertiary }}>
                   Send to Parent →
                 </Text>

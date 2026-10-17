@@ -315,7 +315,7 @@ export function FomoCard({ result, onApply, appliedActions, onClose, isDark, col
 }
 
 export function AdviceCard({ result, appliedActions, onApply, onClose, isDark, colors }: any) {
-  const accent  = '#6366F1';
+  const accent  = '#4A7FA5';
   const indigo  = isDark ? '#1E1B4B' : '#EEF2FF';
   const entries = Object.entries(result.kidEncouragementNotes ?? {});
   const ruleUpdates: string[] = result.suggestedRuleUpdates ?? [];

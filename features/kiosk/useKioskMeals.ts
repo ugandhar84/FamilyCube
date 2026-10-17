@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { localDateStr } from '@/lib/dates';
 import { useFamilyStore } from '@/store/familyStore';
 import { type Meal, weekOf, DAYS } from '@/features/vault/tabs/meals/types';
 
@@ -44,8 +45,13 @@ export function useKioskMeals() {
   const members = useFamilyStore(s => s.members);
   const familyId = (members[0] as any)?.familyId as string | undefined;
   const [meals, setMeals] = useState<Meal[]>([]);
+  // Next week's rows, kept SEPARATE from `meals` so every consumer that reads
+  // `meals` as "this week" (Home's tonight card, Overview) is unaffected. The
+  // Meals page's horizontal week board spans both.
+  const [nextMeals, setNextMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
   const week = weekOf();
+  const nextWeek = (() => { const d = new Date(week + 'T00:00:00'); d.setDate(d.getDate() + 7); return localDateStr(d); })();
 
   const load = useCallback(async () => {
     // Same query MealsTab.load() runs. Scoped by family_id as well when we
@@ -56,8 +62,12 @@ export function useKioskMeals() {
     const { data, error } = await q.order('day');
     if (error) console.warn('[useKioskMeals] load error', error.message);
     if (data) setMeals(data as Meal[]);
+    let q2 = supabase.from('family_meals').select('*').eq('week_of', nextWeek);
+    if (familyId) q2 = q2.eq('family_id', familyId);
+    const { data: d2 } = await q2.order('day');
+    if (d2) setNextMeals(d2 as Meal[]);
     setLoading(false);
-  }, [week, familyId]);
+  }, [week, nextWeek, familyId]);
 
   useEffect(() => {
     load();
@@ -76,5 +86,5 @@ export function useKioskMeals() {
     return () => { if (t) clearTimeout(t); supabase.removeChannel(ch); };
   }, [load]);
 
-  return { meals, loading, reload: load, week };
+  return { meals, nextMeals, loading, reload: load, week, nextWeek };
 }

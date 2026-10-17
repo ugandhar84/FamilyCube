@@ -77,11 +77,23 @@ serve(async (req) => {
     const report = { membersPurged: 0, profilesPurged: 0, choresReleased: 0, eventMemberIdsScrubbed: 0, dryRun };
 
     // ── 1. Purge soft-deleted `members` rows past 7 days ─────────────────────
-    const { data: expiredMembers, error: membersErr } = await db
+    // Self-deletion keeps its 7-day undo. A member an ADMIN removed from the family is kept hidden for 60 days (so a re-invite
+    // brings their old profile back) and only then purged for good.
+    const removedCutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: selfDeleted, error: membersErr } = await db
       .from('members')
       .select('id, name, family_id')
       .not('deleted_at', 'is', null)
+      .is('removed_by', null)
       .lt('deleted_at', cutoff);
+    const { data: adminRemoved, error: removedErr } = await db
+      .from('members')
+      .select('id, name, family_id')
+      .not('removed_by', 'is', null)
+      .not('deleted_at', 'is', null)
+      .lt('deleted_at', removedCutoff);
+    if (removedErr) throw new Error(`removed members fetch: ${removedErr.message}`);
+    const expiredMembers = [...(selfDeleted ?? []), ...(adminRemoved ?? [])];
 
     if (membersErr) throw new Error(`members fetch: ${membersErr.message}`);
 

@@ -10,10 +10,10 @@ import { updateStreak, awardCoins } from '@/lib/db/rewards';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { PinEntryHost } from '@/components/PinEntryModal';
 import AppAlert from '@/components/AppAlert';
 import AppToast from '@/components/AppToast';
 import OfflineBanner from '@/components/OfflineBanner';
-import RecoveryBackfillBanner from '@/components/RecoveryBackfillBanner';
 import * as SplashScreen from 'expo-splash-screen';
 import { supabase } from '@/lib/supabase';
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
@@ -35,7 +35,7 @@ import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, isChatChannelOpen } from '@/store/chatStore';
 import { useTripStore } from '@/store/tripStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
@@ -47,6 +47,8 @@ import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
 import { startBatteryPolling, stopBatteryPolling, startLocationHeartbeat, stopLocationHeartbeat, setBackgroundLocationMemberId, setBackgroundLocationFamilyId } from '@/lib/locationTracking';
 import { registerStoreGeofences } from '@/lib/storeGeofencing';
+import '@/lib/placeGeofencing'; // defines the place geofence task at load so a cold-start wake works
+import { usePlacesStore } from '@/store/placesStore';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
@@ -171,16 +173,16 @@ function RootNavigator() {
           updateStreak(session.user.id).catch(() => {});
           awardCoins(session.user.id, 'daily_login').catch(() => {});
         }
-        // Resumable chat-recovery backfill continuation — also kicked off
-        // on cold start, not just subsequent foregrounds (the AppState
+        // Resumable family-key-rotation continuation — also kicked off on
+        // cold start, not just subsequent foregrounds (the AppState
         // 'active' transition this same call is wired into below doesn't
-        // reliably fire for the very first launch on every platform).
-        const familyIdForColdStartBackfill = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
-        if (familyIdForColdStartBackfill) {
-          import('@/lib/deviceRegistry').then(({ runChatRecoveryBackfillInBackground }) => {
-            runChatRecoveryBackfillInBackground(familyIdForColdStartBackfill).catch(() => {});
-          });
-        }
+        // reliably fire for the very first launch on every platform). This
+        // only ever resumes a job on the device that started it (see
+        // lib/familyKeyRotation.ts's resumeRotationIfPending); every other
+        // device no-ops instantly.
+        import('@/lib/familyKeyRotation').then(({ resumeRotationIfPending }) => {
+          resumeRotationIfPending().catch(() => {});
+        });
       }
       // Hold native splash until auth + profile check finishes. The overlay
       // calls hideAsync once painted, then hideSplashThen fades it out.
@@ -292,11 +294,19 @@ function RootNavigator() {
               });
               destination = '/onboarding/family-choice';
             } else {
+              // Removed from their family by an admin (the login itself is fine): explain it and offer to join or start another.
+              let removed = false;
+              try {
+                const { data: notice } = await supabase.rpc('my_removal_notice');
+                const row = Array.isArray(notice) ? notice[0] : notice;
+                removed = !!row && !row.has_active;
+                if (removed) (globalThis as any).__removedFrom = row.family_name;
+              } catch {}
               let locked = false;
               try {
-                if (await isBiometricEnabled()) locked = await isBiometricAvailable();
+                if (!removed && await isBiometricEnabled()) locked = await isBiometricAvailable();
               } catch {}
-              destination = locked ? '/(auth)/lock' : '/(tabs)';
+              destination = removed ? '/onboarding/removed' : locked ? '/(auth)/lock' : '/(tabs)';
               // Whoever was PIN-switched to as the active member before the
               // app closed is NOT necessarily who's coming back on this cold
               // boot — same reasoning as LoginScreen/LockScreen's Face ID
@@ -308,7 +318,7 @@ function RootNavigator() {
               // prompt after a plain app relaunch. isLocked/lock-screen's own
               // Face ID path already covers the locked branch; this covers
               // the no-lock-enabled branch the same way.
-              if (!locked) {
+              if (!locked && !removed) {
                 const { markPendingOwnerReset } = await import('@/lib/biometrics');
                 await markPendingOwnerReset();
               }
@@ -319,6 +329,21 @@ function RootNavigator() {
             destination = '/(tabs)';
           }
           pendingWidgetTap.current = false;
+          // Heading into (tabs) with familyStore still unresolved guaranteed
+          // a double paint: CustomTabBar/HubScreen both read members/
+          // activeMemberId from familyStore on first render (default empty
+          // state), then again once loadFromStorage() resolves a moment
+          // later — the live-reported "card rendering is janky, hitting
+          // hard" on cold startup. loadFromStorage() itself already starts
+          // from (tabs)/_layout.tsx's own mount effect, so this just waits
+          // for that same bounded fetch/retry loop to reach its terminal
+          // 'confirmed' state (see familyStore.ts's own comment on why
+          // 'confirmed', never 'loaded' alone, is the right gate) before the
+          // splash fades — bounded by the store's own retry budget, so this
+          // can't hang boot indefinitely on a dead network.
+          if (destination === '/(tabs)') {
+            await useFamilyStore.getState().loadFromStorage();
+          }
           // Always navigate BEFORE dismissing splash to prevent the screen
           // from loading behind the fading overlay (causes animation jank).
           router.replace(destination as any);
@@ -642,14 +667,16 @@ function RootNavigator() {
         // used to fall through to the generic default case below with no
         // case of its own, landing on /(tabs)/notifications instead of the
         // actual grocery list (live-reported: "it is going to somewhere").
-        // Grocery has its own dedicated route. No kiosk Grocery tab yet —
-        // falls back to Hub there via navigateFromNotification.
+        // Grocery is no longer a real tab route either — it's a Hub-owned
+        // FullPageOverlay now — but navigateFromNotification itself knows
+        // how to land on Hub and open it from this same '/(tabs)/grocery'
+        // string, same as before this call site needed to change. No
+        // kiosk Grocery tab exists yet — falls back to Hub there too.
         navigateFromNotification('/(tabs)/grocery', isKioskDevice);
       } else if (data?.type === 'schedule_conflict') {
         // schedule-conflict-sweep's server-side double-booking push —
-        // lands on the merged Tasks tab, which defaults to its Schedule
-        // segment (see features/tasks/TasksScreen.tsx).
-        navigateFromNotification('/(tabs)/tasks', isKioskDevice);
+        // lands on the Schedule tab.
+        navigateFromNotification('/(tabs)/schedule', isKioskDevice);
       } else {
         // Was: router.push('/(tabs)/notifications') — that page
         // (NotificationsScreen.tsx, via the all-notifications/notifications
@@ -782,6 +809,7 @@ function RootNavigator() {
             data: row.data ?? row.meta ?? {}, read: row.read ?? false,
             created_at: row.created_at ?? row.timestamp,
           });
+          if (isChatPushForOpenThread(row?.type, row?.data ?? row?.meta)) return;
           showInAppToast({ title: row?.title ?? 'New notification', body: row?.body ?? row?.message, type: row?.type, data: row?.data ?? row?.meta });
         },
       )
@@ -824,6 +852,8 @@ function RootNavigator() {
       const title = content?.title ?? 'New notification';
       const body  = content?.body ?? undefined;
       const data  = (content?.data ?? undefined) as Record<string, any> | undefined;
+      // Already looking at this conversation: the message is on screen, so no banner for it.
+      if (isChatPushForOpenThread(data?.type, data)) return;
       showInAppToast({ title, body, type: data?.type, data });
 
       // Was: relied entirely on the recipient's own games:{familyId}
@@ -922,19 +952,14 @@ function RootNavigator() {
       // whatever gap is causing the live listener to miss real answers.
       checkLastAnsweredCallOnColdStart();
 
-      // Resumable chat-recovery backfill continuation (lib/deviceRegistry.ts) —
-      // a large family's full message history may take more than one pass
-      // to fully cover with a recovery-key wrap, so this picks up wherever
-      // a previous app session left off. No-ops instantly if no recovery
-      // key is set up, or if everything's already backfilled.
-      {
-        const familyIdForBackfill = useFamilyStore.getState().members.find(m => m.familyId)?.familyId;
-        if (familyIdForBackfill) {
-          import('@/lib/deviceRegistry').then(({ runChatRecoveryBackfillInBackground }) => {
-            runChatRecoveryBackfillInBackground(familyIdForBackfill).catch(() => {});
-          });
-        }
-      }
+      // Resumable family-key-rotation continuation (lib/familyKeyRotation.ts) —
+      // a large family's full message/record history may take more than one
+      // pass to fully re-encrypt after a rotation, so this picks up wherever
+      // a previous app session left off. No-ops instantly if no rotation is
+      // pending, or if this isn't the device that started it.
+      import('@/lib/familyKeyRotation').then(({ resumeRotationIfPending }) => {
+        resumeRotationIfPending().catch(() => {});
+      });
 
       // Live-reported: "i see the address still showing the encrypted
       // wrong key" — ensureLocationKeyWrapped only ever runs as a side
@@ -1230,6 +1255,37 @@ function RootNavigator() {
     return () => { cancelled = true; clearInterval(id); };
   }, [activeMemberId]);
 
+  // Kid-request lifecycle sweep — a checkin ("I'm Home!"/"Running Late")
+  // stays visibly 'pending' for an hour after a parent acknowledges it, and
+  // an 'approved' request (ride/tutor/cheer/etc.) stays in that state for
+  // an hour after approval too, before either moves into
+  // History/All ('completed'). Nothing pushes this transition, so it has
+  // to be swept locally — same reason the calendar poll above exists.
+  // Checked every minute (cheap local array scan, no network call unless
+  // something's actually due) so the move to history feels prompt without
+  // needing the app to be foregrounded exactly on the hour.
+  //
+  // expireStale lives here too (not just KidView's own mount-time call) —
+  // it flips a checkin/question to 'expired' once its 3h/36h expiresAt
+  // passes. It previously only ran from KidView, so a checkin a parent never
+  // acknowledged stayed "Needs a Decision" on the PARENT's own screen
+  // indefinitely (parent never mounts KidView) — reported live: "why these
+  // are not auto complete on certain exprity." No server-side sweeper cron
+  // actually exists despite an old comment claiming one does, so this is
+  // the only place this transition happens — run it for whoever's device is
+  // open, parent or kid.
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const SWEEP_INTERVAL_MS = 60_000;
+    const runSweep = () => {
+      useKidRequestStore.getState().finalizeAckedCheckins().catch(() => {});
+      useKidRequestStore.getState().expireStale().catch(() => {});
+    };
+    runSweep();
+    const id = setInterval(runSweep, SWEEP_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [activeMemberId]);
+
   // Store-proximity geofences (lib/storeGeofencing.ts) — was ONLY ever
   // registered from GroceryScreen.tsx (on mount, and after pinning a new
   // store), unlike background GPS tracking's own cold-start re-check a few
@@ -1246,6 +1302,9 @@ function RootNavigator() {
     const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
     if (!familyId) return;
     registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+    // Family places (Home / schools / work) — load, then re-register this
+    // device's geofences for them (no-op until background location is granted).
+    usePlacesStore.getState().load(familyId, activeMemberId).catch(() => {});
   }, [activeMemberId]);
 
   useEffect(() => {
@@ -1396,7 +1455,7 @@ function RootNavigator() {
       {/* Splash modal — Modal creates its own UIWindow above the tab bar,
           so nothing bleeds through. onLayout fires once the gradient is
           painted, then we call hideAsync so native→animated is a seamless swap. */}
-      <Modal
+      <Modal supportedOrientations={['portrait', 'landscape']}
         visible={!splashGone}
         transparent={true}
         animationType="none"
@@ -1498,15 +1557,22 @@ export function ErrorBoundary({ error }: { error: Error }) {
   );
 }
 
+// A chat push/notification row for the conversation that is open on screen is just noise. The payload's own `type`
+// is not always present (family-notifier sends { screen: 'Chat', channelId }), so match on either signal.
+function isChatPushForOpenThread(type: string | undefined, data: Record<string, any> | undefined): boolean {
+  const isChat = type === 'chat_message' || type === 'chat_mention' || data?.screen === 'Chat' || !!data?.channelId;
+  return isChat && isChatChannelOpen(data?.channelId);
+}
+
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <RootNavigator />
         <AppAlert />
+        <PinEntryHost />
         <AppToast />
         <OfflineBanner />
-        <RecoveryBackfillBanner />
       </ThemeProvider>
     </QueryClientProvider>
   );

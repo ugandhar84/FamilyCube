@@ -58,7 +58,7 @@ export interface KioskRailItem {
   Icon: LucideIcon;
 }
 
-const OVERVIEW: KioskRailItem = { key: 'overview', label: 'Overview', Icon: LayoutGrid };
+const OVERVIEW: KioskRailItem = { key: 'overview', label: 'Home',     Icon: LayoutGrid };
 const MEALS:    KioskRailItem = { key: 'meals',    label: 'Meals',    Icon: UtensilsCrossed };
 const TASKS:    KioskRailItem = { key: 'tasks',    label: 'Chores',   Icon: CheckSquare };
 const SCHEDULE: KioskRailItem = { key: 'schedule', label: 'Schedule', Icon: CalendarIcon };

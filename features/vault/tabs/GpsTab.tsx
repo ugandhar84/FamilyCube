@@ -9,10 +9,10 @@
  */
 import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import MapView, { Marker, MarkerAnimated, AnimatedRegion, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints, History, MessageCircle, Gauge } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
@@ -25,6 +25,12 @@ import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill } from './shared';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import FullPageOverlay from '@/components/FullPageOverlay';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { PlacesPage } from '@/features/gps/PlacesPage';
+import { PlaceEditorPage } from '@/features/gps/PlaceEditorPage';
+import { usePlacesStore, type FamilyPlace, type PlaceKind } from '@/store/placesStore';
+import { placeKindMeta } from '@/features/gps/placeKinds';
 
 type LocStatus = 'at_home' | 'at_school' | 'at_work' | 'in_transit' | 'at_activity';
 
@@ -70,6 +76,24 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Matches a live lat/lng against the family's pinned Places (Home/School/
+// Work/Other) within each place's own radius — shows "At Home"/"At
+// School" etc. instead of the raw reverse-geocoded address when someone
+// is genuinely inside a pinned place [live-requested: "We also need to
+// show the pinned place location if the current location address matches
+// to that at Home at school etc"]. Picks the CLOSEST matching place when
+// radii overlap (e.g. a small "Other" pin inside a large Home radius),
+// not just the first one found.
+function matchPinnedPlace(lat: number, lng: number, places: FamilyPlace[]): FamilyPlace | null {
+  let best: FamilyPlace | null = null;
+  let bestDist = Infinity;
+  for (const p of places) {
+    const d = haversineMeters(lat, lng, p.latitude, p.longitude);
+    if (d <= p.radiusM && d < bestDist) { best = p; bestDist = d; }
+  }
+  return best;
 }
 
 const statusColors = (colors: any): Record<LocStatus, string> => ({
@@ -222,14 +246,8 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   );
 });
 
-export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
-  // Real tab bar height (includes the safe-area bottom inset the custom
-  // CustomTabBar already factors in) — without this, the sheet's min-height
-  // snap point and its content's bottom padding were computed against the
-  // full screen height, so the last roster row and the sheet itself at its
-  // minimum size both ended up hidden behind the tab bar.
-  let tabBarHeight = 0;
-  try { tabBarHeight = useBottomTabBarHeight(); } catch { /* not inside a bottom-tabs navigator (e.g. some embedded contexts) — no bar to clear */ }
+export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDark: boolean; onClose?: () => void }) {
+  const insets = useSafeAreaInsets();
 
   const { members, activeMemberId } = useFamilyStore();
   const [locations, setLocations]   = useState<MemberLocation[]>([]);
@@ -277,6 +295,35 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = activeMember?.familyId;
+
+  // Places (Home/School/Work/Other pins + real device geofencing) — the
+  // whole feature (PlacesPage/PlaceEditorPage/placesStore/
+  // lib/placeGeofencing.ts) already existed fully built but had NO entry
+  // point anywhere in the app; PlacesPage's own header comment said
+  // "Opened from the full-width Places card on the map sheet" but that
+  // card was never actually added here [live-requested: "Find fam we
+  // decided to have the pin location of the family members work school
+  // home (common), other places for geo fencing" — confirmed not reachable
+  // in the UI].
+  const { places, load: loadPlaces } = usePlacesStore();
+  const [showPlaces, setShowPlaces] = useState(false);
+  const [editingPlace, setEditingPlace] = useState<FamilyPlace | null | 'new'>(null);
+  const [newPlaceKind, setNewPlaceKind] = useState<PlaceKind>('home');
+
+  useEffect(() => {
+    if (familyId && activeMemberId) loadPlaces(familyId, activeMemberId);
+  }, [familyId, activeMemberId]);
+
+  // Full-bleed map with no header of its own — the bottom tab bar was
+  // still showing underneath it [live-requested: "hide the bottom nav on
+  // this page"], since neither this screen nor FindFamScreen ever called
+  // hideTabBar() — being reached via FullPageOverlay alone doesn't hide
+  // it automatically, every other full-page screen in the app calls this
+  // itself.
+  useEffect(() => {
+    hideTabBar();
+    return () => showTabBar();
+  }, []);
 
   // load() is called on first mount AND on every realtime location ping /
   // 5-min poll from ANY family member — it used to setLoading(true) every
@@ -835,13 +882,16 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // area — using the raw screen height for the map/sheet split let the
   // sheet's own "MIN" snap point end up SHORTER than the tab bar itself,
   // so at min-height the entire sheet rendered underneath the bar instead
-  // of just being smaller. Usable height is screen minus the tab bar; and
-  // SHEET_MIN has its own floor (not just a percentage) so it's always at
-  // least tall enough to show the grabber + "Family (N)" header AND read as
-  // an obvious, easy-to-grab sheet edge — confirmed live as too easy to
-  // drag down to where the sheet became invisible against the map with
-  // nothing left to grab it by. 140px (not 110) leaves real visible margin.
-  const SCREEN_H = SCREEN_H_RAW - tabBarHeight;
+  // of just being smaller. SHEET_MIN has its own floor (not just a
+  // percentage) so it's always at least tall enough to show the grabber +
+  // "Family (N)" header AND read as an obvious, easy-to-grab sheet edge —
+  // confirmed live as too easy to drag down to where the sheet became
+  // invisible against the map with nothing left to grab it by. 140px (not
+  // 110) leaves real visible margin. No longer subtracting tabBarHeight —
+  // this screen now hides the tab bar entirely (hideTabBar() above), so
+  // reserving space for it left a dead gap at the bottom of the sheet
+  // [live-requested: "Remove safe sea of this bottom sheet bottom"].
+  const SCREEN_H = SCREEN_H_RAW;
   const SHEET_MIN = Math.max(140, Math.round(SCREEN_H * 0.16));
   const SHEET_DEFAULT = Math.round(SCREEN_H * 0.48);
   const SHEET_MAX = Math.round(SCREEN_H * 0.86);
@@ -950,6 +1000,23 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         )}
 
+        {/* Close — this screen has no header at all (full-bleed map, "no
+            headers" per its own live-requested layout), so without this
+            there was genuinely no visible way to leave except an edge
+            swipe [live-reported: no overlay/close icon existed on the map
+            at all]. onClose is the render-prop requestAnimatedClose from
+            FullPageOverlay (threaded through FindFamScreen), so tapping
+            this plays the same slide-out-to-the-right animation the swipe
+            gesture already does, not an instant unmount. */}
+        {onClose && (
+          <TouchableOpacity onPress={onClose}
+            style={{ position: 'absolute', top: insets.top + 10, left: 12 }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <ChevronDown size={26} color="#fff" strokeWidth={2.5}
+              style={{ shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }} />
+          </TouchableOpacity>
+        )}
+
         {/* Share My Location — floating pill, bottom-right of the map like a Maps action button */}
         <TouchableOpacity onPress={toggleTracking} disabled={togglingTrack} style={g.trackFab}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -985,9 +1052,34 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         </View>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 90 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}
           showsVerticalScrollIndicator={false}>
-        <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
+
+        {/* Places — Home/School/Work/Other pins with real device
+            geofencing (lib/placeGeofencing.ts). Full-width card, same
+            pattern as PlacesPage's own header comment describes, just
+            actually wired up now. */}
+        <TouchableOpacity onPress={() => setShowPlaces(true)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+            borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+            backgroundColor: isDark ? colors.card : '#fff',
+            paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12,
+            backgroundColor: colors.tealLight, alignItems: 'center', justifyContent: 'center' }}>
+            <MapPin size={20} color={colors.teal} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Places</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+              {places.length === 0
+                ? 'Pin Home, school, work for arrival check-ins'
+                : `${places.length} place${places.length === 1 ? '' : 's'} pinned`}
+            </Text>
+          </View>
+          <ChevronDown size={16} color={colors.textTertiary} style={{ transform: [{ rotate: '-90deg' }] }} />
+        </TouchableOpacity>
+
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 }}>
           Family ({roster.length})
         </Text>
 
@@ -1062,6 +1154,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         )}
 
+        <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14,
+          backgroundColor: isDark ? colors.card : '#fff', paddingHorizontal: 4, marginBottom: 16 }}>
         {roster.map((loc, i) => {
           const rc  = roleColor(loc.role);
           const m   = members.find(mb => mb.id === loc.member_id);
@@ -1080,6 +1174,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 10 * 60_000;
           const sharingOff = loc.share_location_enabled === false;
           const isExpanded = expandedId === loc.member_id;
+
+          // "At Home"/"At School"/etc when this fix falls inside a pinned
+          // Place's radius — takes priority over the raw reverse-geocoded
+          // address, same as how Life360/Find My itself labels a geofenced
+          // location instead of a street address.
+          const matchedPlace = isLive && loc.lat != null && loc.lng != null
+            ? matchPinnedPlace(loc.lat, loc.lng, places)
+            : null;
+          const placeLabel = matchedPlace
+            ? `At ${placeKindMeta(matchedPlace.kind, colors).label}${matchedPlace.kind === 'other' ? ` · ${matchedPlace.name}` : ''}`
+            : null;
 
           return (
             <TouchableOpacity key={loc.member_id} activeOpacity={0.6}
@@ -1106,8 +1211,9 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
-                  {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
+                <Text style={{ fontSize: 12, color: placeLabel ? colors.teal : colors.textSecondary,
+                  fontWeight: placeLabel ? '700' : '400', marginTop: 2 }} numberOfLines={1}>
+                  {placeLabel ?? (loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status]))}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
                   {isLive && isFreshFix && (() => {
@@ -1201,10 +1307,11 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
             </TouchableOpacity>
           );
         })}
+        </View>
         </ScrollView>
       </Animated.View>
 
-      <Modal visible={!!historyFor} animationType="slide" transparent onRequestClose={() => setHistoryFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!historyFor} animationType="slide" transparent onRequestClose={() => setHistoryFor(null)}>
         <View style={g.historyBackdrop}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setHistoryFor(null)} />
           <View style={[g.historySheet, { backgroundColor: colors.background }]}>
@@ -1250,7 +1357,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         </View>
       </Modal>
 
-      <Modal visible={!!driverReportFor} animationType="slide" transparent onRequestClose={() => setDriverReportFor(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!driverReportFor} animationType="slide" transparent onRequestClose={() => setDriverReportFor(null)}>
         <View style={g.historyBackdrop}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setDriverReportFor(null)} />
           <View style={[g.historySheet, { backgroundColor: colors.background }]}>
@@ -1365,6 +1472,33 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           </View>
         </View>
       </Modal>
+
+      {/* Places — Home/School/Work/Other pins + real device geofencing,
+          previously fully built but unreachable from anywhere in the app. */}
+      <FullPageOverlay visible={showPlaces} onDismiss={() => setShowPlaces(false)} zIndex={55}>
+        {(requestAnimatedClose) => (
+          <PlacesPage
+            onClose={requestAnimatedClose}
+            onAdd={(kind) => { setNewPlaceKind(kind); setEditingPlace('new'); }}
+            onEdit={(place) => setEditingPlace(place)}
+            onShow={(place) => {
+              requestAnimatedClose();
+              mapRef.current?.animateToRegion({
+                latitude: place.latitude, longitude: place.longitude,
+                latitudeDelta: 0.01, longitudeDelta: 0.01,
+              }, 650);
+            }}
+          />
+        )}
+      </FullPageOverlay>
+
+      <FullPageOverlay visible={!!editingPlace} onDismiss={() => setEditingPlace(null)} zIndex={56}>
+        {(requestAnimatedClose) => editingPlace === 'new' ? (
+          <PlaceEditorPage defaultKind={newPlaceKind} onClose={requestAnimatedClose} />
+        ) : editingPlace ? (
+          <PlaceEditorPage place={editingPlace} onClose={requestAnimatedClose} />
+        ) : null}
+      </FullPageOverlay>
     </View>
   );
 }
@@ -1387,9 +1521,9 @@ const g = StyleSheet.create({
   sheet:        { borderTopLeftRadius: 22, borderTopRightRadius: 22,
                   shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 6 },
   grabber:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#00000020', alignSelf: 'center', marginTop: 8, marginBottom: 12 },
-  exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1,
-                    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
-  row:          { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12 },
+  exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1,
+                    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
+  row:          { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12, paddingHorizontal: 12 },
   rowExpanded:  { borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 10, marginVertical: 2, borderTopWidth: 1.5 },
   actionPill:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 16,
                   paddingHorizontal: 12, paddingVertical: 7 },

@@ -42,6 +42,7 @@
  * per caller — omit `familyId`/`onShare` context to fall back to the
  * original display-only drawer. RecipeModal.tsx itself is untouched.
  */
+import { KioskSlideModal } from './KioskSlideModal';
 import { useState } from 'react';
 import { Modal, View, Text, ScrollView, Pressable, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { ChefHat, Clock3, UserRound, Sparkles, X, Pencil, Trash2, ShoppingBag, Send, Check, Star } from 'lucide-react-native';
@@ -146,7 +147,7 @@ export function KioskRecipeDrawer({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <KioskSlideModal visible={visible} onRequestClose={onClose}>
       <KioskModalHost style={s.host}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
@@ -306,7 +307,7 @@ export function KioskRecipeDrawer({
           </View>
         </KeyboardAvoidingView>
       </KioskModalHost>
-    </Modal>
+    </KioskSlideModal>
   );
 }
 

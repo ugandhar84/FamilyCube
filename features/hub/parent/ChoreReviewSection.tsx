@@ -5,15 +5,18 @@ import { TYPO, RADIUS } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { parseDbTime, fmtDate } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
+import { useUIStore } from '@/store/uiStore';
 import { supabase } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import { GpOfferReviewCard } from './GpOfferReviewCard';
 import { KidProposedChoreCard } from './KidProposedChoreCard';
 import { SectionCard } from '../hubComponents';
 import { ReasonPromptModal } from '@/components/ReasonPromptModal';
+import { approvalStatusBadge } from './ApprovalDetailScreen';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 import { useSubmitGuard } from '@/lib/hooks/useSubmitGuard';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // Money-green — "Save" jar accent in the coin-split preview, distinct from
 // brand teal used for this card's header. Not colors.success (which IS
@@ -50,17 +53,17 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
         </Text>
       </View>
       <View style={{ padding: 14, gap: 8 }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
         {c.description ? (
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 18 }}>{c.description}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), lineHeight: 18 }}>{c.description}</Text>
         ) : null}
         {targetKids.length > 0 ? (
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
             For: {targetKids.map(k => k.name.split(' ')[0]).join(', ')}
             {targetKids.length > 1 ? ` — ${pts} pts each, independently` : ''}
           </Text>
         ) : (
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>No kid picked — goes to the bounty pool</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>No kid picked — goes to the bounty pool</Text>
         )}
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {[
@@ -81,7 +84,7 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
             onPress={() => declineGrandparentQuestAsParent(c.id, active.id, 'Not suitable')}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
               borderWidth: 1.5, borderColor: colors.border }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Decline</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Decline</Text>
           </Pressable>
           <Pressable
             onPress={() => approveGrandparentQuestAsParent(c.id, active.id)}
@@ -156,8 +159,8 @@ function GpAwaitingSponsorCard({ c, members, colors, isDark, active, grandparent
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Camera size={15} color={colors.teal} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
             {kid?.name.split(' ')[0] ?? 'Kid'} submitted proof · waiting on {sponsor?.name.split(' ')[0] ?? 'grandparent'} to verify
           </Text>
         </View>
@@ -193,13 +196,13 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
       backgroundColor: isDark ? `${colors.danger}10` : colors.dangerLight,
       borderWidth: 1.5, borderColor: `${colors.danger}30` }}>
       <View>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
           {kid?.name.split(' ')[0] ?? 'Kid'} can't take this{sponsor ? ` · from ${sponsor.name.split(' ')[0]}` : ''}
         </Text>
       </View>
       {c.rejectionReason ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>"{c.rejectionReason}"</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontStyle: 'italic' }}>"{c.rejectionReason}"</Text>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable onPress={() => setExpanded(e => !e)}
@@ -267,8 +270,8 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Coins size={15} color={colors.amber} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
             {teen?.name.split(' ')[0] ?? 'Teen'} requested {requested} coins — task already in progress, only the reward needs review
           </Text>
         </View>
@@ -283,7 +286,7 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
             autoFocus
             style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.amber + '60',
               backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
-              fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
+              fontSize: TYPO.caption, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}
           />
           <Pressable onPress={() => setAdjusting(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <X size={16} color={colors.textTertiary} />
@@ -334,171 +337,44 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
 //  - not disputed yet, viewer isn't the original approver → Flag / Request Reversal
 //  - disputeStatus 'flagged', viewer IS the original approver → Discuss (chat) / Stand By Approval
 //  - disputeStatus 'reversal_requested', viewer IS the original approver → Co-Sign Reversal / Stand By Approval
-function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal, acknowledgeRecentApproval }: {
+function ApprovalRow({ c, members, colors, isDark, active, acknowledgeRecentApproval }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
-  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => void;
-  standByApproval: (choreId: string, byParentId: string) => void;
-  requestApprovalReversal: (choreId: string, byParentId: string, reason: string) => void;
-  coSignReversal: (choreId: string, coSigningParentId: string) => void;
   acknowledgeRecentApproval?: (choreId: string, byParentId: string) => void;
 }) {
   const kid = members.find(m => m.id === c.assignedToId);
   const approver = members.find(m => m.id === c.reviewedById);
-  const isOriginalApprover = active.id === c.reviewedById;
-  const totalCoins = (c.basePoints > 0 ? c.basePoints : c.coinsReward) + (c.bonusCoins ?? 0);
-  const [flaggingOpen, setFlaggingOpen] = useState(false);
-  const [reversalOpen, setReversalOpen] = useState(false);
-
-  if (c.disputeStatus === 'reversal_requested' && isOriginalApprover) {
-    return (
-      <View style={{ borderRadius: 14, padding: 12, gap: 8,
-        backgroundColor: isDark ? colors.danger + '12' : colors.danger + '08',
-        borderWidth: 1.5, borderColor: colors.danger + '50' }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>
-          Reversal requested — "{c.title}"
-        </Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-          A co-parent wants to reverse this {totalCoins}-coin payout to {kid?.name.split(' ')[0] ?? 'them'}
-          {c.disputeReason ? ` — "${c.disputeReason}"` : ''}. Nothing changes unless you co-sign.
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={() => standByApproval(c.id, active.id)}
-            style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-              backgroundColor: `${colors.parent}15`, borderWidth: 1, borderColor: `${colors.parent}40` }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>Stand By Approval</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => Alert.alert(
-              'Co-Sign Reversal',
-              `This will remove ${totalCoins} coins from ${kid?.name.split(' ')[0] ?? 'their'} balance and mark "${c.title}" as declined. This cannot be undone.`,
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Co-Sign & Reverse', style: 'destructive', onPress: () => coSignReversal(c.id, active.id) },
-              ],
-            )}
-            style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, backgroundColor: colors.danger }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Co-Sign & Reverse</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
-  if (c.disputeStatus === 'flagged' && isOriginalApprover) {
-    return (
-      <View style={{ borderRadius: 14, padding: 12, gap: 8,
-        backgroundColor: isDark ? colors.warning + '12' : colors.warningLight,
-        borderWidth: 1.5, borderColor: colors.warning + '50' }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warningDark }}>
-          Flagged for discussion — "{c.title}"
-        </Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-          A co-parent flagged your approval{c.disputeReason ? ` — "${c.disputeReason}"` : ''}. No coins have moved.
-        </Text>
-        <Pressable onPress={() => standByApproval(c.id, active.id)}
-          style={{ alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-            backgroundColor: `${colors.parent}15`, borderWidth: 1, borderColor: `${colors.parent}40` }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>Stand By Approval</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (c.disputeStatus) {
-    // Viewer isn't the original approver — a request/flag they raised is
-    // already pending the other parent's response. No further action here.
-    return (
-      <View style={{ borderRadius: 14, padding: 12, gap: 4,
-        backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{c.title}</Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-          {c.disputeStatus === 'reversal_requested' ? 'Waiting on' : 'Flagged for'} {approver?.name.split(' ')[0] ?? 'the other parent'} to respond.
-        </Text>
-      </View>
-    );
-  }
-
-  // Not disputed yet. The original approver has nothing to flag/reverse on
-  // their own approval, but still gets a Dismiss so their own "Recently
-  // Approved" list doesn't keep showing chores they already know about.
-  if (isOriginalApprover) {
-    if (!acknowledgeRecentApproval) return null;
-    return (
-      <View style={{ borderRadius: 14, padding: 12, gap: 8,
-        backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Coins size={14} color={colors.textTertiary} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-              {kid?.name.split(' ')[0] ?? 'Kid'} earned {totalCoins} coins · approved by you
-            </Text>
-          </View>
-          <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)}
-            hitSlop={8}
-            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-              backgroundColor: isDark ? colors.card : '#EEF2F7' }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
+  const total = (c.basePoints > 0 ? c.basePoints : c.coinsReward) + (c.bonusCoins ?? 0);
+  const badge = approvalStatusBadge(c, active.id, id => members.find(m => m.id === id)?.name?.split(' ')[0] ?? 'a parent');
+  const tone = {
+    ok:      { bg: colors.tealLight,  fg: colors.teal },
+    warn:    { bg: colors.amberLight, fg: colors.amber },
+    danger:  { bg: isDark ? colors.danger + '22' : colors.danger + '14', fg: colors.danger },
+    neutral: { bg: colors.surface,    fg: (isDark ? colors.textSecondary : GEMINI.bodyColor) },
+  }[badge.tone];
+  const byMe = active.id === c.reviewedById;
   return (
-    <View style={{ borderRadius: 14, padding: 12, gap: 8,
-      backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+    <Pressable onPress={() => useUIStore.getState().setOpenApprovalDetailChoreId(c.id)}
+      style={({ pressed }) => ({ borderRadius: 14, padding: 12, gap: 8, opacity: pressed ? 0.85 : 1,
+        backgroundColor: colors.surface, borderWidth: 1, borderColor: c.disputeStatus ? tone.fg + '50' : colors.border })}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Coins size={14} color={colors.textTertiary} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-            Approved by {approver?.name.split(' ')[0] ?? 'a parent'} · {kid?.name.split(' ')[0] ?? 'kid'} earned {totalCoins} coins
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }} numberOfLines={1}>
+            {byMe ? 'Approved by you' : `Approved by ${approver?.name.split(' ')[0] ?? 'a parent'}`} · {kid?.name.split(' ')[0] ?? 'kid'} earned {total} coins
           </Text>
         </View>
-        {acknowledgeRecentApproval && (
-          <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)}
-            hitSlop={8}
-            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-              backgroundColor: isDark ? colors.card : '#EEF2F7' }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
+        {!c.disputeStatus && acknowledgeRecentApproval && (
+          <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)} hitSlop={8}
+            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.card }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Dismiss</Text>
           </Pressable>
         )}
       </View>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Pressable
-          onPress={() => setFlaggingOpen(true)}
-          style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-            backgroundColor: `${colors.warning}15`, borderWidth: 1, borderColor: `${colors.warning}40` }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Flag for Discussion</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setReversalOpen(true)}
-          style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-            backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}40` }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Request Reversal</Text>
-        </Pressable>
+      <View style={{ alignSelf: 'flex-start', borderRadius: 100, paddingVertical: 4, paddingHorizontal: 10, backgroundColor: tone.bg }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: tone.fg }}>{badge.label}</Text>
       </View>
-      <ReasonPromptModal
-        visible={flaggingOpen}
-        title="Flag for Discussion"
-        message={`Let ${approver?.name.split(' ')[0] ?? 'the other parent'} know why you want to discuss "${c.title}" (optional).`}
-        confirmLabel="Flag"
-        colors={colors}
-        onCancel={() => setFlaggingOpen(false)}
-        onConfirm={note => { setFlaggingOpen(false); flagApprovalForDiscussion(c.id, active.id, note); }}
-      />
-      <ReasonPromptModal
-        visible={reversalOpen}
-        title="Request Reversal"
-        message={`This asks ${approver?.name.split(' ')[0] ?? 'the other parent'} to co-sign reversing the ${totalCoins}-coin payout for "${c.title}". Nothing changes until they agree. Why?`}
-        confirmLabel="Request"
-        destructive
-        colors={colors}
-        onCancel={() => setReversalOpen(false)}
-        onConfirm={reason => { setReversalOpen(false); requestApprovalReversal(c.id, active.id, reason || 'No reason given'); }}
-      />
-    </View>
+    </Pressable>
   );
 }
 
@@ -523,19 +399,19 @@ function RedoDisputeCard({ c, members, colors, isDark, active, resolveRedoDisput
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <MessageCircle size={15} color={colors.primary} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
             {kid?.name.split(' ')[0] ?? 'Kid'} disagrees with {originalReviewer?.name.split(' ')[0] ?? 'the'} redo request — asking you to take a look
           </Text>
         </View>
       </View>
       {c.rejectionReason ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontStyle: 'italic' }}>
           Redo reason: "{c.rejectionReason}"
         </Text>
       ) : null}
       {c.submissionNote ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary }}>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
           Original note: "{c.submissionNote}"
         </Text>
       ) : null}
@@ -549,7 +425,7 @@ function RedoDisputeCard({ c, members, colors, isDark, active, resolveRedoDisput
             onPress={() => resolveRedoDispute(c.id, active.id, false)}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
               borderWidth: 1.5, borderColor: colors.border }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Side with the redo</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Side with the redo</Text>
           </Pressable>
           <Pressable
             onPress={() => resolveRedoDispute(c.id, active.id, true)}
@@ -597,21 +473,21 @@ function CantMakeItLaterCard({ c, members, colors, isDark, active, approveLaterD
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Clock3 size={15} color={colors.amber} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2 }}>
             {requester?.name.split(' ')[0] ?? 'Someone'} asked to move this to {c.pendingLaterDate ? fmtDate(c.pendingLaterDate) : 'a later date'}
           </Text>
         </View>
       </View>
       {c.pendingLaterReason ? (
-        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>"{c.pendingLaterReason}"</Text>
+        <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontStyle: 'italic' }}>"{c.pendingLaterReason}"</Text>
       ) : null}
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable onPress={() => declineLaterDate(c.id, active.id)}
           style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
             borderWidth: 1.5, borderColor: colors.border }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Keep original date</Text>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>Keep original date</Text>
         </Pressable>
         <Pressable onPress={() => approveLaterDate(c.id, active.id)}
           style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: colors.amber }}>
@@ -716,7 +592,7 @@ export function ChoreReviewSection({
     return Number.isFinite(t) && t > 0 && (Date.now() - t) < 7 * 24 * 3600_000;
   });
   const disputeBadgeCount = recentlyApproved.filter(c =>
-    c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,
+    (c.disputeStatus === 'reversal_requested' || c.disputeStatus === 'flagged') && c.reviewedById === active.id,
   ).length;
   // Coordinated live-DB QA (Round 19, Critical) — a multi-slot bounty's
   // per-claim submissions never touch the parent chore's own status, so
@@ -741,7 +617,7 @@ export function ChoreReviewSection({
   // actually awaiting a decision [live-reported: "why is it coming as
   // pending for parent as the chore pending on the kid"]. Badge is just
   // pendingReviewsCount — genuinely submitted work awaiting review.
-  const badgeCount = pendingReviewsCount;
+  const badgeCount = pendingReviewsCount + disputeBadgeCount;
   // badgeCount deliberately only counts items needing a decision — but
   // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
   // content below (informational, not "pending"), so a card with only
@@ -919,9 +795,7 @@ export function ChoreReviewSection({
                   </Text>
                 </View>
                 {recentlyApproved.map(c => (
-                  <DisputeApprovalCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
-                    flagApprovalForDiscussion={flagApprovalForDiscussion} standByApproval={standByApproval}
-                    requestApprovalReversal={requestApprovalReversal} coSignReversal={coSignReversal}
+                  <ApprovalRow key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     acknowledgeRecentApproval={acknowledgeRecentApproval} />
                 ))}
               </View>

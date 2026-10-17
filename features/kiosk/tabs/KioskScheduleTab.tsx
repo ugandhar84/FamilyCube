@@ -53,6 +53,9 @@ import {
 } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { KioskAvatar } from '../components/KioskAvatar';
+import { KioskJustDescribeEventDrawer } from '../components/KioskJustDescribeDrawer';
+import { KioskTimeGrid } from '../components/KioskTimeGrid';
+import { KioskDayEventsPanel } from '../components/KioskDayEventsPanel';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -73,7 +76,7 @@ import { isEventPast } from '@/features/calendar/components/calendarDateHelpers'
 import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridView';
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
-import { useKioskColors, type KioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels, type KioskColors } from '../kioskPalette';
 import { WidgetCard, PanelHead } from '../components/KioskOS';
 
 /**
@@ -83,29 +86,19 @@ import { WidgetCard, PanelHead } from '../components/KioskOS';
  * walk past is "what's next", not "what does this month look like". A grid
  * is for planning; a list is for glancing.
  */
-type ViewMode = 'agenda' | 'day' | 'week' | 'month';
-const VIEW_MODES: ViewMode[] = ['agenda', 'day', 'week', 'month'];
+type ViewMode = 'day' | 'week' | 'month';
+const VIEW_MODES: ViewMode[] = ['week', 'day', 'month'];
+const MODE_LABEL: Record<ViewMode, string> = { week: 'Week', day: 'Day', month: 'Month' };
 // A distinct real brand accent per mode when active, instead of every tab
 // filling the same k.primary [live-reported: "with different tinted
 // colors"] — reusing the same four-color set kiosk already uses for role/
 // category variety elsewhere (primary/sage/gold/purple), not new colors.
 const MODE_ACCENT: Record<ViewMode, (k: KioskColors) => string> = {
-  agenda: k => k.primary,
   day: k => k.sage,
   week: k => k.gold,
   month: k => k.purple,
 };
 
-/** How far forward Agenda looks. Live-reported from a screenshot: "i see
- *  extra events in the mobile app not in kiosec" — kiosk's own 14-day
- *  window was a kiosk-invented value, not matched to the real phone. Both
- *  CalendarScreen.tsx (its own Agenda mode, `loadRange(today,
- *  addDays(today, 60))`) and TasksScreen.tsx (`today -> +60 days`,
- *  explicitly commented as matching "CalendarScreen's own Agenda view")
- *  use 60 days — an event 3-6 weeks out (the screenshot's own missing
- *  "Maha Saptami"/"Maha Ashtami"/Halloween) is real, current, and simply
- *  outside a 14-day window, not a data or filter bug. */
-const AGENDA_DAYS = 60;
 
 function startOfWeek(d: Date): Date {
   const r = new Date(d);
@@ -162,7 +155,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     isParentViewer ? 'all' : 'mine',
   );
   const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('agenda');
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [cursor, setCursor] = useState(() => new Date());
   // Live-reported: "in kiosk monthly view is not use right as per current
   // design we are not showing anything if we click on date taking us to day
@@ -296,10 +289,6 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     } else if (viewMode === 'week') {
       const ws = startOfWeek(cursor);
       loadRange(toDateStr(ws), toDateStr(addDays(ws, 6)));
-    } else if (viewMode === 'agenda') {
-      // Agenda looks FORWARD from the cursor rather than around it — its
-      // job is "what's coming", so days already past carry no information.
-      loadRange(toDateStr(cursor), toDateStr(addDays(cursor, AGENDA_DAYS)));
     } else {
       loadRange(toDateStr(cursor), toDateStr(cursor));
     }
@@ -370,13 +359,42 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     return ids.map(id => members.find(m => m.id === id)).filter(Boolean) as FamilyMember[];
   };
 
+  // Time-grid columns: Week = seven days. Reads the already-filtered
+  // eventsByDate, so the scope / member filters and privacy rules above apply.
+  const weekColumns = useMemo(() => {
+    const ws = startOfWeek(cursor);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(ws, i);
+      const ds = toDateStr(d);
+      const events = eventsByDate[ds] ?? [];
+      const isToday = ds === todayStr;
+      return {
+        key: ds,
+        label: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+        badge: isToday && events.length ? String(events.length) : undefined,
+        isToday, events,
+      };
+    });
+  }, [cursor, eventsByDate, todayStr]);
+
+  // Day = one wide column for the cursor day, the full 24 hours at a
+  // readable hour height, scrolled to the current time when it's today.
+  const dayColumns = useMemo(() => {
+    const ds = toDateStr(cursor);
+    return [{
+      key: ds,
+      label: cursor.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+      isToday: ds === todayStr,
+      events: eventsByDate[ds] ?? [],
+    }];
+  }, [cursor, eventsByDate, todayStr]);
+
   const shiftCursor = (dir: 1 | -1) => {
     if (viewMode === 'month') setCursor(c => new Date(c.getFullYear(), c.getMonth() + dir, 1));
     // Agenda pages by its own window length, so Next/Prev step to the next
     // and previous fortnight rather than nudging one day at a time through
     // a two-week list.
     else if (viewMode === 'week') setCursor(c => addDays(c, dir * 7));
-    else if (viewMode === 'agenda') setCursor(c => addDays(c, dir * AGENDA_DAYS));
     else setCursor(c => addDays(c, dir));
   };
 
@@ -387,14 +405,6 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         const ws = startOfWeek(cursor);
         const we = addDays(ws, 6);
         return `${ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${we.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-      })()
-    : viewMode === 'agenda'
-    ? (() => {
-        const ae = addDays(cursor, AGENDA_DAYS);
-        const from = toDateStr(cursor) === todayStr
-          ? 'Today'
-          : cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        return `${from} – ${ae.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
       })()
     : cursor.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
@@ -486,27 +496,32 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 style={[s.filterChip, { backgroundColor: !filterMemberId ? k.primary : k.well, borderColor: !filterMemberId ? k.primary : k.cardBorder }]}>
                 <Text style={[s.filterText, { color: !filterMemberId ? k.onPrimary : k.textMuted }]} numberOfLines={1}>All Family</Text>
               </Pressable>
-              {members.map(m => {
-                const rs = assigneeStyle(m, colors, isDark);
+              {members.map((m, mi) => {
+                const pastel = kioskPastels(k)[mi % 4];
                 const on = filterMemberId === m.id;
                 const label = m.name.split(' ')[0];
+                const todayCount = (eventsByDate[todayStr] ?? []).filter(ev => {
+                  const ids = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
+                  return ids.includes(m.id);
+                }).length;
                 return (
                   <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
                     accessibilityRole="button"
                     accessibilityLabel={`Filter to ${label}`}
                     accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
                     accessibilityState={{ selected: on }}
-                    style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
+                    style={[s.filterChip, { backgroundColor: pastel.card, borderColor: on ? pastel.fg : 'transparent', borderWidth: 2, opacity: filterMemberId && !on ? 0.45 : 1 }]}>
                     <KioskAvatar
                       name={m.name}
                       emoji={m.emoji}
                       avatarUrl={m.avatarUrl}
                       siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
-                      size={18}
-                      ringColor={on ? rs.dot : k.cardBorder}
+                      size={26}
+                      bgColor={k.card}
                       k={k}
                     />
-                    <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
+                    <Text style={[s.filterText, { color: pastel.fg }]} numberOfLines={1}>{label}</Text>
+                    <Text style={[s.filterText, { color: pastel.fg, opacity: 0.75, fontWeight: '700' }]} numberOfLines={1}>{todayCount} today</Text>
                   </Pressable>
                 );
               })}
@@ -551,9 +566,9 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 <Pressable key={mode} onPress={() => setViewMode(mode)}
                   style={[s.modeBtn, on && { backgroundColor: accent }]}
                   accessibilityRole="tab" accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
+                  accessibilityLabel={`${MODE_LABEL[mode]} view`}>
                   <Text style={[s.modeBtnText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>
-                    {mode[0].toUpperCase() + mode.slice(1)}
+                    {MODE_LABEL[mode]}
                   </Text>
                 </Pressable>
               );
@@ -576,57 +591,37 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       )}
 
       {viewMode === 'month' && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-          <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} selected={selectedDate} colors={colors} isDark={isDark}
-            active={active}
-            involvedFor={involvedFor}
-            onDayPress={setSelectedDate} />
-          <View style={{ paddingHorizontal: 4, paddingTop: 14, gap: 10 }}>
-            <DayEventsSummaryCard
-              dateLabel={selectedDate === todayStr ? 'Today' : parseDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              // Month's summary card is the phone's own DayEventsSummaryCard,
-              // reused verbatim — it takes an already-filtered list (on the
-              // phone CalendarScreen filters before passing) and applies no
-              // sensitivity rule of its own, so kiosk must not hand it a raw
-              // list. Only 'full' events go in: a busy-block placeholder
-              // can't be expressed through this component's props without
-              // forking it, and this is a secondary summary beneath the
-              // grid, not the surface a viewer relies on to spot a taken
-              // slot — Agenda and Day both render the real busy block.
-              events={(eventsByDate[selectedDate] ?? []).filter(
-                ev => canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) === 'full',
-              )}
-              members={members}
-              colors={colors} isDark={isDark}
-              isViewerParent={active.role === 'parent'}
-              onSelectEvent={routeEventPress}
-            />
-            {/* This used to carry an "Add for this day" button, justified by
-                Month otherwise being the one mode with no route to the
-                composer. That's no longer true — the header's own
-                Add/Ask button is present in every mode — so it went with
-                the other below-the-fold duplicates. Mobile's Month has no
-                card-embedded "+" either; creation there is the screen FAB. */}
+        // Month grid on the left, the selected day's events as a list on the
+        // right — nothing below the grid, so the whole month fits on screen.
+        <View style={s.monthSplit}>
+          <View style={{ flex: 1.7, minWidth: 0 }}>
+            <MonthView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} selected={selectedDate} colors={colors} isDark={isDark}
+              active={active} members={members}
+              involvedFor={involvedFor}
+              onDayPress={setSelectedDate} />
           </View>
-        </ScrollView>
+          <View style={{ flex: 1, minWidth: 280, maxWidth: 380 }}>
+            <KioskDayEventsPanel
+              dateLabel={selectedDate === todayStr ? 'Today' : parseDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              events={eventsByDate[selectedDate] ?? []}
+              members={members} active={active} involvedFor={involvedFor}
+              onEventPress={routeEventPress}
+            />
+          </View>
+        </View>
       )}
       {viewMode === 'week' && (
-        <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
-          active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress} />
+        <KioskTimeGrid
+          columns={weekColumns} members={members} active={active}
+          involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
+          hourHeight={64} startHour={0} endHour={24} autoScrollToNow
+        />
       )}
       {viewMode === 'day' && (
-        <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}
-          members={members} active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress} onLongPressEvent={routeLongPress} />
-      )}
-      {viewMode === 'agenda' && (
-        <AgendaView
-          cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr}
-          colors={colors} isDark={isDark} members={members} active={active}
-          onEventPress={routeEventPress}
-          onLongPressEvent={routeLongPress}
-          onAdd={canCreate ? openCreator : undefined}
+        <KioskTimeGrid
+          columns={dayColumns} members={members} active={active}
+          involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
+          hourHeight={76} startHour={0} endHour={24} autoScrollToNow detailed
         />
       )}
 
@@ -678,23 +673,11 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       />
       <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
 
-      <KioskSmartTaskComposer
+      <KioskJustDescribeEventDrawer
         visible={showComposer}
-        members={members}
-        activeMemberId={active.id}
-        familyId={active.familyId ?? ''}
         onClose={() => setShowComposer(false)}
-        onCreated={() => setShowComposer(false)}
-        onOpenFullForm={(kind, prefill) => {
-          setShowComposer(false);
-          if (kind === 'quest') {
-            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
-            setShowManualQuest(true);
-          } else {
-            setManualEventPrefill(prefill as typeof manualEventPrefill);
-            setShowManualEvent(true);
-          }
-        }}
+        active={active}
+        members={members}
       />
 
       {showManualQuest && (
@@ -1302,298 +1285,6 @@ function KioskEventCard({
   );
 }
 
-// ── Agenda ───────────────────────────────────────────────────────────────
-/**
- * A flat chronological list of what's coming, grouped by day — the updated
- * mockup's new default view, and the right opening state for a kitchen
- * display: as you walk past, the question is "what's next", not "what does
- * this month look like."
- *
- * Two things the mockup's version couldn't do, added here because the real
- * data supports them:
- *
- *  · REAL RIDE STATE. The mockup models a ride as two hand-written linked
- *    rows ("Drop-off" / "Pickup" legs with a `driver` string that may read
- *    "Awaiting Claim"). This app already represents exactly that for real:
- *    eventStore pairs a ride with its pickup leg (linkedEventId /
- *    pickup-leg pairing, see its own recent fixes), and driver state is a
- *    real (driverId, driverName, driverStatus) triple read through the
- *    shared eventAssignee() helper. So the "Claim Ride" button is wired to
- *    claimHelperSlot — a race-safe compare-and-set, NOT a plain
- *    updateEvent. That distinction matters precisely here: two parents can
- *    tap Claim on two devices in the same second, and the loser has to be
- *    told rather than silently overwriting the winner. Routing through the
- *    store action is also what keeps this view from regressing the recent
- *    ride-assignment fixes, since they live inside it.
- *
- *  · SENSITIVITY. A kiosk agenda is legible from across a room. An event
- *    the app itself marks sensitive renders as a neutral busy block for a
- *    viewer who isn't entitled to its detail, using the SAME shared
- *    predicate every other calendar surface calls (canViewSensitiveEventDetail)
- *    rather than a kiosk-local reimplementation of the rule.
- */
-function AgendaView({
-  cursor, eventsByDate, todayStr, colors, isDark, members, active, onEventPress, onLongPressEvent, onAdd,
-}: {
-  cursor: Date;
-  eventsByDate: Record<string, FamilyEvent[]>;
-  todayStr: string;
-  colors: any; isDark: boolean;
-  members: FamilyMember[];
-  active: FamilyMember;
-  /** Plain tap — opens KioskEventDetailSheet. */
-  onEventPress: (ev: FamilyEvent) => void;
-  /** Long-press — opens the full KioskEventEditor drawer. */
-  onLongPressEvent: (ev: FamilyEvent) => void;
-  onAdd?: () => void;
-}) {
-  const { k } = useKioskColors();
-  const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
-  const [claimNote, setClaimNote] = useState<Record<string, string>>({});
-  const isKidViewer = active.role === 'kid' || active.role === 'teen';
-  // Real AgendaView.tsx's own "+N more · Manage →" chip route
-  // [fresh-audit gap] — real mobile pushes a full expo-router screen
-  // (SeriesManagerScreen.tsx), which kiosk has no navigation stack to
-  // reach; KioskSeriesManagerSheet below reproduces that screen's real
-  // logic (same deleteEvent/deleteEventScoped calls) as a kiosk-native
-  // sheet instead.
-  const [viewingSeriesId, setViewingSeriesId] = useState<string | null>(null);
-
-  // Only days that actually have something, forward from the cursor. A
-  // fourteen-row list of "No events" is noise, not a calendar.
-  //
-  // Live-requested: "the recurent cards should show similar to the mobile
-  // app .. we just need to hide them similar to mobile app" —
-  // CalendarScreen.tsx:1022's own collapseSeries(scopedRangeEvents), read
-  // in full: a recurring series (up to 84 materialized occurrences for a
-  // daily rule) collapses to just the next upcoming occurrence (plus
-  // today's own, if today has one) — Agenda-only, matching exactly; Week
-  // needs each occurrence on its real day column and Month needs every
-  // occurrence for its per-day dots, so neither collapses (same real
-  // reasoning that file's own comment gives, not a kiosk-specific
-  // decision). Collapsing happens on the FLAT list, across day
-  // boundaries — a weekly series has occurrences on different real dates
-  // all sharing one seriesId — then the collapsed result is re-grouped by
-  // day the same way eventsByDate already groups everything else.
-  // hiddenCountByRepId/seriesMetaByRepId — real AgendaView.tsx's own
-  // parallel tracking (its lines 60-83) alongside the same collapse rule
-  // collapseSeries performs, since that shared helper only returns the
-  // collapsed array and discards how many occurrences it rolled up. Real
-  // mobile's own "+N more · Manage →" chip [fresh-audit gap] needs this
-  // count; kiosk's Agenda called collapseSeries directly and had nowhere
-  // to get it from, so the chip (and any route to manage the rest of a
-  // flooded series) had no data to render from at all.
-  const { days, hiddenCountByRepId, seriesMetaByRepId } = useMemo(() => {
-    const flat: FamilyEvent[] = [];
-    for (let i = 0; i <= AGENDA_DAYS; i++) {
-      const dateStr = toDateStr(addDays(cursor, i));
-      const evs = eventsByDate[dateStr];
-      if (evs?.length) flat.push(...evs);
-    }
-    const collapsed = collapseSeries(flat);
-    const hiddenCountByRepId = new Map<string, number>();
-    const seriesMetaByRepId = new Map<string, { seriesId: string; total: number }>();
-    const bySeriesId = new Map<string, FamilyEvent[]>();
-    for (const ev of flat) {
-      if (!ev.seriesId) continue;
-      const group = bySeriesId.get(ev.seriesId);
-      if (group) group.push(ev); else bySeriesId.set(ev.seriesId, [ev]);
-    }
-    for (const rep of collapsed) {
-      if (!rep.seriesId) continue;
-      const group = bySeriesId.get(rep.seriesId);
-      if (!group || group.length <= 1) continue;
-      hiddenCountByRepId.set(rep.id, group.length - 1);
-      seriesMetaByRepId.set(rep.id, { seriesId: rep.seriesId, total: group.length });
-    }
-    const byDate = new Map<string, FamilyEvent[]>();
-    for (const ev of collapsed) {
-      const list = byDate.get(ev.date) ?? [];
-      list.push(ev);
-      byDate.set(ev.date, list);
-    }
-    const out: { dateStr: string; events: FamilyEvent[] }[] = [];
-    for (let i = 0; i <= AGENDA_DAYS; i++) {
-      const dateStr = toDateStr(addDays(cursor, i));
-      const evs = byDate.get(dateStr);
-      if (evs?.length) out.push({ dateStr, events: evs });
-    }
-    return { days: out, hiddenCountByRepId, seriesMetaByRepId };
-  }, [cursor, eventsByDate]);
-
-  // Claiming writes, so it follows the same rule every other writing action
-  // on this shared device does: parents only. A kiosk stays on an active
-  // profile for the whole idle window, and anyone walking past the counter
-  // would otherwise be able to assign a family driver.
-  const canClaim = active.role === 'parent';
-
-  if (days.length === 0) {
-    // Copy only promises "tap below to ask" when there's actually a button
-    // to tap — a teen viewer has no onAdd at all (real mobile parity:
-    // CalendarScreen.tsx:1108's own isParentOrSenior-only create gate,
-    // confirmed by reading it — teen genuinely has no creation entry point
-    // there either, so this isn't a kiosk gap to invent a fix for). The
-    // old copy claimed a button existed for every kid-viewer regardless,
-    // which read as broken for a teen [live-reported screenshot: no
-    // header button, no empty-state button, yet the text still said "tap
-    // below"]. Wrapped in a WidgetCard now too, matching every other
-    // panel's dense-card frame instead of floating on the bare background
-    // [live-requested: "we just need parent schedule inspired desing"].
-    const emptyText = isKidViewer
-      ? (onAdd
-        ? 'Nothing on your schedule for the next two weeks. Tap below to ask for a ride or anything else.'
-        : 'Nothing on your schedule for the next two weeks.')
-      : 'Nothing scheduled in the next two weeks.';
-    return (
-      <WidgetCard k={k} isDark={isDark} style={s.agendaEmptyCard}>
-        <View style={s.agendaEmptyWrap}>
-          <CalendarIcon size={30} color={k.textFaint} />
-          <Text style={[s.agendaEmptyText, { color: k.textFaint }]} numberOfLines={3}>
-            {emptyText}
-          </Text>
-          {onAdd && (
-            <Pressable
-              onPress={onAdd}
-              style={[s.monthAddBtn, { backgroundColor: k.primary, alignSelf: 'center' }]}
-              accessibilityRole="button"
-              accessibilityLabel={isKidViewer ? 'Ask a parent' : 'Add an event'}
-            >
-              <Plus size={22} color={k.onPrimary} />
-              <Text style={[s.monthAddBtnText, { color: k.onPrimary }]}>{isKidViewer ? 'Ask a parent' : 'Add an event'}</Text>
-            </Pressable>
-          )}
-        </View>
-      </WidgetCard>
-    );
-  }
-
-  return (
-    <ScrollView contentContainerStyle={s.agendaScroll} showsVerticalScrollIndicator={false}>
-      {/* One continuous strip, not a loose stack of day sections floating
-          on the bare page background — mocked and picked over "one card
-          per day" [live-reported: "do you think one long strip of card is
-          good for this page for agenda?" → "mock please" → chose the
-          single-strip option]. Day headers become plain in-card dividers
-          (a hairline border-top, not their own card edge) between groups
-          of events, matching the mock exactly. Each event keeps its own
-          real KioskEventCard shell/border — this only adds the outer
-          frame that was missing, it doesn't double-box the rows. */}
-      <WidgetCard k={k} isDark={isDark} style={s.agendaStrip}>
-      {days.map(({ dateStr, events }, i) => {
-        const d = parseDate(dateStr);
-        const isToday = dateStr === todayStr;
-        return (
-          <View key={dateStr} style={[s.agendaGroup, i > 0 && [s.agendaGroupDivider, { borderTopColor: k.cardBorder }]]}>
-            <View style={s.agendaDayHead}>
-              <View style={[s.agendaDayBar, { backgroundColor: isToday ? k.primary : k.cardBorder }]} />
-              <Text style={[s.agendaDayLabel, { color: isToday ? k.primary : k.text }]} numberOfLines={1}>
-                {isToday ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'long' })}
-              </Text>
-              <Text style={[s.agendaDayDate, { color: k.textFaint }]} numberOfLines={1}>
-                {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </Text>
-            </View>
-
-            {events.map(ev => {
-              // The shared visibility predicate, not a local copy — see the
-              // component header. 'busy-block' means "show that the slot is
-              // taken, without the detail"; 'hidden' means omit entirely.
-              const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
-              if (vis === 'hidden') return null;
-              // Redacted rows go through KioskBusyBlock, which — like the
-              // phone's BusyBlockCard (EventCard.tsx:715) — structurally
-              // cannot leak a detail because the time is all it receives.
-              // Previously this rendered the ordinary row with its title
-              // swapped to "Busy", which still exposed the (assignee-
-              // derived) accent colour and looked identical to a real event
-              // genuinely titled "Busy".
-              if (vis === 'busy-block') {
-                return <KioskBusyBlock key={ev.id} time={ev.time} endTime={ev.endTime} k={k} />;
-              }
-
-              const assignee = eventAssignee(ev);
-              const isRide = !!ev.rideRequired || ev.category === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title);
-              const needsDriver = isRide && !assignee.name;
-
-              const hiddenCount = hiddenCountByRepId.get(ev.id) ?? 0;
-              const seriesMeta = seriesMetaByRepId.get(ev.id);
-
-              return (
-                <View key={ev.id}>
-                  <KioskEventCard
-                    ev={ev}
-                    members={members}
-                    active={active}
-                    colors={colors} isDark={isDark}
-                    k={k}
-                    density="agenda"
-                    onPress={() => onLongPressEvent(ev)}
-                    onOpenDetail={() => onEventPress(ev)}
-                    claimNote={claimNote[ev.id]}
-                    // The mockup's "Claim Ride" — wired to the real race-safe
-                    // claim, and only offered when there is genuinely an open
-                    // slot to claim.
-                    onClaim={needsDriver && canClaim ? () => {
-                      claimHelperSlot(
-                        ev.id, 'driver', active.name, undefined,
-                        () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
-                        (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
-                      );
-                    } : undefined}
-                  />
-                  {/* Real AgendaView.tsx's own chip (its lines 214-230),
-                      verbatim copy. Parent-only — a kid tapping this on a
-                      long recurring series would land in a bulk-delete
-                      sheet with no reason to be there; matches this file's
-                      own established isViewerParent-gating convention.
-                      Wrapped in the SAME width/center constraint s.card
-                      uses (width:'100%', maxWidth:720, alignSelf:'center')
-                      — without it, the chip's own flex-start hugs this
-                      row's full outer width while the card above it stays
-                      capped and centered, so on any screen wider than
-                      720px the chip's left edge drifted from the card's
-                      own left edge instead of sitting flush under it. */}
-                  {!isKidViewer && seriesMeta && hiddenCount > 0 && (
-                    <View style={{ width: '100%', maxWidth: 720, alignSelf: 'center' }}>
-                    <Pressable
-                      onPress={() => setViewingSeriesId(seriesMeta.seriesId)}
-                      style={[s.seriesMoreChip, { backgroundColor: k.purpleSoft, borderWidth: 1, borderColor: k.purpleEdge }]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${hiddenCount} more occurrences in this series`}
-                      accessibilityHint="Opens series management"
-                    >
-                      <Text style={{ fontSize: 14 }}>🔁</Text>
-                      <Text style={[s.seriesMoreChipText, { color: k.purple }]}>
-                        +{hiddenCount} more · {seriesMeta.total} total in series
-                      </Text>
-                      <Text style={[s.seriesMoreChipLink, { color: k.textFaint }]}>Manage →</Text>
-                    </Pressable>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        );
-      })}
-      </WidgetCard>
-
-      <KioskSeriesManagerSheet
-        seriesId={viewingSeriesId}
-        onClose={() => setViewingSeriesId(null)}
-        colors={colors} isDark={isDark} k={k}
-      />
-
-      {/* No end-of-list "Ask a parent"/"Add an event" here any more — the
-          header now carries that action permanently (see s.headerAddBtn),
-          so a populated fortnight no longer has to be scrolled to its
-          bottom to reach it. The EMPTY-state copy above keeps its own
-          button on purpose: there, it's the first-action prompt filling an
-          otherwise blank view, not a duplicate of a nav control. */}
-    </ScrollView>
-  );
-}
-
 // ── Month grid ───────────────────────────────────────────────────────────
 // Month stays a GRID of dots by design — the phone's own Month view is a
 // grid too (MonthGridView), and a rich card inside a 7-across day cell
@@ -1601,9 +1292,9 @@ function AgendaView({
 // rule: a 'hidden' event must not contribute a dot (that leaks that
 // something exists), while a 'busy-block' one must (its whole purpose is
 // signalling the slot is taken).
-function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, active, involvedFor, onDayPress }: {
+function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, active, members, involvedFor, onDayPress }: {
   cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; selected: string; colors: any; isDark: boolean;
-  active: FamilyMember;
+  active: FamilyMember; members: FamilyMember[];
   involvedFor: (ev: FamilyEvent) => FamilyMember[];
   onDayPress: (dateStr: string) => void;
 }) {
@@ -1687,14 +1378,16 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                       overflow line reads cleanly at this cell height)
                       before falling back to a count. */}
                   <View style={s.monthBadges}>
-                    {dayEvents.slice(0, 3).map(ev => {
+                    {dayEvents.slice(0, 2).map(ev => {
                       // A busy-block event still shows a badge (the slot IS
                       // taken) but with NEUTRAL text/color and no title —
                       // its category/assignee-derived color or title would
                       // identify what the hidden event is, exactly what the
                       // detail redaction withholds.
                       const redacted = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name) !== 'full';
-                      const cs = kioskCatAccent(ev.category ?? 'Event', k);
+                      const who0 = involvedFor(ev)[0];
+                      const pc = kioskPastels(k)[Math.max(0, members.findIndex(m => m.id === who0?.id)) % 4];
+                      const cs = who0 ? { soft: pc.card, fg: pc.fg } : kioskCatAccent(ev.category ?? 'Event', k);
                       return (
                         <View
                           key={ev.id}
@@ -1712,8 +1405,8 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
                         </View>
                       );
                     })}
-                    {dayEvents.length > 3 && (
-                      <Text style={[s.monthMore, { color: k.textFaint }]}>+{dayEvents.length - 3} more</Text>
+                    {dayEvents.length > 2 && (
+                      <Text style={[s.monthMore, { color: k.textFaint }]}>+{dayEvents.length - 2} more</Text>
                     )}
                   </View>
                 </Pressable>
@@ -1723,207 +1416,6 @@ function MonthView({ cursor, eventsByDate, todayStr, selected, colors, isDark, a
         ))}
       </View>
     </View>
-  );
-}
-
-// ── Week strip (original design, extracted) ─────────────────────────────
-function WeekView({ cursor, eventsByDate, todayStr, colors, isDark, active, involvedFor, onEventPress }: {
-  cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; todayStr: string; colors: any; isDark: boolean;
-  active: FamilyMember;
-  involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  onEventPress: (ev: FamilyEvent) => void;
-}) {
-  const { k } = useKioskColors();
-  const days = useMemo(() => {
-    const ws = startOfWeek(cursor);
-    return Array.from({ length: 7 }, (_, i) => addDays(ws, i));
-  }, [cursor]);
-
-  return (
-    <View style={s.week}>
-      {days.map(d => {
-        const dateStr = toDateStr(d);
-        const isToday = dateStr === todayStr;
-        const dayEvents = eventsByDate[dateStr] ?? [];
-        return (
-          <View key={dateStr} style={s.dayCol}>
-            <View style={[s.dayHead, isToday && { borderBottomColor: k.primary }]}>
-              <Text style={[s.dow, { color: k.textFaint }]}>{d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text>
-              <Text style={[s.dnum, { color: isToday ? k.primary : k.text }]}>{d.getDate()}</Text>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {dayEvents.map(ev => {
-                // Week stays deliberately COMPACT — a seven-column strip is
-                // a glance surface, and the phone's own Week view uses the
-                // compact EventCardRow (EventCard.tsx:208), never the rich
-                // EventCardTimeline. It does, however, need the same
-                // sensitivity redaction Agenda/Day apply; it previously had
-                // none, so a sensitive title leaked here.
-                const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
-                if (vis === 'hidden') return null;
-                if (vis === 'busy-block') {
-                  return (
-                    <View key={ev.id} style={[s.evChip, { backgroundColor: k.well, borderColor: k.cardBorder, borderLeftColor: k.cardBorderStrong }]}
-                      accessibilityRole="text" accessibilityLabel={`Busy${ev.time ? `, ${fmtTime(ev.time)}` : ''}`}>
-                      <Text style={[s.evTitle, { color: k.textMuted }]} numberOfLines={1}>🔒 Busy</Text>
-                      {!!ev.time && <Text style={[s.evTime, { color: k.textFaint }]} numberOfLines={1}>{fmtTime(ev.time)}</Text>}
-                    </View>
-                  );
-                }
-                const involved = involvedFor(ev);
-                const primary = involved[0];
-                const rs = assigneeStyle(primary, colors, isDark);
-                const multiColors = involved.length > 1 ? involved.map(m => assigneeStyle(m, colors, isDark).dot) : null;
-                return (
-                  <Pressable key={ev.id} onPress={() => onEventPress(ev)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${ev.title}${ev.time ? `, ${fmtTime(ev.time)}` : ', all day'}`}
-                    accessibilityHint="Opens this event"
-                    style={[s.evChip, { backgroundColor: k.card, borderColor: k.cardBorder, borderLeftColor: rs.dot, overflow: 'hidden' }]}>
-                    {multiColors && <MultiPersonTimeFill hexColors={multiColors} scrimColor={k.card} size={60} radius={0} />}
-                    <Text style={[s.evTitle, { color: k.text }]} numberOfLines={2}>{ev.title}</Text>
-                    {/* Live-reported: raw ev.time ("HH:MM" 24h, the DB's
-                        actual stored format) was rendered directly instead
-                        of through fmtTime — mobile's own event cards always
-                        format via fmtTime (lib/dates.ts), which always
-                        produces 12h AM/PM regardless of device locale. */}
-                    {!!ev.time && <Text style={[s.evTime, { color: k.textMuted }]}>{fmtTime(ev.time)}</Text>}
-                    {involved.length > 0 && (
-                      <Text style={[s.evWho, { color: rs.dot }]} numberOfLines={1}>
-                        {involved.map(m => m.name.split(' ')[0]).join(', ')}
-                      </Text>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            {/* The per-column "+" is gone: creation now lives once, in the
-                header. It was never a per-day add in practice — openCreator
-                routes to SmartTaskComposer/AskParentSheet, neither of which
-                accepts a date prefill — so seven of these only repeated the
-                one action the header already offers. */}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-// ── Day — hour-by-hour agenda, richer than a single strip column since a
-// day view has the whole kiosk width to spend on it. ──────────────────────
-const DAY_START_HOUR = 6;
-const DAY_END_HOUR = 22;
-
-function DayView({ cursor, eventsByDate, colors, isDark, members, active, involvedFor, onEventPress, onLongPressEvent }: {
-  cursor: Date; eventsByDate: Record<string, FamilyEvent[]>; colors: any; isDark: boolean;
-  members: FamilyMember[]; active: FamilyMember;
-  involvedFor: (ev: FamilyEvent) => FamilyMember[];
-  /** Plain tap — opens KioskEventDetailSheet. */
-  onEventPress: (ev: FamilyEvent) => void;
-  /** Long-press — opens the full KioskEventEditor drawer. */
-  onLongPressEvent: (ev: FamilyEvent) => void;
-}) {
-  const { k } = useKioskColors();
-  const claimHelperSlot = useEventStore(st => st.claimHelperSlot);
-  const [claimNote, setClaimNote] = useState<Record<string, string>>({});
-  const canClaim = active.role === 'parent';
-  const dateStr = toDateStr(cursor);
-  const dayEvents = useMemo(
-    () => (eventsByDate[dateStr] ?? []).slice().sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')),
-    [eventsByDate, dateStr],
-  );
-  const timed = dayEvents.filter(ev => !!ev.time);
-  const allDay = dayEvents.filter(ev => !ev.time);
-  const hours = useMemo(() => Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }, (_, i) => DAY_START_HOUR + i), []);
-
-  const eventsAtHour = (h: number) => timed.filter(ev => {
-    const hr = parseInt(ev.time!.split(':')[0], 10);
-    return hr === h;
-  });
-
-  return (
-    <ScrollView style={s.dayRoot} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      {allDay.length > 0 && (
-        <View style={s.dayAllDayRow}>
-          {allDay.map(ev => {
-            // Day view previously applied NO sensitivity redaction at all —
-            // only Agenda did — so a sensitive event a viewer isn't
-            // entitled to read leaked its full title here. Same shared
-            // predicate, same three states.
-            const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
-            if (vis === 'hidden') return null;
-            if (vis === 'busy-block') {
-              return (
-                <View key={ev.id} style={[s.dayAllDayChip, { backgroundColor: k.well, flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs }]}
-                  accessibilityRole="text" accessibilityLabel="Busy, all day">
-                  <Lock size={15} color={k.textFaint} />
-                  <Text style={[s.dayAllDayText, { color: k.textMuted }]} numberOfLines={1}>Busy</Text>
-                </View>
-              );
-            }
-            const involved = involvedFor(ev);
-            const rs = assigneeStyle(involved[0], colors, isDark);
-            return (
-              <Pressable key={ev.id} onPress={() => onEventPress(ev)}
-                accessibilityRole="button"
-                accessibilityLabel={`${ev.title}, all day`}
-                accessibilityHint="Opens this event"
-                style={[s.dayAllDayChip, { backgroundColor: rs.badge }]}>
-                <Text style={[s.dayAllDayText, { color: rs.text }]} numberOfLines={1}>{ev.title}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-      {hours.map(h => {
-        const hourEvents = eventsAtHour(h);
-        const label = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
-        return (
-          <View key={h} style={[s.dayHourRow, { borderTopColor: k.cardBorder }]}>
-            <Text style={[s.dayHourLabel, { color: k.textFaint }]}>{label}</Text>
-            <View style={s.dayHourEvents}>
-              {hourEvents.map(ev => {
-                const vis = canViewSensitiveEventDetail(ev, active.role as any, active.id, active.name);
-                if (vis === 'hidden') return null;
-                if (vis === 'busy-block') {
-                  return <KioskBusyBlock key={ev.id} time={ev.time} endTime={ev.endTime} k={k} />;
-                }
-                const assignee = eventAssignee(ev);
-                const isRide = !!ev.rideRequired || ev.category === 'Ride' || /pick ?up|drop ?off|ride/i.test(ev.title);
-                const needsDriver = isRide && !assignee.name;
-                return (
-                  // Day is the phone's own "detail density" — CalendarScreen
-                  // .tsx mounts the full EventCardTimeline in exactly this
-                  // view (:1642) — so it gets the same rich card Agenda now
-                  // does, minus the leading time chip (the hour gutter to
-                  // the left already states the hour).
-                  <KioskEventCard
-                    key={ev.id}
-                    ev={ev}
-                    members={members}
-                    active={active}
-                    colors={colors} isDark={isDark}
-                    k={k}
-                    density="day"
-                    onPress={() => onLongPressEvent(ev)}
-                    onOpenDetail={() => onEventPress(ev)}
-                    claimNote={claimNote[ev.id]}
-                    onClaim={needsDriver && canClaim ? () => {
-                      claimHelperSlot(
-                        ev.id, 'driver', active.name, undefined,
-                        () => setClaimNote(n => ({ ...n, [ev.id]: 'You have this ride.' })),
-                        (msg) => setClaimNote(n => ({ ...n, [ev.id]: msg || 'Someone else claimed it first.' })),
-                      );
-                    } : undefined}
-                  />
-                );
-              })}
-            </View>
-          </View>
-        );
-      })}
-      {/* End-of-list add button removed — the header carries it now. */}
-    </ScrollView>
   );
 }
 
@@ -2064,7 +1556,8 @@ const s = StyleSheet.create({
   // than six thin bands — this is the primary control in Month view.
   // Grown from 88 — a cell now stacks up to 3 title badges under the day
   // number instead of a single row of dots, so it needs real height.
-  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.sm, minHeight: 130 },
+  monthCellFilled: { borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, padding: KIOSK_SPACE.xs + 2, minHeight: 76 },
+  monthSplit: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.md, paddingHorizontal: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
   monthDayNum: { fontSize: KIOSK_TYPO.body, fontWeight: '700' },
   monthBadges: { gap: 3, marginTop: KIOSK_SPACE.xs },
   monthBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },

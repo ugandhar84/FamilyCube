@@ -23,11 +23,23 @@ export const FONTS = {
   bold: Platform.select({ ios: 'System', android: 'Roboto' }),
 };
 
-// Sizes below are deliberately larger than the Kinfolk mock's raw pixel
-// values. The mock is a desktop web preview; those same px sizes read as
-// too small to comfortably read on an actual phone screen (confirmed on
+// Sizes below are deliberately larger than the source mock's raw pixel
+// values. A mock (whether the old Kinfolk reference or the current Figma
+// Make "Scrollable Content Design" reskin, design/Scrollable Content
+// Design/src/index.css) is a desktop web preview; those same px sizes read
+// as too small to comfortably read on an actual phone screen (confirmed on
 // device — 9-11px text was reported illegible). Every size here is the
 // mock's intent (hierarchy, uppercase tracking, etc.) at a legible floor.
+//
+// Current reskin's own scale, for reference (index.css) — the parent Hub's
+// own card files (features/hub/parent/*.tsx) use these exact px values
+// directly rather than this shared scale, since the reskin's hierarchy sits
+// 1px below this app-wide floor in a couple of spots (body 14 vs this
+// scale's 15) and changing TYPO.body itself would ripple into ~1,250 other
+// call sites across the whole app, far beyond the Home page this pass
+// covers: h1 greeting clamp(27,7vw,38)≈34 · .calm-copy/.section-title h2
+// 20-21 · .attention-card/.evening h2 17 · quick-action/timeline strong 14
+// · overline 10 · detail/caption lines 11-13.
 export const TYPO = {
   hero:       32,   // big hero numbers, pet names on detail
   title:      24,   // screen titles
@@ -44,6 +56,28 @@ export const TYPO = {
 } as const;
 
 export type TypoKey = keyof typeof TYPO;
+
+// Page chrome standard — measured from the app's most common existing pattern
+// (29/700/-0.5 titles in 33 places; header insets.top + 12 / bottom 16; 20px
+// content gutters in 45). New and updated pages use these instead of local
+// numbers. Colours are applied at the call site from useTheme().
+/**
+ * One spacing rhythm for every page. Between SECTIONS (a heading plus its block): `section`. Between COMPONENTS inside a
+ * section (cards, rows, banners, buttons): `item`. Inside a card or banner: `card`. Page edges: `page`. Tight inline
+ * gaps (icon + label): `inline`. Containers use `gap`, children never add their own outer margins.
+ */
+export const RHYTHM = { page: 20, section: 24, item: 12, card: 16, inline: 8 } as const;
+
+export const PAGE = {
+  title:    { fontSize: 29, fontWeight: '700', letterSpacing: -0.5 } as const,
+  eyebrow:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.6 } as const,
+  subtitle: { fontSize: 14, fontWeight: '400', lineHeight: 20 } as const,
+  headerPaddingTop: 12,      // added to the safe-area top inset
+  headerPaddingBottom: 16,
+  headerGap: 4,
+  contentPadding: 20,
+  sectionGap: 12,
+} as const;
 
 // Letter-spacing pairings lifted from the mock (Tailwind's tracking-wider
 // on uppercase labels, tracking-tight on display headings). Kept as a

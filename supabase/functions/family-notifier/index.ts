@@ -168,6 +168,14 @@ type NotifType =
   // audit, gap #4/#26/#27) until ride-deadline-notifier added it.
   | 'ride_pool_unclaimed_urgent'
   | 'ride_still_on'
+  // ride-assignment-confirm-sweeper: a driver/helper who hasn't tapped
+  // Confirm within 1h of being assigned gets this nudge warning the
+  // assignment auto-confirms at the 2h mark if they stay silent; the
+  // second type fires once that auto-confirm actually happens, telling
+  // both the auto-confirmed person and the other parent(s) it occurred
+  // without anyone explicitly saying yes.
+  | 'ride_assignment_confirm_nudge'
+  | 'ride_assignment_auto_confirmed'
   // Chore handoff (offer/accept/decline a chore to a specific person, master
   // flow's "hand it to someone" path) — previously fired zero notifications
   // at all; see store/choreStore.ts's offerChoreHandoff/acceptChoreHandoff/
@@ -199,6 +207,12 @@ type NotifType =
   // views already use (SeniorView's isOpenToGrandparents filter,
   // TeenView's hasCar-gated pool).
   | 'ride_pool_opened'
+  // Live-reported gap: a driver decline that leaves a ride with NO
+  // replacement only ever told prevEvent.updatedBy (one prior actor) —
+  // broadcast to every parent in the family the moment a ride goes
+  // driverless, plus a recurring escalation nudge from the sweeper as the
+  // event time approaches (see ride-driver-needed-sweeper).
+  | 'ride_driver_needed'
   // Full choreStore/eventStore notification-coverage audit (2026-08-28/29)
   // — a batch of previously-silent state changes across store/choreStore.ts
   // and store/eventStore.ts, added together. See each call site's own
@@ -286,6 +300,8 @@ type NotifType =
   // to know a new medication was added to their own record. Also
   // med-reminders' missed-dose escalation to parents.
   | 'medication_added'
+  // A sticky note someone wrote for specific family members (or everyone) — see useStickyNotes.ts.
+  | 'sticky_note'
   | 'medication_missed'
   // med-dose-reminders' own cron — a dose-time nudge sent to the medication's
   // own subject (not parents — see medication_missed above, which
@@ -350,6 +366,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   ride_assignment_offered: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
   ride_assignment_overridden: 'family',
   ride_confirmed_for_kid: 'family', ride_pool_opened: 'family',
+  ride_driver_needed: 'family',
   chore_deleted: 'chores', bounty_claim_approved: 'chores', bounty_claim_declined: 'chores',
   chore_redo_disputed: 'chores', chore_redo_dispute_resolved: 'chores',
   chore_later_date_proposed: 'chores', chore_later_date_approved: 'chores', chore_later_date_declined: 'chores',
@@ -368,7 +385,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   grocery_daily_digest: 'grocery', grocery_run_reminder: 'grocery',
   member_joined: 'family',
   perk_updated: 'rewards',
-  medication_added: 'family', medication_missed: 'family',
+  medication_added: 'family', medication_missed: 'family', sticky_note: 'family',
   store_proximity_arrived: 'grocery',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
@@ -918,6 +935,25 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    case 'ride_driver_needed':
+      // p.escalation is set by the sweeper's recurring re-notify pass
+      // (ride-driver-needed-sweeper) — same event, same recipients, but the
+      // copy needs to read as "still waiting," not a fresh first-time ask,
+      // or a parent who already saw this once reasonably ignores a
+      // duplicate-looking ping.
+      return p.escalation
+        ? {
+            title: '🚨 Still no driver!',
+            body: `"${p.eventTitle}" still has nobody driving — it's coming up soon.`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          }
+        : {
+            title: '🚗 No driver assigned',
+            body: `${p.byName ?? 'Someone'} can't make "${p.eventTitle}" and nobody's covering it yet.`,
+            sound: 'default',
+            data: { screen: 'Schedule', eventId: p.eventId },
+          };
     case 'ride_confirmed_for_kid': {
       const t = to12Hour(p.eventTime as string);
       return {
@@ -978,6 +1014,32 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };
+    case 'ride_assignment_confirm_nudge':
+      // Sent once, ~1h after assignment, to the assigned driver/helper only.
+      // Warns the pending assignment auto-confirms at the 2h mark if they
+      // stay silent — not an ask for a yes, just a heads-up before it
+      // happens automatically.
+      return {
+        title: p.role === 'helper' ? '🙋 Still need your confirmation' : '🚗 Still need your confirmation',
+        body: `You haven't confirmed as ${p.role} for "${p.eventTitle}" yet — we'll auto-confirm you in about an hour if we don't hear back.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    case 'ride_assignment_auto_confirmed':
+      // Two audiences: the person who got auto-confirmed (soft, no sound —
+      // this isn't urgent, it already happened), and the parent who made
+      // the assignment, told it went through without an explicit yes.
+      return p.forAssignee
+        ? {
+            title: '✅ Auto-Confirmed',
+            body: `You didn't respond in time, so we went ahead and confirmed you as ${p.role} for "${p.eventTitle}".`,
+            data: { screen: 'Schedule', eventId: p.eventId },
+          }
+        : {
+            title: '✅ Auto-Confirmed',
+            body: `${p.assigneeName ?? 'They'} didn't respond in time, so ${p.role === 'helper' ? 'their helper assignment' : 'their driver assignment'} for "${p.eventTitle}" was auto-confirmed.`,
+            data: { screen: 'Schedule', eventId: p.eventId },
+          };
     case 'approval_cutoff_nudge':
       return {
         title: '📋 Waiting on Your Yes or No',
@@ -1263,6 +1325,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Store', rewardId: p.rewardId },
       };
     }
+    case 'sticky_note':
+      return {
+        title: `📝 Sticky note from ${p.authorName ?? 'someone'}`,
+        body: String(p.body ?? '').slice(0, 100),
+        sound: 'default',
+        data: { screen: 'Hub' },
+      };
     case 'medication_added':
       return {
         title: `💊 New medication added`,
@@ -1489,6 +1558,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
+
+    // A personal task (someone's own private reminder) never notifies anyone.
+    const qid = (payload as any)?.questId ?? (payload as any)?.choreId;
+    if (qid) {
+      const { data: pq } = await supabase.from('chore_tasks').select('is_personal').eq('id', qid).maybeSingle();
+      if (pq?.is_personal) return new Response(JSON.stringify({ ok: true, skipped: 'personal task' }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
 
     // Resolve push tokens — caller can pass directly or let us look them up
     let pushTokens: string[] = tokens ?? [];

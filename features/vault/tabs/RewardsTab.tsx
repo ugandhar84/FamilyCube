@@ -36,7 +36,7 @@ function RewardModal({ visible, onClose, onSave, initial, colors, isDark }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />

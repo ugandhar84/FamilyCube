@@ -14,7 +14,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useChatStore } from '@/store/chatStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadChoreReceiptPhoto } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent, useCountdown } from './hubUtils';
@@ -337,12 +337,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       setIsSubmittingReceipt(true);
       try {
         const familyId = (active as any).familyId;
-        const path = `chore-proofs/${familyId ?? 'unknown'}/receipt-${receiptChoreId}-${Date.now()}.jpg`;
-        const blob = await (await fetch(receiptPhotoUri)).blob();
-        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
-        receiptPhotoUrl = urlData.publicUrl;
+        receiptPhotoUrl = await uploadChoreReceiptPhoto(familyId ?? 'unknown', receiptChoreId, receiptPhotoUri);
       } catch (e) {
         console.warn('[SeniorView] receipt photo upload failed', e);
         setIsSubmittingReceipt(false);
@@ -1044,7 +1039,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <PushbackSheet
-        target={pushbackSheet} colors={colors} isDark={isDark}
+        target={pushbackSheet}
         onClose={() => setPushbackSheet(null)}
         respondToParentQuest={respondToParentQuest}
       />
@@ -1054,7 +1049,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           quest-pool _isQuestRow), so DelegateSheet's addParentQuest
           branch is the only one this ever exercises from SeniorView. */}
       <DelegateSheet
-        target={delegateSheet} questPool={[]} members={members} active={active} colors={colors} isDark={isDark}
+        target={delegateSheet} questPool={[]} members={members} active={active}
         onClose={() => setDelegateSheet(null)}
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}

@@ -1,49 +1,132 @@
-/**
- * HomeownerNotesScreen — standalone route wrapper around
- * HomeownerNotesTab, mirroring SchoolScreen.tsx's own-header pattern.
- */
-import { useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useUIStore } from '@/store/uiStore';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useFamilyStore } from '@/store/familyStore';
+import { PageHeading } from '@/components/PageHeading';
 import HomeownerNotesTab from './homeowner/HomeownerNotesTab';
+import { AddHomeownerNoteSheet } from './homeowner/AddHomeownerNoteSheet';
+import { EditHomeownerNoteSheet } from './homeowner/EditHomeownerNoteSheet';
+import { CompleteNoteSheet } from './homeowner/CompleteNoteSheet';
+import { NoteDetailSheet } from './homeowner/NoteDetailSheet';
+import { HouseDocumentsSheet } from './homeowner/HouseDocumentsSheet';
+import { useHomeownerNotesStore, type HomeownerNote } from '@/store/homeownerNotesStore';
+import { showAlert } from '@/components/AppAlert';
 
-export default function HomeownerNotesScreen({ hideHeader = false }: { hideHeader?: boolean }) {
+// "Gemini rhythm" canvas (CLAUDE.md rule 6 exception, 2026-10-10) — see
+// features/vault/tabs/SchoolHomeScreen.tsx's own comment for the full
+// rationale.
+const PAGE_BG = '#ECE6DE';
+
+export default function HomeownerNotesScreen({ hideHeader = false, onClose }: { hideHeader?: boolean; onClose?: () => void; }) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { members, activeMemberId } = useFamilyStore();
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const familyId = (activeMember as any)?.familyId ?? (members[0] as any)?.familyId ?? '';
+
+  const { notes, addNote, completeNote } = useHomeownerNotesStore();
+  const [showAdd, setShowAdd] = useState(false);
+  const [detailNoteId, setDetailNoteId] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState<HomeownerNote | null>(null);
+  const [completingNote, setCompletingNote] = useState<HomeownerNote | null>(null);
+  const [showDocuments, setShowDocuments] = useState(false);
+
+  const detailNote = detailNoteId ? notes.find(n => n.id === detailNoteId) ?? null : null;
 
   useEffect(() => {
     useUIStore.getState().setFullBleedScreenActive(true);
-    return () => useUIStore.getState().setFullBleedScreenActive(false);
+    hideTabBar();
+    return () => {
+      useUIStore.getState().setFullBleedScreenActive(false);
+      showTabBar();
+    };
   }, []);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
+    <View style={{ flex: 1, backgroundColor: isDark ? colors.background : PAGE_BG }}>
       {!hideHeader && (
-        <View style={{ flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12,
-          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={{ marginRight: 12 }}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <View style={{ width: 34, height: 34, borderRadius: 10,
-            backgroundColor: colors.teal + '18', borderWidth: 1, borderColor: colors.teal + '30',
-            alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-            <Home size={17} color={colors.teal} />
-          </View>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3, flex: 1 }}>
-            Homeowner Notes
-          </Text>
+        <View style={{ backgroundColor: isDark ? colors.background : PAGE_BG }}>
+          <PageHeading
+            eyebrow="FAMILY CUBE · HOME CARE"
+            title="Home Care"
+            subtitle="Track maintenance, repairs, and home tasks"
+            accent="teal"
+            Icon={Home}
+            onTitlePress={onClose}
+            topInset={insets.top}
+          />
         </View>
       )}
-      <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
-        <HomeownerNotesTab colors={colors} isDark={isDark} />
-      </ScrollView>
-    </SafeAreaView>
+      <HomeownerNotesTab
+        colors={colors}
+        isDark={isDark}
+        onAdd={() => setShowAdd(true)}
+        onOpenNote={note => setDetailNoteId(note.id)}
+        onOpenDocuments={() => setShowDocuments(true)}
+      />
+
+      <HouseDocumentsSheet
+        visible={showDocuments}
+        colors={colors}
+        isDark={isDark}
+        onClose={() => setShowDocuments(false)}
+        zIndex={60}
+      />
+
+      <AddHomeownerNoteSheet
+        visible={showAdd}
+        colors={colors}
+        isDark={isDark}
+        onClose={() => setShowAdd(false)}
+        onSave={async (params) => {
+          if (!activeMemberId) return;
+          const { error } = await addNote({ familyId, createdBy: activeMemberId, ...params });
+          if (error) showAlert('Could not save', error);
+          else setShowAdd(false);
+        }}
+      />
+
+      <NoteDetailSheet
+        visible={!!detailNote}
+        note={detailNote}
+        colors={colors}
+        isDark={isDark}
+        onClose={() => setDetailNoteId(null)}
+        onEdit={() => { if (detailNote) setEditNote(detailNote); }}
+        onComplete={() => { if (detailNote) setCompletingNote(detailNote); }}
+        zIndex={60}
+      />
+
+      {editNote && (
+        <EditHomeownerNoteSheet
+          visible
+          note={editNote}
+          colors={colors}
+          isDark={isDark}
+          onClose={() => setEditNote(null)}
+          zIndex={61}
+        />
+      )}
+
+      <CompleteNoteSheet
+        visible={!!completingNote}
+        note={completingNote}
+        colors={colors}
+        isDark={isDark}
+        onClose={() => setCompletingNote(null)}
+        onConfirm={async (comment) => {
+          if (!completingNote) return;
+          const { error } = await completeNote(completingNote.id, comment);
+          setCompletingNote(null);
+          setDetailNoteId(null);
+          if (error) showAlert('Could not complete', error);
+        }}
+        zIndex={61}
+      />
+    </View>
   );
 }

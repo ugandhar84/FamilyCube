@@ -606,7 +606,7 @@ export default function HealthRecordsList({
           like day and take and missing.. I know today we show overdue bit
           for yestdays one we should show missd right if they really
           missed"]. */}
-      <Modal visible={!!historyMed} transparent animationType="slide" onRequestClose={() => setHistoryMed(null)}>
+      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!historyMed} transparent animationType="slide" onRequestClose={() => setHistoryMed(null)}>
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
           <View style={{
             maxHeight: '80%', borderTopLeftRadius: 24, borderTopRightRadius: 24,

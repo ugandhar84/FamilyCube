@@ -1,5 +1,7 @@
+import { hideAiNames } from '@/lib/hideAiNames';
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, BackHandler, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, BackHandler, Platform, Alert } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { markNetworkOffline, isNetworkError } from '@/lib/networkStore';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
@@ -15,9 +17,10 @@ interface AlertState {
   title: string;
   message?: string;
   buttons: AlertButton[];
+  center?: boolean;
 }
 
-type ShowAlertFn = (title: string, message?: string, buttons?: AlertButton[]) => void;
+type ShowAlertFn = (title: string, message?: string, buttons?: AlertButton[], center?: boolean) => void;
 
 let _showAlert: ShowAlertFn | null = null;
 
@@ -50,7 +53,10 @@ function classify(title: string, message?: string): 'network' | 'server' | 'user
   return 'user';
 }
 
-export function showAlert(title: string, message?: string, buttons?: AlertButton[]) {
+/** `center` shows the dialog in the middle of the screen over a dimmed backdrop (for choices like "Open in Maps"). */
+export function showAlert(title: string, message?: string, buttons?: AlertButton[], center?: boolean) {
+  title = hideAiNames(title);
+  message = hideAiNames(message);
   const kind = classify(title, message);
 
   if (kind === 'network') {
@@ -67,19 +73,30 @@ export function showAlert(title: string, message?: string, buttons?: AlertButton
   }
 
   if (_showAlert) {
-    _showAlert(title, message, buttons ?? [{ text: 'OK' }]);
+    _showAlert(title, message, buttons ?? [{ text: 'OK' }], center);
   }
 }
 
 export default function AppAlert() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [state, setState] = useState<AlertState>({
     visible: false, title: '', message: undefined, buttons: [],
   });
 
+  // Every native Alert.alert in the app renders as this inline banner
+  // instead of a system popup ("no alert screen models").
   useEffect(() => {
-    _showAlert = (title, message, buttons) => {
-      setState({ visible: true, title, message, buttons: buttons ?? [{ text: 'OK' }] });
+    const orig = Alert.alert;
+    Alert.alert = ((title: string, message?: string, buttons?: AlertButton[]) => {
+      showAlert(title, message, buttons);
+    }) as typeof Alert.alert;
+    return () => { Alert.alert = orig; };
+  }, []);
+
+  useEffect(() => {
+    _showAlert = (title, message, buttons, center) => {
+      setState({ visible: true, title, message, center, buttons: buttons ?? [{ text: 'OK' }] });
     };
     return () => { _showAlert = null; };
   }, []);
@@ -114,18 +131,12 @@ export default function AppAlert() {
   const btnFontWeight = (btn: AlertButton): '500' | '600' | '700' =>
     btn.style === 'cancel' ? '500' : btn.style === 'destructive' ? '600' : '700';
 
+  if (!state.visible) return null;
   return (
-    <Modal
-      visible={state.visible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={() => {
-        const cancel = state.buttons.find(b => b.style === 'cancel');
-        dismiss(cancel);
-      }}
-    >
-      <View style={ss.overlay}>
+    <View style={[ss.overlay, state.center
+      ? { top: 0, bottom: 0, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' }
+      : { top: insets.top + 8 }]} pointerEvents={state.center ? 'auto' : 'box-none'}>
+      <View style={{ width: '100%', alignItems: 'center' }} pointerEvents="box-none">
         <View style={withAndroidShadowFix([ss.card, { backgroundColor: cardBg }])}>
 
           <View style={ss.header}>
@@ -179,17 +190,17 @@ export default function AppAlert() {
 
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 
 const ss = StyleSheet.create({
   overlay:  {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: 40,
+    position: 'absolute', left: 0, right: 0, zIndex: 9999, elevation: 9999,
+    alignItems: 'center', paddingHorizontal: 16,
   },
   card:     {
-    width: '100%', maxWidth: 320, borderRadius: 22,
+    width: '100%', maxWidth: 440, borderRadius: 18,
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOpacity: 0.22, shadowOffset: { width: 0, height: 8 }, shadowRadius: 24 },
       android: { elevation: 20 },

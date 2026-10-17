@@ -31,14 +31,18 @@
  */
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Alert, StyleSheet } from 'react-native';
-import { Gift, Coins, ClipboardCheck, History, Check, X, Plus, Pencil, Trash2 } from 'lucide-react-native';
+import { Gift, Coins, Plus, Pencil, Trash2 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
-import { useKioskColors, kioskOnAccent, type KioskColors } from '../kioskPalette';
-import { WidgetCard, WidgetHeader, Well, Chip, TabTitle, EmptyNote, ActionButton } from '../components/KioskOS';
+import { useKioskColors, kioskPastels } from '../kioskPalette';
+import { useChoreStore } from '@/store/choreStore';
+import { showToast } from '@/components/AppToast';
+import { KioskAvatar } from '../components/KioskAvatar';
+import { Eyebrow } from '../components/KioskHomeParts';
 import { KioskAddRewardForm, type RewardFormData } from '../components/KioskAddRewardForm';
 
 export function KioskStoreTab({ active }: { active: FamilyMember }) {
@@ -183,185 +187,236 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
     cancelled: { label: 'Cancelled', accent: k.textFaint },
   };
 
+  const pastels = kioskPastels(k);
+  const kidsList = useMemo(() => members.filter(m => !m.deletedAt && m.inviteStatus !== 'pending' && (m.role === 'kid' || m.role === 'teen')), [members]);
+  const categories = useMemo(() => ['All', ...Array.from(new Set(eligible.map(r => r.category).filter(Boolean)))], [eligible]);
+  const [cat, setCat] = useState('All');
+  const shown = cat === 'All' ? eligible : eligible.filter(r => r.category === cat);
+  const nextTarget = useMemo(
+    () => [...eligible].filter(r => r.cost > maxAffordable).sort((a, b) => a.cost - b.cost)[0],
+    [eligible, maxAffordable],
+  );
+
+  // Cash-out requests (a kid converting coins to money) — parent-only. Lived
+  // on the old full chores board; the Rewards page is its natural home.
+  const getPendingCashOuts = useChoreStore(st => st.getPendingCashOuts);
+  const approveCashOut = useChoreStore(st => st.approveCashOut);
+  const denyCashOut = useChoreStore(st => st.denyCashOut);
+  const pointsToFiatRatio = useChoreStore(st => st.householdSettings.pointsToFiatRatio);
+  const currencySymbol = useChoreStore(st => st.householdSettings.currencySymbol);
+  const transactions = useChoreStore(st => st.transactions);
+  const pendingCashOuts = useMemo(() => (isParent ? getPendingCashOuts() : []), [isParent, getPendingCashOuts, transactions]);
+
+  const first = (m?: { name?: string }) => m?.name?.trim().split(' ')[0] ?? '';
+
+  const redeemLabel = (r: Reward) => (maxAffordable >= r.cost ? 'Redeem' : `${r.cost - maxAffordable} to go`);
+
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        onScrollBeginDrag={registerActivity}
-      >
-        <TabTitle
-          title="Reward Store"
-          subtitle="Perks the family has earned — redeem, and approve what's waiting"
-          k={k}
-          right={canRedeemSelf ? (
-            <View
-              style={[s.coinPill, { backgroundColor: k.gold + (isDark ? '24' : '1A'), borderColor: k.gold + (isDark ? '4D' : '3D') }]}
-              accessible
-              accessibilityLabel={`${totalCoins} coins for ${active.name.split(' ')[0]}`}
-            >
-              <Coins size={18} color={k.gold} />
-              <Text style={[s.coinText, { color: k.gold }]} numberOfLines={1}>
-                {totalCoins} · {active.name.split(' ')[0]}
-              </Text>
-            </View>
-          ) : undefined}
-        />
+      <View style={s.page}>
+        {/* ── Left: balance / approvals ── */}
+        <ScrollView style={s.left} contentContainerStyle={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }} showsVerticalScrollIndicator={false} onScrollBeginDrag={registerActivity}>
+          <Text style={[s.title, { color: k.text }]}>{isParent ? 'Rewards store' : 'Rewards'}</Text>
 
-        {/* ══ PENDING APPROVALS (parent only) ═══════════════════════════ */}
-        {isParent && pending.length > 0 && (
-          <WidgetCard k={k} isDark={isDark} accent={k.gold} style={s.section}>
-            <WidgetHeader
-              Icon={ClipboardCheck} eyebrow="Needs you" title="Pending approvals"
-              accent={k.gold} k={k} isDark={isDark}
-              right={<Chip label={`${pending.length}`} accent={k.gold} isDark={isDark} k={k} />}
-            />
-            <View style={{ gap: KIOSK_SPACE.sm }}>
-              {pending.map(rd => {
+          {canRedeemSelf && (
+            <LinearGradient colors={[k.pastelAmberCard, k.pastelPrimaryCard]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
+              <Text style={[s.heroLabel, { color: k.textMuted }]}>MY COINS</Text>
+              <View style={s.heroRow}>
+                <Coins size={40} color={k.gold} strokeWidth={2.2} />
+                <Text style={[s.heroNum, { color: k.text }]}>{totalCoins}</Text>
+              </View>
+              {gpCoins > 0 && <Text style={[s.heroSub, { color: k.textMuted }]}>Main {mainCoins} · Grandparent bonus {gpCoins}</Text>}
+              {nextTarget ? (
+                <>
+                  <View style={[s.track, { backgroundColor: k.card }]}>
+                    <View style={[s.fill, { backgroundColor: k.primary, width: `${Math.min(100, Math.round((maxAffordable / nextTarget.cost) * 100))}%` }]} />
+                  </View>
+                  <Text style={[s.heroSub, { color: k.textMuted }]}>{nextTarget.cost - maxAffordable} more coins to {nextTarget.emoji} {nextTarget.title}</Text>
+                </>
+              ) : eligible.length > 0 ? (
+                <Text style={[s.heroSub, { color: k.textMuted }]}>You can afford everything. Nice work!</Text>
+              ) : null}
+            </LinearGradient>
+          )}
+
+          {isParent && (
+            <View style={s.block}>
+              <Eyebrow label="WAITING FOR YOUR OK" accent={k.terracotta} k={k} right={pending.length ? `${pending.length}` : undefined} />
+              {pending.length === 0 ? (
+                <View style={[s.clear, { backgroundColor: k.pastelSage }]}>
+                  <Text style={[s.clearTitle, { color: k.sage }]}>All caught up ✓</Text>
+                  <Text style={[s.rowMeta, { color: k.textMuted }]}>New reward requests show up here.</Text>
+                </View>
+              ) : pending.map(rd => {
                 const reward = rewards.find(r => r.id === rd.rewardId);
                 const kid = members.find(m => m.id === rd.memberId);
                 const label = reward?.title ?? rd.rewardTitle ?? 'Perk';
-                const who = kid?.name.split(' ')[0] ?? rd.memberName?.split(' ')[0] ?? 'A kid';
+                const who = first(kid) || first({ name: rd.memberName }) || 'A kid';
                 return (
-                  <Well key={rd.id} k={k} accent={k.gold} style={s.row}>
-                    <Text style={s.rowEmoji}>{reward?.emoji ?? '🎁'}</Text>
+                  <View key={rd.id} style={[s.reqCard, { backgroundColor: k.pastelPrimary, borderColor: k.pastelPrimaryCard }]}>
+                    <View style={[s.emojiTile, { backgroundColor: k.pastelPrimaryCard }]}><Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text></View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[s.rowTitle, { color: k.text }]} numberOfLines={2}>{label}</Text>
-                      <Text style={[s.rowMeta, { color: k.textMuted }]} numberOfLines={1}>
-                        {who} · {rd.deductedCoins} coins
-                      </Text>
+                      <Text style={[s.rowTitle, { color: k.text }]} numberOfLines={2}>{who} · {label}</Text>
+                      <Text style={[s.rowMeta, { color: k.textMuted }]}>{rd.deductedCoins} coins held</Text>
                     </View>
-                    <IconAction
-                      Icon={X} accent={k.danger} k={k} isDark={isDark}
-                      label={`Decline ${label} for ${who}`}
-                      onPress={() => confirmApproval(rd.id, label, who, false)}
-                    />
-                    <IconAction
-                      Icon={Check} accent={k.sage} k={k} isDark={isDark} filled
-                      label={`Approve ${label} for ${who}`}
-                      onPress={() => confirmApproval(rd.id, label, who, true)}
-                    />
-                  </Well>
+                    <Pressable onPress={() => confirmApproval(rd.id, label, who, false)} accessibilityRole="button" accessibilityLabel={`Decline ${label} for ${who}`} style={[s.smallBtn, { backgroundColor: k.card }]}>
+                      <Text style={[s.smallBtnText, { color: k.text }]}>Decline</Text>
+                    </Pressable>
+                    <Pressable onPress={() => confirmApproval(rd.id, label, who, true)} accessibilityRole="button" accessibilityLabel={`Approve ${label} for ${who}`} style={[s.smallBtn, { backgroundColor: k.primary }]}>
+                      <Text style={[s.smallBtnText, { color: k.onPrimary }]}>Approve</Text>
+                    </Pressable>
+                  </View>
                 );
               })}
             </View>
-          </WidgetCard>
-        )}
+          )}
 
-        {/* ══ MY REDEMPTIONS ════════════════════════════════════════════ */}
-        {mine.length > 0 && (
-          <WidgetCard k={k} isDark={isDark} style={s.section}>
-            <WidgetHeader
-              Icon={History} eyebrow="Recent" title="My redemptions"
-              accent={k.purple} k={k} isDark={isDark}
-            />
-            <View style={{ gap: KIOSK_SPACE.xs }}>
+          {isParent && kidsList.length > 0 && (
+            <View style={s.block}>
+              <Eyebrow label="KID BALANCES" accent={k.gold} k={k} />
+              {kidsList.map((m, i) => {
+                const tone = pastels[(members.findIndex(x => x.id === m.id)) % pastels.length] ?? pastels[i % 4];
+                const bal = ((m as any).mainCoins ?? 0) + ((m as any).gpCoins ?? 0);
+                const top = Math.max(1, ...eligible.map(r => r.cost));
+                return (
+                  <View key={m.id} style={[s.kidCard, { backgroundColor: tone.col }]}>
+                    <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={44} bgColor={k.card} k={k} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.rowTitle, { color: k.text }]}>{first(m)}</Text>
+                      <View style={[s.track, { backgroundColor: k.card, height: 8 }]}><View style={[s.fill, { height: 8, backgroundColor: tone.fg, width: `${Math.min(100, Math.round((bal / top) * 100))}%` }]} /></View>
+                    </View>
+                    <View style={[s.coinPill, { backgroundColor: k.pastelAmberCard }]}><Coins size={15} color={k.gold} /><Text style={[s.coinText, { color: k.gold }]}>{bal}</Text></View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {isParent && pendingCashOuts.length > 0 && (
+            <View style={s.block}>
+              <Eyebrow label="CASH-OUT REQUESTS" accent={k.sage} k={k} right={`${pendingCashOuts.length}`} />
+              {pendingCashOuts.map(req => {
+                const member = members.find(m => m.id === req.userId);
+                return (
+                  <View key={req.id} style={[s.cashCard, { backgroundColor: k.pastelSage, borderColor: k.pastelSageCard }]}>
+                    <View style={s.cashHead}>
+                      <Text style={[s.rowTitle, { color: k.text, flex: 1 }]} numberOfLines={1}>{first(member) || req.userId} · Cash-out</Text>
+                      <Text style={[s.cashTotal, { color: k.sage }]}>{currencySymbol}{(req.amount * pointsToFiatRatio).toFixed(2)}</Text>
+                    </View>
+                    {([['Spend', req.spendAllocation], ['Save', req.saveAllocation], ['Give', req.giveAllocation]] as const).map(([l, v]) => (
+                      <View key={l} style={{ flexDirection: 'row' }}>
+                        <Text style={[s.rowMeta, { color: k.textMuted, flex: 1, marginTop: 0 }]}>{l}</Text>
+                        <Text style={[s.rowMeta, { color: k.sage, marginTop: 0 }]}>{v} pts ({currencySymbol}{(v * pointsToFiatRatio).toFixed(2)})</Text>
+                      </View>
+                    ))}
+                    <View style={s.cashBtns}>
+                      <Pressable
+                        onPress={() => { registerActivity(); Alert.alert('Deny Cash-Out?', 'Funds stay in their wallet.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Deny', style: 'destructive', onPress: () => denyCashOut(req.id) }]); }}
+                        accessibilityRole="button" accessibilityLabel="Deny this cash-out request" style={[s.smallBtn, { flex: 1, backgroundColor: k.card }]}>
+                        <Text style={[s.smallBtnText, { color: k.text }]}>Deny</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => { registerActivity(); approveCashOut(req.id); showToast('Payout approved ✓'); }}
+                        accessibilityRole="button" accessibilityLabel="Approve this cash-out payout" style={[s.smallBtn, { flex: 1.5, backgroundColor: k.primary }]}>
+                        <Text style={[s.smallBtnText, { color: k.onPrimary }]}>Approve payout</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {canRedeemSelf && mine.length > 0 && (
+            <View style={s.block}>
+              <Eyebrow label="MY REQUESTS" accent={k.purple} k={k} />
               {mine.map(rd => {
                 const reward = rewards.find(r => r.id === rd.rewardId);
                 const meta = statusMeta[rd.status] ?? statusMeta.pending;
                 return (
-                  <Well key={rd.id} k={k} style={s.row}>
-                    <Text style={s.rowEmojiSm}>{reward?.emoji ?? '🎁'}</Text>
-                    <Text style={[s.rowTitle, { flex: 1, color: k.text }]} numberOfLines={1}>
-                      {reward?.title ?? rd.rewardTitle ?? 'Perk'}
-                    </Text>
-                    <Chip label={meta.label} accent={meta.accent} isDark={isDark} k={k} />
-                  </Well>
+                  <View key={rd.id} style={[s.reqCard, { backgroundColor: k.pastelLav, borderColor: k.pastelLavCard }]}>
+                    <View style={[s.emojiTile, { backgroundColor: k.pastelLavCard }]}><Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[s.rowTitle, { color: k.text }]} numberOfLines={1}>{reward?.title ?? rd.rewardTitle ?? 'Perk'}</Text>
+                      <Text style={[s.rowMeta, { color: k.textMuted }]}>{rd.deductedCoins} coins</Text>
+                    </View>
+                    <View style={[s.statusPill, { backgroundColor: meta.accent + '24' }]}><Text style={[s.statusText, { color: meta.accent }]}>{meta.label}</Text></View>
+                  </View>
                 );
               })}
             </View>
-          </WidgetCard>
-        )}
+          )}
+        </ScrollView>
 
-        {/* ══ AVAILABLE PERKS ═══════════════════════════════════════════ */}
-        <WidgetCard k={k} isDark={isDark} style={s.section}>
-          <WidgetHeader
-            Icon={Gift} eyebrow="Catalog" title="Available perks"
-            accent={k.primary} k={k} isDark={isDark}
-            right={(
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}>
-                {eligible.length > 0 && <Chip label={`${eligible.length}`} accent={k.primary} isDark={isDark} k={k} />}
-                {isParent && (
-                  <ActionButton
-                    label="Add Perk" Icon={Plus} accent={k.primary} k={k} isDark={isDark}
-                    onPress={openAddReward} variant="soft"
-                  />
-                )}
-              </View>
+        {/* ── Right: catalog ── */}
+        <View style={s.right}>
+          <View style={s.catRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.cats} style={{ flex: 1 }}>
+              {categories.map(c => (
+                <Pressable key={c} onPress={() => setCat(c)} accessibilityRole="button" accessibilityState={{ selected: cat === c }}
+                  style={[s.catChip, { backgroundColor: cat === c ? k.text : k.well }]}>
+                  <Text style={[s.catText, { color: cat === c ? k.card : k.textMuted }]}>{c}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {isParent && (
+              <Pressable onPress={openAddReward} accessibilityRole="button" accessibilityLabel="Add a perk" style={[s.addBtn, { backgroundColor: k.primary }]}>
+                <Plus size={18} color={k.onPrimary} strokeWidth={2.6} />
+                <Text style={[s.catText, { color: k.onPrimary }]}>Add perk</Text>
+              </Pressable>
             )}
-          />
-          {eligible.length === 0 ? (
-            <Well k={k} style={s.emptyWell}>
+          </View>
+
+          {shown.length === 0 ? (
+            <View style={[s.clear, { backgroundColor: k.well, alignItems: 'center' }]}>
               <Gift size={30} color={k.textFaint} />
-              <EmptyNote
-                text="No rewards available right now. A parent can add perks from the Store screen on a phone."
-                k={k}
-                style={{ textAlign: 'center', maxWidth: 380 }}
-              />
-            </Well>
+              <Text style={[s.rowMeta, { color: k.textMuted, textAlign: 'center' }]}>
+                {eligible.length === 0 ? 'No rewards available right now. A parent can add perks with Add perk.' : 'Nothing in this category.'}
+              </Text>
+            </View>
           ) : (
-            // 2 rows visible (6-per-row × 2 = 12), rest scroll
-            // [live-requested: "store also untouched tab one lets make
-            // the 6 items per a row.2 row"] — same bounded-ScrollView
-            // pattern every other kiosk grid this session uses, instead
-            // of letting the reward grid grow the whole page indefinitely.
-            <ScrollView style={s.gridScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            <View style={s.grid}>
-              {eligible.map(r => {
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.grid}>
+              {shown.map((r, i) => {
+                const tone = pastels[i % pastels.length];
                 const affordable = canRedeemSelf && maxAffordable >= r.cost;
-                const dim = canRedeemSelf && !affordable;
                 return (
                   <Pressable
                     key={r.id}
-                    onPress={() => canRedeemSelf && onRedeem(r)}
+                    onPress={() => (canRedeemSelf ? (affordable ? onRedeem(r) : undefined) : isParent ? openEditReward(r) : undefined)}
                     onLongPress={isParent ? () => openEditReward(r) : undefined}
                     disabled={!canRedeemSelf && !isParent}
-                    style={({ pressed }) => [
-                      s.perk,
-                      {
-                        backgroundColor: pressed ? k.cardHover : k.well,
-                        borderColor: affordable ? k.primaryEdge : k.cardBorder,
-                        opacity: dim ? 0.55 : 1,
-                      },
-                      affordable && kioskElevation(k.primary, isDark),
-                    ]}
                     accessibilityRole="button"
                     accessibilityLabel={`${r.title}, ${r.cost} coins`}
-                    accessibilityState={{ disabled: !canRedeemSelf }}
-                    accessibilityHint={
-                      isParent ? 'Long-press to edit this perk'
-                        : !canRedeemSelf ? undefined
-                        : affordable ? 'Redeem this reward'
-                        : `Not enough coins yet, ${r.cost - maxAffordable} more needed`
-                    }
+                    accessibilityHint={isParent ? 'Edit this perk' : affordable ? 'Redeem this reward' : `Not enough coins yet, ${r.cost - maxAffordable} more needed`}
+                    style={({ pressed }) => [s.perk, { backgroundColor: tone.col, borderColor: tone.card }, pressed && { opacity: 0.8 }]}
                   >
-                    {isParent && (
-                      <Pressable
-                        onPress={() => confirmDeleteReward(r)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        style={[s.perkDelete, { backgroundColor: k.card, borderColor: k.cardBorder }]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Delete ${r.title}`}
-                      >
-                        <Trash2 size={12} color={k.danger} />
-                      </Pressable>
-                    )}
-                    <Text style={s.perkEmoji}>{r.emoji}</Text>
+                    <View style={s.perkTop}>
+                      <View style={[s.perkEmoji, { backgroundColor: tone.card }]}><Text style={{ fontSize: 34 }}>{r.emoji}</Text></View>
+                      {isParent && (
+                        <Pressable onPress={() => confirmDeleteReward(r)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${r.title}`} style={[s.perkDelete, { backgroundColor: k.card }]}>
+                          <Trash2 size={14} color={k.danger} />
+                        </Pressable>
+                      )}
+                    </View>
                     <Text style={[s.perkTitle, { color: k.text }]} numberOfLines={2}>{r.title}</Text>
-                    <Chip label={`${r.cost} coins`} accent={k.gold} isDark={isDark} k={k} />
-                    {dim && (
-                      <Text style={[s.needMore, { color: k.textFaint }]} numberOfLines={1}>
-                        Need {r.cost - maxAffordable} more
-                      </Text>
-                    )}
+                    <Text style={[s.rowMeta, { color: k.textMuted, marginTop: 0 }]}>{r.category}</Text>
+                    <View style={s.perkBottom}>
+                      <View style={[s.coinPill, { backgroundColor: k.pastelAmberCard }]}><Coins size={15} color={k.gold} /><Text style={[s.coinText, { color: k.gold }]}>{r.cost}</Text></View>
+                      {canRedeemSelf ? (
+                        <View style={[s.perkBtn, { backgroundColor: affordable ? k.primary : k.card }]}>
+                          <Text style={[s.perkBtnText, { color: affordable ? k.onPrimary : k.textFaint }]}>{redeemLabel(r)}</Text>
+                        </View>
+                      ) : isParent ? (
+                        <View style={[s.perkBtn, { backgroundColor: k.card }]}><Pencil size={15} color={k.text} /><Text style={[s.perkBtnText, { color: k.text }]}>Edit</Text></View>
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}
-            </View>
             </ScrollView>
           )}
-        </WidgetCard>
-      </ScrollView>
+        </View>
+      </View>
 
       {/* Jar picker — same choice StoreScreen's JarPickerModal offers when
           neither wallet alone covers the cost, or both do. Rendered as a
@@ -442,81 +497,50 @@ export function KioskStoreTab({ active }: { active: FamilyMember }) {
   );
 }
 
-/**
- * A square icon-only action. Kept local rather than added to KioskOS: the
- * approve/decline pair is the only place in kiosk that wants an icon with
- * no label, and every other surface should be using ActionButton's labelled
- * form instead of reaching for this.
- */
-function IconAction({ Icon, accent, k, isDark, label, onPress, filled = false }: {
-  Icon: typeof Check; accent: string; k: KioskColors; isDark: boolean;
-  label: string; onPress: () => void; filled?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        s.iconBtn,
-        filled
-          ? { backgroundColor: accent, borderColor: accent }
-          : { backgroundColor: accent + (isDark ? '24' : '1A'), borderColor: accent + (isDark ? '4D' : '3D') },
-        pressed && { opacity: 0.75 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Icon size={22} color={filled ? kioskOnAccent(k, accent) : accent} />
-    </Pressable>
-  );
-}
-
 const s = StyleSheet.create({
-  scroll: { padding: KIOSK_SPACE.lg, paddingBottom: KIOSK_SPACE.xxl },
-  section: { marginBottom: KIOSK_SPACE.md },
-
-  coinPill: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.xs,
-    paddingHorizontal: KIOSK_SPACE.md, paddingVertical: KIOSK_SPACE.sm,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1,
-  },
-  coinText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm,
-    paddingVertical: KIOSK_SPACE.sm, minHeight: KIOSK_HIT.control,
-  },
-  rowEmoji: { fontSize: 26 },
-  rowEmojiSm: { fontSize: 20 },
+  page: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.lg, paddingHorizontal: KIOSK_SPACE.xl, paddingTop: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md, minHeight: 0 },
+  left: { width: 360, flexGrow: 0 },
+  right: { flex: 1, minWidth: 0, gap: KIOSK_SPACE.md },
+  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.7 },
+  hero: { borderRadius: 26, padding: KIOSK_SPACE.lg, gap: 8 },
+  heroLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1.1 },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroNum: { fontSize: 50, fontWeight: '800', letterSpacing: -2 },
+  heroSub: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
+  track: { height: 12, borderRadius: 6, overflow: 'hidden' },
+  fill: { height: 12, borderRadius: 6 },
+  block: { gap: KIOSK_SPACE.sm },
+  clear: { borderRadius: KIOSK_RADIUS.xl, padding: KIOSK_SPACE.lg, gap: 4 },
+  clearTitle: { fontSize: KIOSK_TYPO.heading, fontWeight: '800' },
+  reqCard: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1.5, padding: 10 },
+  emojiTile: { width: 46, height: 46, borderRadius: KIOSK_RADIUS.md, alignItems: 'center', justifyContent: 'center' },
   rowTitle: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
-  rowMeta: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
-  iconBtn: {
-    width: KIOSK_HIT.control, height: KIOSK_HIT.control, borderRadius: KIOSK_RADIUS.md,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
-
-  // 6 per row, and radius matching every other kiosk card (WidgetCard's
-  // own KIOSK_RADIUS.sm) instead of the rounder .lg this grid used alone
-  // [live-requested: "store also untouched tab one lets make the 6 items
-  // per a row. use the same radious as the cards in pverview.."]. A
-  // percentage flexBasis (not the old fixed 190px width) so 6 always fit
-  // regardless of screen width, smaller emoji/text to match the denser
-  // card.
-  // 2 rows visible (minHeight 130 each + gap), rest scroll.
-  gridScroll: { maxHeight: 270 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm },
-  perk: {
-    flexBasis: '15%', flexGrow: 1, maxWidth: '15%', minWidth: 120, minHeight: 130,
-    borderRadius: KIOSK_RADIUS.sm, borderWidth: 1, position: 'relative',
-    padding: KIOSK_SPACE.sm, alignItems: 'center', justifyContent: 'center', gap: KIOSK_SPACE.xs,
-  },
-  perkDelete: {
-    position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1,
-  },
-  perkEmoji: { fontSize: 28 },
-  perkTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', textAlign: 'center' },
-  needMore: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
-  emptyWell: { alignItems: 'center', gap: KIOSK_SPACE.sm, paddingVertical: KIOSK_SPACE.xl },
+  rowMeta: { fontSize: KIOSK_TYPO.label, fontWeight: '700', marginTop: 2 },
+  smallBtn: { minHeight: 44, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  smallBtnText: { fontSize: KIOSK_TYPO.label, fontWeight: '800' },
+  statusPill: { borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 },
+  statusText: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
+  kidCard: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm, borderRadius: KIOSK_RADIUS.lg, padding: 12 },
+  coinPill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 100, paddingHorizontal: 11, paddingVertical: 5 },
+  coinText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  cashCard: { borderRadius: KIOSK_RADIUS.lg, borderWidth: 1.5, padding: KIOSK_SPACE.md, gap: 6 },
+  cashHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cashTotal: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800' },
+  cashBtns: { flexDirection: 'row', gap: KIOSK_SPACE.sm, marginTop: 4 },
+  catRow: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm },
+  cats: { gap: 8, paddingRight: 8 },
+  catChip: { minHeight: 44, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  catText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, borderRadius: 100, paddingHorizontal: 16 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: KIOSK_SPACE.sm, paddingBottom: KIOSK_SPACE.xl },
+  perk: { width: '32.3%', borderRadius: KIOSK_RADIUS.xl, borderWidth: 1.5, padding: KIOSK_SPACE.md, gap: 6, minHeight: 200 },
+  perkTop: { flexDirection: 'row', justifyContent: 'space-between' },
+  perkEmoji: { width: 64, height: 64, borderRadius: KIOSK_RADIUS.lg, alignItems: 'center', justifyContent: 'center' },
+  perkDelete: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  perkTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', lineHeight: 21 },
+  perkBottom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 'auto' },
+  perkBtn: { flex: 1, minHeight: 44, borderRadius: KIOSK_RADIUS.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  perkBtnText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
 
   dialogWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   dialog: {

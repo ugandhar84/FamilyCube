@@ -1,7 +1,7 @@
 import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { useUIStore } from '@/store/uiStore';
 
 function getGreeting(firstName: string): string {
   const h = new Date().getHours();
@@ -35,7 +35,7 @@ export function HubGreetingHeader({ firstName, summary, balance, colors, isDark 
         </View>
       ) : null}
       {balance !== undefined && (
-        <Pressable onPress={() => router.push('/(tabs)/store' as any)}
+        <Pressable onPress={() => useUIStore.getState().setOpenRewardsScreenRequested(true)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 8,
             backgroundColor: isDark ? BRAND.amber + '18' : BRAND.amber + '12',
             borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 }}>

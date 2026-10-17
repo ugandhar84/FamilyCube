@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, Animated } from 'react-native';
 import { ChefHat, Sparkles, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── CubeAI Planner Banner (flat) ──────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ export default function AiPlannerBanner({
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success }} />
           </View>
         </View>
-        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textTransform: 'uppercase', letterSpacing: 0.6 }}>
           CubeAI Meal Planner
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -60,12 +61,12 @@ export default function AiPlannerBanner({
           </ScrollView>
 
           {/* Input + send */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, backgroundColor: isDark ? colors.surface : colors.background, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8 }}>
             <TextInput
               value={aiPref} onChangeText={setAiPref}
               placeholder="e.g. Kid-friendly, high-protein, 30 min max…"
               placeholderTextColor={colors.textTertiary}
-              style={{ flex: 1, fontSize: 13, color: colors.textPrimary, minHeight: 22 }}
+              style={{ flex: 1, fontSize: 13, color: (isDark ? colors.textPrimary : GEMINI.titleColor), minHeight: 22 }}
               multiline onSubmitEditing={generateMealPlan}
             />
             <TouchableOpacity onPress={generateMealPlan} disabled={aiLoading || !aiPref.trim()}

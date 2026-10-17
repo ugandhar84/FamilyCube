@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
 import type { TemporaryApproverGrant } from '@/store/temporaryApproverStore';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 const WINDOWS = [
   { label: '24 hours', hours: 24 },
@@ -48,7 +49,7 @@ export function TemporaryApproverCard({
       accent={colors.primary}
       collapsible defaultExpanded={activeGrants.length > 0}
       colors={colors} isDark={isDark}>
-      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 10 }}>
+      <Text style={{ fontSize: TYPO.label, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginBottom: 10 }}>
         Grant a trusted adult the ability to approve/decline chore submissions for a set time — useful while you're
         traveling or unreachable. This doesn't give them member management or settings access.
       </Text>
@@ -62,7 +63,7 @@ export function TemporaryApproverCard({
                 backgroundColor: isDark ? colors.primary + '12' : colors.primaryLight,
                 borderRadius: 12, padding: 10, borderWidth: 1, borderColor: colors.primary + '30' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                     {grantee?.name.split(' ')[0] ?? 'Member'}
                   </Text>
                   <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
@@ -104,8 +105,8 @@ export function TemporaryApproverCard({
             <Pressable onPress={() => setPickingFor(m.id)}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10,
-                backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
+                backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
                 {m.name.split(' ')[0]} ({m.role === 'senior' ? 'Grandparent' : 'Teen'})
               </Text>
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.primary }}>Grant Access</Text>

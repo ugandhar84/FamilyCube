@@ -518,7 +518,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight1 }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
@@ -916,7 +916,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
   const dismiss = () => { Keyboard.dismiss(); setStep('amount'); onClose(); };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', paddingBottom: keyboardHeight2 }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,

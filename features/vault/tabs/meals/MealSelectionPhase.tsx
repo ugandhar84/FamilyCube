@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Check, X, Timer, Star } from 'lucide-react-native';
 import { AiDayOptions } from './types';
+import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── Meal Selection Phase (flat) ───────────────────────────────────────────────
 
@@ -23,18 +24,18 @@ export default function MealSelectionPhase({
         <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: colors.accent + '18', alignItems: 'center', justifyContent: 'center' }}>
           <Check size={15} color={colors.accent} />
         </View>
-        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+        <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textTransform: 'uppercase', letterSpacing: 0.6 }}>
           Pick Your Meals
         </Text>
         <TouchableOpacity onPress={() => { setPendingOptions(null); setSelected({}); }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <X size={16} color={colors.textSecondary} />
+          <X size={16} color={(isDark ? colors.textSecondary : GEMINI.bodyColor)} />
         </TouchableOpacity>
       </View>
       <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 10 }} />
 
       <View style={{ gap: 14 }}>
-      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: -6 }}>Pick up to 2 meals per day, then confirm</Text>
+      <Text style={{ fontSize: 11, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: -6 }}>Pick up to 2 meals per day, then confirm</Text>
 
       {tip && (
         <View style={{ borderRadius: 12, backgroundColor: colors.teal + '15', borderWidth: 1, borderColor: colors.teal + '30', padding: 10 }}>
@@ -84,7 +85,7 @@ export default function MealSelectionPhase({
                 </TouchableOpacity>
                 <Text style={{ fontSize: 18 }}>{opt.emoji ?? '🍽'}</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>{opt.mealName}</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }} numberOfLines={1}>{opt.mealName}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                       <Timer size={10} color={colors.danger} />

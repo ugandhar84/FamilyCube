@@ -719,10 +719,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
-            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 10 }}>
-            {/* Family chrome */}
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 12, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 4 }}>
             <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shared groceries" subtitle={`Shared with all ${members.length} ${familyName ? familyName.split(' ')[0] + 's' : 'members'} · updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`} accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
             {/* Figma: Add item + AI suggestions pill buttons */}
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -897,10 +894,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'runs'} onDismiss={() => setTab(null)} zIndex={41}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
-            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shopping Trips" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
+          <View style={{ backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shopping Trips" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={insets.top} />
           </View>
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
@@ -919,9 +914,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
-            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 12, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 4 }}>
             <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Purchase History" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
             {/* Scan Receipt — moved here from the CubeAI banner's own
                 button, since a scanned receipt IS a purchase-history
@@ -948,10 +941,8 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'insights'} onDismiss={() => setTab(null)} zIndex={43}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
-            backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 8 }}>
-            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Insights" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
+          <View style={{ backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
+            <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Insights" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={insets.top} />
           </View>
           <InsightsTab familyId={familyId} colors={colors} isDark={isDark}
             onViewAllPurchases={() => { setTab(null); setTimeout(() => setTab('history'), 50); }} />

@@ -26,7 +26,7 @@ export function RunsTabBody({
           style={({ pressed }) => ({
             flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
             backgroundColor: pressed ? P + 'CC' : P,
-            borderRadius: 14, paddingVertical: 14, marginBottom: 20,
+            borderRadius: 14, paddingVertical: 14, marginBottom: 6,
           })}>
           <Ionicons name="add" size={20} color="#FFFFFF" />
           <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Start a Shopping Trip</Text>

@@ -6,7 +6,7 @@
  * same "Mark Done" it offers, gated by the same deriveQuestActions.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
 import { Check, Camera, PartyPopper, Plus } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';

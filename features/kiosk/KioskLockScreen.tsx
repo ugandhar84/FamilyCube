@@ -93,6 +93,23 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
       <Text style={[s.brand, { color: ink }]} numberOfLines={1}>
         Family Cube / {familyName}
       </Text>
+      <KioskPhotoFade caption style={{ flex: 1, minHeight: 320, borderRadius: 26 }} />
+      {nextMeal && (
+        <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
+          <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT SHARED MEAL</Text>
+          <Text style={[s.mealTitle, { color: ink }]} numberOfLines={2}>
+            {nextMeal.title}{nextMeal.start_time ? ` · ${nextMeal.start_time}` : ''}
+          </Text>
+        </View>
+      )}
+      <Text style={[s.fine, { color: colors.textTertiary }]}>
+        Agenda, household presence and messages are hidden while the display is locked.
+      </Text>
+    </View>
+  );
+
+  const clockBlock = (
+    <View style={{ gap: 2 }}>
       <Text
         style={[s.clock, { color: ink }]}
         numberOfLines={1}
@@ -109,22 +126,12 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
           {Math.round(weather.temperature)}{weather.unit} · {weather.condition}
         </Text>
       )}
-      <KioskPhotoFade caption style={{ height: 270, borderRadius: 22, marginTop: 4 }} />
-      {nextMeal && (
-        <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
-          <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT SHARED MEAL</Text>
-          <Text style={[s.mealTitle, { color: ink }]} numberOfLines={2}>
-            {nextMeal.title}{nextMeal.start_time ? ` · ${nextMeal.start_time}` : ''}
-          </Text>
-        </View>
-      )}
-      <Text style={[s.fine, { color: colors.textTertiary }]}>
-        Agenda, household presence and messages are hidden while the display is locked.
-      </Text>
     </View>
   );
 
   const rightCol = (
+    <View style={s.rightWrap}>
+    {clockBlock}
     <View style={[s.card, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
       <Lock size={22} color={k.primary} />
       <Text style={[s.cardTitle, { color: ink }]}>Hello again. Who's here?</Text>
@@ -186,6 +193,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
         Auto-locked after 2 minutes. Health, private records and precise location stay on trusted personal devices.
       </Text>
     </View>
+    </View>
   );
 
   return (
@@ -215,7 +223,7 @@ const s = StyleSheet.create({
   safe: { flex: 1 },
   content: { flexGrow: 1, padding: KIOSK_SPACE.xl, gap: KIOSK_SPACE.xl, justifyContent: 'center' },
   contentWide: { flexDirection: 'row', alignItems: 'center' },
-  left: { flex: 1.1, gap: KIOSK_SPACE.sm },
+  left: { flex: 1.3, gap: KIOSK_SPACE.sm, alignSelf: 'stretch' },
   leftNarrow: { flex: 0 },
   brand: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700' },
   clock: {
@@ -231,8 +239,9 @@ const s = StyleSheet.create({
   mealEyebrow: { fontSize: KIOSK_TYPO.label, fontWeight: '800', letterSpacing: 0.6 },
   mealTitle: { fontSize: KIOSK_TYPO.subheading, fontWeight: '700' },
   fine: { fontSize: KIOSK_TYPO.label, lineHeight: 18, marginTop: KIOSK_SPACE.md },
+  rightWrap: { flex: 1, justifyContent: 'center', maxWidth: 560, width: '100%', alignSelf: 'center', gap: KIOSK_SPACE.md },
   card: {
-    flex: 1, borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.lg,
+    borderRadius: KIOSK_RADIUS.lg, borderWidth: 1, padding: KIOSK_SPACE.lg,
     gap: KIOSK_SPACE.sm, maxWidth: 560, width: '100%', alignSelf: 'center',
   },
   cardTitle: { fontSize: KIOSK_TYPO.title, fontWeight: '800' },

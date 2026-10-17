@@ -54,6 +54,7 @@ import { Animated, StyleSheet, Text, View, Easing } from 'react-native';
 import { CalendarDays, ClipboardCheck, Moon } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_AMBIENT_FADE_MS } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
+import { KioskPhotoFade } from './components/KioskPhotoFade';
 
 export interface AmbientNextUp {
   /** Display time, already formatted ("4:45 PM") or undefined for all-day. */
@@ -144,6 +145,10 @@ export function KioskAmbientOverlay({
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
+      {/* Family memories drift behind the clock, dimmed so the time stays readable. */}
+      <KioskPhotoFade style={StyleSheet.absoluteFill} active={visible} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />
+
       {/* ── Corner label ── */}
       <View style={s.corner}>
         <Moon size={16} color={k.gold} />

@@ -36,6 +36,7 @@ import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from './kioskTheme';
 import { useKioskColors } from './kioskPalette';
 import { useTheme } from '@/lib/ThemeContext';
 import { GEMINI } from '@/constants/geminiRhythm';
+import { KioskPhotoFade } from './components/KioskPhotoFade';
 import { useKioskWeather } from './useKioskWeather';
 import { useKioskMeals, todayMealDay } from './useKioskMeals';
 
@@ -108,6 +109,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
           {Math.round(weather.temperature)}{weather.unit} · {weather.condition}
         </Text>
       )}
+      <KioskPhotoFade caption style={{ height: 270, borderRadius: 22, marginTop: 4 }} />
       {nextMeal && (
         <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
           <Text style={[s.mealEyebrow, { color: colors.textTertiary }]}>NEXT SHARED MEAL</Text>

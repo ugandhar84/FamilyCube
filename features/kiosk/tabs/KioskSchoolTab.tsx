@@ -20,7 +20,7 @@ import { useKioskColors, kioskPastels, type KioskColors } from '../kioskPalette'
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 import { KioskAreaMenu, type AreaItem } from '../components/KioskAreaMenu';
 import { KioskFormDrawer, KioskFieldLabel, kioskInputStyle } from '../components/KioskFormDrawer';
-import { KioskSchoolScheduleModal } from '../components/KioskSchoolScheduleModal';
+import { KioskKidSchool, KioskNewSchedule } from '../components/KioskKidSchool';
 import { KioskDateTimePicker, openAndroidPicker } from '../components/KioskDateTimePicker';
 import { KioskAvatar } from '../components/KioskAvatar';
 import { Eyebrow } from '../components/KioskHomeParts';
@@ -85,6 +85,8 @@ export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
   const [weekKid, setWeekKid] = useState<string | undefined>(kids[0]?.id);
   const [dayFor, setDayFor] = useState<string | null>(null);
   const [editFor, setEditFor] = useState<string | null>(null);
+  const [manageFor, setManageFor] = useState<string | null>(null);
+  const [createFor, setCreateFor] = useState<string | 'any' | null>(null);
   const [pickCreate, setPickCreate] = useState(false);
   const [flyer, setFlyer] = useState(false);
   const [addBreak, setAddBreak] = useState(false);
@@ -93,7 +95,7 @@ export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
   const [hFrom, setHFrom] = useState(localDateStr());
   const [hTo, setHTo] = useState(localDateStr());
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
-  useKioskLockSuspended(!!editFor || flyer || addBreak);
+  useKioskLockSuspended(!!editFor || !!manageFor || !!createFor || flyer || addBreak);
 
   const todayKey = DAY_KEYS[new Date().getDay()];
   const scheduleOf = (id: string) => schedules.find(x => x.memberId === id);
@@ -152,7 +154,7 @@ export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
             );
           })}
         {!!last && <Text style={[s.muted, { color: k.textMuted }]}>Dismissal around {fmtTime(last.endTime)}</Text>}
-        <Btn label={sc ? 'Open full day →' : 'Create schedule →'} onPress={() => { registerActivity(); sc ? setDayFor(kid.id) : setEditFor(kid.id); }} />
+        <Btn label="Manage →" onPress={() => { registerActivity(); setManageFor(kid.id); }} />
       </View>
     );
   };
@@ -203,7 +205,7 @@ export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
 
         {area === 'schedules' && (
           <>
-            <View style={s.head}><Text style={[s.h1, { color: k.text, flex: 1 }]}>Schedules</Text>{isParent && <Btn label="Create school schedule" Icon={Plus} onPress={() => { registerActivity(); setPickCreate(true); }} />}</View>
+            <View style={s.head}><Text style={[s.h1, { color: k.text, flex: 1 }]}>Schedules</Text>{isParent && <Btn label="Create school schedule" Icon={Plus} onPress={() => { registerActivity(); setCreateFor('any'); }} />}</View>
             {kids.map((kd, i) => {
               const sc = scheduleOf(kd.id); const tone = pastels[i % 4];
               return (
@@ -213,8 +215,7 @@ export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
                     <Text style={[s.perName, { color: k.text }]} numberOfLines={1}>{kd.name.split(' ')[0]}{sc?.gradeYear ? ` · ${sc.gradeYear}` : ''}</Text>
                     <Text style={[s.muted, { color: k.textMuted }]}>{sc ? `${sc.school ?? 'School'} · ${sc.periods.length} periods` : 'No schedule yet'}</Text>
                   </View>
-                  {isParent ? <Btn kind="sec" label={sc ? 'Edit periods' : 'Create'} onPress={() => { registerActivity(); setEditFor(kd.id); }} />
-                    : sc ? <Btn kind="sec" label="View day" onPress={() => setDayFor(kd.id)} /> : null}
+                  <Btn kind="sec" label="Manage" onPress={() => { registerActivity(); setManageFor(kd.id); }} />
                 </View>
               );
             })}
@@ -307,9 +308,12 @@ export function KioskSchoolTab({ isKid, isTeen, colors, isDark }: {
         </View>
       </KioskFormDrawer>
 
-      {!!editFor && editMember && (
-        <KioskSchoolScheduleModal visible memberId={editMember.id} memberName={editMember.name} isParent={isParent}
-          colors={colors} isDark={isDark} onClose={() => setEditFor(null)} />
+      {manageFor && members.find(m => m.id === manageFor) && (
+        <KioskKidSchool kid={members.find(m => m.id === manageFor)!} kids={kids} canEdit={isParent}
+          onClose={() => setManageFor(null)} onCreate={() => setCreateFor(manageFor)} />
+      )}
+      {createFor && (
+        <KioskNewSchedule kids={kids} presetKidId={createFor === 'any' ? undefined : createFor} onClose={() => setCreateFor(null)} />
       )}
       <FlyerScannerModal visible={flyer} onClose={() => setFlyer(false)} />
     </View>

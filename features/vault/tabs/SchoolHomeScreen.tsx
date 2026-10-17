@@ -36,6 +36,7 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { NewScheduleScreen } from './school/NewScheduleScreen';
 import { HolidaysScreen } from './school/HolidaysScreen';
 import { ClassEditScreen } from './school/ClassEditScreen';
+import { termsOf, guessCurrentTerm, periodsInTerm, prettySubject } from './school/schoolUtils';
 import { HolidayEditScreen } from './school/HolidayEditScreen';
 import { ImportantDateEditScreen } from './school/ImportantDateEditScreen';
 import { SchoolDayScreen } from './school/SchoolDayScreen';
@@ -69,14 +70,6 @@ function fmtTime12(t: string): string {
 
 type MainTab = 'schedule' | 'holidays' | 'dates';
 
-
-/** "HONORS SCI 8 A" -> "Honors Sci 8 A": long shouty words become Title Case; short ones (ELAR, ART, US, MATH) and anything with a digit stay as written. */
-function prettySubject(raw: string): string {
-  return raw.split(/\s+/).map(w => {
-    if (w.length <= 4 || /\d/.test(w) || w !== w.toUpperCase()) return w;
-    return w.charAt(0) + w.slice(1).toLowerCase();
-  }).join(' ');
-}
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const ymd = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -178,37 +171,6 @@ function ClassRow({ p, colors, isDark, now, onPress }: { p: ClassPeriod; colors:
     </TouchableOpacity>
   );
 }
-
-/** The distinct terms (Fall, Spring, Q1...) a schedule's classes belong to, in the order they appear. */
-function termsOf(periods: ClassPeriod[]): string[] {
-  return [...new Set(periods.map(p => p.term?.trim()).filter((t): t is string => !!t))];
-}
-
-/** Best guess at which term is running now, from the month and the term's name. Falls back to the first term. */
-function guessCurrentTerm(terms: string[]): string | undefined {
-  if (terms.length === 0) return undefined;
-  const m = new Date().getMonth(); // 0 = Jan
-  const fall = m >= 7;
-  const quarter = m >= 7 && m <= 9 ? 1 : (m >= 10 || m === 0) ? 2 : m <= 3 ? 3 : 4;
-  const hit = terms.find(t => {
-    const x = t.toLowerCase();
-    if (/fall|autumn/.test(x)) return fall;
-    if (/spring/.test(x)) return !fall && m <= 5;
-    if (/summer/.test(x)) return m === 5 || m === 6;
-    const q = x.match(/(?:^|\b)(?:q|quarter|term)\s*([1-4])\b/);
-    if (q) return +q[1] === quarter;
-    const sem = x.match(/(?:semester|sem)\s*([12])\b/);
-    if (sem) return (+sem[1] === 1) === fall;
-    return false;
-  });
-  return hit ?? terms[0];
-}
-
-/** Classes that run in a term: ones tagged with it, plus any with no term (they run all year). */
-function periodsInTerm(periods: ClassPeriod[], term?: string): ClassPeriod[] {
-  return term ? periods.filter(p => !p.term || p.term.trim() === term) : periods;
-}
-
 
 // Days off (not a class day) — used to keep them out of the "other important dates" list.
 const DAY_OFF_RE = /\b(holiday|break|no school|in-?service|staff (professional|development)|teacher work ?day|school closed)\b/i;

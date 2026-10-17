@@ -44,7 +44,7 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskNavStore } from '@/store/kioskNavStore';
-import { useEventStore, eventAssignee, isEventSensitive } from '@/store/eventStore';
+import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTripStore } from '@/store/tripStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -314,9 +314,8 @@ export default function KioskScreen() {
     const hhmm = new Date().toTimeString().slice(0, 5);
     const upcoming = dayEvents.find(e => !!e.time && e.time >= hhmm) ?? dayEvents.find(e => !e.time);
     if (!upcoming) return undefined;
-    if (isEventSensitive(upcoming)) {
-      return { time: upcoming.time ? fmtTime(upcoming.time) : undefined, title: 'Something scheduled' };
-    }
+    // The idle screen shows the real event name (it used to hide medical/therapy events as "Something
+    // scheduled"). The lock screen still hides the agenda.
     const who = eventAssignee(upcoming).name?.trim().split(' ')[0]
       ?? members.find(m => m.id === upcoming.memberId)?.name?.trim().split(' ')[0];
     return {

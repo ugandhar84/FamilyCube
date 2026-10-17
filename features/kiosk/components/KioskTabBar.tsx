@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
 import { MoreHorizontal } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
-import { useKioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels } from '../kioskPalette';
 import type { KioskRailItem, KioskTabKey } from '../kioskTabs';
 
 const BAR_SLOTS = 6;
@@ -42,9 +42,14 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
 
   const select = (key: KioskTabKey) => { setMoreOpen(false); onSelect(key); };
 
+  const pastels = kioskPastels(k);
+  const toneFor = (key: string) => pastels[Math.max(0, items.findIndex(i => i.key === key)) % 4];
+
   const renderTab = (
     { key, label, Icon }: KioskRailItem, on: boolean, onPress: () => void, badge?: number,
-  ) => (
+  ) => {
+    const tone = toneFor(key);
+    return (
     <Pressable
       key={key} onPress={onPress}
       style={({ pressed }) => [s.tab, pressed && { opacity: 0.7 }]}
@@ -52,19 +57,20 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
       accessibilityLabel={badge ? `${label}, ${badge} waiting` : label}
     >
       {on && <View style={[s.indicator, { backgroundColor: k.primary }]} />}
-      <View>
-        <Icon size={22} color={on ? k.primary : k.textFaint} strokeWidth={2} />
+      <View style={[s.tile, { backgroundColor: on ? k.primary : tone.card }]}>
+        <Icon size={22} color={on ? k.onPrimary : tone.fg} strokeWidth={2.2} />
         {!!badge && (
           <View style={[s.badge, { backgroundColor: k.primary, borderColor: k.card }]}>
             <Text style={[s.badgeText, { color: k.onPrimary }]}>{badge > 9 ? '9+' : badge}</Text>
           </View>
         )}
       </View>
-      <Text style={[s.label, { color: on ? k.primary : k.textFaint }]} numberOfLines={1}>
+      <Text style={[s.label, { color: on ? k.primary : k.textMuted }]} numberOfLines={1}>
         {label === 'Overview' ? 'Home' : label}
       </Text>
     </Pressable>
-  );
+    );
+  };
 
   return (
     <Animated.View
@@ -86,10 +92,10 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
             return (
               <Pressable
                 key={key} onPress={() => select(key)}
-                style={({ pressed }) => [s.moreItem, { backgroundColor: on ? k.primarySoft : k.well }, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [s.moreItem, { backgroundColor: on ? k.primarySoft : toneFor(key).col }, pressed && { opacity: 0.7 }]}
                 accessibilityRole="button" accessibilityLabel={label}
               >
-                <Icon size={22} color={on ? k.primary : k.textMuted} />
+                <Icon size={22} color={on ? k.primary : toneFor(key).fg} />
                 <Text style={[s.moreLabel, { color: on ? k.primary : k.text }]}>{label}</Text>
                 {!!b && <Text style={[s.moreBadge, { color: k.primary }]}>{b}</Text>}
               </Pressable>
@@ -116,7 +122,8 @@ const s = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: KIOSK_SPACE.lg,
     zIndex: 10,
   },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, minHeight: 58 },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6, minHeight: 64 },
+  tile: { width: 44, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   indicator: { position: 'absolute', top: 0, left: '24%', right: '24%', height: 3, borderRadius: 2 },
   label: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   badge: {

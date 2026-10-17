@@ -267,12 +267,13 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     if (selectedKids.length === 0) { Alert.alert('Choose at least one kid for this event'); return; }
     if (blockIfPaywalled()) return;
     busyRef.current = true;
-    setSaveProgress({ done: 0, total: selectedKids.length });
+    setSaveProgress({ done: 0, total: 1 });
     // Same fire-and-forget bug as handleConfirmMulti below — await each
     // addEvent call and only claim success for the ones that actually
     // persisted (addEvent returns '' on failure, a real row id on success).
     let succeeded = 0;
-    for (const kidId of selectedKids) {
+    // One shared entry for all chosen kids (the calendar shows every name) instead of a copy per kid.
+    {
       const id = await addEvent({
         title:    event.title,
         date:     event.date ?? dateToStr(new Date()),
@@ -281,13 +282,14 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         category: event.category,
         location: event.location ?? undefined,
         notes:    [event.description, event.notes, event.recurrence_desc].filter(Boolean).join(' · ') || undefined,
-        memberId: kidId,
+        memberId: selectedKids[0],
+        memberIds: selectedKids.length > 1 ? selectedKids : undefined,
         type:     'event',
         color:    BRAND.teal,
         approvalPending: false,
       });
       if (id) succeeded++;
-      setSaveProgress({ done: succeeded, total: selectedKids.length });
+      setSaveProgress({ done: succeeded, total: 1 });
     }
     if (succeeded === 0) {
       busyRef.current = false; setSaveProgress(null);
@@ -336,7 +338,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     if (importingMulti || busyRef.current) return;
     busyRef.current = true;
     setImportingMulti(true);
-    setSaveProgress({ done: 0, total: toAdd.length * selectedKids.length });
+    setSaveProgress({ done: 0, total: toAdd.length });
     // Was fire-and-forget: addEvent is async and can fail per-call (its own
     // error path already shows a toast), but this loop never awaited any of
     // the resulting promises before showing a hardcoded success toast and
@@ -347,24 +349,25 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     // (and this code) what happened.
     let succeeded = 0;
     let failed = 0;
+    // ONE calendar entry per flyer line, shared by every chosen kid (not a copy per kid): the calendar then shows all their
+    // names, and the database's duplicate guard no longer drops the second kid's copy.
     for (const ev of toAdd) {
-      for (const kidId of selectedKids) {
-        const id = await addEvent({
-          title:    ev.title,
-          date:     ev.date ?? dateToStr(new Date()),
-          time:     ev.time ?? undefined,
-          endTime:  ev.end_time ?? undefined,
-          category: ev.category,
-          location: ev.location ?? undefined,
-          notes:    ev.notes ?? undefined,
-          memberId: kidId,
-          type:     'event',
-          color:    BRAND.teal,
-          approvalPending: false,
-        });
-        if (id) succeeded++; else failed++;
-        setSaveProgress({ done: succeeded + failed, total: toAdd.length * selectedKids.length });
-      }
+      const id = await addEvent({
+        title:    ev.title,
+        date:     ev.date ?? dateToStr(new Date()),
+        time:     ev.time ?? undefined,
+        endTime:  ev.end_time ?? undefined,
+        category: ev.category,
+        location: ev.location ?? undefined,
+        notes:    ev.notes ?? undefined,
+        memberId: selectedKids[0],
+        memberIds: selectedKids.length > 1 ? selectedKids : undefined,
+        type:     'event',
+        color:    BRAND.teal,
+        approvalPending: false,
+      });
+      if (id) succeeded++; else failed++;
+      setSaveProgress({ done: succeeded + failed, total: toAdd.length });
     }
     // Breaks go to each kid's Holidays page as one from–to range per break (and pause that kid's class periods).
     if (succeeded > 0) {

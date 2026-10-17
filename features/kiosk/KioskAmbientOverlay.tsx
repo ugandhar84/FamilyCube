@@ -118,8 +118,9 @@ export function KioskAmbientOverlay({
 
   const night = useIsNight();
   const { photos } = useKioskPhotos();
-  // With memories to show (and not at night), the idle screen is a photo frame with a small clock.
-  const frame = photos.length > 0 && !night;
+  // With memories to show, the idle screen is a photo frame with a small clock. At night (9 PM to 6 AM)
+  // the same frame is shown but dimmed right down so it never lights a sleeping child's room.
+  const frame = photos.length > 0;
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!mounted) return;
@@ -159,6 +160,7 @@ export function KioskAmbientOverlay({
           <View style={s.matte}>
             <KioskPhotoFade style={s.framePhoto} active={visible} caption />
           </View>
+          {night && <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.82)' }]} />}
         </View>
       ) : (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: night ? 'rgba(0,0,0,0.78)' : 'rgba(10,9,16,0.42)' }]} pointerEvents="none" />

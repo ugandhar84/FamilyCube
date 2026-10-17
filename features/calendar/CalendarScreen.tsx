@@ -374,6 +374,12 @@ function FadeInView({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
+/** A whole-day entry: flagged all-day, or no time at all, or a lone midnight start (what a flyer scan writes for "no time"). */
+function isAllDayEvent(ev: FamilyEvent): boolean {
+  if (ev.allDay || !ev.time) return true;
+  return /^00:00(:00)?$/.test(ev.time) && (!ev.endTime || /^00:00(:00)?$/.test(ev.endTime));
+}
+
 export default function CalendarScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery, onRequestJustDescribe, onRequestEventDetail }: {
   hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
   hideSearchBar?: boolean; externalSearchQuery?: string;
@@ -1531,6 +1537,32 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   );
                 })()}
 
+                {/* All-day strip — whole-day entries (breaks, staff days) sit right under the date bar, not as a 12 AM block on the
+                    timeline. The same entry for several kids is one chip with all their names. */}
+                {(() => {
+                  const allDay = dayEvents.filter(isAllDayEvent);
+                  if (allDay.length === 0) return null;
+                  const groups = new Map<string, FamilyEvent[]>();
+                  allDay.forEach(e => groups.set(e.title, [...(groups.get(e.title) ?? []), e]));
+                  return (
+                    <View style={{ paddingHorizontal: 20, paddingBottom: 10, gap: 6 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.textSecondary : BODY_CLR, letterSpacing: 0.2 }}>All day</Text>
+                      {[...groups.entries()].map(([title, evs]) => {
+                        const ids = [...new Set(evs.flatMap(e => e.memberIds?.length ? e.memberIds : e.memberId ? [e.memberId] : []))];
+                        const names = ids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).filter(Boolean).join(', ');
+                        return (
+                          <Pressable key={title} onPress={() => openDetail(evs[0])}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
+                              backgroundColor: isDark ? colors.warning + '18' : colors.warningLight, borderWidth: 1, borderColor: colors.warning }}>
+                            <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.warningDark }} numberOfLines={1}>{title}</Text>
+                            {names ? <Text style={{ fontSize: 12, fontWeight: '600', color: colors.warningDark }} numberOfLines={1}>{names}</Text> : null}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  );
+                })()}
+
                 {/* Section title */}
                 <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
                   borderTopWidth: 1, borderTopColor: isDark ? colors.border : BORDER }}>
@@ -1541,7 +1573,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               </View>
 
               <DaySlotView
-                dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday')}
+                dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday' && !isAllDayEvent(ev))}
                 members={members}
                 selectedDate={selectedDate}
                 colors={colors} isDark={isDark}

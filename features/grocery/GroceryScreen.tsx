@@ -719,19 +719,19 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'list'} onDismiss={() => setTab(null)} zIndex={40}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 12, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 4 }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 12 }}>
             <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Shared groceries" subtitle={`Shared with all ${members.length} ${familyName ? familyName.split(' ')[0] + 's' : 'members'} · updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`} accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
             {/* Figma: Add item + AI suggestions pill buttons */}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Pressable onPress={() => setShowAddItem(true)}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: P,
-                  paddingVertical: 10, alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: P }}>Add item</Text>
+                style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: P,
+                  paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: P }}>Add item</Text>
               </Pressable>
               <Pressable onPress={() => setShowAiSuggestions(true)}
-                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: P,
-                  paddingVertical: 10, alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: P }}>AI suggestions</Text>
+                style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: P,
+                  paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: P }}>AI suggestions</Text>
               </Pressable>
             </View>
             {/* Snap-a-photo banner — full width, opens the AI photo scanner
@@ -741,15 +741,15 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
                 placement confirmed on the list screen, not buried inside
                 Add Item]. Reuses the existing ReceiptScanSheet flow. */}
             <Pressable onPress={() => setShowReceiptScan(true)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-                backgroundColor: colors.amberLight, borderRadius: 14, padding: 14 }}>
-              <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.card,
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 14,
+                backgroundColor: colors.amberLight, borderRadius: 18, padding: 16 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.card,
                 alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="camera" size={19} color={colors.amber} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Snap a photo to add items</Text>
-                <Text style={{ fontSize: 12, fontWeight: '500', color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Snap a photo to add items</Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', lineHeight: 18, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
                   CubeAI reads the photo and adds items for you
                 </Text>
               </View>
@@ -766,7 +766,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
                 <Pressable key={store} onPress={() => setPinningStore(store)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                     borderRadius: 100, borderWidth: 1, borderColor: colors.border,
-                    backgroundColor: colors.primaryLight, paddingVertical: 6, paddingHorizontal: 12 }}>
+                    backgroundColor: colors.primaryLight, paddingVertical: 9, paddingHorizontal: 14 }}>
                   <Ionicons name="location" size={12} color={P} />
                   <Text style={{ fontSize: 13, fontWeight: '600', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>
                     {store}
@@ -779,7 +779,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               <Pressable onPress={() => setPinningStore('Store')}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                   borderRadius: 100, borderWidth: 1, borderStyle: 'dashed', borderColor: P,
-                  paddingVertical: 6, paddingHorizontal: 12 }}>
+                  paddingVertical: 9, paddingHorizontal: 14 }}>
                 <Ionicons name="add" size={14} color={P} />
                 <Text style={{ fontSize: 13, fontWeight: '600', color: P }}>Pin a store</Text>
               </Pressable>
@@ -793,10 +793,10 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             {/* Category / Store view toggle — same rows, grouped differently
                 [live-requested: "we should have option to see the store
                 wise list also right"]. */}
-            <View style={{ flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
               {(['category', 'store'] as const).map(mode => (
                 <Pressable key={mode} onPress={() => setListGroupBy(mode)}
-                  style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
+                  style={{ flex: 1, paddingVertical: 11, alignItems: 'center',
                     backgroundColor: listGroupBy === mode ? P : 'transparent' }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: listGroupBy === mode ? '#FFFFFF' : (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
                     {mode === 'category' ? 'By category' : 'By store'}
@@ -810,7 +810,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             <PartnerStatusBar familyId={familyId} currentMemberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
             <SmartRestockBanner familyId={familyId} colors={colors} isDark={isDark}
               onAddItem={(name, category) => addItem({ familyId, addedBy: activeMemberId ?? '', name, category })} />
-            <View style={{ padding: 20, gap: 14 }}>
+            <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 20, gap: 14 }}>
               {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={P} /> : (
                 <>
                   {categorisedItems.supplies.length > 0 && (
@@ -914,7 +914,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
       <FullPageOverlay visible={tab === 'history'} onDismiss={() => setTab(null)} zIndex={42}>
         {(requestAnimatedClose) => (
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
-          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 12, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 4 }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 12 }}>
             <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Purchase History" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
             {/* Scan Receipt — moved here from the CubeAI banner's own
                 button, since a scanned receipt IS a purchase-history
@@ -925,7 +925,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
             {!isKid && (
               <Pressable onPress={() => setShowReceiptScan(true)}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  paddingVertical: 10, borderRadius: 12, backgroundColor: isDark ? colors.surface : '#FFFFFF',
+                  paddingVertical: 13, borderRadius: 14, backgroundColor: isDark ? colors.surface : '#FFFFFF',
                   borderWidth: 1, borderColor: colors.border }}>
                 <Ionicons name="receipt-outline" size={16} color={P} />
                 <Text style={{ fontSize: 13, fontWeight: '700', color: P }}>Scan Receipt</Text>

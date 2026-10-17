@@ -258,6 +258,21 @@ export default function JustDescribeItScreen({
         input.trim(),
         members.map(m => ({ id: m.id, name: m.name, role: m.role }))
       );
+      // The AI says it is an event (a ride, an appointment): continue in the event form, the same as the "Set up event" button,
+      // not the chore form.
+      if (result?.task?.kind === 'event') {
+        const t = result.task;
+        const startAt = t.startAt && t.startAt.includes('T') ? t.startAt
+          : detected?.when.date && detected.when.time ? `${detected.when.date}T${detected.when.time}:00` : undefined;
+        onOpenFullForm('event', {
+          title: input.trim(), category: detected?.category.eventCategory ?? undefined,
+          startAt: startAt ?? (t.startAt ? `${t.startAt.slice(0, 10)}T${nextHourRoundedStr()}:00` : undefined),
+          pickupLocation: t.pickupLocation ?? detected?.locations.pickup ?? undefined,
+          dropLocation: t.dropoffLocation ?? detected?.locations.dropoff ?? undefined,
+        });
+        reset();
+        return;
+      }
       if (result?.task?.title) {
         // Always fill the form — never overwrite what the user typed in the composer
         setQuestTitle(result.task.title);

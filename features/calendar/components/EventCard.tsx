@@ -19,7 +19,8 @@
  * owns no business logic — purely presentational.
  */
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Alert, Animated, Easing } from 'react-native';
+import { showAlert } from '@/components/AppAlert';
+import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Animated, Easing } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect, ClipPath, Defs, G } from 'react-native-svg';
@@ -169,7 +170,7 @@ export async function openInMaps(addr: string) {
     if (Platform.OS === 'ios' && await Linking.canOpenURL('comgooglemaps://').catch(() => false)) return open(`comgooglemaps://?q=${q}`);
     return open(`https://www.google.com/maps/search/?api=1&query=${q}`);
   };
-  Alert.alert('Open in Maps', addr, Platform.OS === 'ios'
+  showAlert('Open in Maps', addr, Platform.OS === 'ios'
     ? [
         { text: 'Apple Maps', onPress: () => open(`https://maps.apple.com/?q=${q}`) },
         { text: 'Google Maps', onPress: openGoogle },
@@ -179,7 +180,7 @@ export async function openInMaps(addr: string) {
         { text: 'Default Maps app', onPress: () => open(`geo:0,0?q=${q}`) },
         { text: 'Google Maps', onPress: openGoogle },
         { text: 'Cancel', style: 'cancel' },
-      ]);
+      ], true);
 }
 export function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWeight = '600' }: {
   addr: string; color: string; fontSize?: number; iconSize?: number; fontWeight?: string;

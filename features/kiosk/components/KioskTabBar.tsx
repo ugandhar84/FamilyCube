@@ -11,6 +11,7 @@ import { MoreHorizontal } from 'lucide-react-native';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, kioskPastels } from '../kioskPalette';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { KioskRailItem, KioskTabKey } from '../kioskTabs';
 
 const BAR_SLOTS = 6;
@@ -28,6 +29,9 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
   hidden?: boolean;
 }) {
   const { k, isDark } = useKioskColors();
+  const insets = useSafeAreaInsets();
+  // Floating pill: it sits clear of the bottom edge (and the home-indicator inset) instead of docking to it.
+  const lift = Math.max(insets.bottom, 0) + 10;
   const [moreOpen, setMoreOpen] = useState(false);
   const slide = useRef(new Animated.Value(0)).current;
   const [barH, setBarH] = useState(70);
@@ -78,15 +82,15 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
       onLayout={e => { if (!hidden) setBarH(e.nativeEvent.layout.height); }}
       pointerEvents={hidden ? 'none' : 'auto'}
       style={[
-        s.bar, { backgroundColor: isDark ? 'rgba(95,163,125,0.20)' : 'rgba(198,226,208,0.62)', borderTopColor: isDark ? 'rgba(95,163,125,0.35)' : 'rgba(255,255,255,0.75)' },
+        s.bar, { backgroundColor: isDark ? 'rgba(95,163,125,0.20)' : 'rgba(198,226,208,0.62)', borderColor: isDark ? 'rgba(95,163,125,0.35)' : 'rgba(255,255,255,0.8)' },
         // Margin gives the page the bar's height back; translate carries the
         // bar (and the bottom safe-area strip) fully off screen.
-        { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -barH] }),
+        { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [lift, -barH] }),
           transform: [{ translateY: slide.interpolate({ inputRange: [0, 1], outputRange: [0, barH + 80] }) }] },
       ]}
     >
       {/* Frosted sage glass: the page shows faintly through a blurred, sage-tinted strip. */}
-      <BlurView intensity={55} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <BlurView intensity={55} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: 34, overflow: 'hidden' }]} pointerEvents="none" />
       {moreOpen && (
         <View style={[s.more, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
           {rest.map(({ key, label, Icon }) => {
@@ -122,8 +126,9 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
 const s = StyleSheet.create({
   bar: {
     flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-around',
-    borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: KIOSK_SPACE.lg,
+    borderWidth: 1.5, borderRadius: 34, marginHorizontal: 18, paddingHorizontal: KIOSK_SPACE.md,
     zIndex: 10,
+    shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6, minHeight: 64 },
   tile: { width: 44, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },

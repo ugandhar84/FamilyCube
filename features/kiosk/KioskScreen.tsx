@@ -338,7 +338,7 @@ export default function KioskScreen() {
     <KioskActivityProvider value={activityApi}>
       <SafeAreaView
         style={[s.root, { backgroundColor: k.bg }]}
-        edges={['top', 'bottom']}
+        edges={['top']}
         onTouchStart={registerActivity}
       >
         {locked && (

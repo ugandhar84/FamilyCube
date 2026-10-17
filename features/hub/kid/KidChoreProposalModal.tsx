@@ -42,13 +42,13 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
   const { submitting, guard } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
 
-  if (!active) return null;
 
   const pickableMembers = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const accent = BRAND.purple;
 
-  const dismiss = () => { setTitle(''); setForId(active.id); setError(null); onClose(); };
+  const dismiss = () => { setTitle(''); setForId(active?.id ?? ''); setError(null); onClose(); };
   const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75);
+  if (!active) return null;
 
   const submit = guard(async () => {
     const trimmed = title.trim();

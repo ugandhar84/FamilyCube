@@ -733,7 +733,7 @@ export function KioskHealthTab({ isKid, colors, isDark }: {
       });
       return (
         <>
-          <Head title={isKid ? 'My medications' : 'All medications'} right={!isKid ? <View style={s.wrapRow}>{selectBtn()}<Btn label="Add medication" Icon={Plus} onPress={() => setShowAddMed(true)} /></View> : undefined} />
+          <Head title={isKid ? 'My medications' : 'All medications'} right={!isKid ? <View style={s.wrapRow}>{selectBtn()}<Btn kind="sec" label="Scan prescription" Icon={ScanLine} onPress={() => { setScanMode('rx'); setShowScanSheet(true); }} /><Btn label="Add medication" Icon={Plus} onPress={() => setShowAddMed(true)} /></View> : undefined} />
           {whoRow}
           <View style={s.wrapRow}>
             <View style={[s.search, { backgroundColor: k.well }]}><Search size={16} color={k.textFaint} /><TextInput value={medQuery} onChangeText={setMedQuery} placeholder="Search medications" placeholderTextColor={k.textFaint} style={[s.searchIn, { color: k.text }]} accessibilityLabel="Search medications" /></View>

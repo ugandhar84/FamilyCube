@@ -46,7 +46,6 @@ export function PendingVerifyCheerCard({
   members?: FamilyMember[];
   active?: { name: string };
 }) {
-  if (pendingGpApproval.length === 0) return null;
   const actorName = active?.name ?? 'senior';
 
   const insets = useSafeAreaInsets();
@@ -69,6 +68,8 @@ export function PendingVerifyCheerCard({
     seenTeams.add(c.teamGroupId);
     return true;
   });
+
+  if (pendingGpApproval.length === 0) return null;
 
   return (
     <View style={{ gap: 10, marginBottom: 12 }}>

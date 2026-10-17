@@ -315,6 +315,8 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
   const [editing, setEditing] = useState(false);
 
   const available = PILLS.filter(p => p.roles.includes(role));
+  const notifications = useNotifStore(s => s.notifications);
+  const hasUnreadMemory = (notifications ?? []).some(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked'));
   if (available.length === 0) return null;
   const visible = orderPills(available, savedOrder);
 
@@ -324,8 +326,6 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
   // persisted by MemoriesTab.tsx's postMemory/heartMemory) rather than a
   // separate last-viewed-timestamp mechanism — same source of truth the
   // bell icon's own unread badge already reads.
-  const notifications = useNotifStore(s => s.notifications);
-  const hasUnreadMemory = (notifications ?? []).some(n => !n.read && (n.type === 'memory_posted' || n.type === 'memory_liked'));
 
   return (
     <View style={{ paddingBottom: 12 }}>

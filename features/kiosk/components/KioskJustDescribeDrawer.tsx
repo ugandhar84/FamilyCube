@@ -361,9 +361,20 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
   );
 
   const detCat = detection ? ((detection.category.kind === 'event' ? detection.category.eventCategory : detection.category.questCategory) ?? detection.category.label) : '';
-  const examples = mode === 'chore'
-    ? ['Leo take out the trash tomorrow at 5 PM', 'Jaswi water the plants every Sunday', 'Anyone wipe the kitchen counters tonight']
-    : ['Zoe piano lesson Thursday 3:30 PM', 'Family dinner at Nana’s Sunday 5:30 PM', 'Praveena dentist Friday 4 PM'];
+  // Example sentences use THIS family's own people, never made-up names.
+  const examples = useMemo(() => {
+    const kids = people.filter(m => m.role === 'kid' || m.role === 'teen').map(firstName);
+    const adults = people.filter(m => m.role === 'parent').map(firstName);
+    const kid1 = kids[0], kid2 = kids[1] ?? kids[0], adult = adults[0] ?? kids[0];
+    const w = (n: string | undefined, rest: string, fallback: string) => (n ? `${n} ${rest}` : fallback);
+    return mode === 'chore'
+      ? [w(kid1, 'take out the trash tomorrow at 5 PM', 'Take out the trash tomorrow at 5 PM'),
+         w(kid2, 'water the plants every Sunday', 'Water the plants every Sunday'),
+         'Anyone wipe the kitchen counters tonight']
+      : [w(kid1, 'piano lesson Thursday 3:30 PM', 'Piano lesson Thursday 3:30 PM'),
+         'Family dinner Sunday 5:30 PM',
+         w(adult, 'dentist Friday 4 PM', 'Dentist Friday 4 PM')];
+  }, [mode, people]);
   const whoNames = who.map(id => firstName(people.find(m => m.id === id))).filter(Boolean).join(', ');
 
   return (

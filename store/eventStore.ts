@@ -2023,6 +2023,17 @@ export const useEventStore = create<EventState>((set, get) => ({
     // exists only to build the outgoing row; the server's returned row is
     // what every list/cache below is populated from.
     const { data: row, error } = await supabase.from('calendar_events').insert([toRow(draft)]).select().maybeSingle();
+    if (error && /calendar_events_single_dedup_uniq|duplicate key/i.test(error.message ?? '')) {
+      // The same event (same day, title, start time and person) is already on the calendar, usually from an earlier tap of
+      // Add. That is not a failure: tell the person, and hand back the existing event so the caller can finish normally.
+      const d: any = toRow(draft);
+      let q = supabase.from('calendar_events').select('id').eq('family_id', d.family_id).eq('date', d.date).eq('title', d.title);
+      q = d.start_time ? q.eq('start_time', d.start_time) : q.is('start_time', null);
+      q = d.member_id ? q.eq('member_id', d.member_id) : q.is('member_id', null);
+      const { data: existing } = await q.limit(1).maybeSingle();
+      showToast('That event is already on the calendar', 'warning');
+      return (existing as any)?.id ?? '';
+    }
     if (error || !row) {
       console.warn('[eventStore] insert failed', error?.message);
       showToast("Couldn't save — check your connection and try again", 'error');

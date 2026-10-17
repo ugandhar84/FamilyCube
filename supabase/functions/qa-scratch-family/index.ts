@@ -54,7 +54,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications', 'family_vaccines', 'medical_records', 'family_memories', 'member_locations', 'calendar_events', 'kid_requests']);
+const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications', 'family_vaccines', 'medical_records', 'family_memories', 'member_locations', 'calendar_events', 'kid_requests', 'chat_channels', 'chat_messages']);
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
@@ -334,7 +334,7 @@ serve(async (req) => {
       if (!TABLE_OP_ALLOWLIST.has(table)) throw new Error(`table not allowed: ${table}`);
       const { scopedClient, actor } = await mintScratchMemberSession(admin, actingMemberId);
       let q: any;
-      if (op === 'insert') q = scopedClient.from(table).insert(row).select();
+      if (op === 'insert') q = body.noReturn ? scopedClient.from(table).insert(row) : scopedClient.from(table).insert(row).select();
       else if (op === 'update') { q = scopedClient.from(table).update(row).select(); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
       else if (op === 'delete') { q = scopedClient.from(table).delete().select(); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }
       else { q = scopedClient.from(table).select(select ?? '*'); for (const [c, v] of Object.entries(match ?? {})) q = q.eq(c, v as any); }

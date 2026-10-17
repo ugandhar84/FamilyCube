@@ -299,7 +299,7 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   // rationale: if the mount-triggered Animated.start() below ever gets
   // dropped/raced, worst case is a slightly faded card, never a fully
   // blank screen. The real fade+slide-up bounce still plays normally.
-  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0.4))).current;
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(1))).current;
   const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(8))).current;
   const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
 
@@ -307,7 +307,7 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   useEffect(() => {
     if (focusKey === 0 && hasAnimatedIn.current) return;
     hasAnimatedIn.current = true;
-    opacities.forEach(v => v.setValue(0.4));
+    opacities.forEach(v => v.setValue(1));
     translateYs.forEach(v => v.setValue(8));
     const anims = opacities.map((op, i) =>
       Animated.parallel([

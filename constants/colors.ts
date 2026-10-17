@@ -116,49 +116,49 @@ export const lightColors = {
 
 export const darkColors: typeof lightColors = {
   primary:      '#8EA3DD',
-  primaryLight: 'rgba(142,163,221,0.20)',
+  primaryLight: 'rgba(142,163,221,0.28)',
   primaryDark:  '#6C84C8',
   primaryMid:   '#7F96D6',
   primaryText:  '#8EA3DD',
 
   teal:         '#5FA37D',
-  tealLight:    'rgba(95,163,125,0.20)',
+  tealLight:    'rgba(95,163,125,0.28)',
   tealDark:     '#7BBFA0',
 
   amber:        '#F5A85A',
-  amberLight:   'rgba(245,168,90,0.20)',
+  amberLight:   'rgba(245,168,90,0.28)',
   amberDark:    '#F9C488',
 
   pink:         '#A78BC9',
-  pinkLight:    'rgba(167,139,201,0.20)',
+  pinkLight:    'rgba(167,139,201,0.28)',
   pinkDark:     '#C3AAE0',
 
   navy:         '#EDE7DE',
   navyLight:    'rgba(237,231,222,0.12)',
 
   parent:       '#5FA37D',
-  parentLight:  'rgba(95,163,125,0.20)',
+  parentLight:  'rgba(95,163,125,0.28)',
   parentDark:   '#7BBFA0',
 
   kid:          '#F5A85A',
-  kidLight:     'rgba(245,168,90,0.20)',
+  kidLight:     'rgba(245,168,90,0.28)',
   kidDark:      '#F9C488',
 
   danger:       '#EF7B7B',
-  dangerLight:  'rgba(239,123,123,0.20)',
+  dangerLight:  'rgba(239,123,123,0.28)',
   dangerDark:   '#F4A3A3',
   warning:      '#F5A85A',
-  warningLight: 'rgba(245,168,90,0.20)',
+  warningLight: 'rgba(245,168,90,0.28)',
   warningDark:  '#F9C488',
   success:      '#5FA37D',
-  successLight: 'rgba(95,163,125,0.20)',
+  successLight: 'rgba(95,163,125,0.28)',
   successDark:  '#7BBFA0',
   info:         '#A78BC9',
-  infoLight:    'rgba(167,139,201,0.20)',
+  infoLight:    'rgba(167,139,201,0.28)',
   infoDark:     '#C3AAE0',
 
   accent:       '#A78BC9',
-  accentLight:  'rgba(167,139,201,0.20)',
+  accentLight:  'rgba(167,139,201,0.28)',
   accentDark:   '#C3AAE0',
 
   background:   '#0E0C13',
@@ -191,11 +191,11 @@ export const darkColors: typeof lightColors = {
   skeletonHighlight: '#252030',
 
   sky:         '#6FA8CC',
-  skyLight:    'rgba(111,168,204,0.20)',
+  skyLight:    'rgba(111,168,204,0.28)',
   skyDark:     '#4A85AA',
 
   purple:      '#A78BC9',
-  purpleLight: 'rgba(167,139,201,0.20)',
+  purpleLight: 'rgba(167,139,201,0.28)',
   purpleDark:  '#C3AAE0',
 };
 

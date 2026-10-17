@@ -73,7 +73,8 @@ export default function MealFormSheet({
   familyId?: string;
   colors: any; isDark: boolean;
   onClose: () => void;
-  onSave: (patch: MealFormPatch) => void | Promise<void>;
+  /** Resolves to an error message when the save is refused (the form stays open and shows it), or nothing on success. */
+  onSave: (patch: MealFormPatch) => void | string | Promise<void | string>;
   saving?: boolean;
 }) {
   const insets = useSafeAreaInsets();
@@ -101,6 +102,7 @@ export default function MealFormSheet({
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [touched, setTouched]               = useState(false);
+  const [formError, setFormError]           = useState<string | null>(null);
 
   const [title, setTitle]           = useState('');
   const [type, setType]             = useState('dinner');
@@ -212,9 +214,10 @@ export default function MealFormSheet({
 
   const typeColor = MEAL_TYPE_COLOR[type] ?? colors.amber;
 
-  const handleSave = () => {
-    if (!title.trim()) { setTouched(true); return; }
-    onSave({
+  const handleSave = async () => {
+    setFormError(null);
+    if (!title.trim()) { setTouched(true); setFormError('Give the meal a name.'); return; }
+    const err = await onSave({
       title: title.trim(), type, emoji,
       chef_id: chefId || null,
       prep_minutes: prepMins ? parseInt(prepMins) : null,
@@ -226,6 +229,7 @@ export default function MealFormSheet({
       timezone: startTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
       createReminder: createReminder && !!chefId,
     });
+    if (typeof err === 'string' && err) setFormError(err);
   };
 
   if (!visible) return null;
@@ -649,6 +653,13 @@ export default function MealFormSheet({
                     same as every other converted module's Save button
                     [live-reported: "i still see toreekotta CTA button
                     instead of gemini blue"]. ── */}
+                {!!formError && (
+                  <View accessibilityRole="alert" style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start', borderRadius: 14, padding: 14, marginBottom: 12,
+                    backgroundColor: isDark ? colors.danger + '22' : '#FFE8E3', borderWidth: 1.5, borderColor: colors.danger }}>
+                    <Text style={{ fontSize: 16 }}>⚠️</Text>
+                    <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 20, color: colors.danger }}>{formError}</Text>
+                  </View>
+                )}
                 <TouchableOpacity onPress={handleSave} disabled={saving}
                   style={{ borderRadius: 16, paddingVertical: 17, alignItems: 'center',
                     backgroundColor: isDark ? colors.primary : (saving ? GEMINI.blue + '80' : GEMINI.blue) }}>

@@ -29,7 +29,7 @@ export type MealFormState = {
   editMeal: Meal | null;
   familyId: string;
   saving: boolean;
-  onSave: (patch: any) => void | Promise<void>;
+  onSave: (patch: any) => void | string | Promise<void | string>;
   onClose: () => void;
 };
 
@@ -221,19 +221,34 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
   // (addManualMeal/updateMeal) each hand-maintaining their own insert/
   // update + cooking-quest logic; merged since MealFormSheet.tsx itself
   // is now the single component backing both flows.
-  const saveMeal = guardSaveMeal(async (patch: {
+  const saveMealCore = async (patch: {
     title: string; type: string; emoji: string; chef_id: string | null;
     prep_minutes: number | null; dietary_tags: string[]; ingredients: string[];
     prep_steps: string[]; recipe_text?: string | null;
     start_time: string | null; timezone: string | null;
     createReminder: boolean;
-  }) => {
+  }): Promise<string | void> => {
     // Strip fields not in family_meals schema before sending to Supabase
     const { createReminder, recipe_text: _rt, timezone: _tz, ...dbPatch } = patch;
+    // Validation first: return a plain-language message and the form stays open. Success closes it.
+    if (!dbPatch.title.trim()) return 'Give the meal a name.';
+    const targetDay = editMeal?.day ?? addDay;
+    const typeName = (dbPatch.type || 'meal').toLowerCase();
+    if (targetDay && meals.some(m => m.day === targetDay && (m.type ?? '').toLowerCase() === typeName && m.id !== editMeal?.id)) {
+      return `There is already a ${typeName} planned for ${targetDay}. Pick a different meal type, or edit the existing one.`;
+    }
+    const friendly = (msg?: string) => {
+      const m = (msg ?? '').toLowerCase();
+      if (m.includes('one_type_per_day') || m.includes('duplicate key')) return `There is already a ${typeName} planned for ${targetDay}. Pick a different meal type.`;
+      if (m.includes('row-level security') || m.includes('permission')) return 'Only parents can change the meal plan.';
+      if (m.includes('network') || m.includes('fetch')) return 'No connection. Check your internet and try again.';
+      return `Could not save the meal. ${msg ?? 'Please try again.'}`;
+    };
     if (editMeal) {
       const linkedEventId = await syncMealCalendarEvent({ ...editMeal, ...dbPatch });
       const fullPatch = { ...dbPatch, linked_event_id: linkedEventId };
-      await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
+      const { error: updErr } = await supabase.from('family_meals').update(fullPatch).eq('id', editMeal.id);
+      if (updErr) return friendly(updErr.message);
       setMeals(prev => prev.map(m => m.id === editMeal.id ? { ...m, ...fullPatch } : m));
       showToast('Meal updated');
       if (createReminder && dbPatch.chef_id) {
@@ -243,18 +258,25 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
     } else if (addDay) {
       const newId = `${familyId}-${curWeek}-${addDay}-manual-${Date.now()}`;
       const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, title: dbPatch.title, start_time: dbPatch.start_time, prep_minutes: dbPatch.prep_minutes, linked_event_id: null });
-      const { data } = await supabase.from('family_meals').insert({
+      const { data, error: insErr } = await supabase.from('family_meals').insert({
         id: newId,
         family_id: familyId, week_of: curWeek, day: addDay,
         ...dbPatch, ai_generated: false, linked_event_id: linkedEventId,
       }).select().single();
-      if (data) { setMeals(prev => [...prev, data as Meal]); showToast('Meal added'); }
+      if (insErr || !data) return friendly(insErr?.message);
+      setMeals(prev => [...prev, data as Meal]); showToast('Meal added');
       if (createReminder && dbPatch.chef_id) {
         createCookingQuest(dbPatch.title, dbPatch.chef_id, addDay, dbPatch.prep_minutes);
       }
       setAddDay(null);
     }
-  });
+  };
+  // Guarded against double-taps; resolves to an error message (form stays open) or nothing (saved, form closes).
+  const saveMeal = async (patch: Parameters<typeof saveMealCore>[0]): Promise<string | void> => {
+    let result: string | void = undefined;
+    await guardSaveMeal(async () => { result = await saveMealCore(patch); })();
+    return result;
+  };
 
   const deleteMeal = async (id: string) => {
     const meal = meals.find(m => m.id === id);

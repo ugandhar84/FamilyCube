@@ -467,7 +467,7 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   // fully blank screen [live-reported repeatedly, incl. "fucking killing
   // the app"]. The real fade+slide-up bounce on load still plays normally
   // every time the effect does fire.
-  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(0.4))).current;
+  const opacities = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(1))).current;
   const translateYs = useRef(Array.from({ length: CARD_COUNT }, () => new Animated.Value(8))).current;
   const cardAnims = opacities.map((opacity, i) => ({ opacity, translateY: translateYs[i] }));
 
@@ -475,7 +475,7 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   useEffect(() => {
     if (focusKey === 0 && hasAnimatedIn.current) return;
     hasAnimatedIn.current = true;
-    opacities.forEach(v => v.setValue(0.4));
+    opacities.forEach(v => v.setValue(1));
     translateYs.forEach(v => v.setValue(8));
     const anims = opacities.map((op, i) =>
       Animated.parallel([

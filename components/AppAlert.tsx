@@ -1,3 +1,4 @@
+import { hideAiNames } from '@/lib/hideAiNames';
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, BackHandler, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,6 +55,8 @@ function classify(title: string, message?: string): 'network' | 'server' | 'user
 
 /** `center` shows the dialog in the middle of the screen over a dimmed backdrop (for choices like "Open in Maps"). */
 export function showAlert(title: string, message?: string, buttons?: AlertButton[], center?: boolean) {
+  title = hideAiNames(title);
+  message = hideAiNames(message);
   const kind = classify(title, message);
 
   if (kind === 'network') {

@@ -14,7 +14,7 @@ export default function ProcessingScreen({ colors, isDark }: { colors: any; isDa
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 24 }}>
         <ActivityIndicator size="large" color={BRAND.purple} />
         <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>Reading your flyer…</Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Gemini Vision is extracting the schedule</Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Reading the schedule</Text>
       </View>
     </View>
   );

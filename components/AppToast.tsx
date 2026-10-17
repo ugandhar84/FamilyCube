@@ -5,6 +5,7 @@
  * to-dismiss modal — e.g. "Nudge sent!" after a fire-and-forget action
  * that previously gave no visible confirmation at all.
  */
+import { hideAiNames } from '@/lib/hideAiNames';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Animated, Text, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,7 +26,7 @@ type ShowToastFn = (message: string, kind?: ToastKind) => void;
 let _showToast: ShowToastFn | null = null;
 
 export function showToast(message: string, kind: ToastKind = 'success') {
-  _showToast?.(message, kind);
+  _showToast?.(hideAiNames(message), kind);
 }
 
 const DURATION_MS = 2200;

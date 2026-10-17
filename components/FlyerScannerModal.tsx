@@ -29,6 +29,7 @@
  * 3 real call sites (KioskOverviewTab.tsx, HubScreen.tsx,
  * SchoolHomeScreen.tsx) need any edits.
  */
+import { hideAiNames } from '@/lib/hideAiNames';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Animated, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -246,7 +247,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       }
     } catch (e: any) {
       console.error('[flyer] catch:', e?.message ?? e);
-      setError(e.message ?? 'Something went wrong');
+      setError(hideAiNames(e.message) ?? 'Something went wrong');
       setStep('capture');
     }
   };

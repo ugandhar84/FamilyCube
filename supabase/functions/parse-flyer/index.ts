@@ -188,7 +188,7 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
       console.error(`[parse-flyer] ${m.name} threw: ${lastErr}`);
     }
   }
-  throw new Error(`Gemini failed: ${lastErr}`);
+  throw new Error(`The reader could not process this right now. ${lastErr.slice(0, 120)}`);
 }
 
 // ── JSON extraction ───────────────────────────────────────────────────────────

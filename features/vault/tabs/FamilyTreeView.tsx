@@ -20,7 +20,7 @@
  * with the vertical drop continuing from its midpoint.
  */
 import { memo } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, ScrollView } from 'react-native';
 import { MemberTreeCard } from './MemberCard';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -58,37 +58,43 @@ function VerticalLink({ label, colors, isDark }: { label?: string; colors: any; 
   );
 }
 
-/** Horizontal line joining a couple's two cards, with the vertical drop
- * to their children continuing from the joint's midpoint. */
+/** Under a couple (two cards side by side, centres at 25% and 75%): a drop from each card, a bar joining them, and one
+ * line from the bar's midpoint down to the children. */
 function CoupleJoint({ colors, isDark, hasChildren }: { colors: any; isDark: boolean; hasChildren: boolean }) {
   const stroke = lineColor(isDark, colors);
+  const H = 32, BAR = 14;
   return (
-    <View style={{ height: 24, flexDirection: 'row', alignItems: 'center' }}>
-      <View style={{ flex: 1 }} />
-      <View style={{ width: 24, alignItems: 'center' }}>
-        <View style={{ position: 'absolute', left: -24, right: -24, top: 11, height: 2, backgroundColor: stroke }} />
-        {hasChildren && <View style={{ width: 2, height: 24, backgroundColor: stroke, position: 'absolute', top: 11 }} />}
-      </View>
-      <View style={{ flex: 1 }} />
+    <View style={{ height: H }}>
+      <View style={{ position: 'absolute', left: '25%', marginLeft: -1, top: 0, width: 2, height: BAR + 2, backgroundColor: stroke }} />
+      <View style={{ position: 'absolute', left: '75%', marginLeft: -1, top: 0, width: 2, height: BAR + 2, backgroundColor: stroke }} />
+      <View style={{ position: 'absolute', left: '25%', right: '25%', top: BAR, height: 2, backgroundColor: stroke }} />
+      {hasChildren && <View style={{ position: 'absolute', left: '50%', marginLeft: -1, top: BAR, width: 2, height: H - BAR, backgroundColor: stroke }} />}
     </View>
   );
 }
 
-/** Bracket spanning N children — a vertical drop from the parent joint,
- * a horizontal bar spanning the full row of children, then a vertical
- * drop into each child's card. Children render in a row below this. */
+/** One line from each grandparent column (centres at 25% / 75%) down onto the parent it belongs to. */
+function GrandparentLinks({ has, colors, isDark }: { has: [boolean, boolean]; colors: any; isDark: boolean }) {
+  const stroke = lineColor(isDark, colors);
+  return (
+    <View style={{ height: 32 }}>
+      {has.map((on, i) => on ? (
+        <View key={i} style={{ position: 'absolute', left: i === 0 ? '25%' : '75%', marginLeft: -1, top: 0, bottom: 0, width: 2, backgroundColor: stroke }} />
+      ) : null)}
+    </View>
+  );
+}
+
+/** Children: with two, a bar and a drop onto each card centre; otherwise one line drops into the row. */
 function ChildrenBracket({ count, colors, isDark }: { count: number; colors: any; isDark: boolean }) {
   const stroke = lineColor(isDark, colors);
-  if (count <= 1) {
+  if (count !== 2) {
     return <View style={{ alignItems: 'center' }}><View style={{ width: 2, height: 20, backgroundColor: stroke }} /></View>;
   }
   return (
     <View style={{ height: 20 }}>
-      <View style={{ position: 'absolute', left: `${50 / count}%`, right: `${50 / count}%`, top: 0, height: 2, backgroundColor: stroke }} />
-      {Array.from({ length: count }).map((_, i) => {
-        const centerPct = (100 / count) * (i + 0.5);
-        return <View key={i} style={{ position: 'absolute', left: `${centerPct}%`, marginLeft: -1, top: 0, width: 2, height: 20, backgroundColor: stroke }} />;
-      })}
+      <View style={{ position: 'absolute', left: '25%', right: '25%', top: 0, height: 2, backgroundColor: stroke }} />
+      {[25, 75].map(pct => <View key={pct} style={{ position: 'absolute', left: `${pct}%`, marginLeft: -1, top: 0, width: 2, height: 20, backgroundColor: stroke }} />)}
     </View>
   );
 }
@@ -118,19 +124,39 @@ function FamilyTreeViewImpl({ members, activeMemberId, isParent, colors, isDark,
   const activeFirstName = activeMember?.name.split(' ')[0];
 
   return (
-    <View style={{ gap: 4 }}>
-      {grandparents.length > 0 && (
-        <View>
-          <GenLabel label={`Grandparents (${grandparents.length})`} colors={colors} isDark={isDark} />
-          <View style={{ gap: 14 }}>
-            {grandparents.map(gp => renderCard(gp))}
+    <View>
+      {grandparents.length > 0 && (() => {
+        // Maternal and paternal sides sit next to each other; inside each side the grandparents stack vertically.
+        const sideA = grandparents.filter(g => (g as any).linkedParentId && (g as any).linkedParentId === parents[0]?.id);
+        const sideB = grandparents.filter(g => (g as any).linkedParentId && (g as any).linkedParentId === parents[1]?.id);
+        grandparents.filter(g => !sideA.includes(g) && !sideB.includes(g)).forEach(g => (sideA.length <= sideB.length ? sideA : sideB).push(g));
+        const couple = parents.length === 2;
+        const cols = couple ? [sideA, sideB] : [grandparents];
+        return (
+          <View>
+            <GenLabel label={`Grandparents (${grandparents.length})`} colors={colors} isDark={isDark} />
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+              {cols.map((list, i) => (
+                <View key={i} style={{ flex: 1, gap: 10 }}>
+                  {couple && list.length > 0 && (
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? colors.textSecondary : '#5C5648' }}>{parents[i].name.split(' ')[0]}’s side</Text>
+                  )}
+                  {list.map(gp => renderCard(gp))}
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
-      )}
+        );
+      })()}
 
-      {grandparents.length > 0 && parents.length > 0 && (
-        <VerticalLink label={activeFirstName ? `Parent of ${activeFirstName}` : undefined} colors={colors} isDark={isDark} />
-      )}
+      {grandparents.length > 0 && parents.length > 0 && (() => {
+        if (parents.length !== 2) return <VerticalLink label={activeFirstName ? `Parent of ${activeFirstName}` : undefined} colors={colors} isDark={isDark} />;
+        const linked = (i: number) => grandparents.filter(g => (g as any).linkedParentId === parents[i].id).length;
+        let ca = linked(0), cb = linked(1);
+        const loose = grandparents.length - ca - cb;
+        for (let i = 0; i < loose; i++) { if (ca <= cb) ca++; else cb++; }
+        return <GrandparentLinks has={[ca > 0, cb > 0]} colors={colors} isDark={isDark} />;
+      })()}
 
       {parents.length > 0 && (
         <View>
@@ -157,13 +183,15 @@ function FamilyTreeViewImpl({ members, activeMemberId, isParent, colors, isDark,
           <View>
             <GenLabel label="Their Children" colors={colors} isDark={isDark} />
             {parents.length === 2 && <ChildrenBracket count={kids.length} colors={colors} isDark={isDark} />}
-            <View style={{ flexDirection: 'row', gap: 10, flexWrap: kids.length > 2 ? 'wrap' : 'nowrap' }}>
-              {kids.map(k => (
-                <View key={k.id} style={{ width: kids.length > 2 ? '47%' : undefined, flex: kids.length > 2 ? undefined : 1 }}>
-                  {renderCard(k)}
-                </View>
-              ))}
-            </View>
+            {kids.length <= 2 ? (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {kids.map(k => <View key={k.id} style={{ flex: 1 }}>{renderCard(k)}</View>)}
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 24 }} style={{ marginHorizontal: -24 }}>
+                {kids.map(k => <View key={k.id} style={{ width: 168 }}>{renderCard(k)}</View>)}
+              </ScrollView>
+            )}
           </View>
         </>
       )}

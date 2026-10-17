@@ -1,3 +1,5 @@
+import { showToast } from '@/components/AppToast';
+import { supabase } from '@/lib/supabase';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, Image,
@@ -139,6 +141,21 @@ export default function FamilyScreen() {
   // both entries — byKey() below looks them up unconditionally — so the
   // gating happens only at the two render call sites further down.
   const isParent = activeMember?.role === 'parent';
+  // Members an admin removed in the last 60 days: their old profile is kept hidden, and a parent can bring it back.
+  const [removed, setRemoved] = useState<{ id: string; name: string; role: string; removed_at: string }[]>([]);
+  const loadRemoved = useCallback(async () => {
+    if (!isParent) { setRemoved([]); return; }
+    const { data } = await supabase.rpc('list_removed_members');
+    setRemoved(((data ?? []) as any[]).filter(r => !!r.id));
+  }, [isParent]);
+  useEffect(() => { loadRemoved(); }, [loadRemoved, members.length]);
+  const restoreRemoved = async (id: string) => {
+    const { error } = await supabase.rpc('restore_removed_member', { p_member_id: id });
+    if (error) { showToast('Could not restore: ' + error.message); return; }
+    showToast('Member restored');
+    loadRemoved();
+    useFamilyStore.getState().syncFromDB?.().catch?.(() => {});
+  };
   const TOOLS: Tool[] = [
     {
       key: 'people',
@@ -365,6 +382,29 @@ export default function FamilyScreen() {
               as its own distinct block, not three identical gray cards
               [live feedback: "i hate the color of section card fills all
               has same"]. Icon chips sit on white so they still pop. ── */}
+          {isParent && removed.length > 0 && (
+            <SectionCard title="Removed members" bg={colors.amberLight}>
+              <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>
+                Their data stays hidden for 60 days, then it is deleted for good. Restore brings the profile back; they can also rejoin with a new invite.
+              </Text>
+              {removed.map(r => {
+                const daysLeft = Math.max(0, 60 - Math.floor((Date.now() - new Date(r.removed_at).getTime()) / 86400000));
+                return (
+                  <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{r.name}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textTertiary }}>{daysLeft} day{daysLeft === 1 ? '' : 's'} left to restore</Text>
+                    </View>
+                    <Pressable onPress={() => restoreRemoved(r.id)} accessibilityRole="button"
+                      style={{ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.primary }}>
+                      <Text style={{ color: '#fff', fontWeight: '800' }}>Restore</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </SectionCard>
+          )}
+
           <SectionCard title="Care, close at hand" bg={colors.tealLight}>
             {careRows.map((tool, i) => {
               const fg = tool.key === 'health' ? colors.pink : tool.key === 'homecare' ? colors.teal : colors.amber;

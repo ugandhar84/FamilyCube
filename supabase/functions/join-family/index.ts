@@ -226,6 +226,8 @@ serve(async (req) => {
           invite_status:   'active',
           expo_push_token: expoPushToken ?? null,
           last_active:     new Date().toISOString(),
+          deleted_at:      null,
+          removed_by:      null,
         })
         .eq('id', invite.member_id)
         .select()
@@ -243,6 +245,16 @@ serve(async (req) => {
       // shipped (member_id null). No new codes are ever minted this way —
       // see generate-invite-code — so this branch naturally stops being
       // reachable once every such code has expired (7-day TTL).
+      // Rejoining after being removed: bring the old profile back (name, coins and history intact) instead of a duplicate.
+      const { data: prior } = await supabase.from('members').select('id').eq('family_id', invite.family_id)
+        .eq('auth_user_id', callerAuthUserId).not('deleted_at', 'is', null).limit(1).maybeSingle();
+      if (prior) {
+        const { data: back, error: backErr } = await supabase.from('members')
+          .update({ deleted_at: null, removed_by: null, invite_status: 'active', avatar, expo_push_token: expoPushToken ?? null, last_active: new Date().toISOString() })
+          .eq('id', prior.id).select().single();
+        if (!backErr && back) member = back;
+      }
+      if (!member) {
       const memberId = crypto.randomUUID();
       const { data: inserted, error: memberErr } = await supabase
         .from('members')
@@ -270,6 +282,7 @@ serve(async (req) => {
         throw new Error(memberErr?.message ?? 'Failed to create member');
       }
       member = inserted;
+      }
     }
 
     // ── 4. Consume the code — claiming it must actually invalidate it. ────────

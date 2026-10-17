@@ -294,11 +294,19 @@ function RootNavigator() {
               });
               destination = '/onboarding/family-choice';
             } else {
+              // Removed from their family by an admin (the login itself is fine): explain it and offer to join or start another.
+              let removed = false;
+              try {
+                const { data: notice } = await supabase.rpc('my_removal_notice');
+                const row = Array.isArray(notice) ? notice[0] : notice;
+                removed = !!row && !row.has_active;
+                if (removed) (globalThis as any).__removedFrom = row.family_name;
+              } catch {}
               let locked = false;
               try {
-                if (await isBiometricEnabled()) locked = await isBiometricAvailable();
+                if (!removed && await isBiometricEnabled()) locked = await isBiometricAvailable();
               } catch {}
-              destination = locked ? '/(auth)/lock' : '/(tabs)';
+              destination = removed ? '/onboarding/removed' : locked ? '/(auth)/lock' : '/(tabs)';
               // Whoever was PIN-switched to as the active member before the
               // app closed is NOT necessarily who's coming back on this cold
               // boot — same reasoning as LoginScreen/LockScreen's Face ID
@@ -310,7 +318,7 @@ function RootNavigator() {
               // prompt after a plain app relaunch. isLocked/lock-screen's own
               // Face ID path already covers the locked branch; this covers
               // the no-lock-enabled branch the same way.
-              if (!locked) {
+              if (!locked && !removed) {
                 const { markPendingOwnerReset } = await import('@/lib/biometrics');
                 await markPendingOwnerReset();
               }

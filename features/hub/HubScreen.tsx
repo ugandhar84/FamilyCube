@@ -16,7 +16,7 @@ import { useChatStore } from '@/store/chatStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTripStore } from '@/store/tripStore';
 import { useUIStore } from '@/store/uiStore';
-import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { hideTabBar, showTabBar, forceShowTabBar } from '@/lib/tabBarVisibility';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
@@ -235,7 +235,14 @@ export default function HubScreen() {
     // alone covers the WHOLE stack underneath it too (Chores/Rewards/
     // Disputes queues, every detail screen) since the inbox never closes
     // while a child screen is open — see FullPageOverlay's own doc.
-    if (anyFullBleedOpen) hideTabBar(); else showTabBar();
+    if (anyFullBleedOpen) hideTabBar();
+    else {
+      showTabBar();
+      // No Hub overlay is open: once the closing screens have run their own cleanups, make sure the bar is back even
+      // if a hide request leaked somewhere (a missing pair left the bottom nav gone on the Hub).
+      const heal = setTimeout(() => forceShowTabBar(), 400);
+      return () => { clearTimeout(heal); useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
+    }
     return () => { useUIStore.getState().setFullBleedScreenActive(false); showTabBar(); };
   }, [showDescribeTask, showDescribeEvent, showReviewInbox, showRidesRoom, showGrocery, showMeals, showRewards, showMemories,
       showMyChores, piggyBankModal, showAskParentHub, askParentDestination, teenTutorOpen, teenCashOutOpen, teenGasVehicleOpen]);

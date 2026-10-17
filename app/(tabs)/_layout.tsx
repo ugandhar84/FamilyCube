@@ -185,7 +185,9 @@ function CustomTabBar({ state, navigation }: any) {
   // remaining real tab always shows the tab bar.
   useEffect(() => {
     if (activeTabIndex < 0) return;
-    showTabBar();
+    // Switching tabs means no full-page overlay can be open, so reset instead of decrementing: a leaked hide request
+    // from an overlay that closed oddly can no longer leave the bar hidden.
+    forceShowTabBar();
   }, [activeTabIndex, activeRouteName]);
 
   // Hard reset on the tab shell's own first mount — a cold-boot

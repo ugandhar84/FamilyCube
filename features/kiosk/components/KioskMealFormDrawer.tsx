@@ -75,7 +75,8 @@ export function KioskMealFormDrawer({
   members: any[];
   colors?: any; isDark?: boolean;
   onClose: () => void;
-  onSave: (patch: MealFormPatch) => void | Promise<void>;
+  /** Resolves to a message when the save is refused (the drawer stays open and shows it), or nothing on success. */
+  onSave: (patch: MealFormPatch) => void | string | Promise<void | string>;
   saving?: boolean;
 }) {
   const { k, isDark } = useKioskColors();
@@ -122,11 +123,14 @@ export function KioskMealFormDrawer({
   }, [visible, editingMeal]);
 
   const lines = (t: string) => t.split('\n').map(x => x.trim()).filter(Boolean);
-  const save = () => {
-    if (!title.trim()) { setTouched(true); return; }
-    if (taken.has(type)) return;
+  const [formError, setFormError] = useState<string | null>(null);
+  useEffect(() => { if (visible) setFormError(null); }, [visible]);
+  const save = async () => {
+    setFormError(null);
+    if (!title.trim()) { setTouched(true); setFormError('Give the meal a name.'); return; }
+    if (taken.has(type)) { setFormError(`This day already has a ${type}. Pick a different meal type, or edit the existing one.`); return; }
     const steps = lines(prepSteps);
-    onSave({
+    const err = await onSave({
       title: title.trim(), type, emoji,
       chef_id: chefId || null,
       prep_minutes: prepMins ? parseInt(prepMins, 10) : null,
@@ -136,6 +140,7 @@ export function KioskMealFormDrawer({
       start_time: startTime ? fmtTimeLabel(startTime) : null,
       timezone: startTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
     });
+    if (typeof err === 'string' && err) setFormError(err);
   };
   const stopVoice = async () => { const t = await dictation.stop(); if (t) setRecipeText(p => (p ? p + ' ' : '') + t); };
 
@@ -153,7 +158,7 @@ export function KioskMealFormDrawer({
   return (
     <KioskFormDrawer visible={visible} variant="drawer" title={isEdit ? 'Edit meal' : 'Add a meal'} subtitle={isEdit ? editingMeal?.title : dateLine}
       accent={k.gold} Icon={UtensilsCrossed} k={k} onClose={onClose}
-      submitLabel={isEdit ? 'Save meal' : 'Add meal'} onSubmit={save} canSubmit={!!title.trim()} submitting={saving}>
+      submitLabel={isEdit ? 'Save meal' : 'Add meal'} onSubmit={save} canSubmit submitting={saving} error={formError}>
       <View style={s.body}>
         <Card label="Date"><Text style={[s.value, { color: k.text }]}>{dateLine}</Text></Card>
 

@@ -536,13 +536,20 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
     showToast(n ? `${n} ingredients added to the list` : 'Everything is already on the list');
   };
 
-  const saveMeal = async (patch: MealFormPatch) => {
-    if (!familyId) return;
+  /** Resolves to a plain-language reason when the save fails (the drawer stays open and shows it); nothing on success. */
+  const saveMeal = async (patch: MealFormPatch): Promise<string | void> => {
+    if (!familyId) return 'Still loading your family. Try again in a moment.';
+    const friendly = (msg?: string) => {
+      const m = (msg ?? '').toLowerCase();
+      if (m.includes('one_type_per_day') || m.includes('duplicate key')) return `This day already has a ${patch.type}. Pick a different meal type.`;
+      if (m.includes('row-level security') || m.includes('permission')) return 'Only parents can change the meal plan.';
+      if (m.includes('network') || m.includes('fetch')) return 'No connection. Check the internet and try again.';
+      return `Could not save the meal. ${msg ?? 'Please try again.'}`;
+    };
     // A day never gets the same meal type twice.
     const targetDay = editingMeal?.day ?? addDay; const targetWeek = editingMeal?.week_of ?? addWeekOf ?? week;
     if ([...meals, ...nextMeals].some(m => m.id !== editingMeal?.id && m.day === targetDay && m.week_of === targetWeek && (m.type ?? '').toLowerCase() === patch.type.toLowerCase())) {
-      showToast(`${targetDay} already has a ${patch.type}`);
-      return;
+      return `${targetDay} already has a ${patch.type}. Pick a different meal type, or edit the existing one.`;
     }
     setSavingMeal(true);
     try {
@@ -550,7 +557,8 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         const prevChefId = editingMeal.chef_id;
         const linkedEventId = await syncMealCalendarEvent({ ...editingMeal, ...patch });
         const fullPatch = { ...patch, linked_event_id: linkedEventId };
-        await supabase.from('family_meals').update(fullPatch).eq('id', editingMeal.id);
+        const { error: updErr } = await supabase.from('family_meals').update(fullPatch).eq('id', editingMeal.id);
+        if (updErr) return friendly(updErr.message);
         if (patch.chef_id && patch.chef_id !== prevChefId) {
           createCookingQuest(patch.title, patch.chef_id, editingMeal.day, patch.prep_minutes, editingMeal.week_of);
         }
@@ -559,16 +567,19 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         const wk = addWeekOf ?? week;
         const newId = `${familyId}-${wk}-${addDay}-manual-${Date.now()}`;
         const linkedEventId = await syncMealCalendarEvent({ id: newId, day: addDay, week_of: wk, title: patch.title, start_time: patch.start_time, prep_minutes: patch.prep_minutes, linked_event_id: null });
-        await supabase.from('family_meals').insert({
+        const { error: insErr } = await supabase.from('family_meals').insert({
           id: newId,
           family_id: familyId, week_of: wk, day: addDay,
           ...patch, ai_generated: false, linked_event_id: linkedEventId,
         });
+        if (insErr) return friendly(insErr.message);
         if (patch.chef_id) createCookingQuest(patch.title, patch.chef_id, addDay, patch.prep_minutes, wk);
         setAddDay(null);
         setAddWeekOf(null);
       }
       reloadMeals();
+    } catch (e: any) {
+      return friendly(e?.message);
     } finally {
       setSavingMeal(false);
     }

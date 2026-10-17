@@ -17,6 +17,7 @@ import { useKioskWeather } from '../useKioskWeather';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import type { KioskTabKey } from '../kioskTabs';
 import { KioskSimpleChecklist, useKidDay } from './KioskSimpleChecklist';
+import { KioskHomeBell } from './KioskHomeBell';
 import { KioskKidCheckInTile } from './KioskKidQuickActions';
 import { FamilyNowCard, HomeChatsCard, HomeMedsCard, StickyNotesCard, HomeMemoriesCard } from './KioskHomeWidgets';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -87,7 +88,10 @@ export function KioskHomeKid({ active, members, onNavigate }: {
     <View style={s.wrap}>
       <View style={s.top}>
         <View style={{ flexShrink: 1 }}>
-          <Text style={[s.greet, { color: k.text }]} numberOfLines={1}>{greetingFor(now)}, {firstName(active)}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <Text style={[s.greet, { color: k.text, flexShrink: 1 }]} numberOfLines={1}>{greetingFor(now)}, {firstName(active)}</Text>
+            <KioskHomeBell onNavigate={onNavigate} />
+          </View>
           <View style={s.chips}>
             {chip(left ? `${left} to do today` : 'All chores done', k.purpleSoft, k.purple)}
             {chip(`🪙 ${coins} coins`, k.goldSoft, k.gold)}

@@ -27,6 +27,7 @@ import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import type { KioskTabKey } from '../kioskTabs';
 import { KioskRedoReasonDialog } from './KioskRedoReasonDialog';
 import { KioskFamilyBoard } from './KioskFamilyBoard';
+import { KioskHomeBell } from './KioskHomeBell';
 import { KioskSimpleChecklist } from './KioskSimpleChecklist';
 import { KioskJustDescribeTaskDrawer, KioskJustDescribeEventDrawer } from './KioskJustDescribeDrawer';
 import { FamilyNowCard, HomeChatsCard, HomeMedsCard, StickyNotesCard, HomeMemoriesCard } from './KioskHomeWidgets';
@@ -95,7 +96,10 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
     <View style={s.wrap}>
       <View style={s.top}>
         <View style={{ flexShrink: 1 }}>
-          <Text style={[s.greet, { color: k.text }]} numberOfLines={1}>{greetingFor(now)}, {firstName(active)}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <Text style={[s.greet, { color: k.text, flexShrink: 1 }]} numberOfLines={1}>{greetingFor(now)}, {firstName(active)}</Text>
+            <KioskHomeBell onNavigate={onNavigate} />
+          </View>
           <View style={s.chips}>
             {chip(needCount ? `${needCount} waiting on you` : 'Nothing waiting on you', k.purpleSoft, k.purple)}
             {chip(`${dayEvents.length} plan${dayEvents.length === 1 ? '' : 's'} today`, k.goldSoft, k.gold)}

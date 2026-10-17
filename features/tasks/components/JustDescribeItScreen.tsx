@@ -28,7 +28,7 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { previewAssignment } from '@/lib/responsibilityCategories';
 import { todayLocal, nextHourRoundedStr } from '@/lib/dates';
 import { familyAi } from '@/lib/familyAiService';
-import { Mic, Square, Sparkles } from 'lucide-react-native';
+import { Mic, Square, Sparkles, X } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 
@@ -432,6 +432,16 @@ export default function JustDescribeItScreen({
                       <Text style={{ fontSize: 12, color: tertiaryC }}>
                         {isListening ? 'Recording…' : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
                       </Text>
+                      {input.length > 0 && !isListening && (
+                        <TouchableOpacity
+                          onPress={reset}
+                          accessibilityRole="button" accessibilityLabel="Clear the text and the form"
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.surface }}
+                        >
+                          <X size={12} color={colors.textSecondary} />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Clear</Text>
+                        </TouchableOpacity>
+                      )}
                       {hasInput && !isListening && (
                         <TouchableOpacity
                           onPress={handleAiAutoFill}

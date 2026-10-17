@@ -452,20 +452,21 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
           <View style={{
             flex: 1, flexDirection: 'row', alignItems: 'center',
             borderRadius: 16, paddingHorizontal: 14, gap: 10,
-            backgroundColor: segment === 'schedule' ? colors.tealLight : colors.primaryLight,
+            backgroundColor: segment === 'schedule' ? colors.tealLight : colors.pinkLight,
           }}>
-            <Search size={18} color={segment === 'schedule' ? colors.teal : colors.primary} strokeWidth={2} />
+            <Search size={18} color={segment === 'schedule' ? colors.teal : colors.pink} strokeWidth={2} />
             <TextInput
               autoFocus
               value={segment === 'schedule' ? scheduleQuery : choreQuery}
               onChangeText={segment === 'schedule' ? setScheduleQuery : setChoreQuery}
               placeholder={segment === 'schedule' ? 'Search events…' : 'Search tasks…'}
-              placeholderTextColor={segment === 'schedule' ? colors.teal + '80' : colors.primary + '80'}
-              style={{ flex: 1, fontSize: 15, fontWeight: '500', color: segment === 'schedule' ? colors.teal : colors.primary }}
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={segment === 'schedule' ? colors.teal : colors.pink}
+              style={{ flex: 1, height: 44, paddingVertical: 0, fontSize: 16, fontWeight: '600', color: colors.textPrimary }}
               returnKeyType="search"
             />
             <TouchableOpacity onPress={() => toggleSearch(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={18} color={segment === 'schedule' ? colors.teal : colors.primary} strokeWidth={2.5} />
+              <X size={18} color={segment === 'schedule' ? colors.teal : colors.pink} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
         ) : (

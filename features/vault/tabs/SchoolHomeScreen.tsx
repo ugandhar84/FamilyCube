@@ -21,7 +21,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, GraduationCap } from 'lucide-react-native';
+import { Camera, GraduationCap, PartyPopper, CalendarDays } from 'lucide-react-native';
+import { useEventStore } from '@/store/eventStore';
+import { fmtDate, fmtDateShort } from '@/lib/dates';
+import { RHYTHM } from '@/constants/theme';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useSchoolStore, type ClassPeriod } from '@/store/schoolStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -60,7 +63,59 @@ function fmtTime12(t: string): string {
   return `${h12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
-type MainTab = 'today' | 'week' | 'schedules';
+type MainTab = 'schedule' | 'holidays' | 'dates';
+
+// Days off (not a class day) — used to keep them out of the "other important dates" list.
+const DAY_OFF_RE = /\b(holiday|break|no school|in-?service|staff (professional|development)|teacher work ?day|school closed)\b/i;
+
+function localTodayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const WEEK_DAYS: { key: string; label: string }[] = [
+  { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' }, { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' }, { key: 'fri', label: 'Fri' },
+];
+
+/** A kid's whole school week at a glance: each weekday with its periods. */
+function KidWeekCard({ kid, colors, isDark, onOpenDay, onCreateSchedule }: {
+  kid: FamilyMember; colors: any; isDark: boolean; onOpenDay: () => void; onCreateSchedule: () => void;
+}) {
+  const schedule = useSchoolStore(s => s.schedules.find(sc => sc.memberId === kid.id));
+  const border = isDark ? colors.border : BORDER;
+  const cardBg = isDark ? colors.card : CARD_BG;
+  const titleC = isDark ? colors.textPrimary : TITLE_CLR;
+  const bodyC = isDark ? colors.textSecondary : BODY_CLR;
+  const todayKey = DAY_KEYS[new Date().getDay()];
+  return (
+    <View style={[{ borderWidth: isDark ? 1 : 0, borderColor: border, borderRadius: 18, backgroundColor: cardBg, padding: RHYTHM.card, gap: 10 }, !isDark && CARD_SHADOW]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} size={32} />
+        <Text style={{ flex: 1, fontSize: 16, fontWeight: '800', color: titleC }}>{kid.name.split(' ')[0]}{schedule?.gradeYear ? ` · ${schedule.gradeYear}` : ''}</Text>
+        <TouchableOpacity onPress={schedule ? onOpenDay : onCreateSchedule}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: BLUE }}>{schedule ? 'Open' : 'Create'} →</Text>
+        </TouchableOpacity>
+      </View>
+      {!schedule ? (
+        <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No schedule set up yet.</Text>
+      ) : WEEK_DAYS.map(d => {
+        const ps = schedule.periods
+          .filter(p => !p.isLunch && (p.days ?? ['mon', 'tue', 'wed', 'thu', 'fri']).includes(d.key))
+          .sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
+        const isToday = d.key === todayKey;
+        return (
+          <View key={d.key} style={{ flexDirection: 'row', gap: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: border }}>
+            <Text style={{ width: 36, fontSize: 13, fontWeight: '800', color: isToday ? BLUE : bodyC }}>{d.label}</Text>
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: ps.length ? titleC : bodyC }} numberOfLines={2}>
+              {ps.length ? `${fmtTime12(ps[0].startTime)}–${fmtTime12(ps[ps.length - 1].endTime)} · ${ps.length} class${ps.length !== 1 ? 'es' : ''}` : 'No classes'}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreateSchedule }: {
   kid: FamilyMember; isOwnScheduleOnly: boolean; colors: any; isDark: boolean;
@@ -168,7 +223,10 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
 
-  const [mainTab, setMainTab] = useState<MainTab>('today');
+  const [mainTab, setMainTab] = useState<MainTab>('schedule');
+  const [scheduleView, setScheduleView] = useState<'day' | 'week'>('day');
+  const schedules = useSchoolStore(s => s.schedules);
+  const events = useEventStore(s => s.events);
   const [openDayMemberId, setOpenDayMemberId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
@@ -210,68 +268,146 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
           />
         </View>
 
-        {/* Segmented tabs — fully pill-shaped (half of row height), not
-            just rounded-rect, matching the Gemini rhythm's chip style. */}
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, paddingHorizontal: 20 }}>
-          {([['today', 'Today'], ['week', 'Week'], ['schedules', 'Schedules']] as [MainTab, string][]).map(([key, label]) => (
+        {/* Create-schedule banner — says what it is for, with the action inside it (parents). */}
+        {!isOwnScheduleOnly && (
+          <View style={[{ marginHorizontal: RHYTHM.page, marginTop: 4, borderRadius: 18, padding: RHYTHM.card, gap: RHYTHM.item, backgroundColor: isDark ? colors.card : CARD_BG },
+            !isDark && CARD_SHADOW]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : '#F9E5C1' }}>
+                <GraduationCap size={22} color={colors.amber} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: titleC }}>
+                  {kids.some(k => !schedules.find(sc => sc.memberId === k.id)) ? 'Set up the school schedule' : 'Add or change a schedule'}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '500', lineHeight: 18, color: bodyC, marginTop: 2 }}>
+                  Classes, holidays and key dates for each child, so rides, reminders and the calendar know the school day.
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
+              <TouchableOpacity onPress={() => setCreateOpen(true)} accessibilityRole="button"
+                style={{ flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Create schedule</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setFlyerOpen(true)} accessibilityRole="button"
+                style={{ flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+                  borderWidth: 1, borderColor: border, backgroundColor: isDark ? colors.surface : SURFACE }}>
+                <Camera size={16} color={BLUE} />
+                <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Scan a flyer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Segmented tabs — pill-shaped, matching the Gemini rhythm's chip style. */}
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: RHYTHM.item, paddingHorizontal: RHYTHM.page }}>
+          {([['schedule', 'Schedule'], ['holidays', 'Holidays'], ['dates', 'Important dates']] as [MainTab, string][]).map(([key, label]) => (
             <TouchableOpacity key={key} onPress={() => setMainTab(key)}
-              style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 999,
+              style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999,
                 backgroundColor: mainTab === key ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE) }}>
-              <Text style={{ fontSize: 13, fontWeight: '700',
-                color: mainTab === key ? '#FFFFFF' : bodyC }}>{label}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: mainTab === key ? '#FFFFFF' : bodyC }}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <View style={{ height: 12 }} />
-
-        {/* Kid cards */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 14, gap: 12 }}>
+        <View style={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, gap: RHYTHM.item }}>
           {kids.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
               <Text style={{ fontSize: 32 }}>📚</Text>
               <Text style={{ fontSize: 14, color: bodyC, textAlign: 'center' }}>No kids in this family yet.</Text>
             </View>
-          ) : kids.map(kid => (
-            <KidDayCard
-              key={kid.id}
-              kid={kid}
-              isOwnScheduleOnly={isOwnScheduleOnly}
-              colors={colors} isDark={isDark}
-              onOpenDay={() => setOpenDayMemberId(kid.id)}
-              onCreateSchedule={() => setCreateOpen(true)}
-            />
-          ))}
+          ) : mainTab === 'schedule' ? (
+            <>
+              {/* Day / Week */}
+              <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : SURFACE, borderRadius: 14, padding: 3 }}>
+                {([['day', 'Today'], ['week', 'This week']] as const).map(([key, label]) => (
+                  <TouchableOpacity key={key} onPress={() => setScheduleView(key)}
+                    style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 11, backgroundColor: scheduleView === key ? (isDark ? colors.card : '#FFFFFF') : 'transparent' }}>
+                    <Text style={{ fontSize: 13, fontWeight: scheduleView === key ? '800' : '600', color: scheduleView === key ? titleC : bodyC }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {kids.map(kid => scheduleView === 'day' ? (
+                <KidDayCard key={kid.id} kid={kid} isOwnScheduleOnly={isOwnScheduleOnly} colors={colors} isDark={isDark}
+                  onOpenDay={() => setOpenDayMemberId(kid.id)} onCreateSchedule={() => setCreateOpen(true)} />
+              ) : (
+                <KidWeekCard key={kid.id} kid={kid} colors={colors} isDark={isDark}
+                  onOpenDay={() => setOpenDayMemberId(kid.id)} onCreateSchedule={() => setCreateOpen(true)} />
+              ))}
+            </>
+          ) : mainTab === 'holidays' ? (
+            <>
+              {kids.map(kid => {
+                const hs = [...(schedules.find(sc => sc.memberId === kid.id)?.holidays ?? [])].sort((a, b) => a.startDate.localeCompare(b.startDate));
+                const school = schedules.find(sc => sc.memberId === kid.id)?.school;
+                return (
+                  <View key={kid.id} style={[{ borderWidth: isDark ? 1 : 0, borderColor: border, borderRadius: 18, backgroundColor: cardBg, padding: RHYTHM.card, gap: 10 }, !isDark && CARD_SHADOW]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} size={32} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: titleC }}>{kid.name.split(' ')[0]}</Text>
+                        {school ? <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>{school}</Text> : null}
+                      </View>
+                      {!isOwnScheduleOnly && (
+                        <TouchableOpacity onPress={() => setHolidaysMemberId(kid.id)}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: BLUE }}>Manage →</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {hs.length === 0 ? (
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No holidays added yet. Scan a flyer or tap Manage.</Text>
+                    ) : hs.map(h => (
+                      <View key={h.id} style={{ flexDirection: 'row', gap: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: border }}>
+                        <PartyPopper size={16} color={colors.amber} style={{ marginTop: 2 }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }}>{h.reason}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, marginTop: 1 }}>
+                            {h.startDate === h.endDate ? fmtDate(h.startDate) : `${fmtDate(h.startDate)} – ${fmtDate(h.endDate)}`}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </>
+          ) : (
+            (() => {
+              const today = localTodayStr();
+              const kidIds = new Set(kids.map(k => k.id));
+              const dates = events
+                .filter(e => e.date >= today && (e.category === 'School' || e.category === 'Study')
+                  && !DAY_OFF_RE.test(e.title) && (e.memberId ? kidIds.has(e.memberId) : e.memberIds?.some(id => kidIds.has(id))))
+                .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
+                .filter((e, i, arr) => arr.findIndex(x => x.title === e.title && x.date === e.date) === i)
+                .slice(0, 40);
+              return dates.length === 0 ? (
+                <View style={[{ borderRadius: 18, backgroundColor: cardBg, padding: RHYTHM.card, gap: 6 }, !isDark && CARD_SHADOW]}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>No important dates yet</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: bodyC }}>Early release, picture day, conferences and other school dates show here. Scan a school calendar flyer to add them.</Text>
+                </View>
+              ) : (
+                <View style={[{ borderRadius: 18, backgroundColor: cardBg, paddingHorizontal: RHYTHM.card, paddingVertical: 6 }, !isDark && CARD_SHADOW]}>
+                  {dates.map((e, i) => {
+                    const who = members.find(m => m.id === (e.memberId ?? e.memberIds?.[0]));
+                    return (
+                      <View key={e.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
+                        <CalendarDays size={16} color={BLUE} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: titleC }} numberOfLines={2}>{e.title}</Text>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, marginTop: 1 }}>
+                            {fmtDateShort(e.date)}{e.time ? ` · ${fmtTime12(e.time)}` : ''}{who ? ` · ${who.name.split(' ')[0]}` : ''}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()
+          )}
         </View>
-
-        {/* Action buttons — parent only for create/holidays/pickup */}
-        {!isOwnScheduleOnly && (
-          <View style={{ paddingHorizontal: 20, paddingTop: 20, gap: 10 }}>
-            <TouchableOpacity onPress={() => setCreateOpen(true)}
-              style={[{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE },
-                !isDark && { shadowColor: BLUE, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }]}>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF' }}>Create school schedule</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setFlyerOpen(true)}
-              style={[{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
-                borderWidth: isDark ? 1.5 : 0, borderColor: BLUE, backgroundColor: cardBg },
-                !isDark && CARD_SHADOW]}>
-              <Camera size={18} color={isDark ? BLUE : BLUE} />
-              <Text style={{ fontSize: 16, fontWeight: '800', color: titleC }}>Scan a flyer</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => kids[0] && setHolidaysMemberId(kids[0].id)}
-              disabled={kids.length === 0}
-              style={[{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
-                borderWidth: isDark ? 1 : 0, borderColor: border, backgroundColor: cardBg },
-                !isDark && CARD_SHADOW]}>
-              <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>Holidays &amp; exceptions</Text>
-              <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>→</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Caption */}
         <View style={{ paddingHorizontal: 21, paddingTop: 18 }}>

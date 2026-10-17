@@ -4,7 +4,7 @@
  * Right: persona switcher pill | notification bell
  * Heart replaces the dot of the "i" in "Family" (dotless ı + absolute SVG).
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { supabase } from '@/lib/supabase';
 import { LETTER_SPACING } from '@/constants/theme';
 import { IconCubeMark, BRAND } from './FamilyCubeLogo';
 import PersonaSwitcherDropdown from './PersonaSwitcherDropdown';
@@ -216,6 +217,29 @@ function RefreshIcon({ color }: { color: string }) {
   );
 }
 
+// Once per app launch per member: record this open and remember the PREVIOUS one for the header ("Oct 17 · 1:42 PM").
+const _loginSeen: Record<string, Promise<string | null>> = {};
+function fmtLogin(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${date} · ${time}`;
+}
+function useLastLogin(memberId: string | null | undefined): string | null {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!memberId) { setText(null); return; }
+    if (!_loginSeen[memberId]) {
+      _loginSeen[memberId] = Promise.resolve(supabase.rpc('touch_member_login', { p_member_id: memberId }))
+        .then(({ data }) => (data ? fmtLogin(String(data)) : null)).catch(() => null);
+    }
+    let live = true;
+    _loginSeen[memberId].then(t => { if (live) setText(t); });
+    return () => { live = false; };
+  }, [memberId]);
+  return text;
+}
+
 export default function AppHeader({
   memberName    = 'Member',
   memberRole    = 'parent',
@@ -232,6 +256,7 @@ export default function AppHeader({
   const { colors, isDark } = useTheme();
   const { familyName, members } = useFamilyStore();
   const role = ROLE_CONFIG[memberRole] ?? ROLE_CONFIG.parent;
+  const lastLogin = useLastLogin(useFamilyStore(st => st.activeMemberId));
   const [showSwitcher, setShowSwitcher] = React.useState(false);
 
   const handlePersonaPress = () => {
@@ -271,6 +296,7 @@ export default function AppHeader({
             <View>
               <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700', letterSpacing: 0.1 }} numberOfLines={1}>{greeting}</Text>
               <Text style={{ fontSize: 20, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, letterSpacing: -0.5, marginTop: 1 }} numberOfLines={1}>{firstName}</Text>
+              {!!lastLogin && <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }} numberOfLines={1}>Last login {lastLogin}</Text>}
             </View>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

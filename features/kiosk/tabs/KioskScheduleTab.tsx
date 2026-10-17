@@ -53,6 +53,7 @@ import {
 } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { KioskAvatar } from '../components/KioskAvatar';
+import { KioskTimeGrid } from '../components/KioskTimeGrid';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -73,7 +74,7 @@ import { isEventPast } from '@/features/calendar/components/calendarDateHelpers'
 import { DayEventsSummaryCard } from '@/features/calendar/components/MonthGridView';
 import { useKioskLockSuspended } from '../KioskActivityContext';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
-import { useKioskColors, type KioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels, type KioskColors } from '../kioskPalette';
 import { WidgetCard, PanelHead } from '../components/KioskOS';
 
 /**
@@ -83,8 +84,9 @@ import { WidgetCard, PanelHead } from '../components/KioskOS';
  * walk past is "what's next", not "what does this month look like". A grid
  * is for planning; a list is for glancing.
  */
-type ViewMode = 'agenda' | 'day' | 'week' | 'month';
-const VIEW_MODES: ViewMode[] = ['agenda', 'day', 'week', 'month'];
+type ViewMode = 'agenda' | 'day' | 'week' | 'member' | 'month';
+const VIEW_MODES: ViewMode[] = ['week', 'member', 'day', 'agenda', 'month'];
+const MODE_LABEL: Record<ViewMode, string> = { week: 'Week', member: 'By member', day: 'Day', agenda: 'Agenda', month: 'Month' };
 // A distinct real brand accent per mode when active, instead of every tab
 // filling the same k.primary [live-reported: "with different tinted
 // colors"] — reusing the same four-color set kiosk already uses for role/
@@ -94,6 +96,7 @@ const MODE_ACCENT: Record<ViewMode, (k: KioskColors) => string> = {
   day: k => k.sage,
   week: k => k.gold,
   month: k => k.purple,
+  member: k => k.primary,
 };
 
 /** How far forward Agenda looks. Live-reported from a screenshot: "i see
@@ -162,7 +165,7 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     isParentViewer ? 'all' : 'mine',
   );
   const [filterMemberId, setFilterMemberId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('agenda');
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [cursor, setCursor] = useState(() => new Date());
   // Live-reported: "in kiosk monthly view is not use right as per current
   // design we are not showing anything if we click on date taking us to day
@@ -370,6 +373,47 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
     return ids.map(id => members.find(m => m.id === id)).filter(Boolean) as FamilyMember[];
   };
 
+  // Time-grid columns: Week = seven days; By member = one column per person
+  // for the cursor day. Both read the already-filtered eventsByDate, so the
+  // scope / member filters and privacy rules above apply unchanged.
+  const weekColumns = useMemo(() => {
+    const ws = startOfWeek(cursor);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(ws, i);
+      const ds = toDateStr(d);
+      const events = eventsByDate[ds] ?? [];
+      const isToday = ds === todayStr;
+      return {
+        key: ds,
+        label: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+        badge: isToday && events.length ? String(events.length) : undefined,
+        isToday, events,
+      };
+    });
+  }, [cursor, eventsByDate, todayStr]);
+  const memberColumns = useMemo(() => {
+    const ds = toDateStr(cursor);
+    const dayEvents = eventsByDate[ds] ?? [];
+    let people = members.filter(m => !m.deletedAt && m.inviteStatus !== 'pending');
+    if (filterMemberId) people = people.filter(m => m.id === filterMemberId);
+    else if (!canFilterByMember && scheduleScope === 'mine') people = people.filter(m => m.id === active.id);
+    const gridPastels = kioskPastels(k);
+    return people.map(m => {
+      const idx = Math.max(0, members.findIndex(x => x.id === m.id));
+      return {
+        key: m.id,
+        label: m.name.trim().split(' ')[0],
+        color: gridPastels[idx % gridPastels.length].fg,
+        isToday: ds === todayStr,
+        // Family-wide events (nobody assigned) show for everyone.
+        events: dayEvents.filter(ev => {
+          const ids = involvedFor(ev).map(x => x.id);
+          return ids.length === 0 || ids.includes(m.id);
+        }),
+      };
+    });
+  }, [cursor, eventsByDate, members, filterMemberId, canFilterByMember, scheduleScope, active.id, todayStr, k]);
+
   const shiftCursor = (dir: 1 | -1) => {
     if (viewMode === 'month') setCursor(c => new Date(c.getFullYear(), c.getMonth() + dir, 1));
     // Agenda pages by its own window length, so Next/Prev step to the next
@@ -486,27 +530,32 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 style={[s.filterChip, { backgroundColor: !filterMemberId ? k.primary : k.well, borderColor: !filterMemberId ? k.primary : k.cardBorder }]}>
                 <Text style={[s.filterText, { color: !filterMemberId ? k.onPrimary : k.textMuted }]} numberOfLines={1}>All Family</Text>
               </Pressable>
-              {members.map(m => {
-                const rs = assigneeStyle(m, colors, isDark);
+              {members.map((m, mi) => {
+                const pastel = kioskPastels(k)[mi % 4];
                 const on = filterMemberId === m.id;
                 const label = m.name.split(' ')[0];
+                const todayCount = (eventsByDate[todayStr] ?? []).filter(ev => {
+                  const ids = ev.memberIds?.length ? ev.memberIds : (ev.memberId ? [ev.memberId] : []);
+                  return ids.includes(m.id);
+                }).length;
                 return (
                   <Pressable key={m.id} onPress={() => setFilterMemberId(on ? null : m.id)}
                     accessibilityRole="button"
                     accessibilityLabel={`Filter to ${label}`}
                     accessibilityHint={on ? 'Tap again to clear this filter' : `Shows only events ${label} is part of`}
                     accessibilityState={{ selected: on }}
-                    style={[s.filterChip, { backgroundColor: on ? rs.dot : k.well, borderColor: on ? rs.dot : k.cardBorder }]}>
+                    style={[s.filterChip, { backgroundColor: pastel.card, borderColor: on ? pastel.fg : 'transparent', borderWidth: 2, opacity: filterMemberId && !on ? 0.45 : 1 }]}>
                     <KioskAvatar
                       name={m.name}
                       emoji={m.emoji}
                       avatarUrl={m.avatarUrl}
                       siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
-                      size={18}
-                      ringColor={on ? rs.dot : k.cardBorder}
+                      size={26}
+                      bgColor={k.card}
                       k={k}
                     />
-                    <Text style={[s.filterText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>{label}</Text>
+                    <Text style={[s.filterText, { color: pastel.fg }]} numberOfLines={1}>{label}</Text>
+                    <Text style={[s.filterText, { color: pastel.fg, opacity: 0.75, fontWeight: '700' }]} numberOfLines={1}>{todayCount} today</Text>
                   </Pressable>
                 );
               })}
@@ -551,9 +600,9 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
                 <Pressable key={mode} onPress={() => setViewMode(mode)}
                   style={[s.modeBtn, on && { backgroundColor: accent }]}
                   accessibilityRole="tab" accessibilityState={{ selected: on }}
-                  accessibilityLabel={`${mode[0].toUpperCase() + mode.slice(1)} view`}>
+                  accessibilityLabel={`${MODE_LABEL[mode]} view`}>
                   <Text style={[s.modeBtnText, { color: on ? k.onAccent : k.textMuted }]} numberOfLines={1}>
-                    {mode[0].toUpperCase() + mode.slice(1)}
+                    {MODE_LABEL[mode]}
                   </Text>
                 </Pressable>
               );
@@ -611,9 +660,16 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
         </ScrollView>
       )}
       {viewMode === 'week' && (
-        <WeekView cursor={cursor} eventsByDate={eventsByDate} todayStr={todayStr} colors={colors} isDark={isDark}
-          active={active}
-          involvedFor={involvedFor} onEventPress={routeEventPress} />
+        <KioskTimeGrid
+          columns={weekColumns} members={members} active={active}
+          involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
+        />
+      )}
+      {viewMode === 'member' && (
+        <KioskTimeGrid
+          columns={memberColumns} members={members} active={active}
+          involvedFor={involvedFor} onEventPress={routeEventPress} onEventLongPress={routeLongPress}
+        />
       )}
       {viewMode === 'day' && (
         <DayView cursor={cursor} eventsByDate={eventsByDate} colors={colors} isDark={isDark}

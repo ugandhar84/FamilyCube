@@ -1428,18 +1428,18 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                   this is the docked bar shown while scrolling, not the
                   static one]. */}
               <View style={{ marginHorizontal: 20, borderRadius: 18,
-                backgroundColor: isDark ? colors.primary + '26' : colors.primaryLight, paddingVertical: 8, paddingHorizontal: 10,
+                backgroundColor: isDark ? colors.pink + '33' : colors.pinkLight, paddingVertical: 8, paddingHorizontal: 10,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
-                  <I.ChevronLeft c={colors.primary} size={15} />
+                  <I.ChevronLeft c={colors.pink} size={15} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR }}>
                   {selectedDateLabel}
                 </Text>
                 <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
-                  <I.ChevronRight c={colors.primary} size={15} />
+                  <I.ChevronRight c={colors.pink} size={15} />
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -1465,10 +1465,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   marginHorizontal: 20, marginTop: 6, marginBottom: 4,
                   paddingHorizontal: 10, paddingVertical: 8, borderRadius: 18,
-                  backgroundColor: isDark ? colors.primary + '26' : colors.primaryLight }}>
+                  backgroundColor: isDark ? colors.pink + '33' : colors.pinkLight }}>
                   <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                     style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
-                    <I.ChevronLeft c={colors.primary} size={16} />
+                    <I.ChevronLeft c={colors.pink} size={16} />
                   </TouchableOpacity>
 
                   <TouchableOpacity onPress={goToToday} style={{ alignItems: 'center', flex: 1, paddingHorizontal: 8 }}>
@@ -1485,7 +1485,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
                   <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                     style={{ padding: 6, borderRadius: 10, backgroundColor: isDark ? colors.card : '#FFFFFF' }}>
-                    <I.ChevronRight c={colors.primary} size={16} />
+                    <I.ChevronRight c={colors.pink} size={16} />
                   </TouchableOpacity>
                 </View>
 

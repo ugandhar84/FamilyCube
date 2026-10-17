@@ -51,7 +51,7 @@ import {
   View, Text, Image, Pressable, StyleSheet, Alert,
   useWindowDimensions, type StyleProp, type ViewStyle,
 } from 'react-native';
-import { Heart, Trash2, Play, Layers, Download } from 'lucide-react-native';
+import { Heart, Trash2, Play, Layers, Download, Images } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import CubeSpinner from '@/components/CubeSpinner';
 import { MediaViewer } from '@/components/MediaComponents';
@@ -62,12 +62,13 @@ import {
   canDeleteMemory, type FamilyMemoriesApi, type Memory,
 } from '@/features/vault/tabs/useFamilyMemories';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS, KIOSK_HIT, KIOSK_RAIL_WIDTH } from '../kioskTheme';
-import { useKioskColors, kioskRoleAccent, type KioskColors } from '../kioskPalette';
+import { useKioskColors, kioskRoleAccent, kioskPastels, type KioskColors } from '../kioskPalette';
+import { KioskFormDrawer } from './KioskFormDrawer';
 import { EmptyNote } from './KioskOS';
 import { useKioskActivity, useKioskLockSuspended } from '../KioskActivityContext';
 
 /** Owner-specified: two per row, in both portrait and landscape. */
-const COLUMNS = 2;
+const COLUMNS = 3;
 
 /**
  * The photo well's shape. A proportion, never a pixel height — see the
@@ -101,9 +102,11 @@ function urlsOf(mem: Memory): string[] {
 // ─── One card ────────────────────────────────────────────────────────────
 
 function MemoryCard({
-  mem, width, myId, members, k, readOnly, highlighted,
-  onHeart, onDelete, onOpenViewer,
+  mem, width, myId, members, k, readOnly, highlighted, tone,
+  onHeart, onDelete, onOpenViewer, onOpenDetail,
 }: {
+  tone: { col: string; card: string; fg: string };
+  onOpenDetail: () => void;
   mem: Memory;
   /** The measured column width. Every inner dimension derives from this. */
   width: number;
@@ -152,25 +155,25 @@ function MemoryCard({
         s.card,
         {
           width,
-          backgroundColor: k.card,
-          borderColor: highlighted ? k.primary : k.cardBorder,
-          borderWidth: highlighted ? 2 : 1,
+          backgroundColor: tone.col,
+          borderColor: highlighted ? k.primary : tone.card,
+          borderWidth: highlighted ? 2 : 1.5,
         },
       ]}
     >
       {/* ── Photo well ── */}
       <Pressable
-        onPress={() => onOpenViewer(urls, 0, urls.map((_, i) => typeAt(mem, i)))}
+        onPress={onOpenDetail}
         style={({ pressed }) => [
           s.media,
-          { height: mediaHeight, backgroundColor: k.well, opacity: pressed ? 0.88 : 1 },
+          { height: mediaHeight, backgroundColor: tone.card, opacity: pressed ? 0.88 : 1 },
         ]}
         accessibilityRole="imagebutton"
         accessibilityLabel={
           `${heroType === 'video' ? 'Video' : 'Photo'} by ${posterName}` +
           `${mem.description ? `, ${mem.description}` : ''}`
         }
-        accessibilityHint="Opens full screen"
+        accessibilityHint="Opens the memory"
       >
         <Image source={{ uri: urls[0] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
 
@@ -298,8 +301,10 @@ function MemoryCard({
 // ─── The grid ────────────────────────────────────────────────────────────
 
 export function KioskMemoryFeed({
-  api, readOnly = false, focusMemoryId, onFocusMemoryLayout, style,
+  api, readOnly = false, focusMemoryId, onFocusMemoryLayout, style, list,
 }: {
+  /** A filtered/sorted view of api.memories; defaults to all of them. */
+  list?: Memory[];
   /** The shared hook's real data and actions, owned by the tab. */
   api: FamilyMemoriesApi;
   /** Senior/grandparent gate — hides every mutating affordance. */
@@ -319,12 +324,16 @@ export function KioskMemoryFeed({
 
   const [viewer, setViewer] = useState<{ urls: string[]; types: ('photo' | 'video')[]; index: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [detail, setDetail] = useState<Memory | null>(null);
+  const pastels = kioskPastels(k);
+  const shown = list ?? memories;
+  const live = detail ? memories.find(m => m.id === detail.id) ?? null : null;
 
   // The lightbox is a native Modal — it renders in its own window, so no
   // touch inside it ever reaches KioskScreen's root onTouchStart. Hold the
   // idle lock while it is open, exactly as KioskChatTab does for its own
   // lightboxes, so browsing photos is never mistaken for an idle device.
-  useKioskLockSuspended(viewer !== null);
+  useKioskLockSuspended(viewer !== null || detail !== null);
 
   const GAP = KIOSK_SPACE.md;
   // Window-minus-rail-minus-padding is only ever used for the first frame,
@@ -367,7 +376,7 @@ export function KioskMemoryFeed({
     );
   }
 
-  if (memories.length === 0) {
+  if (shown.length === 0) {
     // Wrapped rather than passing `style` straight to EmptyNote — the prop
     // this component takes is a ViewStyle (it lays out a grid), while
     // EmptyNote's is a TextStyle. Casting between them would compile and
@@ -375,7 +384,7 @@ export function KioskMemoryFeed({
     return (
       <View style={style}>
         <EmptyNote
-          text={readOnly
+          text={memories.length > 0 ? 'No memories match.' : readOnly
             ? 'No family photos yet.'
             : 'No family photos yet. Add one and it\'ll show up here.'}
           k={k}
@@ -390,7 +399,7 @@ export function KioskMemoryFeed({
         style={[s.grid, { gap: GAP }, style]}
         onLayout={e => setGridWidth(e.nativeEvent.layout.width)}
       >
-        {memories.map(mem => (
+        {shown.map((mem, idx) => (
           <View
             key={mem.id}
             onLayout={mem.id === focusMemoryId
@@ -405,6 +414,8 @@ export function KioskMemoryFeed({
               k={k}
               readOnly={readOnly}
               highlighted={mem.id === focusMemoryId}
+              tone={pastels[idx % pastels.length]}
+              onOpenDetail={() => { registerActivity(); setDetail(mem); }}
               onHeart={() => { registerActivity(); heartMemory(mem); }}
               onDelete={() => { registerActivity(); deleteMemory(mem.id); }}
               onOpenViewer={openViewer}
@@ -414,7 +425,7 @@ export function KioskMemoryFeed({
         {/* An odd card count leaves a hole in the last row. A flexible
             spacer keeps the final card at its real column width instead of
             letting the row stretch it. */}
-        {memories.length % COLUMNS !== 0 && (
+        {shown.length % COLUMNS !== 0 && (
           <View style={{ width: cardWidth || undefined }} pointerEvents="none" />
         )}
       </View>
@@ -430,6 +441,66 @@ export function KioskMemoryFeed({
           surface (unlike the phone card's inline carousel, which is why
           that one couldn't be reused). Same save-to-device affordance the
           phone offers over it. */}
+      <KioskFormDrawer
+        visible={!!live}
+        variant="drawer"
+        title={live ? (OCCASION_LABEL[live.tag ?? ''] ?? 'A memory').replace(/^\S+\s/, '').replace(/^a /, '').replace(/^./, c => c.toUpperCase()) : ''}
+        subtitle={live ? `${members.find(m => m.id === live.created_by)?.name?.split(' ')[0] ?? 'Family'} · ${fmtDateShort(live.date)}` : ''}
+        accent={k.purple}
+        Icon={Images}
+        k={k}
+        onClose={() => { registerActivity(); setDetail(null); }}
+      >
+        {live && (() => {
+          const urls = urlsOf(live);
+          const hearted = !!live.hearted_by?.includes(myId);
+          const names = (ids?: string[]) => (ids ?? []).map(id => members.find(m => m.id === id)?.name?.split(' ')[0]).filter(Boolean) as string[];
+          const inIt = names(live.tagged_member_ids);
+          const lovers = names(live.hearted_by);
+          const canDel = !readOnly && canDeleteMemory(live, myId, members);
+          return (
+            <View style={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
+              {urls[0] ? (
+                <Pressable onPress={() => openViewer(urls, 0, urls.map((_, i) => typeAt(live, i)))} accessibilityRole="imagebutton" accessibilityLabel="Open full screen"
+                  style={{ height: 300, borderRadius: KIOSK_RADIUS.xl, overflow: 'hidden', backgroundColor: k.well }}>
+                  <Image source={{ uri: urls[0] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  {typeAt(live, 0) === 'video' && <View style={s.badge} pointerEvents="none"><Play size={13} color="#F7F2EE" fill="#F7F2EE" /></View>}
+                </Pressable>
+              ) : null}
+              {!!live.description && <Text style={{ fontSize: KIOSK_TYPO.subheading, fontWeight: '800', lineHeight: 26, color: k.text }}>{live.description}</Text>}
+              {inIt.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={[s.dLabel, { color: k.textFaint }]}>IN THIS MEMORY</Text>
+                  <View style={s.dChips}>{inIt.map(n => <View key={n} style={[s.dChip, { backgroundColor: k.well }]}><Text style={[s.dChipText, { color: k.textMuted }]}>{n}</Text></View>)}</View>
+                </View>
+              )}
+              <View style={{ gap: 6 }}>
+                <Text style={[s.dLabel, { color: k.textFaint }]}>LOVED BY</Text>
+                {lovers.length ? <View style={s.dChips}>{lovers.map(n => <View key={n} style={[s.dChip, { backgroundColor: k.pastelPrimaryCard }]}><Text style={[s.dChipText, { color: k.terracotta }]}>❤️ {n}</Text></View>)}</View>
+                  : <Text style={{ color: k.textMuted, fontWeight: '700' }}>Be the first to love this.</Text>}
+              </View>
+              <View style={s.dChips}>
+                <Pressable onPress={() => { registerActivity(); heartMemory(live); }} accessibilityRole="button" style={[s.dBtn, { backgroundColor: hearted ? k.well : k.primary }]}>
+                  <Heart size={18} color={hearted ? k.text : k.onPrimary} fill={hearted ? 'transparent' : k.onPrimary} />
+                  <Text style={[s.dBtnText, { color: hearted ? k.text : k.onPrimary }]}>{hearted ? 'Unlove' : 'Love it'}</Text>
+                </Pressable>
+                {!!urls[0] && (
+                  <Pressable onPress={async () => { try { const r = await saveMediaToDevice(urls[0], typeAt(live, 0)); if (r === 'saved') Alert.alert('Saved', 'Saved to your library.'); } catch (e: any) { Alert.alert('Couldn\'t save', e?.message ?? 'Please try again.'); } }}
+                    accessibilityRole="button" style={[s.dBtn, { backgroundColor: k.well }]}>
+                    <Download size={18} color={k.text} /><Text style={[s.dBtnText, { color: k.text }]}>Save</Text>
+                  </Pressable>
+                )}
+                {canDel && (
+                  <Pressable onPress={() => { registerActivity(); setDetail(null); deleteMemory(live.id); }} accessibilityRole="button" style={[s.dBtn, { borderWidth: 1.5, borderColor: k.dangerEdge }]}>
+                    <Trash2 size={18} color={k.danger} /><Text style={[s.dBtnText, { color: k.danger }]}>Delete</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          );
+        })()}
+      </KioskFormDrawer>
+
       {viewer && (
         <>
           <MediaViewer
@@ -460,6 +531,12 @@ export function KioskMemoryFeed({
 }
 
 const s = StyleSheet.create({
+  dLabel: { fontSize: KIOSK_TYPO.micro, fontWeight: '800', letterSpacing: 1 },
+  dChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  dChip: { borderRadius: 100, paddingHorizontal: 14, paddingVertical: 8 },
+  dChipText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
+  dBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 52, borderRadius: KIOSK_RADIUS.md, paddingHorizontal: 18 },
+  dBtnText: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   loading: { alignItems: 'center', paddingVertical: KIOSK_SPACE.xl },
   loadingMore: { alignItems: 'center', paddingVertical: KIOSK_SPACE.lg },

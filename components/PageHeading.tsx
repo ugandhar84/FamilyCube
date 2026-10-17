@@ -45,7 +45,8 @@ export function PageHeading({
   const fg = colors[a.fg];
   const bg = colors[a.bg];
   const titleText = (
-    <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...PAGE.title, color: colors.textPrimary, lineHeight: 36 }}>{title}</Text>
+    // Long titles wrap onto a second line at full size instead of shrinking to tiny type on one line.
+    <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8} style={{ ...PAGE.title, color: colors.textPrimary, lineHeight: 36 }}>{title}</Text>
   );
   return (
     <View style={{ paddingHorizontal, paddingTop: topInset + PAGE.headerPaddingTop, paddingBottom: PAGE.headerPaddingBottom }}>

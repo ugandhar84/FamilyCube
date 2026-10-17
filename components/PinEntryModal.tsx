@@ -81,6 +81,8 @@ function Key({ label, onPress, disabled }: { label: string; onPress: () => void;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface PinEntryModalProps {
+  /** Resume lock for the profile already in use: no Cancel (there is nowhere to go back to) and "continue" wording. */
+  resume?: boolean;
   visible: boolean;
   member: FamilyMember | null;
   onSuccess: (member: FamilyMember) => void;
@@ -88,7 +90,7 @@ interface PinEntryModalProps {
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalProps) {
+function PinEntryLayer({ visible, member, onSuccess, onCancel, resume }: PinEntryModalProps) {
   const { colors, isDark } = useTheme();
   // On a kiosk/tablet device this renders as a centered, shaped card
   // (matching KioskFormDrawer's own centered "dialog" variant — same
@@ -244,9 +246,11 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
     <>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: colors.border }]}>
-          <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
-        </Pressable>
+        {!resume && (
+          <Pressable onPress={onCancel} style={[styles.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Avatar */}
@@ -262,7 +266,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel }: PinEntryModalPr
           {member.role === 'parent' ? '👑 Parent' : '🌟 Kid'}
         </Text>
         <Text style={[styles.prompt, { color: isDark ? colors.textSecondary : GEMINI.bodyColor, fontWeight: '700' }]}>
-          {locked ? `🔒 Locked for ${lockRemaining}s` : 'Enter PIN to switch profile'}
+          {locked ? `🔒 Locked for ${lockRemaining}s` : resume ? 'Enter your PIN to continue' : 'Enter PIN to switch profile'}
         </Text>
       </View>
 

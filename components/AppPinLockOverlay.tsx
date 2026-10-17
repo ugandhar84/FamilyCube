@@ -18,7 +18,7 @@ import PinEntryModal from './PinEntryModal';
 // Same 5-minute threshold as the Face ID re-lock in app/_layout.tsx — only
 // re-challenge after genuine backgrounding, not a brief bounce (a share
 // sheet, a permission prompt, a quick app-switcher peek).
-const LOCK_AFTER_MS = 300_000;
+const LOCK_AFTER_MS = 900_000; // 15 minutes away
 
 export default function AppPinLockOverlay() {
   const { isDark } = useTheme();
@@ -105,6 +105,7 @@ export default function AppPinLockOverlay() {
         style={StyleSheet.absoluteFillObject}
       />
       <PinEntryModal
+        resume
         visible={pinChallengeVisible}
         member={activeMember}
         onSuccess={() => setPinChallengeVisible(false)}

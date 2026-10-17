@@ -373,6 +373,14 @@ export default function ChatScreen() {
     loadChannel(channelId);
   }, [channelId, isSenior, !!activeMember]);
 
+  // The inbox rows show each conversation's latest message, so every channel this person can see needs its
+  // messages loaded, not just the one that happens to be open. Just Us stays unloaded until its PIN is entered.
+  const inboxChannelKey = allChannels.filter((c: any) => !c.isCoupleChannel && !(c.lock && !isParent)).map(c => c.id).join(',');
+  useEffect(() => {
+    if (!activeMember || !inboxChannelKey) return;
+    inboxChannelKey.split(',').forEach(id => { if (!(id === 'all' && isSenior)) loadChannel(id); });
+  }, [inboxChannelKey, !!activeMember, isSenior]);
+
   // One cheap query for last-activity + unread counts across every channel
   // this member can see, so the strip can sort/badge correctly even for
   // tabs never opened yet.
@@ -992,12 +1000,15 @@ export default function ChatScreen() {
             // "i still see it displaying the last chat from just us as
             // preview dont do that it is adults matter"].
             const isLockedCouple = chAny.isCoupleChannel && !isCoupleChannelUnlocked(ch.id);
-            const lastMsg = isLockedCouple ? null : (channels[ch.id]?.messages ?? [])[0];
+            const lastMsg = isLockedCouple ? null : (() => { const l = channels[ch.id]?.messages ?? []; return l[l.length - 1]; })();
             const lastSender = lastMsg ? (memberMap[lastMsg.senderId]?.name?.split(' ')[0] ?? '') : null;
             const lastText = lastMsg?.text
               ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
               : lastMsg?.voiceUri ? '🎤 Voice note'
               : lastMsg?.imageUri ? '📷 Photo'
+              : lastMsg?.documentUri ? '📄 Document'
+              : lastMsg?.locationPin ? '📍 Location'
+              : lastMsg ? 'Message'
               : null;
             const lastTime = lastActivity[ch.id]
               ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
@@ -1087,11 +1098,14 @@ export default function ChatScreen() {
             const chAny = ch as any;
             const other = memberMap[chAny.otherId];
             const unread = unreadCounts[ch.id] ?? 0;
-            const lastMsg = (channels[ch.id]?.messages ?? [])[0];
+            const lastMsg = (() => { const l = channels[ch.id]?.messages ?? []; return l[l.length - 1]; })();
             const lastText = lastMsg?.text
               ? (lastMsg.text.length > 55 ? lastMsg.text.slice(0, 55) + '…' : lastMsg.text)
               : lastMsg?.voiceUri ? '🎤 Voice note'
               : lastMsg?.imageUri ? '📷 Photo'
+              : lastMsg?.documentUri ? '📄 Document'
+              : lastMsg?.locationPin ? '📍 Location'
+              : lastMsg ? 'Message'
               : null;
             const lastTime = lastActivity[ch.id]
               ? new Date(lastActivity[ch.id]).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })

@@ -223,11 +223,11 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
       )}
 
       <TouchableOpacity
-        onPress={schedule ? onOpenDay : onCreateSchedule}
+        onPress={onOpenDay}
         style={{ paddingVertical: 13, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: border,
           backgroundColor: isDark ? colors.surface : '#FCFBF9' }}>
         <Text style={{ fontSize: 13, fontWeight: '800', color: titleC }}>
-          {schedule ? 'Manage  →' : 'Create schedule  →'}
+          Manage  →
         </Text>
       </TouchableOpacity>
     </View>

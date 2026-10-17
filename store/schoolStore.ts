@@ -334,8 +334,16 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
         const { data, error } = await supabase.from('kid_schedules').select('*').eq('family_id', familyId);
         if (!error && data) {
           const remote = data.map(scheduleFromRow);
-          set({ schedules: remote });
-          save(remote, get().homeworks);
+          // Never let an empty or partial server copy wipe schedules that only exist on this phone (they could not be saved
+          // before the database policy was fixed): keep local-only ones and push them up.
+          const remoteIds = new Set(remote.map(r => r.memberId));
+          const { useFamilyStore } = require('@/store/familyStore');
+          const realMemberIds = new Set<string>(useFamilyStore.getState().members.map((m: { id: string }) => m.id));
+          const localOnly = get().schedules.filter(sc => !remoteIds.has(sc.memberId) && realMemberIds.has(sc.memberId));
+          const merged = [...remote, ...localOnly];
+          set({ schedules: merged });
+          save(merged, get().homeworks);
+          localOnly.forEach(sc => { syncScheduleUpsert(sc).catch(() => {}); });
         }
       }
     } catch {

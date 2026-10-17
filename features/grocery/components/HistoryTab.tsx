@@ -1,3 +1,4 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable,
@@ -6,7 +7,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { ShoppingCart } from 'lucide-react-native';
+import { ShoppingCart, Receipt } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { CAT_ICON, CAT_EMOJI } from './types';
@@ -220,20 +221,8 @@ export function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: s
           const drItems: any[] = dr.grocery_receipt_items ?? [];
           return (
             <View style={{ flex: 1, backgroundColor: colors.card }}>
-              <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-                borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-                flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Pressable onPress={() => setDetailReceipt(null)}
-                  style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface,
-                    alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-                </Pressable>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Receipt</Text>
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>{dr.store ?? 'Unknown Store'}</Text>
-                </View>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.primary }}>${(dr.total ?? 0).toFixed(2)}</Text>
-              </View>
+              <PageHeading eyebrow="FAMILY CUBE · RECEIPT" title={dr.store ?? 'Unknown Store'} accent="teal" Icon={Receipt} onTitlePress={() => setDetailReceipt(null)} topInset={insets.top}
+                right={<Text style={{ fontSize: 20, fontWeight: '900', color: colors.primary }}>${(dr.total ?? 0).toFixed(2)}</Text>} />
               <ScrollView showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 40 }}>
                 {dr.image_url && (

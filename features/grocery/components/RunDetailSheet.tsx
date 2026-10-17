@@ -1,3 +1,5 @@
+import { ShoppingCart } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Alert, Image, ActivityIndicator, TextInput,
@@ -408,25 +410,13 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     />
     <View style={{ flex: 1, backgroundColor: colors.card }}>
       {/* Full-page header */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
-        flexDirection: 'row', alignItems: 'center' }}>
-        <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: colors.surface, marginRight: 12 }}>
-          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Shopping Trip</Text>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>{run.name}</Text>
-        </View>
-        <View style={{ backgroundColor: isActive ? colors.tealLight : isDone ? colors.surface : colors.primaryLight,
+      <PageHeading eyebrow="FAMILY CUBE · SHOPPING TRIP" title={run.name} accent="teal" Icon={ShoppingCart} onTitlePress={onClose} topInset={insets.top}
+        right={<View style={{ backgroundColor: isActive ? colors.tealLight : isDone ? colors.surface : colors.primaryLight,
           borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
           <Text style={{ fontSize: 12, fontWeight: '600', color: isActive ? colors.teal : isDone ? colors.textSecondary : colors.primary }}>
             {isActive ? '🛒 Shopping now' : isDone ? '✅ Done' : '📋 Draft'}
           </Text>
-        </View>
-      </View>
+        </View>} />
       <View style={{ flex: 1, padding: 16 }}>
           {/* Progress bar */}
           {runItems.length > 0 && (

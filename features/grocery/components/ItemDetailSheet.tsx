@@ -1,3 +1,5 @@
+import { ShoppingCart } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { ScrollView, View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,19 +22,8 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0E0C13' : '#FFFFFF' }}>
       {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-        flexDirection: 'row', alignItems: 'center' }}>
-        <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: colors.surface, marginRight: 12 }}>
-          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>Groceries</Text>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
-        </View>
-        {priceInfo?.price != null && (
+      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title={item.name} accent="teal" Icon={ShoppingCart} onTitlePress={onClose} topInset={insets.top}
+        right={priceInfo?.price != null && (
           <View style={{ backgroundColor: trusted ? colors.tealLight : colors.amberLight, borderRadius: 12,
             paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' }}>
             <Text style={{ fontSize: 16, fontWeight: '800', color: trusted ? colors.teal : colors.amber }}>
@@ -42,8 +33,7 @@ export function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelet
               {priceInfo.source === 'kroger' ? 'Kroger' : priceInfo.source === 'receipt' ? 'Receipt' : '~est'}
             </Text>
           </View>
-        )}
-      </View>
+        )} />
 
       <ScrollView contentContainerStyle={{ padding: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
         {/* Category icon card */}

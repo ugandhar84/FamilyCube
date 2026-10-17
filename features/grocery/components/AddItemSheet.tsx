@@ -1,3 +1,5 @@
+import { ShoppingCart } from 'lucide-react-native';
+import { PageHeading } from '@/components/PageHeading';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, ActivityIndicator,
@@ -153,23 +155,7 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
   return (
     <Pressable style={{ flex: 1, backgroundColor: sheetBg }} onPress={Keyboard.dismiss}>
       {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-        flexDirection: 'row', alignItems: 'center' }}>
-        <Pressable onPress={dismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: colors.surface, marginRight: 12 }}>
-          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.textPrimary }}>
-            {isEdit ? 'Edit Item' : 'Add to List'}
-          </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 1 }}>
-            {isEdit ? 'Update item details' : 'Type a name or tap a suggestion'}
-          </Text>
-        </View>
-      </View>
+      <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title={isEdit ? 'Edit Item' : 'Add to List'} subtitle={isEdit ? 'Update item details' : 'Type a name or tap a suggestion'} accent="teal" Icon={ShoppingCart} onTitlePress={dismiss} topInset={insets.top} />
 
       <ScrollView
         keyboardShouldPersistTaps="always"

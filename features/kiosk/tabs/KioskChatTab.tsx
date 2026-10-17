@@ -66,7 +66,10 @@ import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
 import { showToast } from '@/components/AppToast';
-import { useChatStore, dmChannelId, type ChatMessage } from '@/store/chatStore';
+import { useChatStore, dmChannelId, coupleChannelId, type ChatMessage } from '@/store/chatStore';
+import { useCoupleChannelStore } from '@/store/coupleChannelStore';
+import { useFeatureFlag } from '@/lib/featureFlags';
+import CouplePinModal from '@/components/CouplePinModal';
 import { getActiveFamilyKey, setActiveFamilyKey } from '@/lib/chatCrypto';
 import { isFamilyKeyStale, markFamilyKeyGenerationCurrent } from '@/lib/familyKeyRotation';
 import {
@@ -93,6 +96,8 @@ interface ChannelEntry {
   isDM: boolean;
   lock: boolean;
   otherMember?: FamilyMember;
+  /** The parents-only "Just Us" channel: PIN-gated, same rules as the phone. */
+  isCouple?: boolean;
 }
 
 type DayGroup = { type: 'day'; label: string } | { type: 'msg'; msg: ChatMessage };
@@ -146,6 +151,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // exact same buildGroupChannels() derivation (maternal/paternal/grand-
   // squad split) rather than re-deriving a second, possibly-drifting copy
   // of that logic here.
+  const coupleFlagOn = useFeatureFlag('couple_channel');
   const entries: ChannelEntry[] = useMemo(() => {
     const parents = members.filter(m => m.role === 'parent');
     const viewerGpSide: 'a' | 'b' | 'unlinked' | null = (() => {
@@ -170,6 +176,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       // parent who somehow still reaches it sees a full block screen
       // (ChatScreen.tsx:938, parentLocked). Match that exactly instead of
       // a parent-count heuristic.
+      // The Parents Vault is a phone-only channel; the shared wall display never lists it.
+      .filter(ch => ch.id !== 'parents')
       .filter(ch => !ch.lock || isParent)
       .filter(ch => !ch.seniorOnly || isSenior || isParent)
       .filter(ch => {
@@ -190,8 +198,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       otherMember: m,
     }));
 
-    return [...groupChannels, ...dmEntries];
-  }, [members, active, isParent, isSenior]);
+    // "Just Us": only for a parent with exactly one co-parent, and only while the admin flag is on (same as the phone).
+    const justUs: ChannelEntry[] = (coupleFlagOn && isParent && coParents.length === 1)
+      ? [{ id: coupleChannelId(active.id, coParents[0].id), label: 'Just Us', isDM: true, lock: false, otherMember: coParents[0], isCouple: true }]
+      : [];
+
+    return [...groupChannels, ...justUs, ...dmEntries];
+  }, [members, active, isParent, isSenior, coupleFlagOn]);
+
+  const unlockedCouple = useCoupleChannelStore(st => st.unlockedChannelIds);
+  const [couplePinOpen, setCouplePinOpen] = useState(false);
+  useKioskLockSuspended(couplePinOpen);
 
   const [activeChannel, setActiveChannel] = useState<string>(entries[0]?.id ?? 'all');
 
@@ -382,7 +399,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // since a family's channel/DM count is small enough (a handful) that
   // this is a one-time, one-screen cost, not a per-navigation one.
   useEffect(() => {
-    entries.forEach(e => loadChannel(e.id));
+    entries.forEach(e => { if (!e.isCouple) loadChannel(e.id); });
     // Deliberately NOT re-run when `entries` identity changes on every
     // render (it's a useMemo, so this is really keyed on its own deps) —
     // only care about actual entry-list membership changes.
@@ -391,16 +408,21 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 
   useEffect(() => {
     if (!activeChannel) return;
+    // Just Us stays unloaded and unread-marked until its PIN has been entered.
+    if (activeChannel.startsWith('couple_') && !unlockedCouple.has(activeChannel)) return;
     loadChannel(activeChannel);
     markChannelRead(activeChannel, active.id);
     setOpenChannelId(activeChannel);
     return () => setOpenChannelId(null);
-  }, [activeChannel, active.id, loadChannel, markChannelRead, setOpenChannelId]);
+  }, [activeChannel, active.id, loadChannel, markChannelRead, setOpenChannelId, unlockedCouple]);
 
   // Switching channels clears in-progress compose state — same reasoning as
   // ChatScreen.tsx's switchChannel: an in-flight reply/attachment/draft must
   // never leak into whichever channel is opened next.
   const switchChannel = (id: string) => {
+    // Leaving Just Us locks it again; entering it asks for the PIN unless this session already unlocked it.
+    if (activeChannel.startsWith('couple_') && id !== activeChannel) useCoupleChannelStore.getState().lock(activeChannel);
+    if (id.startsWith('couple_') && !useCoupleChannelStore.getState().isUnlocked(id)) setCouplePinOpen(true);
     setActiveChannel(id);
     setReplyingTo(null);
     setAttachUri(null);
@@ -685,7 +707,8 @@ export function KioskChatTab({ active, members, colors, isDark }: {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.convs} keyboardShouldPersistTaps="handled">
           {entries.map((e, i) => {
             const tone = kioskPastels(k)[i % 4];
-            const list = channels[e.id]?.messages ?? [];
+            const coupleLocked = !!e.isCouple && !unlockedCouple.has(e.id);
+            const list = coupleLocked ? [] : (channels[e.id]?.messages ?? []);
             const last = list[list.length - 1];
             const unread = unreadCounts[e.id] ?? 0;
             const on = e.id === activeChannel;
@@ -699,7 +722,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
                     {e.lock && <Lock size={13} color={k.textMuted} />}
                   </View>
                   <Text style={[s.convPreview, { color: k.textMuted }]} numberOfLines={1}>
-                    {last ? `${last.senderId === active.id ? 'You: ' : ''}${messagePreviewText(last)}` : 'No messages yet'}
+                    {coupleLocked ? '🔒 PIN required to view' : last ? `${last.senderId === active.id ? 'You: ' : ''}${messagePreviewText(last)}` : 'No messages yet'}
                   </Text>
                 </View>
                 <View style={s.convMeta}>
@@ -717,6 +740,26 @@ export function KioskChatTab({ active, members, colors, isDark }: {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={s.threadPane}
       >
+            {activeChannel.startsWith('couple_') && !unlockedCouple.has(activeChannel) && (
+              <View style={[StyleSheet.absoluteFill, { zIndex: 5, backgroundColor: k.card, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }]}>
+                <Lock size={34} color={k.textMuted} />
+                <Text style={[s.title, { color: k.text }]}>Just Us</Text>
+                <Text style={{ color: k.textMuted, fontSize: 15, textAlign: 'center' }}>Enter the PIN to open this private channel.</Text>
+                <Pressable onPress={() => setCouplePinOpen(true)} accessibilityRole="button"
+                  style={{ backgroundColor: k.primary, borderRadius: 14, paddingHorizontal: 26, paddingVertical: 14, minHeight: 48, justifyContent: 'center' }}>
+                  <Text style={{ color: k.onPrimary, fontSize: 16, fontWeight: '800' }}>Enter PIN</Text>
+                </Pressable>
+              </View>
+            )}
+            {couplePinOpen && (
+              <CouplePinModal
+                visible
+                mode="verify"
+                channelId={activeChannel}
+                onCancel={() => { setCouplePinOpen(false); setActiveChannel(entries[0]?.id ?? 'all'); }}
+                onSuccess={() => { useCoupleChannelStore.getState().markUnlocked(activeChannel); setCouplePinOpen(false); }}
+              />
+            )}
             <View style={[s.threadPanel, { backgroundColor: k.card }]}>
               <View style={s.threadHead}>
                 <View style={{ flexDirection: 'row' }}>

@@ -311,6 +311,20 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
   };
 }
 
+// ─── Personal tasks ──────────────────────────────────────────────────────────
+// A task someone created for themselves, worth nothing and finished with one tap (the kiosk "Add my own task"), is
+// a private reminder list. Only its owner sees it: it never shows in parents' or siblings' task lists, boards or counts.
+function isPersonalTask(c: any): boolean {
+  const worth = (c.basePoints || c.coinsReward || 0) + (c.bonusCoins || 0);
+  return !!c.createdById && c.createdById === c.assignedToId && !!c.trustedAutoApprove && worth === 0;
+}
+function visibleChores(chores: any[]): any[] {
+  const { useFamilyStore } = require('@/store/familyStore');
+  const s = useFamilyStore.getState();
+  const me = s.activeMemberId;
+  return chores.filter(c => !isPersonalTask(c) || c.assignedToId === me);
+}
+
 // ─── The hook — drop-in for useQuestStore ────────────────────────────────────
 
 export function useQuestStore() {
@@ -318,7 +332,7 @@ export function useQuestStore() {
 
   return {
     // State
-    quests: store.chores.map(choreToQuest),
+    quests: visibleChores(store.chores).map(choreToQuest),
 
     // Mutations
     addQuest: (q: Partial<Quest> & Record<string, any>) => {
@@ -573,7 +587,7 @@ export function useQuestStore() {
 useQuestStore.getState = () => {
   const store = useChoreStore.getState();
   const shim = {
-    quests: store.chores.map(choreToQuest),
+    quests: visibleChores(store.chores).map(choreToQuest),
     updateQuest: (id: string, updates: Partial<Quest>, _by?: string) => {
       const choreUpdates: Partial<ChoreTask> = {};
       if (updates.title          !== undefined) choreUpdates.title             = updates.title;

@@ -54,7 +54,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications']);
+const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'family_recipes', 'grocery_items', 'family_medications', 'family_vaccines', 'medical_records', 'family_memories', 'member_locations', 'calendar_events', 'kid_requests']);
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
@@ -281,6 +281,14 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
+    // 'chore_patch' — set columns on one scratch chore (the service role), to stage cases like "created by a kid".
+    if (action === 'chore_patch') {
+      const { choreId, patch } = body;
+      if (!String(choreId ?? '').startsWith('qa_scratch_')) throw new Error('not a scratch chore');
+      const { error } = await admin.from('chore_tasks').update(patch).eq('id', choreId);
+      return json({ ok: !error, error: error?.message ?? null });
+    }
+
     if (action === 'rpc') {
       // resolve_active_member_id() only ever trusts a real auth.uid() match
       // (see its own migration — every path requires
@@ -420,6 +428,9 @@ async function deleteFamily(admin: ReturnType<typeof createClient>, familyId: st
   await admin.from('rewards').delete().eq('family_id', familyId);
   await admin.from('grocery_items').delete().eq('family_id', familyId);
   await admin.from('family_sticky_notes').delete().eq('family_id', familyId);
+  await admin.from('family_vaccines').delete().eq('family_id', familyId);
+  await admin.from('medical_records').delete().eq('family_id', familyId);
+  await admin.from('family_memories').delete().eq('family_id', familyId);
   await admin.from('family_meals').delete().eq('family_id', familyId);
   await admin.from('family_recipes').delete().eq('family_id', familyId);
   await admin.from('family_medications').delete().eq('family_id', familyId);

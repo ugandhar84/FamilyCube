@@ -73,13 +73,15 @@ try {
   r = await as(alex, 'family_meals', 'insert', { row: meal('n1', 'Mon', 'dinner', monday(1)) });
   check(B, 'parent adds a meal to NEXT week', r.ok, r.error);
   r = await as(alex, 'family_meals', 'insert', { row: meal('b2', 'Mon', 'breakfast') });
-  if (r.ok) finding(B, 'the database allows a second breakfast on the same day', 'Only the kiosk UI blocks a duplicate meal type per day. Add a unique index on (family_id, week_of, day, type) if it must hold on every client, including the phone.');
-  else check(B, 'a second breakfast the same day is blocked', true, '');
+  check(B, 'a second breakfast the same day is blocked by the database', !r.ok, r.error ?? 'insert succeeded');
   r = await as(mia, 'family_meals', 'select', { match: { family_id: F, week_of: monday(0) } });
   check(B, 'a kid can read this week’s plan', rows(r).length >= 3, r.error ?? rows(r).length);
   r = await as(mia, 'family_meals', 'delete', { match: { family_id: F, type: 'lunch' } });
-  if (rows(r).length > 0) finding(B, 'a kid can delete meals at the database level', 'The kiosk hides edit/delete from kids and teens, but the table policy allows it. Tighten family_meals RLS to parents if that matters.');
-  else check(B, 'a kid cannot delete meals', true, '');
+  check(B, 'a kid cannot delete meals', rows(r).length === 0, `deleted ${rows(r).length}`);
+  r = await as(mia, 'family_meals', 'insert', { row: meal('k1', 'Wed', 'snack') });
+  check(B, 'a kid cannot add a meal', !r.ok, r.error ?? 'insert succeeded');
+  r = await as(zane, 'family_meals', 'insert', { row: meal('t1', 'Wed', 'snack') });
+  check(B, 'a teen can still add a meal (as on the phone)', r.ok, r.error);
   const mv = await as(alex, 'family_meals', 'update', { row: { day: 'Tue', week_of: monday(1) }, match: { id: `${F}-${monday(0)}-Mon-b1` } });
   check(B, 'moving a meal to another day and week works (drag and drop)', mv.ok && rows(mv).length === 1, mv.error);
 
@@ -150,6 +152,21 @@ try {
   r = await rpc(mia, 'claim_pool_quest', { p_chore_id: q.choreId, p_member_id: mia });
   check(G, 'a second kid cannot claim the same bounty', !r.ok || r.data?.ok === false || JSON.stringify(r.data).includes('false'), r.error ?? JSON.stringify(r.data));
 
+  // One-tap tasks: a parent-trusted task and a kid's own zero-coin task finish on submit; a kid's own coin task does not.
+  const mk = async (extra) => { const row = { id: `qa_scratch_ct_${Math.random().toString(36).slice(2, 8)}`, family_id: F, title: extra.title, status: 'todo', is_pool: false, assigned_to_id: mia, created_by_id: extra.by, base_points: extra.coins, coins_reward: extra.coins, trusted_auto_approve: !!extra.trusted, created_at: new Date().toISOString() }; const res = await call({ action: 'table', actingMemberId: alex, table: 'chore_tasks', op: 'insert', row }); return { id: row.id, res }; };
+  let own = await call({ action: 'add_quest', familyId: F, title: 'QA my own reminder', isPool: false, assignedToId: mia, status: 'todo', coins: 0 });
+  await call({ action: 'chore_patch', choreId: own.choreId, patch: { created_by_id: mia, trusted_auto_approve: true, base_points: 0, coins_reward: 0 } });
+  r = await rpc(mia, 'submit_chore', { p_chore_id: own.choreId, p_member_id: mia });
+  check(G, 'a kid finishes their own zero-coin task with one tap', r.ok, r.error);
+  let coinTask = await call({ action: 'add_quest', familyId: F, title: 'QA my own coin task', isPool: false, assignedToId: mia, status: 'todo', coins: 20 });
+  await call({ action: 'chore_patch', choreId: coinTask.choreId, patch: { created_by_id: mia, trusted_auto_approve: true } });
+  r = await rpc(mia, 'submit_chore', { p_chore_id: coinTask.choreId, p_member_id: mia });
+  check(G, 'a kid cannot self-approve a task that pays coins', !r.ok, r.error ?? 'approved');
+  let trusted = await call({ action: 'add_quest', familyId: F, title: 'QA brush teeth', isPool: false, assignedToId: mia, status: 'todo', coins: 2 });
+  await call({ action: 'chore_patch', choreId: trusted.choreId, patch: { created_by_id: alex, trusted_auto_approve: true } });
+  r = await rpc(mia, 'submit_chore', { p_chore_id: trusted.choreId, p_member_id: mia });
+  check(G, 'a parent-trusted task completes on one tap', r.ok, r.error);
+
   /* ───────── Rewards ───────── */
   const H = 'Rewards';
   await call({ action: 'set_coins', familyId: F, memberId: mia, mainCoins: 100 });
@@ -169,6 +186,56 @@ try {
   const rw2 = await call({ action: 'add_reward', familyId: F, title: 'QA expensive', cost: 500 });
   r = await rpc(mia, 'redeem_reward', { p_reward_id: rw2.rewardId ?? rw2.id, p_member_id: mia });
   check(H, 'a kid without enough coins is refused', !r.ok, r.error ?? JSON.stringify(r.data));
+
+  /* ───────── Calendar events ───────── */
+  const I = 'Calendar';
+  const day = new Date().toISOString().slice(0, 10);
+  r = await call({ action: 'add_event', familyId: F, memberId: mia, title: 'QA soccer practice', date: day, time: '16:45' });
+  check(I, 'an event is created for a kid', r.ok, r.error);
+  r = await as(mia, 'calendar_events', 'select', { match: { family_id: F, date: day } });
+  check(I, 'the kid can read today’s events', rows(r).some(e => e.title === 'QA soccer practice'), r.error ?? rows(r).length);
+  r = await as(mia, 'calendar_events', 'delete', { match: { id: rows(r)[0]?.id } });
+  if (rows(r).length > 0) finding(I, 'a kid can delete a family event at the table level', 'The kiosk hides delete from kids, but the table policy allows it for any family member.');
+  else check(I, 'a kid cannot delete a family event', true, '');
+
+  /* ───────── Kid requests ───────── */
+  const J = 'Kid requests';
+  r = await as(mia, 'kid_requests', 'insert', { row: { id: `kr_${Date.now()}`, family_id: F, from_member_id: mia, type: 'delegation', detail: 'Grocery request', status: 'pending' } });
+  check(J, 'a kid sends a request', r.ok, r.error);
+  const krId = rows(r)[0]?.id;
+  r = await as(zane, 'kid_requests', 'select', { match: { family_id: F } });
+  if (rows(r).length > 0) finding(J, 'another kid/teen can read a different kid’s requests', 'kid_requests SELECT is family-wide at the table level.');
+  else check(J, 'a different teen cannot read the kid’s requests', true, '');
+  r = await as(mia, 'kid_requests', 'update', { row: { status: 'approved' }, match: { id: krId } });
+  if (r.ok && rows(r)[0]?.status === 'approved') finding(J, 'a kid can approve their own request at the table level', 'The kiosk and phone only offer Approve to parents; the table policy accepts an update from the requesting kid.');
+  else check(J, 'a kid cannot approve their own request', true, r.error);
+
+  /* ───────── Vaccines and records ───────── */
+  const K = 'Health records';
+  r = await as(alex, 'family_vaccines', 'insert', { row: { family_id: F, member_id: mia, title: 'Flu Shot 2026', date: day, series_current: 1, series_total: 1, done: false } });
+  check(K, 'a parent adds a vaccine for a kid', r.ok, r.error);
+  r = await as(mia, 'family_vaccines', 'select', { match: { family_id: F } });
+  check(K, 'the kid can read their vaccines', rows(r).length === 1, r.error);
+  r = await as(alex, 'medical_records', 'insert', { row: { family_id: F, member_id: alex, title: 'QA bloodwork', tag: 'lab', record_date: day, ai_tags: [], ai_analyzed: false } });
+  check(K, 'a parent saves a medical record', r.ok, r.error);
+  r = await as(mia, 'medical_records', 'select', { match: { family_id: F } });
+  if (rows(r).length > 0) finding(K, 'a kid can read a parent’s medical records at the table level', 'The app hides Records from kids, but the table returns them. The file contents are encrypted, titles and tags are not.');
+  else check(K, 'a kid cannot read a parent’s medical records', true, '');
+
+  /* ───────── Memories ───────── */
+  const L = 'Memories';
+  r = await as(mia, 'family_memories', 'insert', { row: { family_id: F, title: 'QA leaf pile', date: day, created_by: mia, hearts: 0, hearted_by: [], photo_urls: [], tagged_member_ids: [mia] } });
+  check(L, 'a kid posts a memory', r.ok, r.error);
+  const memId = rows(r)[0]?.id;
+  r = await as(zane, 'family_memories', 'delete', { match: { id: memId } });
+  check(L, 'another teen cannot delete a kid’s memory', rows(r).length === 0, `deleted ${rows(r).length}`);
+  r = await as(alex, 'family_memories', 'delete', { match: { id: memId } });
+  check(L, 'a parent can delete a memory', rows(r).length === 1, r.error);
+
+  /* ───────── Locations ───────── */
+  const M2 = 'Locations';
+  r = await as(mia, 'member_locations', 'select', { match: {} });
+  finding(M2, `a kid can read ${rows(r).length} location row(s)`, 'member_locations is readable family-wide (the kiosk only shows people who chose to share).');
 
 } catch (e) {
   check('Harness', 'suite ran to the end', false, e.message);

@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T06:33:53.224Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T15:29:25.765Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**48 passed, 0 failed, 2 findings.**
+**63 passed, 0 failed, 6 findings.**
 
 ## Sticky notes
 
@@ -31,9 +31,11 @@ Run: 2026-10-17T06:33:53.224Z against a throwaway scratch family (real rows, rea
 | PASS | parent adds a breakfast | null |
 | PASS | parent adds lunch and dinner for the same day (3 meals a day) | null |
 | PASS | parent adds a meal to NEXT week | null |
-| PASS | a second breakfast the same day is blocked |  |
+| PASS | a second breakfast the same day is blocked by the database | duplicate key value violates unique constraint "family_meals_no_dup" |
 | PASS | a kid can read this week’s plan | 3 |
-| NOTE | a kid can delete meals at the database level | The kiosk hides edit/delete from kids and teens, but the table policy allows it. Tighten family_meals RLS to parents if that matters. |
+| PASS | a kid cannot delete meals | deleted 0 |
+| PASS | a kid cannot add a meal | new row violates row-level security policy for table "family_meals" |
+| PASS | a teen can still add a meal (as on the phone) | null |
 | PASS | moving a meal to another day and week works (drag and drop) | null |
 
 ## Recipe book
@@ -70,7 +72,7 @@ Run: 2026-10-17T06:33:53.224Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 0b580b33-bccb-4244-92c2-b8dcf0db07ee is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 3658e54f-1353-4d8f-a93c-e7eae08463af is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -78,14 +80,56 @@ Run: 2026-10-17T06:33:53.224Z against a throwaway scratch family (real rows, rea
 | PASS | approving twice does not pay twice | coins gained after a second approve: 15 |
 | PASS | a teen claims a pool bounty | null |
 | PASS | a second kid cannot claim the same bounty | [{"claimed":false,"chore":null}] |
+| PASS | a kid finishes their own zero-coin task with one tap | null |
+| PASS | a kid cannot self-approve a task that pays coins | A child/teenager cannot approve their own chore — requires a parent or an active temporary-approver grant. |
+| PASS | a parent-trusted task completes on one tap | null |
 
 ## Rewards
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792218826767"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792218826767"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792250944541"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792250944541"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
+
+## Calendar
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | an event is created for a kid |  |
+| PASS | the kid can read today’s events | 1 |
+| NOTE | a kid can delete a family event at the table level | The kiosk hides delete from kids, but the table policy allows it for any family member. |
+
+## Kid requests
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a kid sends a request | null |
+| NOTE | another kid/teen can read a different kid’s requests | kid_requests SELECT is family-wide at the table level. |
+| NOTE | a kid can approve their own request at the table level | The kiosk and phone only offer Approve to parents; the table policy accepts an update from the requesting kid. |
+
+## Health records
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a parent adds a vaccine for a kid | null |
+| PASS | the kid can read their vaccines | null |
+| PASS | a parent saves a medical record | null |
+| NOTE | a kid can read a parent’s medical records at the table level | The app hides Records from kids, but the table returns them. The file contents are encrypted, titles and tags are not. |
+
+## Memories
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a kid posts a memory | null |
+| PASS | another teen cannot delete a kid’s memory | deleted 0 |
+| PASS | a parent can delete a memory | null |
+
+## Locations
+
+| Result | Check | Detail |
+|---|---|---|
+| NOTE | a kid can read 0 location row(s) | member_locations is readable family-wide (the kiosk only shows people who chose to share). |
 

@@ -261,6 +261,9 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const busyRef = useRef(false);
   const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
 
+  // The reader often writes "00:00" for a line with no time; midnight is never a real start here, so treat it as no time.
+  const realTime = (t?: string | null) => (t && !/^0{1,2}:00(:00)?$/.test(t.trim()) ? t : undefined);
+
   // ── Save single event ──
   const handleConfirmEvent = async () => {
     if (!event || busyRef.current) return;
@@ -277,9 +280,9 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       const id = await addEvent({
         title:    event.title,
         date:     event.date ?? dateToStr(new Date()),
-        time:     event.time ?? undefined,
-        endTime:  event.end_time ?? undefined,
-        allDay:   !event.time && !event.end_time ? true : undefined,
+        time:     realTime(event.time),
+        endTime:  realTime(event.end_time),
+        allDay:   !realTime(event.time) && !realTime(event.end_time) ? true : undefined,
         category: event.category,
         location: event.location ?? undefined,
         notes:    [event.description, event.notes, event.recurrence_desc].filter(Boolean).join(' · ') || undefined,
@@ -356,10 +359,10 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       const id = await addEvent({
         title:    ev.title,
         date:     ev.date ?? dateToStr(new Date()),
-        time:     ev.time ?? undefined,
-        endTime:  ev.end_time ?? undefined,
+        time:     realTime(ev.time),
+        endTime:  realTime(ev.end_time),
         // No start or end time on the flyer means a whole-day entry.
-        allDay:   !ev.time && !ev.end_time ? true : undefined,
+        allDay:   !realTime(ev.time) && !realTime(ev.end_time) ? true : undefined,
         category: ev.category,
         location: ev.location ?? undefined,
         notes:    ev.notes ?? undefined,

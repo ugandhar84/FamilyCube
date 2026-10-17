@@ -104,7 +104,7 @@ export default function ReviewMultiScreen({
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{ev.title}</Text>
                   <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
                     {ev.date ? new Date(ev.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No date'}
-                    {ev.time ? ` · ${fmtTime12(ev.time)}` : ''}
+                    {ev.time && !/^0{1,2}:00(:00)?$/.test(ev.time) ? ` · ${fmtTime12(ev.time)}` : ' · All day'}
                   </Text>
                 </View>
                 <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,

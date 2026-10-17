@@ -5,10 +5,12 @@
  * and two ask-for-help buttons. Kids can only tick their own chores — every
  * approval and edit stays with a parent.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, type FamilyEvent } from '@/store/eventStore';
+import { KioskEventDetailSheet } from './KioskEventDetailSheet';
+import { KioskChoreDetailDrawer } from './KioskChoreDetailDrawer';
 import { KIOSK_TYPO, KIOSK_SPACE } from '../kioskTheme';
 import { useKioskColors, kioskPastels } from '../kioskPalette';
 import { useKioskWeather } from '../useKioskWeather';
@@ -63,7 +65,7 @@ export function KioskHomeKid({ active, members, onNavigate }: {
   // One vertical timeline: their events as blocks, their chores dropped in at the time they are due.
   const { quests } = useQuestStore();
   const timeline = useMemo(() => {
-    const evs = mine.filter(e => !e.allDay && e.time).map(e => ({ k: 'e' as const, id: e.id, min: toMin(e.time), end: e.endTime ? toMin(e.endTime) : toMin(e.time) + 60, title: e.title, sub: `${fmt12(e.time)}${e.endTime ? ` – ${fmt12(e.endTime)}` : ''}`, done: false }));
+    const evs = mine.filter(e => !e.allDay && e.time).map(e => ({ k: 'e' as const, ev: e, id: e.id, min: toMin(e.time), end: e.endTime ? toMin(e.endTime) : toMin(e.time) + 60, title: e.title, sub: `${fmt12(e.time)}${e.endTime ? ` – ${fmt12(e.endTime)}` : ''}`, done: false }));
     const chs = [...todo, ...done].filter((q: any) => q.dueTime).map((q: any) => ({ k: 'c' as const, id: q.id, min: toMin(q.dueTime), end: toMin(q.dueTime), title: q.title, sub: fmt12(q.dueTime), done: done.some((d: any) => d.id === q.id), coins: q.coins }));
     return [...evs, ...chs].sort((a, b) => a.min - b.min);
   }, [mine, todo, done]);
@@ -71,6 +73,8 @@ export function KioskHomeKid({ active, members, onNavigate }: {
   const nowAt = timeline.findIndex(x => x.min > nowMin);
   const pastels = kioskPastels(k);
   void quests;
+  const [viewEvent, setViewEvent] = useState<FamilyEvent | null>(null);
+  const [viewQuestId, setViewQuestId] = useState<string | null>(null);
 
   const qbtn = (label: string, emoji: string, bg: string, fg: string, onPress: () => void) => (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={[s.qb, { backgroundColor: bg }]}>
@@ -131,16 +135,16 @@ export function KioskHomeKid({ active, members, onNavigate }: {
                       <Text style={[s.tTime, { color: k.textMuted }]}>{fmt12(`${String(Math.floor(x.min / 60)).padStart(2, '0')}:${String(x.min % 60).padStart(2, '0')}`)}</Text>
                       <View style={[s.tDot, { backgroundColor: x.k === 'c' ? (x.done ? k.sage : k.card) : tone.card, borderColor: tone.fg }]} />
                       {x.k === 'e' ? (
-                        <Pressable onPress={() => onNavigate('schedule')} accessibilityRole="button" style={[s.tCard, { backgroundColor: tone.col, borderColor: tone.card, opacity: past ? 0.55 : 1 }]}>
+                        <Pressable onPress={() => setViewEvent((x as any).ev)} accessibilityRole="button" style={[s.tCard, { backgroundColor: tone.col, borderColor: tone.card, opacity: past ? 0.55 : 1 }]}>
                           <Text style={[s.tTitle, { color: k.text }]} numberOfLines={1}>{x.title}</Text>
                           <Text style={[s.sub, { color: k.textMuted, marginTop: 0 }]}>{x.sub}</Text>
                         </Pressable>
                       ) : (
-                        <View style={[s.tChore, { backgroundColor: k.card, borderColor: k.pastelPrimaryCard }]}>
+                        <Pressable onPress={() => setViewQuestId(String(x.id))} accessibilityRole="button" style={[s.tChore, { backgroundColor: k.card, borderColor: k.pastelPrimaryCard }]}>
                           <Text style={{ fontSize: 15 }}>{x.done ? '✅' : '⬜'}</Text>
                           <Text style={[s.tTitle, { color: k.text, flex: 1, textDecorationLine: x.done ? 'line-through' : 'none' }]} numberOfLines={1}>{x.title}</Text>
                           <View style={[s.coinPill, { backgroundColor: k.pastelAmberCard }]}><Text style={[s.sub, { color: k.gold, marginTop: 0 }]}>🪙 {(x as any).coins}</Text></View>
-                        </View>
+                        </Pressable>
                       )}
                     </View>
                   </View>
@@ -159,6 +163,8 @@ export function KioskHomeKid({ active, members, onNavigate }: {
         </ScrollView>
       </View>
       {askNode}
+      <KioskEventDetailSheet event={viewEvent} active={active} members={members} onClose={() => setViewEvent(null)} onEditFull={() => { setViewEvent(null); onNavigate('schedule'); }} />
+      <KioskChoreDetailDrawer questId={viewQuestId} active={active} members={members} onClose={() => setViewQuestId(null)} />
     </View>
   );
 }

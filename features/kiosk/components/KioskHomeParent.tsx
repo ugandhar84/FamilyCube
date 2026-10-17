@@ -12,7 +12,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, type FamilyEvent } from '@/store/eventStore';
+import { KioskEventDetailSheet } from './KioskEventDetailSheet';
+import { KioskChoreDetailDrawer } from './KioskChoreDetailDrawer';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
@@ -75,6 +77,8 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
     <View style={[s.chip, { backgroundColor: bg }]}><Text style={[s.chipText, { color: fg }]}>{text}</Text></View>
   );
 
+  const [viewEvent, setViewEvent] = useState<FamilyEvent | null>(null);
+  const [viewQuestId, setViewQuestId] = useState<string | null>(null);
   const [showTask, setShowTask] = useState(false);
   const [showEvent, setShowEvent] = useState(false);
   const goMap = () => onNavigate('findfam');
@@ -106,7 +110,7 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
       </View>
 
       <View style={s.body}>
-        <KioskFamilyBoard people={people} events={dayEvents} chores={quests as any} onOpenEvent={() => onNavigate('schedule')} />
+        <KioskFamilyBoard people={people} events={dayEvents} chores={quests as any} onOpenEvent={setViewEvent} onOpenChore={setViewQuestId} />
         <ScrollView style={s.side} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
           <Section label="NEEDS YOU" accent={k.primary} k={k}>
             {needCount === 0 ? (
@@ -158,6 +162,8 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
         </ScrollView>
       </View>
 
+      <KioskEventDetailSheet event={viewEvent} active={active} members={members} onClose={() => setViewEvent(null)} onEditFull={() => { setViewEvent(null); onNavigate('schedule'); }} />
+      <KioskChoreDetailDrawer questId={viewQuestId} active={active} members={members} onClose={() => setViewQuestId(null)} />
       <KioskJustDescribeTaskDrawer visible={showTask} onClose={() => setShowTask(false)} active={active} members={members} />
       <KioskJustDescribeEventDrawer visible={showEvent} onClose={() => setShowEvent(false)} active={active} members={members} />
 

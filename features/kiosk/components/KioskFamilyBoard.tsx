@@ -2,7 +2,7 @@
  * KioskFamilyBoard — today as one board: a column per person, hour by hour, with
  * a "now" line the board scrolls to. Events are pastel blocks (an event shared by
  * several people shows in each column); chores due at a time sit in the owner's
- * column as small chips. Tapping an event opens the Schedule.
+ * column as small chips. Tapping an event or a chore opens its details.
  */
 import { useEffect, useMemo, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
@@ -20,11 +20,12 @@ const HOURS = 15;  // 7 AM .. 10 PM
 const HH = 56;     // px per hour (roomy enough to read at a glance)
 const hourLabel = (h: number) => `${h % 12 || 12} ${h >= 12 ? 'PM' : 'AM'}`;
 
-export function KioskFamilyBoard({ people, events, chores, onOpenEvent }: {
+export function KioskFamilyBoard({ people, events, chores, onOpenEvent, onOpenChore }: {
   people: FamilyMember[];
   events: FamilyEvent[];
   chores: { id: string; title: string; assignedToId?: string; dueTime?: string; dueDate?: string; status: string }[];
-  onOpenEvent: () => void;
+  onOpenEvent: (e: FamilyEvent) => void;
+  onOpenChore: (id: string) => void;
 }) {
   const { k } = useKioskColors();
   const pastels = kioskPastels(k);
@@ -65,7 +66,7 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent }: {
               {c.ev.map(e => {
                 const st = toMin(e.time); const en = e.endTime ? toMin(e.endTime) : st + 60;
                 return (
-                  <Pressable key={e.id} onPress={onOpenEvent} accessibilityRole="button" accessibilityLabel={`${e.title}, ${fmt12(e.time)}`}
+                  <Pressable key={e.id} onPress={() => onOpenEvent(e)} accessibilityRole="button" accessibilityLabel={`${e.title}, ${fmt12(e.time)}`}
                     style={[s.blk, { top: top(st), height: Math.max(30, ((en - st) / 60) * HH - 3), backgroundColor: c.tone.card, opacity: en < nowMin ? 0.55 : 1 }]}>
                     <Text style={[s.bT, { color: k.text }]} numberOfLines={2}>{e.title}</Text>
                     <Text style={[s.bS, { color: k.textMuted }]} numberOfLines={1}>{fmt12(e.time)}</Text>
@@ -75,10 +76,10 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent }: {
               {c.ch.map(q => {
                 const done = ['pending_approval', 'approved', 'done'].includes(q.status);
                 return (
-                  <View key={q.id} style={[s.chip, { top: top(toMin(q.dueTime)), backgroundColor: k.card, borderColor: c.tone.fg }]}>
+                  <Pressable key={q.id} onPress={() => onOpenChore(q.id)} accessibilityRole="button" accessibilityLabel={`${q.title}, chore`} style={[s.chip, { top: top(toMin(q.dueTime)), backgroundColor: k.card, borderColor: c.tone.fg }]}>
                     <Text style={{ fontSize: 12 }}>{done ? '✅' : '⬜'}</Text>
                     <Text style={[s.cT, { color: k.text, textDecorationLine: done ? 'line-through' : 'none' }]} numberOfLines={1}>{q.title}</Text>
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>

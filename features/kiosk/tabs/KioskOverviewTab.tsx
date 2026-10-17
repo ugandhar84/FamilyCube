@@ -204,8 +204,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function KioskOverviewTab({
-  active, members, onNavigate, onIntercom, onLock, familyName, colors, isDark: phoneDark,
+  active, members, onNavigate, onIntercom, onAskFam, onLock, familyName, colors, isDark: phoneDark,
 }: {
+  onAskFam?: () => void;
   onLock?: () => void;
   familyName?: string;
   active: FamilyMember;
@@ -1416,7 +1417,7 @@ export function KioskOverviewTab({
   // non-literal flag keeps TS from narrowing its hook-derived values to never.
   const NEW_HOME: boolean = Boolean(1);
   if (NEW_HOME) {
-    if (isParent) return <KioskHomeParent active={active} members={members} onNavigate={onNavigate} onIntercom={onIntercom} />;
+    if (isParent) return <KioskHomeParent active={active} members={members} onNavigate={onNavigate} onIntercom={onIntercom} onAskFam={onAskFam} />;
     if (isKid || isTeen) return <KioskHomeKid active={active} members={members} onNavigate={onNavigate} />;
     // Senior keeps the simple household board.
     return (

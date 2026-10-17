@@ -405,6 +405,7 @@ export default function KioskScreen() {
                 members={members}
                 onNavigate={setTab}
                 onIntercom={() => setIntercomOpen(true)}
+                onAskFam={isParent ? () => setAskCubeOpen(true) : undefined}
                 colors={colors}
                 isDark={isDark}
               />

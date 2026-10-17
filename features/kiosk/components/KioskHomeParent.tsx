@@ -9,7 +9,7 @@
  * Schedule / Meals tabs the rest of kiosk uses.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
@@ -24,14 +24,17 @@ import { useKioskWeather } from '../useKioskWeather';
 import { useKioskMeals, todayMealDay } from '../useKioskMeals';
 import type { KioskTabKey } from '../kioskTabs';
 import { KioskRedoReasonDialog } from './KioskRedoReasonDialog';
+import { KioskFamilyBoard } from './KioskFamilyBoard';
+import { KioskJustDescribeTaskDrawer, KioskJustDescribeEventDrawer } from './KioskJustDescribeDrawer';
+import { FamilyNowCard, HomeChatsCard, HomeMedsCard, StickyNotesCard, HomeMemoriesCard } from './KioskHomeWidgets';
 import {
   Section, Dial, FacePile, PulseCard, RaisedCard, NextUpTimeline, TonightCard, ActionTile,
   fmt12, toMin, firstName, greetingFor, useNow,
 } from './KioskHomeParts';
 
-export function KioskHomeParent({ active, members, onNavigate, onIntercom }: {
+export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAskFam }: {
   active: FamilyMember; members: FamilyMember[];
-  onNavigate: (tab: KioskTabKey) => void; onIntercom: () => void;
+  onNavigate: (tab: KioskTabKey) => void; onIntercom: () => void; onAskFam?: () => void;
 }) {
   const { k, isDark } = useKioskColors();
   const now = useNow();
@@ -72,121 +75,91 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom }: {
     <View style={[s.chip, { backgroundColor: bg }]}><Text style={[s.chipText, { color: fg }]}>{text}</Text></View>
   );
 
+  const [showTask, setShowTask] = useState(false);
+  const [showEvent, setShowEvent] = useState(false);
+  const goMap = () => onNavigate('findfam');
+  const goMemories = () => onNavigate('memories');
+
+  const qbtn = (label: string, emoji: string, bg: string, fg: string, onPress: () => void) => (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={[s.qb, { backgroundColor: bg }]}>
+      <Text style={{ fontSize: 20 }}>{emoji}</Text><Text style={[s.qbT, { color: fg }]} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+
   return (
     <View style={s.wrap}>
-      <View>
-        <Text style={[s.greet, { color: k.text }]} numberOfLines={1}>{greetingFor(now)}, {firstName(active)}</Text>
-        <View style={s.chips}>
-          {chip(needCount ? `${needCount} waiting on you` : 'Nothing waiting on you', k.purpleSoft, k.purple)}
-          {chip(`${dayEvents.length} plan${dayEvents.length === 1 ? '' : 's'} today`, k.goldSoft, k.gold)}
-          {weather && chip(`${Math.round(weather.temperature)}${weather.unit} · ${weather.condition}`, k.well, k.textMuted)}
+      <View style={s.top}>
+        <View style={{ flexShrink: 1 }}>
+          <Text style={[s.greet, { color: k.text }]} numberOfLines={1}>{greetingFor(now)}, {firstName(active)}</Text>
+          <View style={s.chips}>
+            {chip(needCount ? `${needCount} waiting on you` : 'Nothing waiting on you', k.purpleSoft, k.purple)}
+            {chip(`${dayEvents.length} plan${dayEvents.length === 1 ? '' : 's'} today`, k.goldSoft, k.gold)}
+            {weather && chip(`${Math.round(weather.temperature)}${weather.unit} · ${weather.condition}`, k.well, k.textMuted)}
+          </View>
+        </View>
+        <View style={s.qa}>
+          {qbtn('Task', '＋', k.primary, k.onPrimary, () => setShowTask(true))}
+          {qbtn('Event', '＋', k.sageSoft, k.sage, () => setShowEvent(true))}
+          {qbtn('Ask Fam', '✨', k.purpleSoft, k.purple, onAskFam ?? (() => {}))}
+          {qbtn('Ride', '🚗', k.primarySoft, k.primary, () => onNavigate('schedule'))}
         </View>
       </View>
 
-      <View style={s.cols}>
-        <View style={s.col}>
-          <Section label="FAMILY PULSE" accent={k.sage} k={k}>
-            <PulseCard k={k} isDark={isDark}>
-              <View style={s.pulseTop}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[s.pulseTitle, { color: k.text }]}>
-                    {needCount ? 'Everyone is accounted for.' : 'You’re on top of today.'}
-                  </Text>
-                  <Text style={[s.pulseSub, { color: k.textMuted }]}>
-                    {needCount ? 'One thing needs your decision.' : 'Nothing needs your decision right now.'}
-                  </Text>
-                </View>
-                <Dial
-                  pct={people.length ? sharingCount / people.length : 0}
-                  value={`${sharingCount}/${people.length}`} caption="sharing"
-                  color={k.sage} track={k.sageEdge} inner={k.sageSoft} k={k}
-                />
-              </View>
-              <View style={s.faceRow}>
-                <FacePile members={people} k={k} edge={k.card} />
-                <Text style={[s.pulseSub, { color: k.textMuted }]}>{clock}</Text>
-              </View>
-            </PulseCard>
-          </Section>
-
-          <Section label="NEEDS YOU" accent={k.primary} k={k} flex>
+      <View style={s.body}>
+        <KioskFamilyBoard people={people} events={dayEvents} chores={quests as any} onOpenEvent={() => onNavigate('schedule')} />
+        <ScrollView style={s.side} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
+          <Section label="NEEDS YOU" accent={k.primary} k={k}>
             {needCount === 0 ? (
-              <View style={[s.clear, { backgroundColor: k.sageSoft }]}>
-                <Text style={[s.clearTitle, { color: k.sage }]}>All caught up ✓</Text>
-                <Text style={[s.pulseSub, { color: k.textMuted }]}>New chores appear here the moment a kid taps done.</Text>
-              </View>
+              <View style={[s.clear, { backgroundColor: k.sageSoft }]}><Text style={[s.clearTitle, { color: k.sage }]}>All caught up ✓</Text></View>
             ) : (
               <View style={{ gap: KIOSK_SPACE.sm }}>
                 {pending.slice(0, 3).map((q: any) => (
                   <RaisedCard key={q.id} k={k} isDark={isDark} style={s.needRow}>
-                    <View style={[s.needIcon, { backgroundColor: k.primarySoft }]}><Text style={{ fontSize: 20 }}>✅</Text></View>
+                    <View style={[s.needIcon, { backgroundColor: k.primarySoft }]}><Text style={{ fontSize: 18 }}>✅</Text></View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[s.needTitle, { color: k.text }]} numberOfLines={1}>{nameOf(q.assignedToId)} · {q.title}</Text>
-                      <Text style={[s.pulseSub, { color: k.textMuted }]}>🪙 {q.coins} coins when approved</Text>
+                      <Text style={[s.needTitle, { color: k.text }]} numberOfLines={2}>{nameOf(q.assignedToId)} · {q.title}</Text>
+                      <Text style={[s.pulseSub, { color: k.textMuted }]}>🪙 {q.coins} coins</Text>
                     </View>
-                    <Pressable onPress={() => setRedoId(q.id)} accessibilityRole="button" accessibilityLabel={`Redo ${q.title}`}
-                      style={[s.btn, { backgroundColor: k.well }]}>
-                      <Text style={[s.btnText, { color: k.text }]}>Redo</Text>
-                    </Pressable>
-                    <Pressable onPress={() => { approveQuest(q.id, active.id); showToast('Approved ✓'); }}
-                      accessibilityRole="button" accessibilityLabel={`Approve ${q.title}`}
-                      style={[s.btn, { backgroundColor: k.primary }]}>
-                      <Text style={[s.btnText, { color: k.onPrimary }]}>Approve</Text>
-                    </Pressable>
+                    <Pressable onPress={() => setRedoId(q.id)} accessibilityRole="button" accessibilityLabel={`Redo ${q.title}`} style={[s.btn, { backgroundColor: k.well }]}><Text style={[s.btnText, { color: k.text }]}>Redo</Text></Pressable>
+                    <Pressable onPress={() => { approveQuest(q.id, active.id); showToast('Approved ✓'); }} accessibilityRole="button" accessibilityLabel={`Approve ${q.title}`} style={[s.btn, { backgroundColor: k.primary }]}><Text style={[s.btnText, { color: k.onPrimary }]}>Approve</Text></Pressable>
                   </RaisedCard>
                 ))}
-                {pending.length > 3 && (
-                  <Pressable onPress={() => onNavigate('tasks')} accessibilityRole="button">
-                    <Text style={[s.more, { color: k.primary }]}>+{pending.length - 3} more · Review all →</Text>
-                  </Pressable>
-                )}
+                {pending.length > 3 && <Pressable onPress={() => onNavigate('tasks')} accessibilityRole="button"><Text style={[s.more, { color: k.primary }]}>+{pending.length - 3} more · Review all →</Text></Pressable>}
                 {askCount > 0 && (
                   <RaisedCard k={k} isDark={isDark} style={s.needRow}>
-                    <View style={[s.needIcon, { backgroundColor: k.purpleSoft }]}><Text style={{ fontSize: 20 }}>🙋</Text></View>
+                    <View style={[s.needIcon, { backgroundColor: k.purpleSoft }]}><Text style={{ fontSize: 18 }}>🙋</Text></View>
                     <Text style={[s.needTitle, { color: k.text, flex: 1 }]}>{askCount} kid request{askCount === 1 ? '' : 's'}</Text>
-                    <Pressable onPress={() => onNavigate('tasks')} accessibilityRole="button"
-                      style={[s.btn, { backgroundColor: k.primary }]}>
-                      <Text style={[s.btnText, { color: k.onPrimary }]}>Review</Text>
-                    </Pressable>
+                    <Pressable onPress={() => onNavigate('tasks')} accessibilityRole="button" style={[s.btn, { backgroundColor: k.primary }]}><Text style={[s.btnText, { color: k.onPrimary }]}>Review</Text></Pressable>
                   </RaisedCard>
                 )}
                 {rewardReqs > 0 && (
                   <RaisedCard k={k} isDark={isDark} style={s.needRow}>
-                    <View style={[s.needIcon, { backgroundColor: k.goldSoft }]}><Text style={{ fontSize: 20 }}>🎁</Text></View>
+                    <View style={[s.needIcon, { backgroundColor: k.goldSoft }]}><Text style={{ fontSize: 18 }}>🎁</Text></View>
                     <Text style={[s.needTitle, { color: k.text, flex: 1 }]}>{rewardReqs} reward request{rewardReqs === 1 ? '' : 's'}</Text>
-                    <Pressable onPress={() => onNavigate('store')} accessibilityRole="button"
-                      style={[s.btn, { backgroundColor: k.primary }]}>
-                      <Text style={[s.btnText, { color: k.onPrimary }]}>Review</Text>
-                    </Pressable>
+                    <Pressable onPress={() => onNavigate('store')} accessibilityRole="button" style={[s.btn, { backgroundColor: k.primary }]}><Text style={[s.btnText, { color: k.onPrimary }]}>Review</Text></Pressable>
                   </RaisedCard>
                 )}
               </View>
             )}
           </Section>
-
-          <View style={s.tiles}>
-            <ActionTile emoji="＋" label="Task" bg={k.purpleSoft} fg={k.purple} onPress={() => onNavigate('tasks')} />
-            <ActionTile emoji="📅" label="Event" bg={k.sageSoft} fg={k.sage} onPress={() => onNavigate('schedule')} />
-            <ActionTile emoji="🛒" label="Groceries" bg={k.goldSoft} fg={k.gold} onPress={() => onNavigate('meals')} />
-            <ActionTile emoji="🚗" label="Ride" bg={k.primarySoft} fg={k.primary} onPress={() => onNavigate('schedule')} />
-          </View>
-        </View>
-
-        <View style={s.col}>
-          <Section label="NEXT UP" accent={k.primary} k={k} right={`${dayEvents.length} today`}>
-            <NextUpTimeline events={dayEvents} members={members} k={k} isDark={isDark} onOpen={() => onNavigate('schedule')} />
-          </Section>
           <Section label={`TONIGHT${tonight?.start_time ? ` · ${fmt12(tonight.start_time).toUpperCase()}` : ''}`} accent={k.sage} k={k}>
             <TonightCard meal={tonight} cook={cook} k={k} isDark={isDark} onOpen={() => onNavigate('meals')} />
           </Section>
-          <Pressable onPress={onIntercom} accessibilityRole="button" accessibilityLabel="Intercom"
-            style={[s.talk, { backgroundColor: k.purpleSoft }]}>
-            <Text style={{ fontSize: 26 }}>🎙️</Text>
+          <FamilyNowCard members={members} onOpenMap={goMap} />
+          <HomeChatsCard active={active} members={members} />
+          <HomeMedsCard active={active} members={members} ownOnly={false} />
+          <StickyNotesCard active={active} members={members} />
+          <HomeMemoriesCard onOpen={goMemories} />
+          <Pressable onPress={onIntercom} accessibilityRole="button" accessibilityLabel="Intercom" style={[s.talk, { backgroundColor: k.purpleSoft }]}>
+            <Text style={{ fontSize: 24 }}>🎙️</Text>
             <Text style={[s.talkTitle, { color: k.purple }]}>Intercom</Text>
             <View style={[s.talkBtn, { backgroundColor: k.purple }]}><Text style={[s.btnText, { color: k.onAccent }]}>Talk</Text></View>
           </Pressable>
-        </View>
+        </ScrollView>
       </View>
+
+      <KioskJustDescribeTaskDrawer visible={showTask} onClose={() => setShowTask(false)} active={active} members={members} />
+      <KioskJustDescribeEventDrawer visible={showEvent} onClose={() => setShowEvent(false)} active={active} members={members} />
 
       <KioskRedoReasonDialog
         visible={!!redoQuest}
@@ -210,6 +183,12 @@ const s = StyleSheet.create({
   chips: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
   chip: { borderRadius: 9, paddingHorizontal: 11, paddingVertical: 5 },
   chipText: { fontSize: KIOSK_TYPO.label, fontWeight: '700' },
+  top: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md },
+  qa: { marginLeft: 'auto', flexDirection: 'row', gap: 10 },
+  qb: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 52, borderRadius: 18, paddingHorizontal: 16 },
+  qbT: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  body: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.md, minHeight: 0 },
+  side: { width: 320 },
   cols: { flex: 1, flexDirection: 'row', gap: KIOSK_SPACE.lg, minHeight: 0 },
   col: { flex: 1, gap: KIOSK_SPACE.md, minHeight: 0 },
   pulseTop: { flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md },

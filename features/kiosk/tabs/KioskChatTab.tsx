@@ -68,7 +68,7 @@ import { checkProfanity } from '@/lib/contentModeration';
 import { showToast } from '@/components/AppToast';
 import { useChatStore, dmChannelId, type ChatMessage } from '@/store/chatStore';
 import { getActiveFamilyKey, setActiveFamilyKey } from '@/lib/chatCrypto';
-import { isFamilyKeyStale } from '@/lib/familyKeyRotation';
+import { isFamilyKeyStale, markFamilyKeyGenerationCurrent } from '@/lib/familyKeyRotation';
 import {
   buildGroupChannels, formatDay, QUICK_REACTIONS, REPLY_KIND_LABEL,
 } from '@/features/chat/components/constants';
@@ -296,6 +296,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     setCodeBusy(true); setCodeError('');
     try {
       await setActiveFamilyKey(familyId, codeDraft.trim());
+      await markFamilyKeyGenerationCurrent(familyId);
       setCodeDraft(''); setKeyLocked(false);
       await loadChannel(activeChannel);
     } catch (e: any) {

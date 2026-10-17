@@ -171,6 +171,8 @@ const FAMILY_KEY_CODE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 const LOCAL_FAMILY_KEY_PREFIX      = 'familycube_shared_key_v1_';
 const LOCAL_FAMILY_KEY_PREV_PREFIX = 'familycube_shared_key_prev_v1_';
+// The readable code itself, kept in the device's secure storage so an admin can look at it again later.
+const LOCAL_FAMILY_CODE_PREFIX     = 'familycube_family_code_v1_';
 
 const _familyKeyCache: Map<string, CryptoKey> = new Map();
 const _familyPrevKeysCache: Map<string, CryptoKey[]> = new Map();
@@ -251,7 +253,13 @@ export async function setActiveFamilyKey(familyId: string, code: string): Promis
   const key = await deriveFamilyKeyFromCode(code);
   const raw = await crypto.subtle.exportKey('raw', key);
   await SecureStore.setItemAsync(LOCAL_FAMILY_KEY_PREFIX + familyId, buf2b64(raw));
+  try { await SecureStore.setItemAsync(LOCAL_FAMILY_CODE_PREFIX + familyId, normalizeFamilyKeyCode(code)); } catch { /* the key itself is saved; only the viewable copy is skipped */ }
   _familyKeyCache.set(familyId, key);
+}
+
+/** The code this device was last given for `familyId`, if it was saved (codes set before this was added are not). */
+export async function getStoredFamilyCode(familyId: string): Promise<string | null> {
+  try { return await SecureStore.getItemAsync(LOCAL_FAMILY_CODE_PREFIX + familyId); } catch { return null; }
 }
 
 /**

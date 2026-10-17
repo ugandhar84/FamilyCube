@@ -28,11 +28,13 @@ import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
 import { fmtDateTime } from '@/lib/dates';
 import { showAlert } from '@/components/AppAlert';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as Clipboard from 'expo-clipboard';
 import {
   generateFamilyKeyCode, normalizeFamilyKeyCode,
-  getActiveFamilyKey, setActiveFamilyKey, addPreviousFamilyKeyFromCode,
+  getActiveFamilyKey, setActiveFamilyKey, addPreviousFamilyKeyFromCode, getStoredFamilyCode,
 } from '@/lib/chatCrypto';
-import { rotateFamilyKey, RotationTooSoonError, isFamilyKeyStale, ROTATION_COOLDOWN_DAYS } from '@/lib/familyKeyRotation';
+import { rotateFamilyKey, RotationTooSoonError, isFamilyKeyStale, markFamilyKeyGenerationCurrent, ROTATION_COOLDOWN_DAYS } from '@/lib/familyKeyRotation';
 
 type Mode = 'loading' | 'setup' | 'manage';
 
@@ -134,6 +136,7 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
       await supabase.from('families').update({
         key_generation: 1, key_rotated_at: new Date().toISOString(), key_rotated_by: activeMemberId,
       }).eq('id', familyId);
+      await markFamilyKeyGenerationCurrent(familyId).catch(() => {});
       const justSet = normalized;
       setHasKey(true);
       setStale(false);
@@ -159,6 +162,8 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
     await yieldToUI();
     try {
       await setActiveFamilyKey(familyId, normalized);
+      // Record that this device now holds the family's current code, or it keeps reporting "out of date".
+      await markFamilyKeyGenerationCurrent(familyId).catch(() => {});
       setEntryCode('');
       setHasKey(true);
       setStale(false);
@@ -206,6 +211,23 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
       showAlert("Couldn't save this code", e?.message ?? 'Something went wrong. Try again.');
     }
     setSavingOlder(false);
+  };
+
+  // View the code again later (admin only). It is kept in this device's secure storage; showing it asks for
+  // Face ID / Touch ID / the device passcode first.
+  const [shownCode, setShownCode] = useState<string | null>(null);
+  const [codeSaved, setCodeSaved] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!familyId || !hasKey) return;
+    getStoredFamilyCode(familyId).then(c => setCodeSaved(!!c));
+  }, [familyId, hasKey, stale]);
+  const revealCode = async () => {
+    if (!familyId) return;
+    try {
+      const auth = await LocalAuthentication.authenticateAsync({ promptMessage: 'Show the family security code', fallbackLabel: 'Use passcode' });
+      if (!auth.success) return;
+    } catch { /* no biometrics available: fall through to showing it */ }
+    setShownCode(await getStoredFamilyCode(familyId));
   };
 
   const handleRotate = async () => {
@@ -419,6 +441,37 @@ export default function DataRecoveryScreen({ hideChrome = false }: {
               <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => setShowOlderField(true)}>
                 <Text style={[s.btnText, { color: colors.primary }]}>I Also Have an Older Code</Text>
               </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {hasKey && isParent && !rotateMode && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Your security code</Text>
+            {codeSaved === false ? (
+              <Text style={s.cardSub}>
+                This device doesn’t have the code saved to show (it was set before saving was added). Rotate the code below to set a
+                new one that you can view here later, or ask the family admin who set it.
+              </Text>
+            ) : shownCode ? (
+              <>
+                <Text selectable style={[s.cardTitle, { letterSpacing: 2, textAlign: 'center', fontSize: 20 }]}>{shownCode}</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => { Clipboard.setStringAsync(shownCode); showAlert('Copied', 'The code is on your clipboard.'); }}>
+                    <Text style={[s.btnText, { color: colors.primary }]}>Copy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={() => setShownCode(null)}>
+                    <Text style={[s.btnText, { color: colors.primary }]}>Hide</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={s.cardSub}>Look at the code again whenever a family member or a new device needs it. You’ll be asked to confirm it’s you first.</Text>
+                <TouchableOpacity style={[s.btn, { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary }]} onPress={revealCode}>
+                  <Text style={[s.btnText, { color: colors.primary }]}>Show my code</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         )}

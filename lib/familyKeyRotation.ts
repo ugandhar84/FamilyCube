@@ -134,6 +134,8 @@ export async function runRotationJob(): Promise<void> {
   }
 
   await rotateActiveFamilyKey(job.familyId, job.newCode);
+  // The device that ran the rotation now holds the new key, so it is current with the family's new generation.
+  await markFamilyKeyGenerationCurrent(job.familyId).catch(() => {});
   await clearJob();
 }
 
@@ -294,7 +296,10 @@ export async function isFamilyKeyStale(familyId: string): Promise<boolean> {
   if (error || family == null) return false; // can't tell — fail open rather than lock everyone out on a network blip
 
   const localGenRaw = await AsyncStorage.getItem(`familycube_key_generation_${familyId}`);
-  const localGen = localGenRaw ? parseInt(localGenRaw, 10) : 0;
+  // Nothing was ever recorded on this device (older builds never wrote it, so every existing device is here).
+  // Generation 1 is the original setup, so a device holding a key is current; anything later means the family
+  // rotated at least once, and this device has to be given the new code (which then records the generation).
+  const localGen = localGenRaw ? parseInt(localGenRaw, 10) : 1;
   return (family.key_generation ?? 0) > localGen;
 }
 

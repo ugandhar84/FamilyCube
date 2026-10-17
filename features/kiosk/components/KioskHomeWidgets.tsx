@@ -26,6 +26,7 @@ import { KioskAvatar } from './KioskAvatar';
 import { KioskFormDrawer } from './KioskFormDrawer';
 import { Eyebrow, firstName } from './KioskHomeParts';
 import { useKioskPhotos } from '../useKioskPhotos';
+import { KIOSK_FONT } from '../kioskFonts';
 
 const STATUS: Record<string, string> = { at_home: 'Home', at_school: 'School', at_work: 'Work', in_transit: 'On the move', at_activity: 'Activity' };
 
@@ -210,19 +211,19 @@ export function StickyNotesCard({ active, members }: { active: FamilyMember; mem
           return (
             <View key={n.id} style={[s.sticky, { backgroundColor: t.bg, transform: [{ rotate: i % 2 ? '1deg' : '-1deg' }] }]}>
               <Text style={[s.stickyT, { color: k.text }]}>{n.body}</Text>
-              <Text style={[s.sub, { color: t.fg }]}>— {firstName(members.find(m => m.id === n.author_id))}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(id => firstName(members.find(m => m.id === id))).join(', ')}` : ''}</Text>
+              <Text style={[s.stickyBy, { color: t.fg }]}>— {firstName(members.find(m => m.id === n.author_id))}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(id => firstName(members.find(m => m.id === id))).join(', ')}` : ''}</Text>
               {(isParent || n.author_id === active.id) && <Pressable onPress={() => remove(n)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove note" style={s.stickyX}><X size={14} color={k.textMuted} /></Pressable>}
             </View>
           );
         })}
-        {<Pressable onPress={() => setAdding(true)} accessibilityRole="button" style={[s.sticky, s.stickyAdd, { backgroundColor: k.well }]}><Plus size={18} color={k.textMuted} /><Text style={[s.btnT, { color: k.textMuted }]}>Add a note</Text></Pressable>}
+        {<Pressable onPress={() => setAdding(true)} accessibilityRole="button" style={[s.sticky, s.stickyAdd, { backgroundColor: k.well }]}><Plus size={18} color={k.textMuted} /><Text style={[s.stickyBy, { color: k.textMuted }]}>Add a note</Text></Pressable>}
         
       </View>
       <KioskFormDrawer visible={adding} variant="drawer" title="New sticky note" subtitle="It appears on Home for the people you choose" accent={k.gold} Icon={StickyNote} k={k}
         onClose={() => setAdding(false)} submitLabel="Post note" onSubmit={save} canSubmit={!!text.trim()}>
         <View style={{ gap: KIOSK_SPACE.md }}>
           <TextInput value={text} onChangeText={setText} placeholder="e.g. Soccer cleats are in the garage" placeholderTextColor={k.textFaint} multiline maxLength={100}
-            style={[s.input, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }]} accessibilityLabel="Note" />
+            style={[s.input, { color: k.text, backgroundColor: k.pastelAmber, borderColor: k.pastelAmberCard, fontFamily: KIOSK_FONT.hand.bold, fontSize: 24 }]} accessibilityLabel="Note" />
           <Text style={[s.sub, { color: k.textFaint, textAlign: 'right' }]}>{text.length}/100</Text>
           <Text style={[s.sub, { color: k.textFaint }]}>SHARE WITH</Text>
           <View style={s.wrap}>
@@ -290,7 +291,8 @@ const s = StyleSheet.create({
   badgeT: { fontSize: 12, fontWeight: '800' },
   notes: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   sticky: { width: '47.5%', minHeight: 88, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomRightRadius: 18, borderBottomLeftRadius: 6, padding: 12, gap: 6, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
-  stickyT: { fontSize: KIOSK_TYPO.caption, fontWeight: '700', lineHeight: 19 },
+  stickyT: { fontSize: 22, lineHeight: 26, fontFamily: KIOSK_FONT.hand.bold },
+  stickyBy: { fontSize: 18, fontFamily: KIOSK_FONT.hand.semibold },
   stickyAdd: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0, transform: [] },
   stickyX: { position: 'absolute', top: 6, right: 6 },
   input: { minHeight: 96, borderRadius: 16, borderWidth: 1, padding: 14, fontSize: KIOSK_TYPO.body, fontWeight: '600', textAlignVertical: 'top' },

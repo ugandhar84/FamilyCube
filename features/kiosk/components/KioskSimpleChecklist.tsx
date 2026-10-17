@@ -17,7 +17,8 @@ import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { showToast } from '@/components/AppToast';
 import { localDateStr } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
-import type { KioskColors } from '../kioskPalette';
+import { kioskPastels, type KioskColors } from '../kioskPalette';
+import { fmt12 } from './KioskHomeParts';
 import { visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader } from './KioskOS';
 import { ListChecks } from 'lucide-react-native';
@@ -83,6 +84,7 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
     } else onOpenTasks();
   };
 
+  const pastels = kioskPastels(k);
   const Frame = bare ? BareFrame : WidgetCard;
   return (
     <Frame k={k} isDark={isDark}>
@@ -103,20 +105,27 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
         </View>
       )}
       <View style={{ gap: KIOSK_SPACE.sm }}>
-        {todo.map((q, i) => (
-          <Pressable
-            key={q.id}
-            onPress={() => tap(q)}
-            style={({ pressed }) => [s.row, i === 0 && s.rowNext, { backgroundColor: pressed ? k.cardHover : k.well, borderColor: i === 0 ? k.sage : k.cardBorder }]}
-            accessibilityRole="button"
-            accessibilityLabel={`${q.title}. Tap when finished`}
-          >
-            <View style={[s.circle, { borderColor: k.sage }]}>
-              {q.photoRequired && <Camera size={22} color={k.sage} />}
-            </View>
-            <Text style={[s.title, { color: k.text }]} numberOfLines={2}>{q.title}</Text>
-          </Pressable>
-        ))}
+        {todo.map((q, i) => {
+          const tone = pastels[i % 4];
+          return (
+            <Pressable
+              key={q.id}
+              onPress={() => tap(q)}
+              style={({ pressed }) => [s.row, { backgroundColor: tone.col, borderColor: i === 0 ? k.primary : tone.card, borderWidth: i === 0 ? 3 : 1.5 }, pressed && { opacity: 0.8 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`${q.title}. Tap when finished`}
+            >
+              <View style={[s.circle, { borderColor: tone.fg, backgroundColor: k.card }]}>
+                {q.photoRequired && <Camera size={20} color={tone.fg} />}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.title, { color: k.text, flex: 0 }]} numberOfLines={2}>{q.title}</Text>
+                <Text style={[s.subT, { color: k.textMuted }]} numberOfLines={1}>{q.dueTime ? `Due ${fmt12(q.dueTime)} · ` : ''}tap when finished</Text>
+              </View>
+              {!!q.coins && <View style={[s.coinPill, { backgroundColor: k.pastelAmberCard }]}><Text style={[s.coinT, { color: k.gold }]}>🪙 {q.coins}</Text></View>}
+            </Pressable>
+          );
+        })}
         {adding ? (
           <View style={[s.row, { backgroundColor: k.well, borderColor: k.cardBorder }]}>
             <TextInput
@@ -139,16 +148,21 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
             <Text style={[s.title, { color: k.textMuted }]}>Add my own task</Text>
           </Pressable>
         )}
-        {done.map(q => (
-          <View key={q.id} style={[s.row, { backgroundColor: k.sageSoft, borderColor: k.sageEdge, opacity: 0.85 }]}>
-            <View style={[s.circle, { backgroundColor: k.sage, borderColor: k.sage }]}>
-              <Check size={26} color={k.onPrimary} strokeWidth={3} />
+        {done.map((q, i) => {
+          const tone = pastels[(todo.length + i) % 4];
+          return (
+            <View key={q.id} style={[s.row, { backgroundColor: tone.col, borderColor: tone.card, borderWidth: 1.5 }]}>
+              <View style={[s.circle, { backgroundColor: k.sage, borderColor: k.sage }]}>
+                <Check size={22} color={k.onPrimary} strokeWidth={3} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.title, { color: k.textMuted, flex: 0, textDecorationLine: 'line-through' }]} numberOfLines={2}>{q.title}</Text>
+                <Text style={[s.subT, { color: k.textMuted }]}>{q.status === 'approved' ? 'Approved' : 'Sent to a parent to approve'}</Text>
+              </View>
+              {!!q.coins && <View style={[s.coinPill, { backgroundColor: k.pastelAmberCard }]}><Text style={[s.coinT, { color: k.gold }]}>🪙 {q.coins}</Text></View>}
             </View>
-            <Text style={[s.title, { color: k.textMuted, textDecorationLine: 'line-through' }]} numberOfLines={2}>
-              {q.title}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </Frame>
   );
@@ -165,7 +179,10 @@ const s = StyleSheet.create({
   },
   rowNext: { borderWidth: 3 },
   addBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '700' },
+  title: { flex: 1, fontSize: KIOSK_TYPO.body, fontWeight: '800' },
+  subT: { fontSize: KIOSK_TYPO.label, fontWeight: '700', marginTop: 1 },
+  coinPill: { borderRadius: 100, paddingHorizontal: 11, paddingVertical: 4 },
+  coinT: { fontSize: 13, fontWeight: '800' },
   empty: { fontSize: KIOSK_TYPO.body, fontWeight: '600', paddingVertical: KIOSK_SPACE.md },
   allDone: {
     flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.md,

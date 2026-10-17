@@ -13,10 +13,11 @@ import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { useKioskColors, kioskPastels } from '../kioskPalette';
 import { KioskAvatar } from './KioskAvatar';
 import { fmt12, toMin, firstName } from './KioskHomeParts';
+import { KIOSK_FONT } from '../kioskFonts';
 
 const H0 = 7;      // first hour shown
 const HOURS = 15;  // 7 AM .. 10 PM
-const HH = 46;     // px per hour
+const HH = 56;     // px per hour (roomy enough to read at a glance)
 const hourLabel = (h: number) => `${h % 12 || 12} ${h >= 12 ? 'PM' : 'AM'}`;
 
 export function KioskFamilyBoard({ people, events, chores, onOpenEvent }: {
@@ -92,19 +93,19 @@ export function KioskFamilyBoard({ people, events, chores, onOpenEvent }: {
 }
 
 const s = StyleSheet.create({
-  board: { flex: 1, borderRadius: 26, minHeight: 0, overflow: 'hidden' },
+  board: { flex: 1, flexBasis: 0, minWidth: 0, borderRadius: 26, minHeight: 0, overflow: 'hidden' },
   head: { flexDirection: 'row', gap: 6, paddingHorizontal: 8, paddingTop: 8, paddingBottom: 6 },
-  gutter: { width: 48 },
+  gutter: { width: 52 },
   pHead: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 100, paddingVertical: 4, paddingHorizontal: 6 },
-  pName: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', flexShrink: 1 },
-  allDay: { marginHorizontal: 8, marginBottom: 6, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5, fontSize: KIOSK_TYPO.label, fontWeight: '800' },
-  hr: { position: 'absolute', left: 0, fontSize: 11, fontWeight: '800' },
+  pName: { fontSize: 20, fontFamily: KIOSK_FONT.hand.bold, flexShrink: 1 },
+  allDay: { marginHorizontal: 8, marginBottom: 6, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5, fontSize: 17, fontFamily: KIOSK_FONT.hand.bold },
+  hr: { position: 'absolute', left: 0, fontSize: 16, fontFamily: KIOSK_FONT.hand.semibold },
   col: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth, marginLeft: 6, position: 'relative' },
   line: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth },
   blk: { position: 'absolute', left: 3, right: 3, borderRadius: 14, paddingHorizontal: 8, paddingVertical: 4, overflow: 'hidden' },
-  bT: { fontSize: KIOSK_TYPO.label, fontWeight: '800', lineHeight: 16 },
-  bS: { fontSize: 11, fontWeight: '700' },
+  bT: { fontSize: 19, lineHeight: 20, fontFamily: KIOSK_FONT.hand.bold },
+  bS: { fontSize: 15, fontFamily: KIOSK_FONT.hand.semibold },
   chip: { position: 'absolute', left: 3, right: 3, height: 30, borderRadius: 12, borderWidth: 2, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7 },
-  cT: { flex: 1, fontSize: 12, fontWeight: '800' },
-  now: { position: 'absolute', left: 48, right: 0, height: 3, borderRadius: 2, zIndex: 5 },
+  cT: { flex: 1, fontSize: 17, fontFamily: KIOSK_FONT.hand.bold },
+  now: { position: 'absolute', left: 52, right: 0, height: 3, borderRadius: 2, zIndex: 5 },
 });

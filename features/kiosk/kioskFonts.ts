@@ -28,6 +28,7 @@ import {
   Fraunces_600SemiBold,
   Fraunces_700Bold,
 } from '@expo-google-fonts/fraunces';
+import { Caveat_600SemiBold, Caveat_700Bold } from '@expo-google-fonts/caveat';
 
 /**
  * Family name strings for use in `fontFamily` style props. Every consumer
@@ -51,6 +52,8 @@ export const KIOSK_FONT = {
     semibold: 'Fraunces_600SemiBold',
     bold: 'Fraunces_700Bold',
   },
+  // Handwriting for sticky notes and the family board, like a note on the fridge.
+  hand: { semibold: 'Caveat_600SemiBold', bold: 'Caveat_700Bold' },
 } as const;
 
 /** Call once, high in the kiosk tree (KioskScreen) — see that file's usage. */
@@ -66,6 +69,8 @@ export function useKioskFonts(): boolean {
     Fraunces_500Medium,
     Fraunces_600SemiBold,
     Fraunces_700Bold,
+    Caveat_600SemiBold,
+    Caveat_700Bold,
   });
   return loaded;
 }

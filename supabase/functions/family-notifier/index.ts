@@ -300,6 +300,8 @@ type NotifType =
   // to know a new medication was added to their own record. Also
   // med-reminders' missed-dose escalation to parents.
   | 'medication_added'
+  // A sticky note someone wrote for specific family members (or everyone) — see useStickyNotes.ts.
+  | 'sticky_note'
   | 'medication_missed'
   // med-dose-reminders' own cron — a dose-time nudge sent to the medication's
   // own subject (not parents — see medication_missed above, which
@@ -383,7 +385,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   grocery_daily_digest: 'grocery', grocery_run_reminder: 'grocery',
   member_joined: 'family',
   perk_updated: 'rewards',
-  medication_added: 'family', medication_missed: 'family',
+  medication_added: 'family', medication_missed: 'family', sticky_note: 'family',
   store_proximity_arrived: 'grocery',
   // 'custom' has no fixed category — only two callers exist today
   // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
@@ -1323,6 +1325,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Store', rewardId: p.rewardId },
       };
     }
+    case 'sticky_note':
+      return {
+        title: `📝 Sticky note from ${p.authorName ?? 'someone'}`,
+        body: String(p.body ?? '').slice(0, 100),
+        sound: 'default',
+        data: { screen: 'Hub' },
+      };
     case 'medication_added':
       return {
         title: `💊 New medication added`,

@@ -34,7 +34,17 @@ export function useStickyNotes(active: FamilyMember, members: FamilyMember[]) {
     const text = body.trim().slice(0, NOTE_MAX);
     if (!text || !familyId) return false;
     const { error } = await supabase.from('family_sticky_notes').insert({ family_id: familyId, author_id: active.id, body: text, color, recipient_ids: to });
-    if (!error) load();
+    if (!error) {
+      load();
+      // Push to the people it is shared with (everyone else when no one is chosen). The notifier also
+      // records it in the notifications table, so a failed delivery is still visible afterwards.
+      const targets = to.length ? to : members.filter(m => m.id !== active.id && !(m as any).deletedAt && (m as any).inviteStatus !== 'pending').map(m => m.id);
+      if (targets.length) {
+        supabase.functions.invoke('family-notifier', {
+          body: { type: 'sticky_note', familyId, memberIds: targets, persist: true, excludeMemberId: active.id, payload: { authorName: active.name?.trim().split(' ')[0], body: text } },
+        }).catch(e => console.warn('[useStickyNotes] notify failed:', e?.message));
+      }
+    }
     return !error;
   };
   const remove = async (n: StickyNote) => { await supabase.from('family_sticky_notes').delete().eq('id', n.id); setNotes(p => p.filter(x => x.id !== n.id)); };

@@ -359,6 +359,16 @@ export default function JustDescribeItEventScreen({
     }
   }, [members]);
 
+  // The end must never be before the start (the database rejects it): when the start moves past the end, push the end to an
+  // hour later, capped at 23:59 so a late start cannot wrap around midnight.
+  useEffect(() => {
+    if (evAllDay || !evTime) return;
+    if (!evEndTime || evEndTime <= evTime) {
+      const next = addMinutesToHHMM(evTime, 60);
+      setEvEndTime(next > evTime ? next : '23:59');
+    }
+  }, [evTime, evEndTime, evAllDay]);
+
   // Re-check all selected members when date or time changes
   useEffect(() => {
     if (!formOpen || evAllDay || evMemberIds.length === 0) return;

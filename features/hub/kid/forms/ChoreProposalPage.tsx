@@ -35,6 +35,7 @@ export function ChoreProposalPage({ active, members, familyId, onClose }: {
   const [revealed, setRevealed] = useState(false);
   const [title, setTitle] = useState('');
   const [forId, setForId] = useState(active.id);
+  const [coins, setCoins] = useState('');
   const { submitting, guard } = useSubmitGuard();
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
@@ -60,7 +61,8 @@ export function ChoreProposalPage({ active, members, familyId, onClose }: {
         p_proposer_id: active.id,
         p_for_member_id: forId,
         p_title: trimmed,
-        p_description: null,
+        // The RPC has no reward field (a parent sets the reward when approving), so the kid's ask travels in the note.
+        p_description: coins.trim() ? `Suggested reward: ${coins.trim()} coins` : null,
         p_category: 'other',
       });
       if (rpcError) throw rpcError;
@@ -71,8 +73,13 @@ export function ChoreProposalPage({ active, members, familyId, onClose }: {
     }
   });
 
-  const close = () => { setRevealed(false); setTitle(''); setForId(active.id); setSent(false); onClose(); };
-  const handleReveal = (typed: string) => { setTitle(typed); setRevealed(true); };
+  const close = () => { setRevealed(false); setTitle(''); setCoins(''); setForId(active.id); setSent(false); onClose(); };
+  const handleReveal = (typed: string) => {
+    // "Wash the car for 20 coins" -> chore "Wash the car" and a suggested reward of 20.
+    const m = typed.match(/\s*(?:for|=|-|\u2013)?\s*(\d{1,4})\s*(?:coins?|points?|pts)\b\.?\s*$/i);
+    if (m) { setCoins(m[1]); setTitle(typed.slice(0, m.index).trim() || typed); } else setTitle(typed);
+    setRevealed(true);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
@@ -121,6 +128,14 @@ export function ChoreProposalPage({ active, members, familyId, onClose }: {
                 />
               </FieldCard>
 
+              <FieldCard label="Suggested reward · optional" focused={coins.length > 0} colors={colors} isDark={isDark}>
+                <TextInput
+                  style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary, padding: 0 }}
+                  value={coins} onChangeText={t => setCoins(t.replace(/[^0-9]/g, '').slice(0, 4))} placeholder="e.g. 20 coins"
+                  placeholderTextColor={colors.textTertiary} keyboardType="number-pad"
+                />
+              </FieldCard>
+
               <DropRow
                 label="Who's this for?"
                 value={forId}
@@ -136,7 +151,7 @@ export function ChoreProposalPage({ active, members, familyId, onClose }: {
 
             <BeforeYouSendBox
               recipientLabel={`To ${parentNames.length > 0 ? parentNames.join(' and ') : 'your parents'}`}
-              note="A parent will set the coin reward when they approve it."
+              note="A parent decides the final coin reward when they approve it."
               colors={colors}
             />
 

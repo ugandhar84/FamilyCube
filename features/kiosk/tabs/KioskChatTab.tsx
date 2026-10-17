@@ -51,7 +51,7 @@ import {
   findNodeHandle, UIManager,
 } from 'react-native';
 import {
-  Send, Lock, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
+  Send, Lock, ShieldCheck, Paperclip, Mic, Camera, Image as ImageIcon, Video, FileText,
   MapPin, X, XCircle, CornerUpLeft, Pencil, Search, ChevronLeft, ChevronRight, type LucideIcon,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -79,7 +79,8 @@ import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import { useGroceryStore } from '@/store/groceryStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKioskActivity, useKioskLockSuspended, KioskModalHost } from '../KioskActivityContext';
-import { useKioskColors } from '../kioskPalette';
+import { useKioskColors, kioskPastels } from '../kioskPalette';
+import { useKioskNavStore } from '@/store/kioskNavStore';
 import { Chip } from '../components/KioskOS';
 import { KioskAvatar } from '../components/KioskAvatar';
 import { KIOSK_TYPO, KIOSK_HIT, KIOSK_SPACE, KIOSK_RADIUS, kioskElevation } from '../kioskTheme';
@@ -370,7 +371,6 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // never leak into whichever channel is opened next.
   const switchChannel = (id: string) => {
     setActiveChannel(id);
-    setThreadOpen(true);
     setReplyingTo(null);
     setAttachUri(null);
     setModerationWarning(false);
@@ -378,6 +378,17 @@ export function KioskChatTab({ active, members, colors, isDark }: {
     setShowAttachMenu(false);
     setSearchOpen(false);
   };
+
+  // "Message" from the Find page opens that person's direct chat once.
+  const pendingDm = useKioskNavStore(st => st.pendingDmMemberId);
+  const setPendingDm = useKioskNavStore(st => st.setPendingDm);
+  useEffect(() => {
+    if (!pendingDm) return;
+    const id = dmChannelId(active.id, pendingDm);
+    if (entries.some(e => e.id === id)) switchChannel(id);
+    setPendingDm(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingDm, entries]);
 
   const rawMsgs = channels[activeChannel]?.messages ?? [];
   const currentEntry = entries.find(e => e.id === activeChannel);
@@ -620,111 +631,75 @@ export function KioskChatTab({ active, members, colors, isDark }: {
   // Modal too — reading a longer thread with few taps must not silently
   // count as inactivity and lock the kiosk mid-read.
   useKioskLockSuspended(
-    threadOpen || !!quickEmojiFor || !!actionMsg || !!lightboxUri || !!videoLightboxUri ||
+    !!quickEmojiFor || !!actionMsg || !!lightboxUri || !!videoLightboxUri ||
     !!groceryMsg || !!sharedCardPayload || recording || reviewing,
   );
 
   return (
     <View style={s.root}>
-      {/* ── Channel/DM grid — replaces the old sidebar list. Each card is a
-          preview: name, lock/unread badges, and up to 5 most recent
-          messages (sender + truncated text), so a glance at the grid tells
-          you what's being discussed without opening anything. Tapping a
-          card opens the full conversation as an overlay sheet, same
-          pattern as Ask Fam/Ask Cube. */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
-      >
-        <ScrollView
-          ref={gridScrollRef}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.grid}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* One flowing grid, 2 cards per row throughout — reverted from
-              a Channels/DM two-column split [live-requested: "dont
-              separate anything just try to adjust grids with available
-              previews"]. Radius/sizing still match Overview's own card
-              convention (KIOSK_RADIUS.sm, 2-per-row). */}
-          <Text style={[s.gridSectionLabel, { color: k.textFaint }]}>CHANNELS</Text>
-          <View style={s.gridRow}>
-            {entries.filter(e => !e.isDM).map(e => (
-              <ChatPreviewCard
-                key={e.id}
-                entry={e}
-                unread={unreadCounts[e.id] ?? 0}
-                messages={channels[e.id]?.messages ?? []}
-                memberMap={memberMap}
-                selfId={active.id}
-                k={k}
-                onPress={() => switchChannel(e.id)}
-                onQuickSend={(text) => sendMessage(e.id, active.id, text)}
-                scrollRef={gridScrollRef}
-              />
-            ))}
-          </View>
-
-          {entries.some(e => e.isDM) && (
-            <Text style={[s.gridSectionLabel, { color: k.textFaint, marginTop: KIOSK_SPACE.lg }]}>DIRECT MESSAGES</Text>
-          )}
-          <View style={s.gridRow}>
-            {entries.filter(e => e.isDM).map(e => (
-              <ChatPreviewCard
-                key={e.id}
-                entry={e}
-                unread={unreadCounts[e.id] ?? 0}
-                messages={channels[e.id]?.messages ?? []}
-                memberMap={memberMap}
-                selfId={active.id}
-                k={k}
-                onPress={() => switchChannel(e.id)}
-                onQuickSend={(text) => sendMessage(e.id, active.id, text)}
-                scrollRef={gridScrollRef}
-              />
-            ))}
-          </View>
+      {/* ── Left pane: conversations as pastel cards with the last message,
+          time and unread count. Tapping one opens its thread on the right. */}
+      <View style={[s.listPane, { borderRightColor: k.cardBorder }]}>
+        <View style={s.listHead}>
+          <Text style={[s.listTitle, { color: k.text }]}>Chat</Text>
+        </View>
+        <View style={[s.encBanner, { backgroundColor: k.pastelSage }]}>
+          <ShieldCheck size={15} color={k.sage} />
+          <Text style={[s.encText, { color: k.sage }]} numberOfLines={1}>End-to-end encrypted with your family key</Text>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.convs} keyboardShouldPersistTaps="handled">
+          {entries.map((e, i) => {
+            const tone = kioskPastels(k)[i % 4];
+            const list = channels[e.id]?.messages ?? [];
+            const last = list[list.length - 1];
+            const unread = unreadCounts[e.id] ?? 0;
+            const on = e.id === activeChannel;
+            const faces = e.isDM && e.otherMember ? [e.otherMember] : members.filter(m => !(m as any).deletedAt && m.role !== 'senior').slice(0, 3);
+            return (
+              <Pressable key={e.id} onPress={() => switchChannel(e.id)} accessibilityRole="button" accessibilityState={{ selected: on }}
+                accessibilityLabel={`${e.label}${unread ? `, ${unread} unread` : ''}`}
+                style={({ pressed }) => [s.conv, { backgroundColor: on ? tone.card : tone.col, borderColor: on ? tone.fg : 'transparent' }, pressed && { opacity: 0.8 }]}>
+                <View style={{ flexDirection: 'row' }}>
+                  {faces.map((m, fi) => (
+                    <View key={m.id} style={{ marginLeft: fi === 0 ? 0 : -10, borderRadius: 24, borderWidth: 2, borderColor: on ? tone.card : tone.col }}>
+                      <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} siblings={members.filter(x => x.id !== m.id).map(x => x.name)}
+                        size={faces.length > 1 ? 38 : 46} bgColor={k.card} k={k} />
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={s.convName}>
+                    <Text style={[s.convLabel, { color: k.text }]} numberOfLines={1}>{e.label}</Text>
+                    {e.lock && <Lock size={13} color={k.textMuted} />}
+                  </View>
+                  <Text style={[s.convPreview, { color: k.textMuted }]} numberOfLines={1}>
+                    {last ? `${last.senderId === active.id ? 'You: ' : ''}${messagePreviewText(last)}` : 'No messages yet'}
+                  </Text>
+                </View>
+                <View style={s.convMeta}>
+                  {!!last && <Text style={[s.convTime, { color: k.textFaint }]}>{shortTime(last.timestamp)}</Text>}
+                  {unread > 0 && <View style={[s.unread, { backgroundColor: k.primary }]}><Text style={[s.unreadText, { color: k.onPrimary }]}>{unread > 9 ? '9+' : unread}</Text></View>}
+                </View>
+              </Pressable>
+            );
+          })}
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
 
-      {/* ── Message thread — opens as a narrow right-anchored Modal drawer,
-          the exact same shell KioskAskFamDrawer already uses successfully:
-          a dimming scrim over the grid, a fixed-width panel pinned to the
-          right edge, full height. Tap a card in the grid, its conversation
-          slides in from the right, same as tapping the header's Ask Fam
-          button. This also carries over that drawer's Android keyboard fix
-          for free — KeyboardAvoidingView's 'height' behavior can shrink the
-          panel because it's height:'100% of the KeyboardAvoidingView', not
-          a fixed pixel box computed from a pre-keyboard measurement (an
-          earlier version tried sizing this drawer to the grid's own
-          measured rect, which left no room for the panel to shrink into
-          and broke the keyboard fix again). */}
-      <KioskSlideModal visible={threadOpen} onRequestClose={() => setThreadOpen(false)}>
-        <KioskModalHost style={s.threadHost}>
-          <Pressable
-            style={[StyleSheet.absoluteFill, { backgroundColor: k.scrim }]}
-            onPress={() => setThreadOpen(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Close chat"
-          />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={s.threadRight}
-            pointerEvents="box-none"
-          >
-            <View style={withAndroidShadowFix(s.threadShadowWrap)}>
-            <View style={[s.threadPanel, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
+      {/* ── Right pane: the open conversation, inline (a tablet has the room). */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={s.threadPane}
+      >
+            <View style={[s.threadPanel, { backgroundColor: k.card }]}>
               <View style={s.threadHead}>
-                <Pressable
-                  onPress={() => setThreadOpen(false)}
-                  hitSlop={12}
-                  style={[s.threadCloseBtn, { backgroundColor: k.well }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close chat"
-                >
-                  <X size={20} color={k.textMuted} />
-                </Pressable>
+                <View style={{ flexDirection: 'row' }}>
+                  {(currentEntry?.isDM && currentEntry.otherMember ? [currentEntry.otherMember] : members.filter(m => !(m as any).deletedAt && m.role !== 'senior').slice(0, 3)).map((m, fi) => (
+                    <View key={m.id} style={{ marginLeft: fi === 0 ? 0 : -10, borderRadius: 24, borderWidth: 2, borderColor: k.card }}>
+                      <KioskAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl} size={42} bgColor={k.well} k={k} />
+                    </View>
+                  ))}
+                </View>
                 <Text style={[s.title, { color: k.text, flex: 1 }]} numberOfLines={1}>
               {currentEntry?.label ?? 'Chat'}
             </Text>
@@ -1023,6 +998,18 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
 
+          {/* Quick replies — one tap, no keyboard on a wall display. */}
+          {!reviewing && !recording && !replyingTo && !editingMsg && !text && (
+            <View style={s.quickRow}>
+              {['On my way', 'Be right there', 'Yes please', 'Love you ❤️'].map(q => (
+                <Pressable key={q} onPress={() => { registerActivity(); sendMessage(activeChannel, active.id, q); }} accessibilityRole="button" accessibilityLabel={`Send: ${q}`}
+                  style={[s.quickChip, { backgroundColor: k.pastelLavCard }]}>
+                  <Text style={[s.quickText, { color: k.purple }]}>{q}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
           {/* ── Input bar ── */}
           {!reviewing && !recording && (
             <View style={[s.inputRow, { backgroundColor: k.card, borderColor: k.cardBorder }]}>
@@ -1060,10 +1047,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
             </View>
           )}
             </View>
-            </View>
-          </KeyboardAvoidingView>
-        </KioskModalHost>
-      </KioskSlideModal>
+      </KeyboardAvoidingView>
 
       {/* ── Quick emoji (double-tap) ── */}
       <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
@@ -1183,6 +1167,18 @@ function VideoLightbox({ uri, onClose }: { uri: string | null; onClose: () => vo
 // REPLY_KIND_LABEL already gives the reply-quote banner, so a photo/voice/
 // document/location message previews consistently everywhere in this tab
 // rather than showing raw empty text.
+/** "4:16 PM" today, "Yest." yesterday, else "Oct 12". */
+function shortTime(ts: string | number | Date): string {
+  const d = new Date(ts as any);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  if (same) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'Yest.';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function messagePreviewText(msg: ChatMessage): string {
   if (msg.systemEvent) return '📎 Shared card';
   if (msg.imageUri) return REPLY_KIND_LABEL[msg.mediaType === 'video' ? 'video' : 'image'];
@@ -1371,7 +1367,25 @@ function ChatPreviewCard({ entry, unread, messages, memberMap, selfId, k, onPres
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, flexDirection: 'row' },
+  listPane: { width: 352, borderRightWidth: StyleSheet.hairlineWidth },
+  listHead: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8 },
+  listTitle: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
+  encBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginBottom: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  encText: { fontSize: KIOSK_TYPO.label, fontWeight: '700', flex: 1 },
+  convs: { paddingHorizontal: 14, paddingBottom: 16, gap: 9 },
+  conv: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 22, borderWidth: 2, paddingHorizontal: 14, paddingVertical: 12 },
+  convName: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  convLabel: { fontSize: KIOSK_TYPO.subheading, fontWeight: '800', flexShrink: 1 },
+  convPreview: { fontSize: KIOSK_TYPO.caption, fontWeight: '600', marginTop: 2 },
+  convMeta: { alignItems: 'flex-end', gap: 6 },
+  convTime: { fontSize: KIOSK_TYPO.micro, fontWeight: '700' },
+  unread: { minWidth: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  unreadText: { fontSize: 12, fontWeight: '800' },
+  threadPane: { flex: 1, minWidth: 0 },
+  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 8 },
+  quickChip: { minHeight: 42, borderRadius: 100, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  quickText: { fontSize: KIOSK_TYPO.caption, fontWeight: '800' },
   grid: { padding: KIOSK_SPACE.sm, gap: KIOSK_SPACE.sm },
   gridSectionLabel: { fontSize: KIOSK_TYPO.sectionLabel, fontWeight: '800', letterSpacing: 1.2, marginBottom: KIOSK_SPACE.xs, marginLeft: 4 },
   // 2 per row, always — a percentage flexBasis instead of the old fixed
@@ -1469,9 +1483,8 @@ const s = StyleSheet.create({
     elevation: 12,
   },
   threadPanel: {
-    flex: 1,
-    borderWidth: 1, borderRadius: KIOSK_RADIUS.lg, overflow: 'hidden',
-    paddingHorizontal: 20, paddingTop: 20,
+    flex: 1, overflow: 'hidden',
+    paddingHorizontal: 24, paddingTop: 14,
   },
 
   threadHead: {

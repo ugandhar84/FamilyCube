@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useUIStore } from '@/store/uiStore';
 import {
   View, Text, StyleSheet, ActivityIndicator, ScrollView,
@@ -294,6 +294,21 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
     return map;
   }, [meals]);
 
+  // Open on today: when the visible week is the current one, scroll the plan to today's day card once it is laid out.
+  const scrollRef = useRef<ScrollView>(null);
+  const layoutY = useRef({ plan: 0, cards: 0, days: {} as Record<string, number> });
+  const todayKey = DAYS[(new Date().getDay() + 6) % 7];
+  const scrollToToday = useCallback(() => {
+    if (curWeek !== weekOf()) return;
+    const y = layoutY.current.plan + layoutY.current.cards + (layoutY.current.days[todayKey] ?? 0);
+    if (y > 0) scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+  }, [curWeek, todayKey]);
+  useEffect(() => {
+    if (loading) return;
+    const t = setTimeout(scrollToToday, 250);
+    return () => clearTimeout(t);
+  }, [loading, curWeek, scrollToToday]);
+
   if (loading) return (
     <View style={{ flex: 1 }}>
       <FlatSectionHeader Icon={ChefHat} title="Meal Planner" accent={colors.danger} colors={colors} />
@@ -304,6 +319,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
   return (
     <View style={{ flex: 1 }}>
     <ScrollView
+      ref={scrollRef}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
     >
@@ -319,7 +335,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
       )}
 
       {/* ── Weekly Plan Grid ─────────────────────────────── */}
-      <View>
+      <View onLayout={e => { layoutY.current.plan = e.nativeEvent.layout.y; }}>
         <FlatSectionHeader
           Icon={ChefHat} title="Week Plan" accent={colors.danger} colors={colors}
           badge={`Wk of ${new Date(curWeek + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
@@ -327,9 +343,10 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
         />
 
         {/* Day cards */}
-        <View>
+        <View onLayout={e => { layoutY.current.cards = e.nativeEvent.layout.y; }}>
           {DAYS.map(day => (
-            <DayCard key={day} day={day} meals={mealsByDay[day] ?? []}
+            <View key={day} onLayout={e => { layoutY.current.days[day] = e.nativeEvent.layout.y; }}>
+            <DayCard day={day} meals={mealsByDay[day] ?? []}
               members={members as any}
               colors={colors} isDark={isDark}
               onRecipe={m => {
@@ -354,6 +371,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
                 showToast(newChefId ? 'Chef updated' : 'Chef removed');
               }}
             />
+            </View>
           ))}
         </View>
       </View>

@@ -115,6 +115,56 @@ try {
   else check(E, 'a different teen cannot mark the kid’s dose', true, r.error);
   r = await as(nana, 'family_medications', 'select', { match: { family_id: F } });
   finding(E, `a grandparent can read ${rows(r).length} family medication row(s)`, 'Read access is family-wide at the table level; the apps filter to own medications for kids/teens/seniors client-side.');
+  /* ───────── Chores ───────── */
+  const G = 'Chores';
+  const rpc = (id, fnName, args) => call({ action: 'rpc', actingMemberId: id, fnName, args });
+  let q = await call({ action: 'add_quest', familyId: F, title: 'QA empty dishwasher', isPool: false, assignedToId: mia, status: 'todo', coins: 15, dueDate: new Date().toISOString().slice(0, 10), dueTime: '17:30' });
+  const choreId = q.choreId;
+  check(G, 'a chore is created and assigned to a kid', q.ok, q.error);
+  r = await rpc(mia, 'submit_chore', { p_chore_id: choreId, p_member_id: mia, p_note: 'done' });
+  check(G, 'the kid submits it for approval', r.ok, r.error);
+  r = await rpc(zane, 'approve_chore', { p_chore_id: choreId, p_reviewer_id: zane });
+  check(G, 'a teen cannot approve a kid’s chore', !r.ok, r.error ?? 'approved');
+  r = await rpc(sarah, 'request_redo', { p_chore_id: choreId, p_reviewer_id: sarah, p_reason: 'dishes still in the sink' });
+  check(G, 'a parent sends it back for a redo with a reason', r.ok, r.error);
+  r = await rpc(mia, 'submit_chore', { p_chore_id: choreId, p_member_id: mia, p_note: 'fixed' });
+  check(G, 'the kid resubmits after the redo', r.ok, r.error);
+  const before = (await call({ action: 'read', table: 'members', familyId: F })).rows?.find(m => m.id === mia);
+  r = await rpc(alex, 'approve_chore', { p_chore_id: choreId, p_reviewer_id: alex });
+  check(G, 'a parent approves it', r.ok, r.error);
+  const after = (await call({ action: 'read', table: 'members', familyId: F })).rows?.find(m => m.id === mia);
+  const gained = (after?.main_coins ?? 0) - (before?.main_coins ?? 0);
+  check(G, 'the kid is paid the coins once approved', gained === 15, `coins gained: ${gained}`);
+  r = await rpc(alex, 'approve_chore', { p_chore_id: choreId, p_reviewer_id: alex });
+  const afterTwice = (await call({ action: 'read', table: 'members', familyId: F })).rows?.find(m => m.id === mia);
+  const gained2 = (afterTwice?.main_coins ?? 0) - (before?.main_coins ?? 0);
+  check(G, 'approving twice does not pay twice', gained2 === 15, `coins gained after a second approve: ${gained2}`);
+  q = await call({ action: 'add_quest', familyId: F, title: 'QA bounty: wash the car', isPool: true, status: 'todo', coins: 25 });
+  r = await rpc(zane, 'claim_pool_quest', { p_chore_id: q.choreId, p_member_id: zane });
+  check(G, 'a teen claims a pool bounty', r.ok, r.error);
+  r = await rpc(mia, 'claim_pool_quest', { p_chore_id: q.choreId, p_member_id: mia });
+  check(G, 'a second kid cannot claim the same bounty', !r.ok || r.data?.ok === false || JSON.stringify(r.data).includes('false'), r.error ?? JSON.stringify(r.data));
+
+  /* ───────── Rewards ───────── */
+  const H = 'Rewards';
+  await call({ action: 'set_coins', familyId: F, memberId: mia, mainCoins: 100 });
+  const rw = await call({ action: 'add_reward', familyId: F, title: 'QA extra screen time', cost: 60 });
+  r = await rpc(mia, 'redeem_reward', { p_reward_id: rw.rewardId ?? rw.id, p_member_id: mia });
+  check(H, 'a kid with enough coins requests a reward', r.ok, r.error ?? JSON.stringify(r.data));
+  const rdRow = Array.isArray(r.data) ? r.data[0] : r.data;
+  const rdId = rdRow?.id ?? rdRow?.redemption_id ?? rdRow?.redemption?.id;
+  check(H, 'the request comes back pending for a parent', (rdRow?.status ?? rdRow?.redemption?.status) === 'pending', JSON.stringify(r.data).slice(0, 160));
+  if (rdId) {
+    r = await rpc(mia, 'resolve_reward_redemption', { p_redemption_id: rdId, p_approve: true, p_actor_id: mia });
+    check(H, 'a kid cannot approve their own reward request', !r.ok, r.error ?? 'approved');
+    r = await rpc(alex, 'resolve_reward_redemption', { p_redemption_id: rdId, p_approve: true, p_actor_id: alex });
+    check(H, 'a parent approves the request', r.ok, r.error);
+  }
+  await call({ action: 'set_coins', familyId: F, memberId: mia, mainCoins: 10 });
+  const rw2 = await call({ action: 'add_reward', familyId: F, title: 'QA expensive', cost: 500 });
+  r = await rpc(mia, 'redeem_reward', { p_reward_id: rw2.rewardId ?? rw2.id, p_member_id: mia });
+  check(H, 'a kid without enough coins is refused', !r.ok, r.error ?? JSON.stringify(r.data));
+
 } catch (e) {
   check('Harness', 'suite ran to the end', false, e.message);
 } finally {

@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T06:21:23.610Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T06:27:52.204Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**28 passed, 0 failed, 4 findings.**
+**42 passed, 1 failed, 4 findings.**
 
 ## Sticky notes
 
@@ -60,4 +60,29 @@ Run: 2026-10-17T06:21:23.610Z against a throwaway scratch family (real rows, rea
 | PASS | the kid marks their own dose taken | ["2026-10-17/13:00"] |
 | NOTE | another kid/teen can mark someone else’s dose | toggle_medication_dose accepted a different family member. The kiosk only offers a kid their own doses, but the RPC does not enforce it. |
 | NOTE | a grandparent can read 1 family medication row(s) | Read access is family-wide at the table level; the apps filter to own medications for kids/teens/seniors client-side. |
+
+## Chores
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a chore is created and assigned to a kid |  |
+| PASS | the kid submits it for approval | null |
+| PASS | a teen cannot approve a kid’s chore | member d155839a-2a16-4f16-b760-5d1d48d393d0 is not authorized to approve chores |
+| PASS | a parent sends it back for a redo with a reason | null |
+| PASS | the kid resubmits after the redo | null |
+| PASS | a parent approves it | null |
+| PASS | the kid is paid the coins once approved | coins gained: 15 |
+| PASS | approving twice does not pay twice | coins gained after a second approve: 15 |
+| PASS | a teen claims a pool bounty | null |
+| PASS | a second kid cannot claim the same bounty | [{"claimed":false,"chore":null}] |
+
+## Rewards
+
+| Result | Check | Detail |
+|---|---|---|
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792218465239"}] |
+| **FAIL** | the request comes back pending for a parent | [{"redemption_id":"rd1792218465239"}] |
+| PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
+| PASS | a parent approves the request | null |
+| PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
 

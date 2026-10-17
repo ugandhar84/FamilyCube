@@ -36,6 +36,7 @@ import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { CreateScheduleScreen, type ScheduleDraft } from './school/CreateScheduleScreen';
 import { BuildPeriodsScreen } from './school/BuildPeriodsScreen';
 import { HolidaysScreen } from './school/HolidaysScreen';
+import { ClassEditScreen } from './school/ClassEditScreen';
 import { SchoolDayScreen } from './school/SchoolDayScreen';
 
 // "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — warm
@@ -66,6 +67,55 @@ function fmtTime12(t: string): string {
 }
 
 type MainTab = 'schedule' | 'holidays' | 'dates';
+
+
+/** "HONORS SCI 8 A" -> "Honors Sci 8 A": long shouty words become Title Case; short ones (ELAR, ART, US, MATH) and anything with a digit stay as written. */
+function prettySubject(raw: string): string {
+  return raw.split(/\s+/).map(w => {
+    if (w.length <= 4 || /\d/.test(w) || w !== w.toUpperCase()) return w;
+    return w.charAt(0) + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+/** A steady colour per subject, so the same class always looks the same. */
+function subjectTone(subject: string, colors: any): { fg: string; bg: string } {
+  const tones = [
+    { fg: colors.primary, bg: colors.primaryLight },
+    { fg: colors.teal, bg: colors.tealLight },
+    { fg: colors.amber, bg: colors.amberLight },
+    { fg: colors.pink, bg: colors.pinkLight },
+  ];
+  const key = subject.toUpperCase().replace(/\b(A|B)$/, '').replace(/\s+\d*[AB]?$/, '').trim();
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return tones[h % tones.length];
+}
+
+/** One class as a card: time on the left, coloured subject block on the right. */
+function ClassRow({ p, colors, isDark, now, onPress }: { p: ClassPeriod; colors: any; isDark: boolean; now?: boolean; onPress?: () => void }) {
+  const tone = subjectTone(p.subject, colors);
+  const mins = timeToMins(p.endTime) - timeToMins(p.startTime);
+  const sub = [p.room, p.teacher].filter(Boolean).join(' · ');
+  return (
+    <TouchableOpacity activeOpacity={onPress ? 0.7 : 1} onPress={onPress} disabled={!onPress} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12 }}>
+      <View style={{ width: 62, alignItems: 'flex-end', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.startTime)}</Text>
+        <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? colors.textTertiary : BODY_CLR_LIGHT, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.endTime)}</Text>
+      </View>
+      <View style={{ flex: 1, flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? tone.fg + '22' : tone.bg,
+        borderWidth: now ? 2 : 0, borderColor: tone.fg }}>
+        <View style={{ width: 5, backgroundColor: tone.fg }} />
+        <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, gap: 2 }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR }} numberOfLines={2}>{prettySubject(p.subject)}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.textSecondary : BODY_CLR }} numberOfLines={1}>
+            {sub ? `${sub} · ` : ''}{mins > 0 ? `${mins} min` : ''}
+          </Text>
+        </View>
+        {onPress ? <Text style={{ alignSelf: 'center', paddingRight: 12, fontSize: 12, fontWeight: '800', color: tone.fg }}>Edit</Text> : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 /** The distinct terms (Fall, Spring, Q1...) a schedule's classes belong to, in the order they appear. */
 function termsOf(periods: ClassPeriod[]): string[] {
@@ -244,6 +294,8 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
   const events = useEventStore(s => s.events);
   const [tab, setTab] = useState<MainTab>('schedule');
   const [view, setView] = useState<'day' | 'week'>('day');
+  const [dayPick, setDayPick] = useState<string | undefined>(undefined);
+  const [editing, setEditing] = useState<ClassPeriod | 'new' | null>(null);
   const terms = termsOf(schedule?.periods ?? []);
   const [termPick, setTermPick] = useState<string | undefined>(undefined);
   const term = termPick ?? guessCurrentTerm(terms);
@@ -324,46 +376,84 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                   </ScrollView>
                 )}
                 <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : SURFACE, borderRadius: 14, padding: 3 }}>
-                  {([['day', 'Today'], ['week', 'This week']] as const).map(([key, label]) => (
+                  {([['day', 'By day'], ['week', 'Week grid']] as const).map(([key, label]) => (
                     <TouchableOpacity key={key} onPress={() => setView(key)}
                       style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 11, backgroundColor: view === key ? (isDark ? colors.card : '#FFFFFF') : 'transparent' }}>
                       <Text style={{ fontSize: 13, fontWeight: view === key ? '800' : '600', color: view === key ? titleC : bodyC }}>{label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
-                {view === 'day' ? (
-                  <View style={card as any}>
-                    {dayPeriods(todayKey).length === 0 ? (
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No classes today.</Text>
-                    ) : dayPeriods(todayKey).map((p, i) => (
-                      <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: i > 0 ? 10 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>{fmtTime12(p.startTime)}–{fmtTime12(p.endTime)}</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>{p.subject}</Text>
+                {view === 'day' ? (() => {
+                  const selDay = dayPick ?? (WEEK_DAYS.some(d => d.key === todayKey) ? todayKey : 'mon');
+                  const list = dayPeriods(selDay);
+                  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+                  return (
+                    <>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {WEEK_DAYS.map(d => {
+                          const on = d.key === selDay;
+                          return (
+                            <TouchableOpacity key={d.key} onPress={() => setDayPick(d.key)} accessibilityRole="button" accessibilityState={{ selected: on }}
+                              style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14,
+                                backgroundColor: on ? (isDark ? colors.teal : TITLE_CLR) : (isDark ? colors.surface : SURFACE) }}>
+                              <Text style={{ fontSize: 13, fontWeight: '800', color: on ? '#FFFFFF' : bodyC }}>{d.label}</Text>
+                              {d.key === todayKey ? <View style={{ width: 5, height: 5, borderRadius: 3, marginTop: 3, backgroundColor: on ? '#FFFFFF' : BLUE }} /> : <View style={{ height: 8 }} />}
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={card as any}>
-                    {WEEK_DAYS.map((d, i) => {
-                      const ps = dayPeriods(d.key);
-                      return (
-                        <View key={d.key} style={{ gap: 6, paddingTop: i > 0 ? 12 : 0, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-                          <Text style={{ fontSize: 13, fontWeight: '800', color: d.key === todayKey ? BLUE : titleC }}>{d.full}</Text>
-                          {ps.length === 0 ? (
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No classes</Text>
-                          ) : ps.map(p => (
-                            <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
-                              <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.startTime)}–{fmtTime12(p.endTime)}</Text>
-                              <Text style={{ flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '700', color: titleC }} numberOfLines={1}>{p.subject}</Text>
-                            </View>
+                      {list.length === 0 ? (
+                        <View style={card as any}><Text style={{ fontSize: 13, fontWeight: '600', color: bodyC }}>No classes on this day.</Text></View>
+                      ) : (
+                        <View style={{ gap: 8 }}>
+                          {list.map(p => (
+                            <ClassRow key={p.id} p={p} colors={colors} isDark={isDark} onPress={canEdit ? () => setEditing(p) : undefined}
+                              now={selDay === todayKey && nowMin >= timeToMins(p.startTime) && nowMin < timeToMins(p.endTime)} />
                           ))}
                         </View>
-                      );
-                    })}
-                  </View>
+                      )}
+                    </>
+                  );
+                })() : (() => {
+                  // Week at a glance: a row per class slot (by start time), a column per weekday.
+                  const termPeriods = periodsInTerm(schedule?.periods ?? [], term).filter(p => !p.isLunch);
+                  const slots = [...new Set(termPeriods.map(p => p.startTime))].sort((a, b) => timeToMins(a) - timeToMins(b));
+                  const cell = (slot: string, key: string) => termPeriods.find(p => p.startTime === slot && (p.days ?? ['mon', 'tue', 'wed', 'thu', 'fri']).includes(key));
+                  return (
+                    <View style={[card as any, { padding: 10, gap: 6 }]}>
+                      <View style={{ flexDirection: 'row', gap: 4 }}>
+                        <View style={{ width: 44 }} />
+                        {WEEK_DAYS.map(d => (
+                          <Text key={d.key} style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '800', color: d.key === todayKey ? BLUE : bodyC }}>{d.label}</Text>
+                        ))}
+                      </View>
+                      {slots.map(slot => (
+                        <View key={slot} style={{ flexDirection: 'row', gap: 4, alignItems: 'stretch' }}>
+                          <View style={{ width: 44, justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 9, fontWeight: '700', color: bodyC, fontVariant: ['tabular-nums'] }}>{fmtTime12(slot).replace(' ', '')}</Text>
+                          </View>
+                          {WEEK_DAYS.map(d => {
+                            const p = cell(slot, d.key);
+                            const tone = p ? subjectTone(p.subject, colors) : null;
+                            return (
+                              <TouchableOpacity key={d.key} disabled={!p || !canEdit} onPress={() => p && setEditing(p)} activeOpacity={0.7} style={{ flex: 1, minHeight: 40, borderRadius: 8, padding: 3, justifyContent: 'center',
+                                backgroundColor: tone ? (isDark ? tone.fg + '22' : tone.bg) : (isDark ? colors.surface : '#FAF8F4') }}>
+                                {p && <Text style={{ fontSize: 9, fontWeight: '800', color: tone!.fg, textAlign: 'center' }} numberOfLines={3}>{prettySubject(p.subject)}</Text>}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
+                {canEdit && (
+                  <TouchableOpacity onPress={() => setEditing('new')} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>+ Add a class</Text>
+                  </TouchableOpacity>
                 )}
                 <TouchableOpacity onPress={onOpenDay} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>{canEdit ? 'Edit classes & open the full day →' : 'Open the full day →'}</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Open the full day →</Text>
                 </TouchableOpacity>
                 {canEdit && (
                   <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
@@ -468,6 +558,15 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
           )}
         </ScrollView>
       </View>
+      {editing && (
+        <ClassEditScreen
+          colors={colors} isDark={isDark}
+          memberId={kid.id} memberName={kid.name}
+          period={editing === 'new' ? null : editing}
+          terms={terms} defaultTerm={term}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </OverlayPage>
   );
 }

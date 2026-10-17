@@ -355,26 +355,26 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     let failed = 0;
     // ONE calendar entry per flyer line, shared by every chosen kid (not a copy per kid): the calendar then shows all their
     // names, and the database's duplicate guard no longer drops the second kid's copy.
-    for (const ev of toAdd) {
-      const id = await addEvent({
-        title:    ev.title,
-        date:     ev.date ?? dateToStr(new Date()),
-        time:     realTime(ev.time),
-        endTime:  realTime(ev.end_time),
-        // No start or end time on the flyer means a whole-day entry.
-        allDay:   !realTime(ev.time) && !realTime(ev.end_time) ? true : undefined,
-        category: ev.category,
-        location: ev.location ?? undefined,
-        notes:    ev.notes ?? undefined,
-        memberId: selectedKids[0],
-        memberIds: selectedKids.length > 1 ? selectedKids : undefined,
-        type:     'event',
-        color:    BRAND.teal,
-        approvalPending: false,
-      });
-      if (id) succeeded++; else failed++;
-      setSaveProgress({ done: succeeded + failed, total: toAdd.length });
-    }
+    const rows = toAdd.map(ev => ({
+      title:    ev.title,
+      date:     ev.date ?? dateToStr(new Date()),
+      time:     realTime(ev.time),
+      endTime:  realTime(ev.end_time),
+      // No start or end time on the flyer means a whole-day entry.
+      allDay:   !realTime(ev.time) && !realTime(ev.end_time) ? true : undefined,
+      category: ev.category,
+      location: ev.location ?? undefined,
+      notes:    ev.notes ?? undefined,
+      memberId: selectedKids[0],
+      memberIds: selectedKids.length > 1 ? selectedKids : undefined,
+      type:     'event' as const,
+      color:    BRAND.teal,
+      approvalPending: false,
+    }));
+    // One request for the whole calendar instead of one per event.
+    const res = await useEventStore.getState().addEventsBulk(rows as any, done => setSaveProgress({ done, total: toAdd.length }));
+    succeeded = res.saved;
+    failed = res.failed;
     // Breaks go to each kid's Holidays page as one from–to range per break (and pause that kid's class periods).
     if (succeeded > 0) {
       const ranges = holidayRanges(toAdd);

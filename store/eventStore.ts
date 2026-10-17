@@ -457,6 +457,8 @@ interface EventState {
 
   // Mutations (optimistic)
   addEvent:    (e: Omit<FamilyEvent, 'id'>) => Promise<string>;
+  /** Save many events in one request (chunked). Returns how many were saved; a chunk the database refuses falls back to one-by-one. */
+  addEventsBulk: (events: Omit<FamilyEvent, 'id'>[], onProgress?: (done: number) => void) => Promise<{ saved: number; failed: number }>;
   updateEvent: (id: string, updates: Partial<FamilyEvent>) => Promise<void>;
   deleteEvent: (id: string) => void;
   // Removes events from local state ONLY — for callers (calendar-sync-
@@ -2004,6 +2006,35 @@ export const useEventStore = create<EventState>((set, get) => ({
   },
 
   // ── Mutations ─────────────────────────────────────────────────────────────
+  addEventsBulk: async (events, onProgress) => {
+    const CHUNK = 25;
+    let saved = 0, failed = 0;
+    const createdBy = getActiveMemberId() ?? undefined;
+    for (let i = 0; i < events.length; i += CHUNK) {
+      const slice = events.slice(i, i + CHUNK);
+      const rows = slice.map((e, j) => toRow({
+        ...e, id: 'ev' + Date.now() + '-' + i + '-' + j,
+        title: e.title?.trim() ?? e.title,
+        createdBy: e.createdBy ?? createdBy,
+        createdAt: e.createdAt ?? new Date().toISOString(),
+      } as FamilyEvent));
+      const { error } = await supabase.from('calendar_events').insert(rows);
+      if (!error) {
+        saved += slice.length;
+      } else {
+        // One row (e.g. a duplicate) sank the whole chunk: save that chunk one by one so the rest still go in.
+        for (const e of slice) {
+          const id = await get().addEvent(e);
+          if (id) saved++; else failed++;
+        }
+      }
+      onProgress?.(saved + failed);
+    }
+    // One refresh instead of per-row cache patching.
+    await get().syncFromDB();
+    return { saved, failed };
+  },
+
   addEvent: async (e) => {
     const draft: FamilyEvent = {
       ...e, id: 'ev' + Date.now(),

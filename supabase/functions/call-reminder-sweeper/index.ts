@@ -229,8 +229,9 @@ serve(async (req) => {
         // below, which still matters for reassignments made through those
         // RPCs after creation.
         const driverHelperIds = [
-          (e as any).driver_status === 'confirmed' ? (e as any).driver_id : null,
-          (e as any).helper_status === 'confirmed' ? (e as any).helper_id : null,
+          // Ring whoever is assigned unless they declined: waiting for a tap on "confirm" meant an assigned driver was never rung.
+          (e as any).driver_status !== 'rejected' ? (e as any).driver_id : null,
+          (e as any).helper_status !== 'rejected' ? (e as any).helper_id : null,
         ].filter((id): id is string => !!id);
         dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids, notes: (e as any).notes ?? null, location: (e as any).location ?? null, subjectMemberId: e.member_id ?? null, driverHelperIds });
       }
@@ -363,8 +364,8 @@ serve(async (req) => {
         // row, so the missed-call follow-up needs the same direct-column
         // read to actually find them.
         const directDriverHelperIds = !isChore ? [
-          source.driver_status === 'confirmed' ? source.driver_id : null,
-          source.helper_status === 'confirmed' ? source.helper_id : null,
+          source.driver_status !== 'rejected' ? source.driver_id : null,
+          source.helper_status !== 'rejected' ? source.helper_id : null,
         ].filter((id: string | null): id is string => !!id) : [];
         const memberIds = isChore
           ? [source.assigned_to_id].filter(Boolean)

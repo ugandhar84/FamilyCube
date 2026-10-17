@@ -34,7 +34,7 @@ export function KioskHomeKid({ active, members, onNavigate }: {
   const weather = useKioskWeather();
   const dayEvents = useEventStore(s => s.dayEvents);
   const { meals } = useKioskMeals();
-  const { todo, done, total } = useKidDay(active, members);
+  const { todo, done, total, doneCount } = useKidDay(active, members);
   const { openPicker, node: askNode } = useKioskAskParent({ active, members, withPicker: true });
 
   const coins = (active as any).mainCoins ?? (active as any).coins ?? 0;
@@ -81,7 +81,7 @@ export function KioskHomeKid({ active, members, onNavigate }: {
       <Text style={{ fontSize: 20 }}>{emoji}</Text><Text style={[s.qbT, { color: fg }]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
-  const pct = total ? done.length / total : 0;
+  const pct = total ? doneCount / total : 0;
 
   return (
     <View style={s.wrap}>
@@ -101,7 +101,7 @@ export function KioskHomeKid({ active, members, onNavigate }: {
         <ScrollView style={s.col} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.xl }}>
           <PulseCard k={k} isDark={isDark}>
             <View style={s.pulseTop}>
-              <Dial pct={pct} value={`${done.length}/${total}`} caption="done" color={k.sage} track={k.sageEdge} inner={k.sageSoft} k={k} />
+              <Dial pct={pct} value={`${doneCount}/${total}`} caption="done" color={k.sage} track={k.sageEdge} inner={k.sageSoft} k={k} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[s.pulseTitle, { color: k.text }]}>{left ? `${left} to do today` : 'You’re on fire today! 🔥'}</Text>
                 {streak > 0 && <Text style={[s.sub, { color: k.textMuted }]}>🔥 {streak}-day streak</Text>}
@@ -113,8 +113,11 @@ export function KioskHomeKid({ active, members, onNavigate }: {
             </View>
           </PulseCard>
           <Section label="MY TO-DO" accent={k.primary} k={k}>
+            {/* All unfinished tasks plus the last 10 finished ones; scrolls inside the card when it is long. */}
             <RaisedCard k={k} isDark={isDark} style={{ padding: KIOSK_SPACE.sm }}>
-              <KioskSimpleChecklist bare active={active} members={members} k={k} isDark={isDark} onOpenTasks={() => onNavigate('tasks')} />
+              <ScrollView style={{ maxHeight: 460 }} nestedScrollEnabled showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
+                <KioskSimpleChecklist bare active={active} members={members} k={k} isDark={isDark} onOpenTasks={() => onNavigate('tasks')} />
+              </ScrollView>
             </RaisedCard>
           </Section>
           <HomeMedsCard active={active} members={members} ownOnly />

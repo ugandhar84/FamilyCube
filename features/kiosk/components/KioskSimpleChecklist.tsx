@@ -37,17 +37,18 @@ export function useKidDay(active: FamilyMember, members: FamilyMember[]) {
   const mine = useMemo(() => {
     const visible = visibleQuestsFor(quests, members, { id: active.id, role: active.role });
     const poolIds = new Set(poolQuestsIn(visible).map(q => q.id));
-    // Today's list only: due today, overdue, or undated — a chore due next
-    // week isn't something to tick off this morning. Earliest due time first
-    // so it reads top-to-bottom as the order to do things in.
-    const today = localDateStr();
+    // Every task assigned to me: all the unfinished ones (past, today and upcoming) are kept, and only the 10 most
+    // recent finished ones are shown (see below). Soonest deadline first, undated last.
     return visible
-      .filter(q => !poolIds.has(q.id) && q.assignedToId === active.id && (!q.dueDate || q.dueDate <= today))
-      .sort((a, b) => (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') || a.title.localeCompare(b.title));
+      .filter(q => !poolIds.has(q.id) && q.assignedToId === active.id)
+      .sort((a, b) => `${a.dueDate ?? '9999-99-99'} ${a.dueTime ?? '99:99'}`.localeCompare(`${b.dueDate ?? '9999-99-99'} ${b.dueTime ?? '99:99'}`) || a.title.localeCompare(b.title));
   }, [quests, members, active.id, active.role]);
   const todo = mine.filter(q => ['todo', 'claimed', 'in_progress', 'declined'].includes(q.status));
-  const done = mine.filter(q => ['pending_approval', 'approved', 'done'].includes(q.status));
-  return { todo, done, total: todo.length + done.length };
+  const doneAll = mine.filter(q => ['pending_approval', 'approved', 'done', 'auto_approved'].includes(q.status));
+  // Every unfinished task, plus only the 10 most recently finished (submitted or approved) so the list stays short.
+  const stamp = (q: any) => q.submittedAt ?? q.approvedAt ?? q.updatedAt ?? q.createdAt ?? '';
+  const done = [...doneAll].sort((a, b) => String(stamp(b)).localeCompare(String(stamp(a)))).slice(0, 10);
+  return { todo, done, total: todo.length + doneAll.length, doneCount: doneAll.length };
 }
 
 export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, bare }: {
@@ -61,7 +62,7 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
   const [draft, setDraft] = useState('');
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   useEffect(() => { useChoreStore.getState().syncFromDB().catch(() => {}); }, []);
-  const { todo, done, total } = useKidDay(active, members);
+  const { todo, done, total, doneCount } = useKidDay(active, members);
 
   // The kid's own entry: no coins, no review — a plain reminder for
   // themselves (trusted so one tap completes it).
@@ -95,7 +96,7 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
       {!bare && (
         <WidgetHeader
           Icon={ListChecks} eyebrow="Today"
-          title={total === 0 ? 'My day' : `My day · ${done.length} of ${total} done`}
+          title={total === 0 ? 'My day' : `My day · ${doneCount} of ${total} done`}
           accent={k.sage} k={k} isDark={isDark}
         />
       )}

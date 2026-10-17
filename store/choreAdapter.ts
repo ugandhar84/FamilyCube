@@ -452,6 +452,8 @@ export function useQuestStore() {
       store.deleteChore(id);
     },
 
+    skipQuestOccurrence: (id: string) => store.skipChoreOccurrence(id),
+
     // Made awaitable — previously void-returning while internally firing an
     // un-awaited store.updateChore() promise. A caller chaining a second
     // write right after (e.g. QuestDetailModal's reassign-with-a-note/coins

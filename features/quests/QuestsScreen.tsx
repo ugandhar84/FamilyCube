@@ -15,6 +15,7 @@
  *  - Decline reason shown inline on kid's declined card
  *  - Senior sees approve/decline but NOT AI engine or + Quest button
  */
+import { confirmDeleteChore } from '@/lib/confirmDeleteChore';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
@@ -98,7 +99,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
   const { members, activeMemberId, setActiveMember, familyName } = useFamilyStore();
-  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant, reassignQuest, cheerQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, skipQuestOccurrence, approveParticipant, declineParticipant, reopenParticipant, reassignQuest, cheerQuest } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
@@ -1148,6 +1149,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                   reopenParticipant={reopenParticipant}
                   updateQuest={updateQuest}
                   deleteQuest={deleteQuest}
+                  skipQuestOccurrence={skipQuestOccurrence}
                   setEditTarget={setEditTarget}
                   setDelegateTarget={setDelegateTarget}
                   setProofPhotoViewerUri={setProofPhotoViewerUri}
@@ -1286,14 +1288,11 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
           ownTopInset={false}
           onDelete={isParent ? () => {
             const q = detailTarget;
-            Alert.alert(
-              'Delete Chore',
-              `Remove "${q.title}"? This cannot be undone.`,
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => { deleteQuest(q.id); setDetailTarget(null); } },
-              ],
-            );
+            confirmDeleteChore({
+              quest: q, deleteQuest, skipQuestOccurrence,
+              onDeleted: () => setDetailTarget(null),
+              onSkipped: () => { showToast('Skipped this time'); setDetailTarget(null); },
+            });
           } : undefined}
         />
       )}

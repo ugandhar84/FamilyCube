@@ -10,6 +10,7 @@
  * Takes the quest id, not the object, and re-reads it from the store, so a
  * realtime update (a parent approving it elsewhere) shows up live.
  */
+import { confirmDeleteChore } from '@/lib/confirmDeleteChore';
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, Image, Alert, StyleSheet } from 'react-native';
 import { ClipboardList } from 'lucide-react-native';
@@ -61,7 +62,7 @@ export function KioskChoreDetailDrawer({ questId, active, members, onClose }: {
 }) {
   const { k } = useKioskColors();
   const { colors, isDark } = useTheme();
-  const { quests, submitQuest, approveQuest, declineQuest, claimQuest, deleteQuest } = useQuestStore();
+  const { quests, submitQuest, approveQuest, declineQuest, claimQuest, deleteQuest, skipQuestOccurrence } = useQuestStore();
   const isActiveApprover = useTemporaryApproverStore(s => s.isActiveApprover(active.id));
   const [log, setLog] = useState<ActivityLogRow[]>([]);
   const [redoOpen, setRedoOpen] = useState(false);
@@ -204,10 +205,11 @@ export function KioskChoreDetailDrawer({ questId, active, members, onClose }: {
 
           {a.canDelete && (
             <Pressable
-              onPress={() => Alert.alert('Delete this chore?', 'This cannot be undone.', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => { deleteQuest(quest.id); showToast('Chore deleted'); close(); } },
-              ])}
+              onPress={() => confirmDeleteChore({
+                quest, deleteQuest, skipQuestOccurrence,
+                onDeleted: () => { showToast('Chore deleted'); close(); },
+                onSkipped: () => { showToast('Skipped this time'); close(); },
+              })}
               accessibilityRole="button" style={[s.delete, { borderColor: k.dangerEdge }]}>
               <Text style={[s.btnText, { color: k.danger }]}>Delete chore</Text>
             </Pressable>

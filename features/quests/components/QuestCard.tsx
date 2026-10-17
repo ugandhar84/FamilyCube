@@ -1,3 +1,4 @@
+import { confirmDeleteChore } from '@/lib/confirmDeleteChore';
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated, Image, ActivityIndicator } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -54,6 +55,7 @@ interface Props {
   reopenParticipant: (questId: string, memberId: string, byId: string) => void;
   updateQuest: (id: string, patch: any, byId?: string) => void;
   deleteQuest: (id: string) => void;
+  skipQuestOccurrence?: (id: string) => Promise<boolean> | boolean;
   setEditTarget: (q: Quest | null) => void;
   setDelegateTarget: (t: { id: string; title: string } | null) => void;
   setProofPhotoViewerUri: (uri: string | null) => void;
@@ -68,7 +70,7 @@ export function QuestCard({
   isParent, isSenior, isKid, isKidOrTeen, isParentOrSenior, myId, activeMember,
   isAssignedTo, isClaiming, handleClaim, openSubmitSheet, setDeclineTarget, onCantMakeIt,
   approveQuest, reassignQuest, approveParticipant, reopenParticipant,
-  updateQuest, deleteQuest, setEditTarget, setDelegateTarget, setProofPhotoViewerUri, onCardPress,
+  updateQuest, deleteQuest, skipQuestOccurrence, setEditTarget, setDelegateTarget, setProofPhotoViewerUri, onCardPress,
 }: Props) {
   const assignee = members.find(m => m.id === q.assignedToId);
   // Persisted (chore_tasks.gp_withdrawn_ids), per-GP "no guilt" pass on a
@@ -359,10 +361,10 @@ export function QuestCard({
     return (
       <TouchableOpacity
         style={{ width: 72, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.danger, borderRadius: 18, marginLeft: 8, marginBottom: 10 }}
-        onPress={() => Alert.alert(
-          title,
-          message,
-          [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete Anyway', style: 'destructive', onPress: () => {
+        onPress={() => confirmDeleteChore({
+          quest: q, deleteQuest, skipQuestOccurrence,
+          intro: isActive && assignee ? `${assignee.name.split(' ')[0]} is working on it right now.` : undefined,
+          beforeDelete: () => {
             if (isActive && assigneeId) {
               const parentName = activeMember?.name?.split(' ')[0] ?? 'A parent';
               const msg = `🗑️ ${parentName} removed the chore "${q.title}" that was assigned to you — no action needed on your end.`;
@@ -371,9 +373,8 @@ export function QuestCard({
                 useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
               } catch { /* chat store not available */ }
             }
-            deleteQuest(q.id);
-          } }]
-        )}
+          },
+        })}
       >
         <Animated.View style={{ alignItems: 'center', transform: [{ scale }] }}>
           <I.Trash c={colors.textInverse} size={20} />

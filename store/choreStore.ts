@@ -986,6 +986,8 @@ interface ChoreState {
   _addChoreImpl:       (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => Promise<ChoreTask>;
   updateChore:         (id: string, updates: Partial<ChoreTask>) => Promise<void>;
   deleteChore:         (id: string) => Promise<void>;
+  /** Repeating chore: drop only the current time (move to the next due date, clear any submission) and keep repeating. Returns false when the chore doesn't repeat. */
+  skipChoreOccurrence: (id: string) => Promise<boolean>;
 
   // ── Child actions ──────────────────────────────────────────────────────────
   // onLost — scenarios 3.1/3.4: the claim's optimistic local write can lose
@@ -2244,6 +2246,34 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         );
       }
     }
+  },
+
+  skipChoreOccurrence: async (id) => {
+    const chore = get().chores.find(c => c.id === id);
+    const rule = chore?.recurrenceRule;
+    if (!chore || !rule || rule.frequency === 'once') return false;
+    const from = chore.dueDate ?? localDateStr(new Date());
+    const next = nextDueDate(from, rule.frequency, rule.days, rule.dayOfMonth) ?? undefined;
+    await get().updateChore(id, {
+      status: 'todo',
+      submittedAt: undefined, submissionPhotoUrl: undefined, submissionNote: undefined,
+      approvedAt: undefined, reviewedAt: undefined, rejectionReason: undefined,
+      redoCount: 0,
+      dueDate: next,
+    });
+    // Take just this day's reminder off the calendar; the series keeps going.
+    if (chore.linkedEventId) {
+      try {
+        const { data } = await supabase.from('calendar_events').select('id')
+          .eq('series_id', chore.linkedEventId).eq('date', from).is('deleted_at', null).limit(1).maybeSingle();
+        const occId = (data as any)?.id;
+        if (occId) {
+          const { useEventStore } = require('./eventStore');
+          await useEventStore.getState().deleteEventScoped(occId, 'this');
+        }
+      } catch (e) { console.warn('[choreStore] skipChoreOccurrence calendar cleanup failed', e); }
+    }
+    return true;
   },
 
   deleteChore: async (id) => {

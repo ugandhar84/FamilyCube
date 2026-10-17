@@ -34,7 +34,7 @@ import {
   Send, Search, X, XCircle,
   ChevronDown, ChevronUp, CornerUpLeft, Pencil,
   Paperclip, Mic, Lock, ShieldCheck, Video,
-  Camera, Image as ImageIcon, MapPin, FileText, AudioLines,
+  Camera, Image as ImageIcon, MapPin, FileText, AudioLines, MessageCircle,
   type LucideIcon,
 } from 'lucide-react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -960,6 +960,7 @@ export default function ChatScreen() {
             title="Messages"
             subtitle={`${members.length} people · tap a name to start a thread`}
             accent="pink"
+            Icon={MessageCircle}
             topInset={0}
           />
 

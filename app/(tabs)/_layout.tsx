@@ -132,8 +132,8 @@ function CustomTabBar({ state, navigation }: any) {
   const chatUnreadCounts = useChatStore(s => s.unreadCounts);
   const totalChatUnread = Object.values(chatUnreadCounts).reduce((sum, n) => sum + n, 0);
   const lastNavTime = useRef(0);
-  const { members, activeMemberId } = useFamilyStore();
-  const activeMember = members.find(m => m.id === activeMemberId);
+  // Selectors, not the whole store: the bar must not re-render on every unrelated family-store change while tabs animate.
+  const activeMember = useFamilyStore(st => st.members.find(m => m.id === st.activeMemberId));
   const activeRole = activeMember?.role;
   const overdueCount = useChoreStore(s => countOverdueChores(s.chores, activeMember));
   const overduePulse = useRef(new Animated.Value(1)).current;

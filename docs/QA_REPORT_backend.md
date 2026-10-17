@@ -1,8 +1,8 @@
 # Kiosk and Hub QA report
 
-Run: 2026-10-17T17:12:33.437Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
+Run: 2026-10-17T17:15:39.254Z against a throwaway scratch family (real rows, real member sessions, so row-level security applies).
 
-**128 passed, 1 failed, 1 findings.**
+**131 passed, 0 failed, 1 findings.**
 
 ## Sticky notes
 
@@ -74,7 +74,7 @@ Run: 2026-10-17T17:12:33.437Z against a throwaway scratch family (real rows, rea
 |---|---|---|
 | PASS | a chore is created and assigned to a kid |  |
 | PASS | the kid submits it for approval | null |
-| PASS | a teen cannot approve a kid’s chore | member 1e107c66-7268-4a64-9752-ae8cfdbdc667 is not authorized to approve chores |
+| PASS | a teen cannot approve a kid’s chore | member 45f9701b-da1f-4be4-8b8e-dfddba040f07 is not authorized to approve chores |
 | PASS | a parent sends it back for a redo with a reason | null |
 | PASS | the kid resubmits after the redo | null |
 | PASS | a parent approves it | null |
@@ -93,8 +93,8 @@ Run: 2026-10-17T17:12:33.437Z against a throwaway scratch family (real rows, rea
 
 | Result | Check | Detail |
 |---|---|---|
-| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792257074099"}] |
-| PASS | the request returns a redemption id | [{"redemption_id":"rd1792257074099"}] |
+| PASS | a kid with enough coins requests a reward | [{"redemption_id":"rd1792257256858"}] |
+| PASS | the request returns a redemption id | [{"redemption_id":"rd1792257256858"}] |
 | PASS | a kid cannot approve their own reward request | only a parent can approve or decline a redemption |
 | PASS | a parent approves the request | null |
 | PASS | a kid without enough coins is refused | redeem_reward: insufficient balance |
@@ -199,9 +199,10 @@ Run: 2026-10-17T17:12:33.437Z against a throwaway scratch family (real rows, rea
 | PASS | a kid reads their own visit record | 1 |
 | PASS | sweeper fixtures were created |  |
 | PASS | the sweeper runs | {"ok":true,"scanned":3,"clearedApproved":1,"deletedStale":1,"failed":0} |
+| PASS | the fixtures can be read back |  |
 | PASS | an unsubmitted recording older than 7 days is deleted | still there |
-| **FAIL** | a fresh unsubmitted recording is kept |  |
-| NOTE | an approved visit has its audio reference cleared |  |
+| PASS | a fresh unsubmitted recording is kept | {"id":"b21da0e0-b5e2-49f7-9909-af951f9ca8c6","family_id":"b6442611-0efe-4f8b-87b7-e5f15c2297f3","member_id":"472f2215-8ad3-4e9a-a829-52662f25984b","uploaded_by":"c5ad6304-4854-446e-a031-6982d88f8f86","title":"QA fresh"," |
+| PASS | an approved visit has its audio reference cleared | null |
 | PASS | the stale and approved audio files are really deleted from storage | false/false |
 | PASS | the fresh audio file is still in storage | null |
 

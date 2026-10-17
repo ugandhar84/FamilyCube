@@ -247,8 +247,10 @@ export default function HubScreen() {
   // on its own navigator — full-page overlays are position:absolute Views,
   // not router pushes), so we always play the animation on every tab focus.
   const [hubFocusKey, setHubFocusKey] = useState(0);
+  // Play the entrance once, the first time the Hub is shown. Replaying it on every tab focus re-rendered the whole
+  // Hub tree and reset every card to faded-out, which read as a stutter on every switch back to Hub.
   useFocusEffect(useCallback(() => {
-    setHubFocusKey(k => k + 1);
+    setHubFocusKey(k => (k === 0 ? 1 : k));
   }, []));
 
   useEffect(() => {

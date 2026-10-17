@@ -16,7 +16,7 @@ import { localToday, hoursUntilEvent } from './hubUtils';
 import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useRewardStore } from '@/store/rewardStore';
-import { useNotifStore } from '@/store/notifStore';
+import { useChatStore } from '@/store/chatStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
@@ -99,6 +99,9 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number; phase?: import('@/store/tripStore').TripPhase }[];
   onUpdateEta?: (tripId: string, etaMinutes: number) => void;
 }) {
+  // Unread CHAT messages only (same source as the Chat tab badge). This tile used to show the bell's total of every
+  // unread notification, so it read "21 unread" with no unread chats.
+  const chatUnread = useChatStore(st => Object.values(st.unreadCounts).reduce((sum, n) => sum + n, 0));
   const { familyName } = useFamilyStore();
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
@@ -883,7 +886,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           colors={colors} isDark={isDark}
           groceryCount={groceryItems.length}
           reviewCount={pendingReviewCount}
-          chatUnreadCount={useNotifStore(s => s.unreadCount)}
+          chatUnreadCount={chatUnread}
           tasksPendingCount={tasksPendingCount}
           tasksInProgressCount={tasksInProgressCount}
           tasksUnassignedCount={tasksUnassignedCount}

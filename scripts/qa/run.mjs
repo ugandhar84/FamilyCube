@@ -363,6 +363,7 @@ try {
     const sw = await (await fetch(`${URL}/functions/v1/visit-audio-sweeper`, { method: 'POST', headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }, body: '{}' })).json();
     check(MF, 'the sweeper runs', !!sw.ok, JSON.stringify(sw));
     let q = await call({ action: 'read', table: 'medical_records', familyId: F, where: { tag: 'visit_recording' } });
+    check(MF, 'the fixtures can be read back', q.ok && Array.isArray(q.rows), q.error);
     const byTitle = Object.fromEntries((q.rows ?? []).map(x => [x.title, x]));
     check(MF, 'an unsubmitted recording older than 7 days is deleted', !byTitle['QA stale'], 'still there');
     check(MF, 'a fresh unsubmitted recording is kept', !!byTitle['QA fresh']?.file_path, JSON.stringify(byTitle['QA fresh']));

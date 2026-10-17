@@ -58,7 +58,7 @@ const TABLE_OP_ALLOWLIST = new Set(['family_sticky_notes', 'family_meals', 'fami
 const READ_ALLOWLIST = new Set([
   'calendar_events', 'event_participants', 'chore_tasks', 'chore_participants',
   'members', 'families', 'activity_log', 'trips',
-  'rewards', 'reward_redemptions', 'grocery_items', 'kid_requests',
+  'rewards', 'reward_redemptions', 'grocery_items', 'kid_requests', 'medical_records',
   // Added for QA visibility into ask-cube's own turn-by-turn tool-call
   // trace (role/content/tool_calls/tool_name per row) — read-only, needed
   // to diagnose whether a hollow/odd reply came from the model skipping a

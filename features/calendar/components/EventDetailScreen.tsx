@@ -29,6 +29,7 @@ import { CallReminderToggle } from '@/features/tasks/components/forms/CallRemind
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 import { GEMINI } from '@/constants/geminiRhythm';
+import RecordVisitSheet from '@/features/vault/records/RecordVisitSheet';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -247,6 +248,7 @@ export default function EventDetailScreen({
   const [declineReason,  setDeclineReason]  = useState('');
 
   // Inline notes editing
+  const [recordVisitOpen, setRecordVisitOpen] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesText,    setNotesText]    = useState(liveEv.notes ?? '');
   const [notesBusy,    setNotesBusy]    = useState(false);
@@ -613,6 +615,22 @@ export default function EventDetailScreen({
     <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
+        {cat === 'Medical' && amIParent && (
+          <RecordVisitSheet
+            visible={recordVisitOpen}
+            onClose={() => setRecordVisitOpen(false)}
+            familyId={(members.find(m => m.id === activeMemberId) as any)?.familyId ?? ''}
+            memberId={liveEv.memberId ?? allAssignees[0]?.id ?? ''}
+            memberName={allAssignees[0]?.name ?? 'this patient'}
+            actorId={activeMemberId ?? ''}
+            eventTitle={liveEv.title}
+            eventDate={liveEv.date}
+            eventTime={liveEv.time}
+            doctorName={liveEv.doctorName}
+            location={liveEv.location}
+          />
+        )}
+
         <PageHeading
           eyebrow="FAMILY CUBE · SCHEDULE"
           title={liveEv.title}
@@ -664,6 +682,17 @@ export default function EventDetailScreen({
               </View>
             )}
           </View>
+
+          {/* ── Record Visit — parent-only on a Medical appointment: records the audio, AI-summarises it and saves the
+              encrypted result to the patient's Records (same flow the old event sheet had). ── */}
+          {cat === 'Medical' && amIParent && (
+            <TouchableOpacity onPress={() => setRecordVisitOpen(true)} accessibilityRole="button" accessibilityLabel="Record visit"
+              style={{ marginHorizontal: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                borderRadius: 14, borderWidth: 1, borderColor: accent + '50', backgroundColor: accent + '12', paddingHorizontal: 16, paddingVertical: 14 }}>
+              <Text style={{ fontSize: 20 }}>🎙️</Text>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: accent }}>Record Visit</Text>
+            </TouchableOpacity>
+          )}
 
           {/* ── Info card ── */}
           <View style={{ marginHorizontal: 20, marginBottom: 20,

@@ -78,14 +78,14 @@ export function KioskTabBar({ items, active, onSelect, badges, leading, trailing
       onLayout={e => { if (!hidden) setBarH(e.nativeEvent.layout.height); }}
       pointerEvents={hidden ? 'none' : 'auto'}
       style={[
-        s.bar, { backgroundColor: isDark ? 'rgba(23,21,29,0.55)' : 'rgba(255,255,255,0.55)', borderTopColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.7)' },
+        s.bar, { backgroundColor: isDark ? 'rgba(95,163,125,0.20)' : 'rgba(198,226,208,0.62)', borderTopColor: isDark ? 'rgba(95,163,125,0.35)' : 'rgba(255,255,255,0.75)' },
         // Margin gives the page the bar's height back; translate carries the
         // bar (and the bottom safe-area strip) fully off screen.
         { marginBottom: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -barH] }),
           transform: [{ translateY: slide.interpolate({ inputRange: [0, 1], outputRange: [0, barH + 80] }) }] },
       ]}
     >
-      {/* Frosted glass: the page shows faintly through a blurred, translucent strip. */}
+      {/* Frosted sage glass: the page shows faintly through a blurred, sage-tinted strip. */}
       <BlurView intensity={55} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} pointerEvents="none" />
       {moreOpen && (
         <View style={[s.more, { backgroundColor: k.card, borderColor: k.cardBorder }]}>

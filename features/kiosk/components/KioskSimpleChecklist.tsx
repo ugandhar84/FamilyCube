@@ -19,7 +19,9 @@ import { localDateStr } from '@/lib/dates';
 import { KIOSK_TYPO, KIOSK_SPACE, KIOSK_RADIUS } from '../kioskTheme';
 import { kioskPastels, type KioskColors } from '../kioskPalette';
 import { fmt12 } from './KioskHomeParts';
-import { addPersonalTask, quickDeadlines, deadlineLabel } from '@/lib/personalTasks';
+import { KioskDateTimePicker, openAndroidPicker } from './KioskDateTimePicker';
+import { useKioskColors } from '../kioskPalette';
+import { addPersonalTask, quickDeadlines, deadlineLabel, customDeadline } from '@/lib/personalTasks';
 import { visibleQuestsFor, poolQuestsIn } from '../kidQuestLanes';
 import { WidgetCard, WidgetHeader } from './KioskOS';
 import { ListChecks } from 'lucide-react-native';
@@ -64,12 +66,16 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
   // The kid's own entry: no coins, no review — a plain reminder for
   // themselves (trusted so one tap completes it).
   const [deadlineKey, setDeadlineKey] = useState('today');
+  const [pickDate, setPickDate] = useState<Date | null>(null);
+  const [pickTime, setPickTime] = useState<Date | null>(null);
+  const [picker, setPicker] = useState<'date' | 'time' | null>(null);
+  const { isDark: kioskDark } = useKioskColors();
   const addOwn = () => {
     const title = draft.trim();
     if (!title) return;
-    const dl = quickDeadlines().find(d => d.key === deadlineKey) ?? quickDeadlines()[1];
+    const dl = deadlineKey === 'custom' && pickDate ? customDeadline(pickDate, pickTime) : (quickDeadlines().find(d => d.key === deadlineKey) ?? quickDeadlines()[1]);
     addPersonalTask(active, title, dl);
-    setDraft(''); setAdding(false); setDeadlineKey('today');
+    setDraft(''); setAdding(false); setDeadlineKey('today'); setPickDate(null); setPickTime(null); setPicker(null);
     showToast('Added to your list ✓');
   };
 
@@ -145,7 +151,20 @@ export function KioskSimpleChecklist({ active, members, k, isDark, onOpenTasks, 
                 <Text style={[s.dlT, { color: deadlineKey === d.key ? k.onPrimary : k.textMuted }]}>{d.label}</Text>
               </Pressable>
             ))}
+            <Pressable onPress={() => { setDeadlineKey('custom'); if (!pickDate) setPickDate(new Date()); setPicker(p => (p === 'date' ? null : 'date')); }} accessibilityRole="button" accessibilityState={{ selected: deadlineKey === 'custom' }}
+              style={[s.dlChip, { backgroundColor: deadlineKey === 'custom' ? k.primary : k.well }]}>
+              <Text style={[s.dlT, { color: deadlineKey === 'custom' ? k.onPrimary : k.textMuted }]}>{deadlineKey === 'custom' && pickDate ? customDeadline(pickDate, pickTime).label : 'Pick a date…'}</Text>
+            </Pressable>
           </View>
+          {deadlineKey === 'custom' && (
+            <View style={s.dlRow}>
+              <Pressable onPress={() => (Platform.OS === 'android' ? openAndroidPicker({ mode: 'date', value: pickDate ?? new Date(), onChange: setPickDate }) : setPicker(p => (p === 'date' ? null : 'date')))} accessibilityRole="button" style={[s.dlChip, { backgroundColor: k.pastelSageCard }]}><Text style={[s.dlT, { color: k.sage }]}>Date</Text></Pressable>
+              <Pressable onPress={() => { if (!pickTime) { const t0 = new Date(); t0.setMinutes(0, 0, 0); t0.setHours(t0.getHours() + 1); setPickTime(t0); } if (Platform.OS === 'android') openAndroidPicker({ mode: 'time', value: pickTime ?? new Date(), onChange: setPickTime }); else setPicker(p => (p === 'time' ? null : 'time')); }} accessibilityRole="button" style={[s.dlChip, { backgroundColor: k.pastelAmberCard }]}><Text style={[s.dlT, { color: k.gold }]}>{pickTime ? 'Time set' : 'Add a time'}</Text></Pressable>
+              {!!pickTime && <Pressable onPress={() => { setPickTime(null); setPicker(null); }} accessibilityRole="button" style={[s.dlChip, { backgroundColor: k.well }]}><Text style={[s.dlT, { color: k.textMuted }]}>No time</Text></Pressable>}
+            </View>
+          )}
+          {picker === 'date' && pickDate && <KioskDateTimePicker mode="date" visible k={k} isDark={kioskDark} value={pickDate} minimumDate={new Date(new Date().setHours(0, 0, 0, 0))} onChange={setPickDate} onDone={() => setPicker(null)} />}
+          {picker === 'time' && pickTime && <KioskDateTimePicker mode="time" visible k={k} isDark={kioskDark} value={pickTime} onChange={setPickTime} onDone={() => setPicker(null)} />}
           </View>
         ) : (
           <Pressable

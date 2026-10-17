@@ -3,27 +3,31 @@
  * deadline, tick it off with one tap. Only the owner sees these (see lib/personalTasks.ts).
  */
 import { useMemo, useState } from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Plus, Check } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { showToast } from '@/components/AppToast';
-import { addPersonalTask, quickDeadlines, deadlineLabel } from '@/lib/personalTasks';
+import { addPersonalTask, quickDeadlines, deadlineLabel, customDeadline } from '@/lib/personalTasks';
 
 export function HubMyList({ active, colors, isDark }: { active: FamilyMember; colors: any; isDark: boolean }) {
   const { quests, submitQuest } = useQuestStore();
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
   const [dl, setDl] = useState('today');
+  const [pickDate, setPickDate] = useState<Date | null>(null);
+  const [pickTime, setPickTime] = useState<Date | null>(null);
+  const [picker, setPicker] = useState<'date' | 'time' | null>(null);
   const mine = useMemo(() => quests
     .filter((q: any) => q.createdById === active.id && q.assignedToId === active.id && q.trustedAutoApprove && !q.coins
       && ['todo', 'in_progress', 'claimed', 'declined'].includes(q.status))
     .sort((a: any, b: any) => `${a.dueDate ?? '9999'} ${a.dueTime ?? '99:99'}`.localeCompare(`${b.dueDate ?? '9999'} ${b.dueTime ?? '99:99'}`)), [quests, active.id]);
   const save = () => {
-    const d = quickDeadlines().find(x => x.key === dl) ?? quickDeadlines()[1];
+    const d = dl === 'custom' && pickDate ? customDeadline(pickDate, pickTime) : (quickDeadlines().find(x => x.key === dl) ?? quickDeadlines()[1]);
     if (!text.trim()) return;
     addPersonalTask(active, text, d);
-    setText(''); setAdding(false); setDl('today'); showToast('Added to your list');
+    setText(''); setAdding(false); setDl('today'); setPickDate(null); setPickTime(null); setPicker(null); showToast('Added to your list');
   };
   if (mine.length === 0 && !adding) {
     return (
@@ -58,7 +62,25 @@ export function HubMyList({ active, colors, isDark }: { active: FamilyMember; co
                 <Text style={[s.chipT, { color: dl === d.key ? '#fff' : colors.textSecondary }]}>{d.label}</Text>
               </Pressable>
             ))}
+            <Pressable onPress={() => { setDl('custom'); if (!pickDate) setPickDate(new Date()); setPicker(p => (p === 'date' ? null : 'date')); }} style={[s.chip, { backgroundColor: dl === 'custom' ? colors.primary : colors.surface }]}>
+              <Text style={[s.chipT, { color: dl === 'custom' ? '#fff' : colors.textSecondary }]}>{dl === 'custom' && pickDate ? customDeadline(pickDate, pickTime).label : 'Pick a date…'}</Text>
+            </Pressable>
           </View>
+          {dl === 'custom' && (
+            <View style={s.chips}>
+              <Pressable onPress={() => setPicker(p => (p === 'date' ? null : 'date'))} style={[s.chip, { backgroundColor: colors.surface }]}><Text style={[s.chipT, { color: colors.textSecondary }]}>Date</Text></Pressable>
+              <Pressable onPress={() => { if (!pickTime) { const t0 = new Date(); t0.setMinutes(0, 0, 0); t0.setHours(t0.getHours() + 1); setPickTime(t0); } setPicker(p => (p === 'time' ? null : 'time')); }} style={[s.chip, { backgroundColor: colors.surface }]}><Text style={[s.chipT, { color: colors.textSecondary }]}>{pickTime ? 'Change time' : 'Add a time'}</Text></Pressable>
+              {!!pickTime && <Pressable onPress={() => { setPickTime(null); setPicker(null); }} style={[s.chip, { backgroundColor: colors.surface }]}><Text style={[s.chipT, { color: colors.textSecondary }]}>No time</Text></Pressable>}
+            </View>
+          )}
+          {picker === 'date' && pickDate && (
+            <DateTimePicker value={pickDate} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={new Date(new Date().setHours(0, 0, 0, 0))}
+              onChange={(_e, d) => { if (Platform.OS !== 'ios') setPicker(null); if (d) setPickDate(d); }} />
+          )}
+          {picker === 'time' && pickTime && (
+            <DateTimePicker value={pickTime} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_e, d) => { if (Platform.OS !== 'ios') setPicker(null); if (d) setPickTime(d); }} />
+          )}
           <View style={s.btns}>
             <Pressable onPress={() => setAdding(false)} style={[s.btn, { backgroundColor: colors.surface }]}><Text style={[s.btnT, { color: colors.textPrimary }]}>Cancel</Text></Pressable>
             <Pressable onPress={save} disabled={!text.trim()} style={[s.btn, { backgroundColor: colors.primary, opacity: text.trim() ? 1 : 0.4 }]}><Check size={16} color="#fff" /><Text style={[s.btnT, { color: '#fff' }]}>Add</Text></Pressable>

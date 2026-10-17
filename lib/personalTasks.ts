@@ -47,3 +47,11 @@ export function deadlineLabel(dueDate?: string, dueTime?: string): string {
   const [h, m] = dueTime.split(':').map(Number);
   return `${day} · ${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
+
+/** A deadline built from a date (and optional time) the person picked themselves. */
+export function customDeadline(date: Date, time?: Date | null): QuickDeadline {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const d = localDateStr(date);
+  const tm = time ? `${pad(time.getHours())}:${pad(time.getMinutes())}` : undefined;
+  return { key: 'custom', label: deadlineLabel(d, tm), date: d, time: tm };
+}

@@ -86,7 +86,7 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
 }
 
 const s = StyleSheet.create({
-  wrap: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, gap: 8 },
+  wrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 22, gap: 8 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   scroller: { marginHorizontal: -16, overflow: 'visible' },
   grid: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14 },
@@ -98,7 +98,7 @@ const s = StyleSheet.create({
   when: { fontSize: 11, fontWeight: '700' },
   x: { position: 'absolute', top: 6, right: 6 },
   add: { alignItems: 'center', justifyContent: 'center', shadowOpacity: 0, elevation: 0, transform: [] },
-  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginVertical: 6, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
+  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 14, marginBottom: 22, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
   emptyT: { fontSize: 14, fontWeight: '700' },
   modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 10 },

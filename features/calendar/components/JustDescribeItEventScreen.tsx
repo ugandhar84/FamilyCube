@@ -32,7 +32,7 @@ import { detectLocalTask } from '@/features/tasks/lib/localTaskDetection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { todayLocal } from '@/lib/dates';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { Mic, Square, CalendarDays } from 'lucide-react-native';
+import { Mic, Square, CalendarDays, X } from 'lucide-react-native';
 import AppDateTimePicker from '@/components/AppDateTimePicker';
 import { supabase } from '@/lib/supabase';
 import { LocationAutocompleteInput } from '@/components/LocationAutocompleteInput';
@@ -330,6 +330,8 @@ export default function JustDescribeItEventScreen({
     setMemberConflicts({});
     setCheckingConflicts({});
     setListenSecs(0);
+    setPickupOnly(false);
+    timeTouched.current = false;
     dictation.reset();
   };
 
@@ -427,6 +429,17 @@ export default function JustDescribeItEventScreen({
     openInlineForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenForm, detection, isEdit]);
+
+  // The spoken time always wins over a hand-over guess: if the words are read again after the form opened, follow them,
+  // unless the person already picked a time themselves.
+  const timeTouched = useRef(false);
+  useEffect(() => {
+    const spoken = detection?.when.time?.slice(0, 5);
+    if (!autoOpened.current || timeTouched.current || !spoken || spoken === evTime) return;
+    setEvTime(spoken);
+    setEvEndTime(detection?.when.returnTime ? detection.when.returnTime.slice(0, 5) : addMinutesToHHMM(spoken, 60));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detection?.when.time]);
 
   // Keep pick-up locations mirrored as drop-off is filled (only when pick-up is enabled)
   useEffect(() => {
@@ -861,6 +874,16 @@ export default function JustDescribeItEventScreen({
                     <Text style={{ fontSize: 12, color: tertiaryC }}>
                       {isListening ? `Listening · ${fmtListenTime(listenSecs)}` : hasInput ? 'Unsaved · only a draft' : 'Nothing created yet'}
                     </Text>
+                    {(hasInput || formOpen) && !isListening && (
+                      <TouchableOpacity
+                        onPress={reset}
+                        accessibilityRole="button" accessibilityLabel="Clear the text and the form"
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.surface }}
+                      >
+                        <X size={12} color={bodyC} />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: bodyC }}>Clear</Text>
+                      </TouchableOpacity>
+                    )}
                     {hasInput && !isListening && (
                       <TouchableOpacity
                         onPress={handleAiAutoFill}
@@ -1473,7 +1496,7 @@ export default function JustDescribeItEventScreen({
           visible={showTimePick}
           mode="time"
           value={(() => { const [h, m] = evTime.split(':'); const d = new Date(); d.setHours(+h, +m, 0, 0); return d; })()}
-          onConfirm={d => { setEvTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setShowTimePick(false); }}
+          onConfirm={d => { timeTouched.current = true; setEvTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`); setShowTimePick(false); }}
           onCancel={() => setShowTimePick(false)}
         />
         <AppDateTimePicker

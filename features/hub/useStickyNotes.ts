@@ -1,0 +1,43 @@
+/**
+ * useStickyNotes — the family's sticky notes (family_sticky_notes), shared by the phone Hub card and the
+ * kiosk Home card. Anyone can write one (100 characters) and choose who sees it; no one chosen means
+ * everyone. A member sees notes they wrote, notes shared with them, and notes for everyone.
+ * The author or a parent can remove a note. Stays live through realtime.
+ */
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import type { FamilyMember } from '@/store/familyStore';
+
+export const NOTE_MAX = 100;
+export type NoteColor = 'amber' | 'sage' | 'lavender' | 'peach';
+export const NOTE_COLORS: NoteColor[] = ['amber', 'sage', 'lavender', 'peach'];
+
+export interface StickyNote {
+  id: string; author_id: string; body: string; color: string; created_at: string; recipient_ids: string[] | null;
+}
+
+export function useStickyNotes(active: FamilyMember, members: FamilyMember[]) {
+  const familyId = (members[0] as any)?.familyId as string | undefined;
+  const [notes, setNotes] = useState<StickyNote[]>([]);
+  const load = useCallback(async () => {
+    if (!familyId) return;
+    const { data } = await supabase.from('family_sticky_notes').select('*').eq('family_id', familyId).order('created_at', { ascending: false }).limit(8);
+    if (data) setNotes((data as StickyNote[]).filter(n => n.author_id === active.id || !n.recipient_ids?.length || n.recipient_ids.includes(active.id)));
+  }, [familyId, active.id]);
+  useEffect(() => {
+    load();
+    const ch = supabase.channel(`sticky_notes_${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'family_sticky_notes' }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [load]);
+  const add = async (body: string, color: NoteColor, to: string[]) => {
+    const text = body.trim().slice(0, NOTE_MAX);
+    if (!text || !familyId) return false;
+    const { error } = await supabase.from('family_sticky_notes').insert({ family_id: familyId, author_id: active.id, body: text, color, recipient_ids: to });
+    if (!error) load();
+    return !error;
+  };
+  const remove = async (n: StickyNote) => { await supabase.from('family_sticky_notes').delete().eq('id', n.id); setNotes(p => p.filter(x => x.id !== n.id)); };
+  const canRemove = (n: StickyNote) => active.role === 'parent' || n.author_id === active.id;
+  return { notes, add, remove, canRemove };
+}

@@ -27,6 +27,7 @@ import { KioskFormDrawer } from './KioskFormDrawer';
 import { Eyebrow, firstName } from './KioskHomeParts';
 import { useKioskPhotos } from '../useKioskPhotos';
 import { KIOSK_FONT } from '../kioskFonts';
+import { useStickyNotes, NOTE_MAX, type NoteColor } from '@/features/hub/useStickyNotes';
 
 const STATUS: Record<string, string> = { at_home: 'Home', at_school: 'School', at_work: 'Work', in_transit: 'On the move', at_activity: 'Activity' };
 
@@ -172,36 +173,18 @@ export function HomeMedsCard({ active, members, ownOnly }: { active: FamilyMembe
 }
 
 /* ───────── Sticky notes ───────── */
-interface Note { id: string; author_id: string; body: string; color: string; created_at: string; recipient_ids: string[] | null }
 export function StickyNotesCard({ active, members }: { active: FamilyMember; members: FamilyMember[] }) {
   const { k } = useKioskColors();
-  const familyId = (members[0] as any)?.familyId as string | undefined;
-  const isParent = active.role === 'parent';
-  const [to, setTo] = useState<string[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
+  const { notes, add, remove, canRemove } = useStickyNotes(active, members);
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
   const [color, setColor] = useState('amber');
+  const [to, setTo] = useState<string[]>([]);
   const tones: Record<string, { bg: string; fg: string }> = { amber: { bg: k.pastelAmberCard, fg: k.gold }, sage: { bg: k.pastelSageCard, fg: k.sage }, lavender: { bg: k.pastelLavCard, fg: k.purple }, peach: { bg: k.pastelPrimaryCard, fg: k.terracotta } };
-  const load = useCallback(async () => {
-    if (!familyId) return;
-    const { data } = await supabase.from('family_sticky_notes').select('*').eq('family_id', familyId).order('created_at', { ascending: false }).limit(8);
-    // Visible to its author, to everyone when no one is chosen, or to the people it was shared with.
-    if (data) setNotes((data as Note[]).filter(n => n.author_id === active.id || !n.recipient_ids?.length || n.recipient_ids.includes(active.id)));
-  }, [familyId, active.id]);
-  useEffect(() => {
-    load();
-    const ch = supabase.channel(`home_notes_${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'family_sticky_notes' }, () => load()).subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [load]);
   const save = async () => {
-    const body = text.trim(); if (!body || !familyId) return;
-    const { error } = await supabase.from('family_sticky_notes').insert({ family_id: familyId, author_id: active.id, body, color, recipient_ids: to });
-    if (error) { showToast('Could not post the note'); return; }
-    setText(''); setTo([]); setAdding(false); showToast('Note posted'); load();
+    if (!(await add(text, color as NoteColor, to))) { showToast('Could not post the note'); return; }
+    setText(''); setTo([]); setAdding(false); showToast('Note posted');
   };
-  const remove = async (n: Note) => { await supabase.from('family_sticky_notes').delete().eq('id', n.id); setNotes(p => p.filter(x => x.id !== n.id)); };
   return (
     <View style={{ gap: 8 }}>
       <Eyebrow label="STICKY NOTES" accent={k.gold} k={k} />
@@ -212,7 +195,7 @@ export function StickyNotesCard({ active, members }: { active: FamilyMember; mem
             <View key={n.id} style={[s.sticky, { backgroundColor: t.bg, transform: [{ rotate: i % 2 ? '1deg' : '-1deg' }] }]}>
               <Text style={[s.stickyT, { color: k.text }]}>{n.body}</Text>
               <Text style={[s.stickyBy, { color: t.fg }]}>— {firstName(members.find(m => m.id === n.author_id))}{n.recipient_ids?.length ? ` → ${n.recipient_ids.map(id => firstName(members.find(m => m.id === id))).join(', ')}` : ''}</Text>
-              {(isParent || n.author_id === active.id) && <Pressable onPress={() => remove(n)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove note" style={s.stickyX}><X size={14} color={k.textMuted} /></Pressable>}
+              {canRemove(n) && <Pressable onPress={() => remove(n)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove note" style={s.stickyX}><X size={14} color={k.textMuted} /></Pressable>}
             </View>
           );
         })}
@@ -222,9 +205,9 @@ export function StickyNotesCard({ active, members }: { active: FamilyMember; mem
       <KioskFormDrawer visible={adding} variant="drawer" title="New sticky note" subtitle="It appears on Home for the people you choose" accent={k.gold} Icon={StickyNote} k={k}
         onClose={() => setAdding(false)} submitLabel="Post note" onSubmit={save} canSubmit={!!text.trim()}>
         <View style={{ gap: KIOSK_SPACE.md }}>
-          <TextInput value={text} onChangeText={setText} placeholder="e.g. Soccer cleats are in the garage" placeholderTextColor={k.textFaint} multiline maxLength={100}
+          <TextInput value={text} onChangeText={setText} placeholder="e.g. Soccer cleats are in the garage" placeholderTextColor={k.textFaint} multiline maxLength={NOTE_MAX}
             style={[s.input, { color: k.text, backgroundColor: k.pastelAmber, borderColor: k.pastelAmberCard, fontFamily: KIOSK_FONT.hand.bold, fontSize: 24 }]} accessibilityLabel="Note" />
-          <Text style={[s.sub, { color: k.textFaint, textAlign: 'right' }]}>{text.length}/100</Text>
+          <Text style={[s.sub, { color: k.textFaint, textAlign: 'right' }]}>{text.length}/{NOTE_MAX}</Text>
           <Text style={[s.sub, { color: k.textFaint }]}>SHARE WITH</Text>
           <View style={s.wrap}>
             <Pressable onPress={() => setTo([])} accessibilityRole="button" accessibilityState={{ selected: to.length === 0 }} style={[s.colorChip, { backgroundColor: to.length === 0 ? k.primary : k.well }]}>

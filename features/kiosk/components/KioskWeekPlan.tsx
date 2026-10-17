@@ -5,9 +5,11 @@
  * Each meal is a pastel card by type; tapping opens the recipe drawer, and a
  * parent gets a + under every day. Search still covers every past week.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, StyleSheet, ActivityIndicator, type LayoutChangeEvent } from 'react-native';
-import { Plus, Search, X, ShoppingCart, Sparkles, CalendarDays } from 'lucide-react-native';
+import { Plus, Search, X, ShoppingCart, Sparkles, CalendarDays, Trash2 } from 'lucide-react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Meal } from '@/features/vault/tabs/meals/types';
 import { localDateStr } from '@/lib/dates';
@@ -23,9 +25,45 @@ const GAP = KIOSK_SPACE.sm;
 const cap = (t?: string | null) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : '');
 const typeIdx = (t?: string | null) => { const i = TYPE_ORDER.indexOf((t ?? '').toLowerCase()); return i < 0 ? 9 : i; };
 
+type Rect = { x: number; y: number; w: number; h: number };
+
+/** A meal card a parent can press-and-hold to drag onto another day or the remove bar. */
+function DragCard({ m, tone, chefName, chefAvatar, canDrag, onOpen, onRemove, onStart, onMove, onEnd }: {
+  m: Meal; tone: { card: string; fg: string }; chefName: string; chefAvatar: React.ReactNode; canDrag: boolean;
+  onOpen: () => void; onRemove: () => void;
+  onStart: (m: Meal, x: number, y: number) => void; onMove: (x: number, y: number) => void; onEnd: (x: number, y: number) => void;
+}) {
+  const { k } = useKioskColors();
+  const pan = Gesture.Pan().enabled(canDrag).activateAfterLongPress(280)
+    .onStart(e => { runOnJS(onStart)(m, e.absoluteX, e.absoluteY); })
+    .onUpdate(e => { runOnJS(onMove)(e.absoluteX, e.absoluteY); })
+    .onEnd(e => { runOnJS(onEnd)(e.absoluteX, e.absoluteY); });
+  return (
+    <GestureDetector gesture={pan}>
+      <View>
+        <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${m.title} ${cap(m.type)}`} accessibilityHint={canDrag ? 'Press and hold to move to another day' : undefined}
+          style={({ pressed }) => [s.card, { backgroundColor: tone.card }, pressed && { opacity: 0.75 }]}>
+          <Text style={[s.type, { color: tone.fg }]}>{(m.type ?? 'Meal').toUpperCase()}</Text>
+          <Text style={{ fontSize: 26 }}>{m.emoji ?? '🍽️'}</Text>
+          <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{m.title}</Text>
+          <View style={s.chefRow}>
+            {chefAvatar}
+            <Text style={[s.cardMeta, { color: k.textMuted }]} numberOfLines={1}>{[chefName, m.start_time].filter(Boolean).join(' · ')}</Text>
+          </View>
+        </Pressable>
+        {canDrag && (
+          <Pressable onPress={onRemove} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Remove ${m.title}`} style={[s.x, { backgroundColor: k.card }]}>
+            <X size={14} color={k.textMuted} strokeWidth={2.6} />
+          </Pressable>
+        )}
+      </View>
+    </GestureDetector>
+  );
+}
+
 export function KioskWeekPlan({
   meals, nextMeals, week, nextWeek, loading, members, isKidOrTeen,
-  onOpenMeal, onAddMeal, onAddWeekToList, onOpenAi,
+  onOpenMeal, onAddMeal, onAddWeekToList, onOpenAi, onMoveMeal, onRemoveMeal,
   query, setQuery, searchResults, searchLoading,
 }: {
   meals: Meal[]; nextMeals: Meal[]; week: string; nextWeek: string; loading: boolean;
@@ -35,6 +73,10 @@ export function KioskWeekPlan({
   onAddMeal: (day: string, weekOf: string) => void;
   onAddWeekToList: () => void;
   onOpenAi: () => void;
+  /** Drop a meal on another day (this or next week). */
+  onMoveMeal: (m: Meal, day: string, weekOf: string) => void;
+  /** Remove a meal (the tab confirms first). */
+  onRemoveMeal: (m: Meal) => void;
   query: string; setQuery: (q: string) => void;
   searchResults: Meal[] | null; searchLoading: boolean;
 }) {
@@ -68,6 +110,74 @@ export function KioskWeekPlan({
   useEffect(() => { if (boardW > 0 && !loading) goToday(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [boardW, loading, todayIdx]);
   const awayFromToday = Math.abs(scrollX - todayIdx * (COL_W + GAP)) > COL_W / 2;
 
+  /* ── drag a meal to another day, or onto the remove bar ── */
+  const canDrag = !isKidOrTeen;
+  const rootRef = useRef<View>(null);
+  const colRefs = useRef<Record<string, View | null>>({});
+  const removeRef = useRef<View>(null);
+  const rects = useRef<{ cols: Record<string, Rect>; remove: Rect | null; root: Rect; scrollX: number; board: Rect }>({ cols: {}, remove: null, root: { x: 0, y: 0, w: 0, h: 0 }, scrollX: 0, board: { x: 0, y: 0, w: 0, h: 0 } });
+  const scrollXRef = useRef(0);
+  const boardRef = useRef<View>(null);
+  const [drag, setDrag] = useState<Meal | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
+  const ghostStyle = useAnimatedStyle(() => ({ transform: [{ translateX: dragX.value }, { translateY: dragY.value }] }));
+  const autoScroll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastX = useRef(0);
+
+  const measure = (r: View | null) => new Promise<Rect>(res => { if (!r) return res({ x: 0, y: 0, w: 0, h: 0 }); r.measureInWindow((x, y, w, h) => res({ x, y, w, h })); });
+  const hit = useCallback((x: number, y: number): string | null => {
+    const R = rects.current;
+    if (R.remove && x >= R.remove.x && x <= R.remove.x + R.remove.w && y >= R.remove.y && y <= R.remove.y + R.remove.h) return 'remove';
+    const shift = R.scrollX - scrollXRef.current;
+    for (const [key, c] of Object.entries(R.cols)) {
+      const cx = c.x + shift;
+      if (x >= cx && x <= cx + c.w && y >= c.y && y <= c.y + c.h) return key;
+    }
+    return null;
+  }, []);
+  const stopAuto = () => { if (autoScroll.current) { clearInterval(autoScroll.current); autoScroll.current = null; } };
+  const startDrag = useCallback(async (m: Meal, x: number, y: number) => {
+    const cols: Record<string, Rect> = {};
+    await Promise.all(Object.entries(colRefs.current).map(async ([key, ref]) => { cols[key] = await measure(ref); }));
+    const [root, board] = await Promise.all([measure(rootRef.current), measure(boardRef.current)]);
+    rects.current = { cols, remove: null, root, board, scrollX: scrollXRef.current };
+    setDrag(m); setHover(null);
+    dragX.value = x - root.x - 80; dragY.value = y - root.y - 40; lastX.current = x;
+    stopAuto();
+    autoScroll.current = setInterval(() => {
+      const b = rects.current.board; const px = lastX.current;
+      if (px < b.x + 70) scrollRef.current?.scrollTo({ x: Math.max(0, scrollXRef.current - 18), animated: false });
+      else if (px > b.x + b.w - 70) scrollRef.current?.scrollTo({ x: scrollXRef.current + 18, animated: false });
+    }, 16);
+    // The remove bar mounts with the drag; measure it on the next frame.
+    setTimeout(async () => { rects.current.remove = await measure(removeRef.current); }, 60);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const moveDrag = useCallback((x: number, y: number) => {
+    dragX.value = x - rects.current.root.x - 80; dragY.value = y - rects.current.root.y - 40; lastX.current = x;
+    setHover(hit(x, y));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hit]);
+  const endDrag = useCallback((x: number, y: number) => {
+    stopAuto();
+    const target = hit(x, y);
+    setDrag(cur => {
+      if (cur && target) {
+        if (target === 'remove') onRemoveMeal(cur);
+        else {
+          const col = days.find(d => d.key === target);
+          if (col && !(col.day === cur.day && col.weekOf === cur.week_of)) onMoveMeal(cur, col.day, col.weekOf);
+        }
+      }
+      return null;
+    });
+    setHover(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hit, days, onMoveMeal, onRemoveMeal]);
+  useEffect(() => () => stopAuto(), []);
+
   const rangeLabel = `${days[0].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${days[13].date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   const chef = (id?: string | null) => (id ? members.find(m => m.id === id) : undefined);
 
@@ -77,7 +187,7 @@ export function KioskWeekPlan({
   };
 
   return (
-    <View style={s.wrap}>
+    <View ref={rootRef} style={s.wrap} collapsable={false}>
       <View style={s.head}>
         <Text style={[s.title, { color: k.text }]}>Week plan</Text>
         <View style={[s.range, { backgroundColor: k.well }]}><CalendarDays size={15} color={k.textMuted} /><Text style={[s.rangeText, { color: k.textMuted }]}>{rangeLabel}</Text></View>
@@ -131,18 +241,19 @@ export function KioskWeekPlan({
       ) : loading ? (
         <ActivityIndicator color={k.gold} style={{ marginTop: KIOSK_SPACE.xl }} />
       ) : (
-        <View style={{ flex: 1, minHeight: 0 }} onLayout={(e: LayoutChangeEvent) => setBoardW(e.nativeEvent.layout.width)}>
+        <View ref={boardRef} collapsable={false} style={{ flex: 1, minHeight: 0 }} onLayout={(e: LayoutChangeEvent) => setBoardW(e.nativeEvent.layout.width)}>
           <ScrollView
             ref={scrollRef} horizontal showsHorizontalScrollIndicator={false}
             snapToInterval={COL_W + GAP} decelerationRate="fast"
-            onScroll={e => setScrollX(e.nativeEvent.contentOffset.x)} scrollEventThrottle={32}
+            scrollEnabled={!drag} onScroll={e => { scrollXRef.current = e.nativeEvent.contentOffset.x; setScrollX(e.nativeEvent.contentOffset.x); }} scrollEventThrottle={16}
             contentContainerStyle={{ gap: GAP, paddingBottom: KIOSK_SPACE.md }}
           >
             {days.map((d, i) => {
               const isToday = i === todayIdx;
               const past = i < todayIdx;
               return (
-                <View key={d.key} style={[s.col, { width: COL_W, backgroundColor: isToday ? k.primarySoft : k.well, opacity: past ? 0.7 : 1 }]}>
+                <View key={d.key} ref={el => { colRefs.current[d.key] = el; }} collapsable={false}
+                  style={[s.col, { width: COL_W, backgroundColor: isToday ? k.primarySoft : k.well, opacity: past && hover !== d.key ? 0.7 : 1 }, hover === d.key && { borderWidth: 3, borderColor: k.primary }]}>
                   <View style={s.colHead}>
                     <Text style={[s.dow, { color: isToday ? k.primary : k.textMuted }]}>{isToday ? 'TODAY' : d.day.toUpperCase()}</Text>
                     <Text style={[s.dnum, { color: k.text }]}>{d.date.getDate()}</Text>
@@ -150,21 +261,12 @@ export function KioskWeekPlan({
                   </View>
                   <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
                     {d.meals.map(m => {
-                      const tone = typeTone(m.type);
                       const c = chef(m.chef_id);
                       return (
-                        <Pressable key={m.id} onPress={() => onOpenMeal(m)} accessibilityRole="button" accessibilityLabel={`${m.title} ${cap(m.type)}`}
-                          style={({ pressed }) => [s.card, { backgroundColor: tone.card }, pressed && { opacity: 0.75 }]}>
-                          <Text style={[s.type, { color: tone.fg }]}>{(m.type ?? 'Meal').toUpperCase()}</Text>
-                          <Text style={{ fontSize: 26 }}>{m.emoji ?? '🍽️'}</Text>
-                          <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{m.title}</Text>
-                          <View style={s.chefRow}>
-                            {c ? <KioskAvatar name={c.name} emoji={c.emoji} avatarUrl={c.avatarUrl} size={20} bgColor={k.card} k={k} /> : null}
-                            <Text style={[s.cardMeta, { color: k.textMuted }]} numberOfLines={1}>
-                              {[c ? c.name.trim().split(' ')[0] : 'No chef', m.start_time].filter(Boolean).join(' · ')}
-                            </Text>
-                          </View>
-                        </Pressable>
+                        <DragCard key={m.id} m={m} tone={typeTone(m.type)} canDrag={canDrag} onOpen={() => onOpenMeal(m)} onRemove={() => onRemoveMeal(m)}
+                          chefName={c ? c.name.trim().split(' ')[0] : 'No chef'}
+                          chefAvatar={c ? <KioskAvatar name={c.name} emoji={c.emoji} avatarUrl={c.avatarUrl} size={20} bgColor={k.card} k={k} /> : null}
+                          onStart={startDrag} onMove={moveDrag} onEnd={endDrag} />
                       );
                     })}
                     {!isKidOrTeen && (
@@ -179,12 +281,26 @@ export function KioskWeekPlan({
               );
             })}
           </ScrollView>
-          {awayFromToday && (
+          {drag && (
+            <View ref={removeRef} collapsable={false} pointerEvents="none"
+              style={[s.removeBar, { backgroundColor: hover === 'remove' ? k.danger : k.dangerSoft, borderColor: k.dangerEdge }]}>
+              <Trash2 size={20} color={hover === 'remove' ? k.onAccent : k.danger} />
+              <Text style={[s.removeT, { color: hover === 'remove' ? k.onAccent : k.danger }]}>Drop here to remove</Text>
+            </View>
+          )}
+          {awayFromToday && !drag && (
             <Pressable onPress={() => goToday()} accessibilityRole="button" accessibilityLabel="Jump to today" style={[s.todayBtn, { backgroundColor: k.primary }]}>
               <Text style={[s.todayText, { color: k.onPrimary }]}>Today</Text>
             </Pressable>
           )}
         </View>
+      )}
+      {drag && (
+        <Animated.View pointerEvents="none" style={[s.ghost, { backgroundColor: typeTone(drag.type).card }, ghostStyle]}>
+          <Text style={[s.type, { color: typeTone(drag.type).fg }]}>{(drag.type ?? 'Meal').toUpperCase()}</Text>
+          <Text style={{ fontSize: 24 }}>{drag.emoji ?? '🍽️'}</Text>
+          <Text style={[s.cardTitle, { color: k.text }]} numberOfLines={2}>{drag.title}</Text>
+        </Animated.View>
       )}
     </View>
   );
@@ -208,6 +324,10 @@ const s = StyleSheet.create({
   dnum: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   mon: { fontSize: KIOSK_TYPO.micro, fontWeight: '800' },
   card: { borderRadius: KIOSK_RADIUS.lg, padding: 10, gap: 3 },
+  x: { position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  ghost: { position: 'absolute', left: 0, top: 0, width: 160, borderRadius: KIOSK_RADIUS.lg, padding: 10, gap: 3, opacity: 0.92, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8, zIndex: 50 },
+  removeBar: { position: 'absolute', left: 0, right: 0, bottom: 4, minHeight: 64, borderRadius: 20, borderWidth: 2, borderStyle: 'dashed', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, zIndex: 40 },
+  removeT: { fontSize: KIOSK_TYPO.body, fontWeight: '800' },
   type: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8 },
   cardTitle: { fontSize: KIOSK_TYPO.caption, fontWeight: '800', lineHeight: 18 },
   cardMeta: { fontSize: KIOSK_TYPO.micro, fontWeight: '700', flexShrink: 1 },

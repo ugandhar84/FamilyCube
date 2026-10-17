@@ -574,6 +574,26 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
     }
   };
 
+  /** Removing a meal always asks first. */
+  const confirmRemoveMeal = (meal: Meal) => Alert.alert(
+    'Remove this meal?',
+    `"${meal.title}" will be removed from ${meal.day}'s plan${meal.linked_event_id ? ' and its calendar reminder' : ''}.`,
+    [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => deleteMeal(meal) }],
+  );
+
+  /** Drag a meal to another day (this or next week). A day never gets the same meal type twice. */
+  const moveMeal = async (meal: Meal, day: string, wk: string) => {
+    if ([...meals, ...nextMeals].some(m => m.id !== meal.id && m.day === day && m.week_of === wk && (m.type ?? '').toLowerCase() === (meal.type ?? '').toLowerCase())) {
+      showToast(`${day} already has a ${meal.type}`);
+      return;
+    }
+    const linked = await syncMealCalendarEvent({ ...meal, day, week_of: wk });
+    const { error } = await supabase.from('family_meals').update({ day, week_of: wk, linked_event_id: linked }).eq('id', meal.id);
+    if (error) { showToast('Could not move the meal. Try again.'); return; }
+    showToast(`${meal.title} moved to ${day}`);
+    reloadMeals();
+  };
+
   const deleteMeal = async (meal: Meal) => {
     if (meal.linked_event_id) useEventStore.getState().deleteEvent(meal.linked_event_id);
     await supabase.from('family_meals').delete().eq('id', meal.id);
@@ -815,6 +835,8 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
             onAddMeal={(d, w) => { setAddWeekOf(w); setAddDay(d); }}
             onAddWeekToList={addWeekToList}
             onOpenAi={() => setArea('ai')}
+            onMoveMeal={moveMeal}
+            onRemoveMeal={confirmRemoveMeal}
             query={mealQuery} setQuery={setMealQuery}
             searchResults={mealSearchResults} searchLoading={mealSearchLoading}
           />
@@ -1086,7 +1108,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
       members={members}
       k={k}
       onEdit={isKidOrTeen ? undefined : (m) => { setOpenMeal(null); setEditingMeal(m); }}
-      onDelete={isKidOrTeen ? undefined : (m) => { setOpenMeal(null); deleteMeal(m); }}
+      onDelete={isKidOrTeen ? undefined : (m) => { setOpenMeal(null); confirmRemoveMeal(m); }}
       hideAddToGrocery={isKidOrTeen}
       familyId={familyId}
       senderId={active.id}

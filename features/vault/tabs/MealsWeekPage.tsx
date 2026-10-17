@@ -8,6 +8,8 @@
  *   "Add meal" CTA
  *   Day cards (via MealsTab)
  */
+import { PageHeading } from '@/components/PageHeading';
+import { ChefHat } from 'lucide-react-native';
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,35 +88,17 @@ export default function MealsWeekPage({
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
-      {/* ── ReviewInbox-style header ── */}
-      <View style={{
-        paddingHorizontal: 20,
-        paddingTop: insets.top + 12,
-        paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-        backgroundColor: canvas,
-        gap: 8,
-      }}>
-        {/* Family chrome */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-            FAMILY CUBE / {familyName.toUpperCase()}
-          </Text>
-          {activeMember && (
-            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-              {(activeMember as any).name} · {(activeMember as any).role === 'parent' ? 'Parent / Admin' : 'Member'}
-            </Text>
-          )}
-        </View>
-
-        {/* Title — tapping it goes back, no separate breadcrumb link above
-            it [live-requested pattern, same as Grocery's sub-screens]. */}
-        <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-            A week at the table
-          </Text>
-        </Pressable>
+      {/* Standard page heading: tap the title to go back. */}
+      <View style={{ backgroundColor: canvas }}>
+        <PageHeading
+          eyebrow="FAMILY CUBE · MEALS"
+          title="A week at the table"
+          subtitle="Plan breakfast, lunch, snacks and dinner for the family."
+          accent="amber"
+          Icon={ChefHat}
+          onTitlePress={onClose}
+          topInset={insets.top}
+        />
       </View>
 
       {/* Week navigator */}

@@ -10,6 +10,8 @@ import {
   TextInput, Platform, Image, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PageHeading } from '@/components/PageHeading';
+import { OverlayPage, OverlayHeading } from '@/components/OverlayPage';
 import { BookOpen, Plus, Sparkles, ChefHat, Search, Check, Trash2, Mic, Wand2, Camera, ImagePlus, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -270,39 +272,17 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
   return (
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
-      {/* ── ReviewInbox-style header ── */}
-      <View style={{
-        paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-        backgroundColor: canvas, gap: 8,
-      }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-            FAMILY CUBE / {familyName.toUpperCase()}
-          </Text>
-          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-            {(activeMember as any)?.name} · {isParent ? 'Parent / Admin' : 'Member'}
-          </Text>
-        </View>
-
-        {/* Title — tapping it goes back, no separate breadcrumb link above
-            it [live-requested pattern, same as Grocery's sub-screens].
-            Header "+" add-recipe button removed per explicit request
-            ("remove + from headers") — adding a recipe still happens via
-            the recipe cards' own "+ New recipe" affordance below. */}
-        <Pressable onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-          <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-            Family recipe book
-          </Text>
-        </Pressable>
-
-        <Text style={{ fontSize: 14, color: isDark ? colors.textSecondary : GEMINI.bodyColor, lineHeight: 20 }}>
-          {isParent
-            ? "Recipes your family has made and loved. Add any recipe to this week's plan."
-            : 'Recipes your family has made and loved. Add your own to share with the family.'}
-        </Text>
-      </View>
+      <PageHeading
+        eyebrow="FAMILY CUBE · MEALS"
+        title="Family recipe book"
+        subtitle={isParent
+          ? "Recipes your family has made and loved. Add any recipe to this week's plan."
+          : 'Recipes your family has made and loved. Add your own to share with the family.'}
+        accent="amber"
+        Icon={BookOpen}
+        onTitlePress={onClose}
+        topInset={insets.top}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: insets.bottom + 80 }}>
@@ -498,30 +478,10 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       </ScrollView>
 
       {/* ── Add new recipe — full-page overlay ── */}
-      <FullPageOverlay visible={showAddRecipe} onDismiss={() => setShowAddRecipe(false)} zIndex={90}>
+      <OverlayPage visible={showAddRecipe} onDismiss={() => setShowAddRecipe(false)} zIndex={90}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
-          {/* Header */}
-          <View style={{
-            paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-            backgroundColor: canvas, gap: 8,
-          }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                FAMILY CUBE / {familyName.toUpperCase()}
-              </Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-                {(activeMember as any)?.name}
-              </Text>
-            </View>
-            <Pressable onPress={() => setShowAddRecipe(false)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                New recipe
-              </Text>
-            </Pressable>
-          </View>
+          <OverlayHeading eyebrow="FAMILY CUBE · MEALS" title="New recipe" accent="amber" Icon={BookOpen} onTitlePress={() => setShowAddRecipe(false)} topInset={insets.top} />
 
           {/* ── Single scrollable body — photo + all form fields scroll together ── */}
           <ScrollView
@@ -805,32 +765,12 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
           </ScrollView>
         </View>
         </KeyboardAvoidingView>
-      </FullPageOverlay>
+      </OverlayPage>
 
       {/* ── "Add to week" — full-page overlay (no bottom sheets) ── */}
-      <FullPageOverlay visible={!!addTarget} onDismiss={() => setAddTarget(null)} zIndex={80}>
+      <OverlayPage visible={!!addTarget} onDismiss={() => setAddTarget(null)} zIndex={80}>
         <View style={{ flex: 1, backgroundColor: canvas }}>
-          {/* Header */}
-          <View style={{
-            paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 16,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-            backgroundColor: canvas, gap: 8,
-          }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                FAMILY CUBE / {familyName.toUpperCase()}
-              </Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-                {(activeMember as any)?.name}
-              </Text>
-            </View>
-            <Pressable onPress={() => setAddTarget(null)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-              <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                Add to this week
-              </Text>
-            </Pressable>
-          </View>
+          <OverlayHeading eyebrow="FAMILY CUBE · MEALS" title="Add to this week" accent="amber" Icon={BookOpen} onTitlePress={() => setAddTarget(null)} topInset={insets.top} />
 
           <ScrollView showsVerticalScrollIndicator={false}
             contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: insets.bottom + 100 }}>
@@ -929,7 +869,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             </Pressable>
           </View>
         </View>
-      </FullPageOverlay>
+      </OverlayPage>
 
       {/* ── Recipe detail overlay ── */}
       <FullPageOverlay visible={!!activeRecipe} onDismiss={() => setActiveRecipe(null)} zIndex={70}>

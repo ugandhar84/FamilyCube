@@ -1,10 +1,11 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator, ScrollView,
   StyleSheet, Animated, Easing, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, Send, ShoppingBag } from 'lucide-react-native';
+import { Check, Send, ShoppingBag, ChefHat } from 'lucide-react-native';
 import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { Meal } from './types';
@@ -96,40 +97,15 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
                 the rest of the Meals module
                 [live-requested: "make the gemini rythem everywhere in the
                 meals"]. ── */}
-            <View style={{
-              paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? colors.border : GEMINI.border,
-              backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 6,
-            }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: (isDark ? colors.textSecondary : GEMINI.bodyColorLight) }}>
-                  FAMILY CUBE / {familyName.toUpperCase()}
-                </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: (isDark ? colors.textSecondary : GEMINI.bodyColor) }}>
-                  {(activeMember as any)?.name} · {(activeMember as any)?.role === 'parent' ? 'Parent / Admin' : 'Member'}
-                </Text>
-              </View>
-
-              {/* Status pill */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: colors.tealLight }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.teal }}>
-                    Planned · {meal.day}
-                  </Text>
-                </View>
-                {meal.ai_generated && (
-                  <View style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: colors.pinkLight }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink }}>CubeAI</Text>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity onPress={animatedClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-                <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-                  {meal.title}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <PageHeading
+              eyebrow="FAMILY CUBE · MEALS"
+              title={meal.title}
+              subtitle={`Planned · ${meal.day}${meal.ai_generated ? ' · CubeAI' : ''}`}
+              accent="teal"
+              Icon={ChefHat}
+              onTitlePress={animatedClose}
+              topInset={insets.top}
+            />
 
             <ScrollView
               showsVerticalScrollIndicator={false}

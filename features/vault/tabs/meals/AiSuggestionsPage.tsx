@@ -1,3 +1,4 @@
+import { PageHeading } from '@/components/PageHeading';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
@@ -6,7 +7,7 @@ import {
   StyleSheet, Animated, Easing, Pressable, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, BookMarked } from 'lucide-react-native';
+import { Check, BookMarked, Sparkles } from 'lucide-react-native';
 import { AiDayOptions, Meal, categorizeItem } from './types';
 import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore } from '@/store/groceryStore';
@@ -443,41 +444,17 @@ export default function AiSuggestionsPage({
         <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           <View style={{ flex: 1, backgroundColor: canvas }}>
 
-            {/* ── Header ── */}
-            <View style={{
-              paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 16,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: isDark ? colors.border : 'rgba(88,114,196,0.08)',
-              backgroundColor: canvas, gap: 6,
-            }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: isDark ? colors.textSecondary : GEMINI.bodyColorLight }}>
-                  FAMILY CUBE / {familyName.toUpperCase()}
-                </Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.teal }}>
-                  {(activeMember as any)?.name} · {(activeMember as any)?.role === 'parent' ? 'Parent / Admin' : 'Member'}
-                </Text>
-              </View>
-
-              {/* Title — tapping it goes back, no separate breadcrumb link
-                  above it [live-requested pattern, same as Grocery/Meals'
-                  other sub-screens]. */}
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
-                <Text style={{ fontSize: 29, fontWeight: '700', lineHeight: 34, letterSpacing: -0.5, color: isDark ? colors.textPrimary : GEMINI.titleColor }}>
-                  A little inspiration
-                </Text>
-              </TouchableOpacity>
-
-              <View style={{ flexDirection: 'row', marginTop: 2 }}>
-                <View style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: colors.pinkLight }}>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.pink }}>
-                    {hasSuggestions
-                      ? `CubeAI · ${totalSelected === 0 ? 'none selected' : `${totalSelected} selected`}`
-                      : 'CubeAI · weekly meal ideas'}
-                  </Text>
-                </View>
-              </View>
-            </View>
+            <PageHeading
+              eyebrow="FAMILY CUBE · MEALS"
+              title="A little inspiration"
+              subtitle={hasSuggestions
+                ? `CubeAI · ${totalSelected === 0 ? 'none selected' : `${totalSelected} selected`}`
+                : 'CubeAI · weekly meal ideas'}
+              accent="pink"
+              Icon={Sparkles}
+              onTitlePress={onClose}
+              topInset={insets.top}
+            />
 
             <ScrollView showsVerticalScrollIndicator={false}
               contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32, gap: 16 }}>

@@ -473,7 +473,7 @@ function toRow(m: FamilyMember) {
     // to whatever field the caller actually meant to change (role,
     // linked_parent_id, GP dispatch prefs, etc.) — the root cause behind a
     // whole string of "X isn't saving" reports this session.
-    pin:   m.pin ?? null,
+    // pin is intentionally NOT written here: it is a server-side hash, only set_member_pin / the email reset change it.
     last_celebration_seen_at: m.lastCelebrationSeenAt ?? null,
     has_car: m.hasCar ?? false,
     ride_earnings_per_run: m.rideEarningsPerRun ?? 50,
@@ -1161,13 +1161,20 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // and ProfileSettingsScreen.tsx's PIN sheets now route through here and
     // rely on this throwing to show a real error instead of a false
     // "PIN saved").
-    const { error } = await supabase.from('members').update({ pin: pin ?? null }).eq('id', id);
+    const { error } = await supabase.rpc('set_member_pin', { p_member_id: id, p_pin: pin ?? null });
     if (error) {
       console.warn('[familyStore] setMemberPin failed', error.message);
       set({ members: get().members.map(m => m.id === id ? { ...m, pin: before?.pin, pinEnabled: !!before?.pin } : m) });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
       throw error;
     }
+
+    // The PIN is stored as a server-side hash now; take that stored value so local state never holds a plain PIN.
+    try {
+      const { data: stored } = await supabase.from('members').select('pin').eq('id', id).maybeSingle();
+      set({ members: get().members.map(m => m.id === id ? { ...m, pin: (stored as any)?.pin ?? undefined, pinEnabled: !!(stored as any)?.pin } : m) });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
+    } catch { /* the next sync brings it in */ }
 
     // Multi-family membership — a grandparent's PIN is kept in sync
     // across ALL of their family member rows, not just this one, per live

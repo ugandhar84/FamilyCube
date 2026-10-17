@@ -401,6 +401,29 @@ try {
     check(MF, 'the fresh audio file is still in storage', kept.ok, kept.error);
   }
 
+  /* ───────── PINs ───────── */
+  const PN = 'PIN';
+  r = await rpc(mia, 'set_member_pin', { p_member_id: mia, p_pin: '4821' });
+  check(PN, 'a member sets their own PIN', r.ok, r.error);
+  let mrow = (await call({ action: 'read', table: 'members', familyId: F })).rows?.find(x => x.id === mia);
+  check(PN, 'the PIN is stored hashed, not readable', typeof mrow?.pin === 'string' && mrow.pin.startsWith('$2') && !mrow.pin.includes('4821'), String(mrow?.pin).slice(0, 12));
+  r = await rpc(alex, 'verify_member_pin', { p_member_id: mia, p_entered_pin: '4821' });
+  check(PN, 'the right PIN verifies', r.ok && (Array.isArray(r.data) ? r.data[0]?.ok : r.data?.ok) === true, JSON.stringify(r.data ?? r.error));
+  r = await rpc(alex, 'verify_member_pin', { p_member_id: mia, p_entered_pin: '0000' });
+  check(PN, 'a wrong PIN is refused', r.ok && (Array.isArray(r.data) ? r.data[0]?.ok : r.data?.ok) === false, JSON.stringify(r.data ?? r.error));
+  r = await rpc(zane, 'set_member_pin', { p_member_id: mia, p_pin: '1111' });
+  check(PN, 'a teen cannot change a sibling’s PIN', !r.ok, r.error ?? 'changed');
+  r = await rpc(mia, 'set_member_pin', { p_member_id: alex, p_pin: '1111' });
+  check(PN, 'a kid cannot change a parent’s PIN', !r.ok, r.error ?? 'changed');
+  r = await rpc(alex, 'set_member_pin', { p_member_id: mia, p_pin: '7390' });
+  check(PN, 'a parent can reset a kid’s PIN', r.ok, r.error);
+  r = await rpc(mia, 'set_member_pin', { p_member_id: mia, p_pin: '12' });
+  check(PN, 'a PIN that is not 4 digits is rejected', !r.ok, r.error ?? 'accepted');
+  r = await rpc(mia, 'confirm_pin_reset', { p_member_id: mia, p_code: '000000', p_new_pin: '5555' });
+  check(PN, 'a reset without a valid code fails', !r.ok || (r.data === false), r.error ?? JSON.stringify(r.data));
+  r = await rpc(zane, 'confirm_pin_reset', { p_member_id: mia, p_code: '000000', p_new_pin: '5555' });
+  check(PN, 'someone else cannot use another member’s reset', !r.ok, r.error ?? 'allowed');
+
 } catch (e) {
   check('Harness', 'suite ran to the end', false, e.message);
 } finally {

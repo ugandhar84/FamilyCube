@@ -1,3 +1,4 @@
+import PinResetFlow from './PinResetFlow';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, Animated, Vibration,
@@ -108,6 +109,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel, resume }: PinEntr
   const [locked, setLocked]         = useState(false);
   const [lockRemaining, setLockRemaining] = useState(0);
   const [errorMsg, setErrorMsg]     = useState('');
+  const [resetting, setResetting]  = useState(false);
 
   const shakeAnim    = useRef(new Animated.Value(0)).current;
   const lockInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -125,6 +127,7 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel, resume }: PinEntr
       setLockRemaining(0);
       setErrorMsg('');
       setVerifying(false);
+      setResetting(false);
       if (lockInterval.current) clearInterval(lockInterval.current);
     }
   }, [visible, member?.id]);
@@ -242,7 +245,9 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel, resume }: PinEntr
 
   if (!member) return null;
 
-  const content = (
+  const content = resetting ? (
+    <PinResetFlow member={member} onBack={() => setResetting(false)} onDone={() => { setResetting(false); onSuccess(member); }} />
+  ) : (
     <>
       {/* Header */}
       <View style={styles.header}>
@@ -297,9 +302,15 @@ function PinEntryLayer({ visible, member, onSuccess, onCancel, resume }: PinEntr
       </View>
 
       {/* Forgot PIN hint */}
-      <Text style={[styles.hint, { color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }]}>
-        Forgot PIN? Ask a parent to reset it in Settings.
-      </Text>
+      {member.authUserId ? (
+        <Pressable onPress={() => setResetting(true)} accessibilityRole="button" style={{ paddingVertical: 10 }}>
+          <Text style={[styles.hint, { color: colors.primary, fontWeight: '700' }]}>Forgot PIN? Email me a code</Text>
+        </Pressable>
+      ) : (
+        <Text style={[styles.hint, { color: isDark ? colors.textTertiary : GEMINI.bodyColorLight }]}>
+          Forgot PIN? Ask a parent to reset it in Settings.
+        </Text>
+      )}
     </>
   );
 

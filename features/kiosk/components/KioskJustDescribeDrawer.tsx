@@ -306,25 +306,6 @@ function JustDescribeDrawer({ visible, onClose, active, members, mode }: {
   // ── premium UI helpers ──
   const people_ = (multi: boolean, ids: string[], onPick: (id: string) => void, list: FamilyMember[]) =>
     list.map(m => <PersonChip key={m.id} m={m} i={Math.max(0, people.findIndex(x => x.id === m.id))} on={ids.includes(m.id)} onPress={() => onPick(m.id)} />);
-  const Card = ({ title: t, hint, Icon, tone, children }: { title: string; hint?: string; Icon: LucideIcon; tone: { card: string; fg: string }; children: React.ReactNode }) => (
-    <View style={[s.card, { backgroundColor: k.card, borderColor: k.cardBorder }, kioskElevation(tone.fg, isDark)]}>
-      <View style={s.cardHead}>
-        <View style={[s.iconTile, { backgroundColor: tone.card }]}><Icon size={20} color={tone.fg} strokeWidth={2.2} /></View>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.cardTitle, { color: k.text }]}>{t}</Text>
-          {!!hint && <Text style={[s.cardHint, { color: k.textMuted }]}>{hint}</Text>}
-        </View>
-      </View>
-      {children}
-    </View>
-  );
-  const Field = ({ label, value, set, placeholder, multiline }: { label?: string; value: string; set: (t: string) => void; placeholder: string; multiline?: boolean }) => (
-    <View style={{ gap: 6 }}>
-      {!!label && <Text style={[s.fieldLabel, { color: k.textFaint }]}>{label}</Text>}
-      <TextInput value={value} onChangeText={set} placeholder={placeholder} placeholderTextColor={k.textFaint} multiline={multiline}
-        style={[s.field, { color: k.text, backgroundColor: k.well, borderColor: k.cardBorder }, multiline && { minHeight: 80, textAlignVertical: 'top', paddingTop: 12 }]} />
-    </View>
-  );
   const recurRow = () => (
     <View style={{ gap: 10 }}>
       <Text style={[s.fieldLabel, { color: k.textFaint }]}>REPEATS</Text>

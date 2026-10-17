@@ -53,6 +53,7 @@ import {
 } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { KioskAvatar } from '../components/KioskAvatar';
+import { KioskJustDescribeEventDrawer } from '../components/KioskJustDescribeDrawer';
 import { KioskTimeGrid } from '../components/KioskTimeGrid';
 import { KioskDayEventsPanel } from '../components/KioskDayEventsPanel';
 import { useEventStore, eventAssignee, canViewSensitiveEventDetail } from '@/store/eventStore';
@@ -672,23 +673,11 @@ export function KioskScheduleTab({ active, members, colors, isDark }: { active: 
       />
       <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={active.id} />
 
-      <KioskSmartTaskComposer
+      <KioskJustDescribeEventDrawer
         visible={showComposer}
-        members={members}
-        activeMemberId={active.id}
-        familyId={active.familyId ?? ''}
         onClose={() => setShowComposer(false)}
-        onCreated={() => setShowComposer(false)}
-        onOpenFullForm={(kind, prefill) => {
-          setShowComposer(false);
-          if (kind === 'quest') {
-            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
-            setShowManualQuest(true);
-          } else {
-            setManualEventPrefill(prefill as typeof manualEventPrefill);
-            setShowManualEvent(true);
-          }
-        }}
+        active={active}
+        members={members}
       />
 
       {showManualQuest && (

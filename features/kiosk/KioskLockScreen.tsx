@@ -90,9 +90,6 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 
   const leftCol = (
     <View style={[s.left, !wide && s.leftNarrow]}>
-      <Text style={[s.brand, { color: ink }]} numberOfLines={1}>
-        Welcome to {familyName}
-      </Text>
       <KioskPhotoFade caption style={{ flex: 1, minHeight: 320, borderRadius: 26 }} />
       {nextMeal && (
         <View style={[s.mealCard, cardShadow, { backgroundColor: cardBg, borderColor: isDark ? colors.border : GEMINI.border }]}>
@@ -110,6 +107,9 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors }: {
 
   const clockBlock = (
     <View style={{ gap: 2 }}>
+      <Text style={[s.brand, { color: ink }]} numberOfLines={1}>
+        Welcome to {familyName}
+      </Text>
       <Text
         style={[s.clock, { color: ink }]}
         numberOfLines={1}

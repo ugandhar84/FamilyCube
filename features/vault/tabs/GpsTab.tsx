@@ -219,12 +219,28 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // they keep the freeze-after-mount optimization that's worked
   // correctly for them throughout.
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  // A map marker is a frozen picture, so it cannot run a real animation. For someone who is moving it steps through a few poses
+  // (a swing of the shoe, a bob of the car) about twice a second; each pose is one re-snapshot, and only moving people do this.
+  const [moveFrame, setMoveFrame] = useState(0);
+  const isMoving = !!movementMeta;
+  useEffect(() => {
+    if (!isMoving) { setMoveFrame(0); return; }
+    const id = setInterval(() => setMoveFrame(f => (f + 1) % 4), 600);
+    return () => clearInterval(id);
+  }, [isMoving]);
   useEffect(() => {
     if (avatarUrl) { setTracksViewChanges(true); return; }
     setTracksViewChanges(true);
     const t = setTimeout(() => setTracksViewChanges(false), 300);
     return () => clearTimeout(t);
-  }, [avatarUrl, emoji, ringColor, movementMeta]);
+  }, [avatarUrl, emoji, ringColor, movementMeta, moveFrame]);
+  const stepPose = (() => {
+    const walkingLike = moveKind === 'walking' || moveKind === 'running';
+    const rot = walkingLike ? [6, -4, -14, -4][moveFrame] : 0;
+    const lift = walkingLike ? [0, -1.5, -3, -1.5][moveFrame] : [0, -1, 0, -1][moveFrame];
+    const sway = walkingLike ? [-1.5, 0, 1.5, 0][moveFrame] : 0;
+    return { transform: [{ translateX: sway }, { translateY: lift }, { rotate: `${rot}deg` }] };
+  })();
   return (
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}
       tracksViewChanges={tracksViewChanges}>
@@ -245,7 +261,7 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
           </View>
           {movementMeta && (
             <View style={{ position: 'absolute', right: -9, bottom: -5, minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 3, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: infoColor, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 13, lineHeight: 16 }}>{movementMeta.emoji}</Text>
+              <Text style={[{ fontSize: 13, lineHeight: 16 }, stepPose]}>{movementMeta.emoji}</Text>
             </View>
           )}
         </View>

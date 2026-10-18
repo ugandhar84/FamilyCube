@@ -22,11 +22,11 @@ export default function MovementBadge({ kind, size = 14, color, animated = true 
 
   useEffect(() => {
     if (!animated || kind === 'stationary') return;
-    const stepMs = kind === 'running' ? 230 : kind === 'walking' ? 380 : kind === 'cycling' ? 300 : 160;
-    const groundMs = kind === 'running' ? 420 : kind === 'walking' ? 800 : kind === 'cycling' ? 520 : 380;
+    const stepMs = kind === 'running' ? 450 : kind === 'walking' ? 720 : kind === 'cycling' ? 600 : 480;
+    const groundMs = kind === 'running' ? 800 : kind === 'walking' ? 1500 : kind === 'cycling' ? 1000 : 900;
     const stepLoop = Animated.loop(Animated.sequence([
-      Animated.timing(step, { toValue: 1, duration: stepMs, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(step, { toValue: 0, duration: stepMs, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(step, { toValue: 1, duration: stepMs, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(step, { toValue: 0, duration: stepMs, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ]));
     const groundLoop = Animated.loop(Animated.timing(ground, { toValue: 1, duration: groundMs, easing: Easing.linear, useNativeDriver: true }));
     stepLoop.start(); groundLoop.start();
@@ -55,9 +55,9 @@ export default function MovementBadge({ kind, size = 14, color, animated = true 
 
   if (walkingLike) {
     // One shoe taking steps: it lifts and tilts forward, swings ahead, then plants — repeating over a ground line that slides past.
-    const lift = step.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -size * 0.34, 0] });
-    const ahead = step.interpolate({ inputRange: [0, 1], outputRange: [-size * 0.18, size * 0.18] });
-    const tilt = step.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['8deg', '-20deg', '8deg'] });
+    const lift = step.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -size * 0.2, 0] });
+    const ahead = step.interpolate({ inputRange: [0, 1], outputRange: [-size * 0.12, size * 0.12] });
+    const tilt = step.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['6deg', '-14deg', '6deg'] });
     return (
       <View style={{ width: w, height: h, overflow: 'hidden', justifyContent: 'flex-end', alignItems: 'center' }}>
         {dashes}

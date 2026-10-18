@@ -1162,7 +1162,7 @@ async function executeTool(
     if (!id) return { error: `Couldn't find a family member named "${args.memberName}".` };
     const { data: recent, error } = await supabase.from('chore_tasks')
       .select('created_at, submitted_at, due_date, status')
-      .eq('family_id', familyId).eq('assigned_to_id', id)
+      .eq('family_id', familyId).eq('assigned_to_id', id).or('is_personal.is.null,is_personal.eq.false')
       .in('status', ['approved', 'auto_approved', 'completed'])
       .not('submitted_at', 'is', null)
       .order('submitted_at', { ascending: false }).limit(20);
@@ -1237,7 +1237,8 @@ async function executeTool(
   }
 
   if (name === 'get_quests') {
-    let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, due_date, assigned_to_id').eq('family_id', familyId);
+    // A child's private to-do list is never shown to anyone else, parents included (only the child sees their own).
+    let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, due_date, assigned_to_id').eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`);
     if (args.status && args.status !== 'any') query = query.eq('status', args.status);
     if (args.memberName) {
       const { id, error: ambigErr } = await resolveMemberIdOrError(supabase, familyId, args.memberName, aliasMap, members);
@@ -1287,7 +1288,7 @@ async function executeTool(
     // completed in familyStore.ts's own "no longer active" check) — a real,
     // very common terminal status this filter was silently excluding.
     let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, approved_at, assigned_to_id')
-      .eq('family_id', familyId).in('status', ['completed', 'auto_approved', 'approved'])
+      .eq('family_id', familyId).in('status', ['completed', 'auto_approved', 'approved']).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
       .gte('approved_at', args.startDate).lte('approved_at', args.endDate + 'T23:59:59');
     if (args.memberName) {
       const { id, error: ambigErr } = await resolveMemberIdOrError(supabase, familyId, args.memberName, aliasMap, members);
@@ -1378,7 +1379,7 @@ async function executeTool(
     if (args.targetType === 'chore') {
       let query = supabase.from('chore_tasks')
         .select('id, title, status, coins_reward, due_date, due_time, assigned_to_id, description, alert_call, alert_call_lead_minutes')
-        .eq('family_id', familyId)
+        .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
         .ilike('title', `%${search}%`);
       if (memberId) query = query.eq('assigned_to_id', memberId);
       const { data, error } = await query.limit(5);
@@ -1514,7 +1515,7 @@ async function executeTool(
       // could be filed as a chore instead of an event.
       const { data: choreFallback } = await supabase.from('chore_tasks')
         .select('id, title, due_date, due_time, assigned_to_id')
-        .eq('family_id', familyId).ilike('title', `%${search}%`).limit(5);
+        .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`).ilike('title', `%${search}%`).limit(5);
       if (choreFallback && choreFallback.length > 0) {
         return {
           error: `No event matched "${search}", but a matching CHORE was found instead. Call propose_update again with targetType: 'chore' (not 'event') for this — do not tell the user nothing was found.`,
@@ -1909,7 +1910,7 @@ async function executeTool(
     // "never invent a reason for a tool error" instruction added below.
     let query = supabase.from('chore_tasks')
       .select('id, title, status, is_pool, assigned_to_id, created_by_id, requires_photo')
-      .eq('family_id', familyId)
+      .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
       .ilike('title', `%${search}%`);
     if (memberId) query = query.eq('assigned_to_id', memberId);
     const { data, error } = await query.limit(5);

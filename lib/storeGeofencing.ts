@@ -28,6 +28,7 @@ const GEOFENCE_RADIUS_METERS = 1609;
 const REGISTERED_KEY = '@familycube_store_geofence_key_v1';
 const COOLDOWN_KEY_PREFIX = '@familycube_store_geofence_last_';
 const COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const MAX_STORE_REGIONS = 6; // shares iOS's 20-region budget with places (10) and trips (2)
 const MAX_FIX_AGE_MS = 2 * 60 * 1000;
 const MAX_FIX_ACCURACY_M = 200;
 
@@ -255,7 +256,13 @@ export async function registerStoreGeofences(familyId: string, memberId: string)
 
   ensureTaskDefined(tm);
 
-  const regions: Location.LocationRegion[] = locations.map((loc: any) => {
+  // The 20-region iOS limit is shared with family places and trips: keep the 6 stores nearest to where this phone last was.
+  let origin: { latitude: number; longitude: number } | null = null;
+  try { origin = (await Location.getLastKnownPositionAsync())?.coords ?? null; } catch { /* fall back to list order */ }
+  const nearestFirst = origin
+    ? [...locations].sort((a: any, b: any) => haversineMeters(origin!.latitude, origin!.longitude, a.latitude, a.longitude) - haversineMeters(origin!.latitude, origin!.longitude, b.latitude, b.longitude))
+    : locations;
+  const regions: Location.LocationRegion[] = nearestFirst.slice(0, MAX_STORE_REGIONS).map((loc: any) => {
     const identifier = `${familyId}:${loc.store}`;
     regionStoreMap[identifier] = { store: loc.store, familyId };
     return {

@@ -436,15 +436,24 @@ export default function AskCubeProposalCard({
     : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
     : proposal.kind === 'cancel_event' ? 'Cancel event'
     : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
+    : proposal.kind === 'quest' ? 'Add chore'
+    : proposal.kind === 'event' ? 'Add event'
+    : proposal.kind === 'meal' ? 'Add to plan'
     : 'Create';
+  // What the button becomes once it has been confirmed.
+  const doneLabel = proposal.kind === 'cancel_event' ? 'Cancelled'
+    : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Updated'
+    : proposal.kind === 'redemption' ? 'Redeemed'
+    : proposal.kind === 'chore_action' || proposal.kind === 'kid_request_action' ? 'Done'
+    : 'Added';
 
   const Actions = added ? (
-    <View style={{ borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-      backgroundColor: colors.success + '18', marginTop: 2 }}>
-      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.success }}>✓ Done</Text>
+    <View style={{ borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: colors.success + '1F', marginTop: 2 }}>
+      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.success }}>✓ {doneLabel}</Text>
     </View>
   ) : discarded ? (
-    <View style={{ borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+    <View style={{ borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center',
       backgroundColor: colors.border + '60', marginTop: 2 }}>
       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{discardedLabel ?? 'Discarded'}</Text>
     </View>
@@ -453,16 +462,17 @@ export default function AskCubeProposalCard({
       <Pressable
         onPress={() => { if (!added && !discarded) onDiscard(); }}
         disabled={added || discarded}
-        style={{ flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-          backgroundColor: isDark ? colors.surface : '#FFFFFF',
-          borderWidth: 1, borderColor: colors.border }}>
+        accessibilityRole="button" accessibilityLabel="Discard"
+        style={{ flex: 1, borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
       </Pressable>
       <Pressable
         onPress={() => { if (!added && !discarded) onCreate(); }}
         disabled={added || discarded}
-        style={{ flex: 2, borderRadius: 12, paddingVertical: 11, alignItems: 'center', backgroundColor: accent }}>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>{createLabel}</Text>
+        accessibilityRole="button" accessibilityLabel={createLabel}
+        style={{ flex: 1.7, borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textInverse }}>{createLabel}</Text>
       </Pressable>
     </View>
   );
@@ -473,10 +483,10 @@ export default function AskCubeProposalCard({
   // detail the user was just reviewing and read as the item vanishing
   // outright rather than a recorded decision.
   const cardBase = {
-    marginTop: 8, maxWidth: '90%' as const,
-    backgroundColor: isDark ? colors.surface : '#F4F3FA',
-    borderRadius: 16, borderWidth: 1.5,
-    borderColor: discarded ? colors.border : (isDark ? accent + '40' : accent + '30'),
+    marginTop: 8, maxWidth: '94%' as const,
+    backgroundColor: colors.card,
+    borderRadius: 16, borderWidth: 1,
+    borderColor: colors.border,
     padding: 16, gap: 10,
     opacity: discarded ? 0.5 : 1,
   };
@@ -497,10 +507,10 @@ export default function AskCubeProposalCard({
     // compact grid card above — a no-op fallback instead of `disabled`.
     const handleExpand = onExpand ?? (() => {});
     return (
-      <View style={{ marginTop: 8, maxWidth: '90%',
-        backgroundColor: isDark ? colors.surface : '#F4F3FA',
-        borderRadius: 16, borderWidth: 1.5,
-        borderColor: (discarded ? colors.border : accent + '30'),
+      <View style={{ marginTop: 8, maxWidth: '94%',
+        backgroundColor: colors.card,
+        borderRadius: 16, borderWidth: 1,
+        borderColor: colors.border,
         overflow: 'hidden', opacity: discarded ? 0.5 : 1 }}>
         {/* Real dish photo when the model supplied one, else the emoji hero.
             The whole card (not just the hero band) opens the recipe detail

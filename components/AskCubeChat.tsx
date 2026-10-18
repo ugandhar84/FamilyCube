@@ -27,6 +27,7 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { spokenVerdict } from '@/lib/spokenVerdict';
 import { setChangeSource } from '@/lib/activityLog';
 import * as Location from 'expo-location';
+import { showAlert } from '@/components/AppAlert';
 import { correctSpokenNames } from '@/lib/correctSpokenNames';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -425,25 +426,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         return;
       }
     }
-    // "Somewhere nearby" needs where they are. Ask first; if they agree, send ONE location with this message only (not saved,
-    // never shown to the AI model, used just to look up real places).
-    let oneTimeLocation: { lat: number; lng: number } | undefined = opts?.location;
-    if (!opts?.silent && !oneTimeLocation && /\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest|local)\b/i.test(trimmed)) {
-      const share = await new Promise<boolean>(resolve => Alert.alert(
-        'Share your location once?',
-        'Ask Cube can find places near you. Your location is used only for this request. It is not saved and is not shown to the AI.',
-        [{ text: 'Not now', style: 'cancel', onPress: () => resolve(false) }, { text: 'Share once', onPress: () => resolve(true) }],
-      ));
-      if (share) {
-        try {
-          const perm = await Location.requestForegroundPermissionsAsync();
-          if (perm.status === 'granted') {
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            oneTimeLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          }
-        } catch { /* send without it; the assistant will say it needs a location */ }
-      }
-    }
+    // A one-time location only comes from the "Share your location once?" card the assistant shows when it needs one (or from a
+    // card the person already tapped). No blocking dialog here: a native alert cannot appear over this full-screen chat.
+    const oneTimeLocation: { lat: number; lng: number } | undefined = opts?.location;
     if (!opts?.silent) {
       setInput('');
       setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
@@ -1192,10 +1177,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                           setMessages(prev => prev.map(x => x.id === m.id ? { ...x, needsLocationFor: undefined } : x));
                           try {
                             const perm = await Location.requestForegroundPermissionsAsync();
-                            if (perm.status !== 'granted') { Alert.alert('Location is off', 'Allow location for Family Cube in Settings, or tell me the town or area instead.'); return; }
+                            if (perm.status !== 'granted') { showAlert('Location is off', 'Allow location for Family Cube in Settings, or tell me the town or area instead.'); return; }
                             const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
                             send(ask, { location: { lat: pos.coords.latitude, lng: pos.coords.longitude }, silent: true });
-                          } catch { Alert.alert('Could not get your location', 'Try again, or tell me the town or area instead.'); }
+                          } catch { showAlert('Could not get your location', 'Try again, or tell me the town or area instead.'); }
                         }} style={{ flex: 1.4, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
                           <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textInverse }}>Share once</Text>
                         </Pressable>

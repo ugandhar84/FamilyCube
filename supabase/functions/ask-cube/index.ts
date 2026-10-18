@@ -4021,6 +4021,9 @@ start the reply fresh from real data for THIS turn.` : ''}
       needsLocation = true;
     }
 
+    // A message that is plainly about "near me" with no shared location always gets the card.
+    if (!oneTimeLocation && /\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest)\b/i.test(body.message ?? '')) needsLocation = true;
+
     // Only keep refs for chores the reply text actually names — a turn can
     // call get_quests broadly (e.g. "what's overdue") and pull back rows
     // that never make it into the final sentence; linking those too would

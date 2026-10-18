@@ -566,8 +566,9 @@ const TOOLS = [
           memberName:   { type: 'string', description: 'Whose event this is, if named — narrows the search when multiple events could match' },
           nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("Saturday", "next week") — omit if not implied' },
           reason:       { type: 'string', description: 'The reason given for cancelling, if the user stated one' },
+          allOnDate:    { type: 'string', description: 'YYYY-MM-DD. Use this INSTEAD of targetSearch when the user wants to cancel ALL of someone\'s events on one day ("cancel all of Cherry\'s events tomorrow", "clear my day"): resolve the day yourself and pass it here with memberName. One draft card per event comes back for the user to confirm.' },
         },
-        required: ['targetSearch'],
+        required: [],
       },
     },
   },
@@ -1538,6 +1539,25 @@ async function executeTool(
   if (name === 'propose_cancel_event') {
     let memberId: string | null = null;
     if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    // Bulk: everything for one person on one day. One draft card per real event; the person still confirms each.
+    if (typeof args.allOnDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.allOnDate)) {
+      let q = supabase.from('calendar_events')
+        .select('id, title, category, date, start_time, member_id, member_ids')
+        .eq('family_id', familyId).is('deleted_at', null).eq('date', args.allOnDate);
+      if (memberId) q = q.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+      const { data: dayRows, error: dayErr } = await q.order('start_time').limit(12);
+      if (dayErr) return { error: dayErr.message };
+      const scoped = scopeEventsToViewer(dayRows ?? [], viewerRole, viewerId, viewerName);
+      if (!scoped.length) return { error: `Nothing is on the calendar for ${args.memberName ?? 'that person'} on ${args.allOnDate}. Tell the user plainly that there is nothing to cancel.` };
+      return {
+        __proposalBatch: scoped.map((ev: any) => ({
+          __proposal: 'cancel_event',
+          eventId: ev.id, title: realNameToAlias(aliasMap, members, ev.title), date: ev.date, time: ev.start_time,
+          reason: typeof args.reason === 'string' ? args.reason : undefined,
+        })),
+        note: `Drafted ${scoped.length} cancellation card(s), one per event, for the user to confirm one by one. Tell the user how many, list them briefly by title and time, and say nothing is cancelled until they confirm each card.`,
+      };
+    }
     const search = args.targetSearch ?? '';
     let query = supabase.from('calendar_events')
       .select('id, title, category, date, start_time, member_id, member_ids')
@@ -2821,7 +2841,7 @@ not once with a vague/blank targetSearch hoping it matches everything — a sing
 on ONE chore. The same applies to a bulk/vague CANCEL EVENT request with no real title to search on ("cancel all her
 fun stuff this weekend", "clear my whole day tomorrow") — call get_schedule first for that range to see the actual
 distinct events, then call propose_cancel_event once per real event you found, never with a non-title phrase like
-"fun stuff" as targetSearch (that has nothing to match against and risks a wrong or empty result). These only PROPOSE, they do not create, change, or perform anything
+"fun stuff" as targetSearch (that has nothing to match against and risks a wrong or empty result). For "cancel ALL of <person>'s events <day>" or "clear my day" specifically, call propose_cancel_event ONCE with allOnDate (the resolved YYYY-MM-DD) and memberName; it returns one draft card per event, so never loop and never say you hit a technical problem just because several events match. These only PROPOSE, they do not create, change, or perform anything
 When the user wants to approve/decline a KID REQUEST (a ride, help/tutor, permission, appointment, check-in, or
 other request a kid sent — never a chore, propose_chore_action covers those), use propose_kid_request_action.
 "Approve Mia's ride request" -> action: 'approve'. "Decline the tutor request from Leo" -> action: 'decline'.
@@ -3222,13 +3242,17 @@ conversation text, so never reference "the suggestions below" in your actual rep
           if (result.__proposal) {
             proposals.push({ kind: result.__proposal, data: result });
           }
+          if (Array.isArray(result.__proposalBatch)) {
+            for (const item of result.__proposalBatch) proposals.push({ kind: item.__proposal, data: item });
+          }
           if (Array.isArray(result.__choreRefs)) {
             for (const ref of result.__choreRefs) choreRefsMap.set(ref.id, ref);
           }
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, ...modelResult } = result as any;
+          if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
 
           const resultStr = JSON.stringify(modelResult);
           messages.push({ role: 'tool', tool_call_id: call.id, name: call.function.name, content: resultStr });

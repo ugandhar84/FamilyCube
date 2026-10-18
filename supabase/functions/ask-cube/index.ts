@@ -1239,7 +1239,10 @@ async function executeTool(
   if (name === 'get_quests') {
     // A child's private to-do list is never shown to anyone else, parents included (only the child sees their own).
     let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, due_date, assigned_to_id').eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`);
+    // A chore that is already finished (approved/completed) is never "pending" or "overdue". With no status asked for, only open
+    // chores come back; finished work is what get_chore_history is for.
     if (args.status && args.status !== 'any') query = query.eq('status', args.status);
+    else query = query.not('status', 'in', '(approved,auto_approved,completed,cancelled)');
     if (args.memberName) {
       const { id, error: ambigErr } = await resolveMemberIdOrError(supabase, familyId, args.memberName, aliasMap, members);
       if (ambigErr) return { error: ambigErr };
@@ -1267,6 +1270,9 @@ async function executeTool(
       quests: rows.map((r: any) => ({
         title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, dueDate: r.due_date,
         assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
+        // Decided here, not by the model: overdue means still open AND past its due date. Finished chores are never overdue.
+        overdue: !['approved', 'auto_approved', 'completed', 'cancelled'].includes(r.status) && !!r.due_date && r.due_date < today,
+        finished: ['approved', 'auto_approved', 'completed'].includes(r.status),
       })),
       __choreRefs: rows.map((r: any) => ({ id: r.id, title: r.title })),
       // Open chores only, real names, for the app to draw as a card. Never sent to the model.

@@ -1800,7 +1800,7 @@ async function executeTool(
   }
 
   if (name === 'find_nearby_places') {
-    if (!oneTimeLocation) return { error: 'No location was shared for this message. Tell the user they can tap "Share location" when you ask, or name a town or area, and never make up places.' };
+    if (!oneTimeLocation) return { __needsLocation: true, error: 'No location was shared for this message. The app is now showing the person a "Share my location once" card under your reply. Say in one short sentence that you can search as soon as they tap it (or they can name a town or area), and never make up places.' };
     const q = String(args.query ?? '').trim().slice(0, 80);
     if (!q) return { error: 'Say what to look for (for example park or pharmacy).' };
     const creds = getAppleMapsCredentials();
@@ -3485,6 +3485,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // user to pick from), and each one needs its own card client-side.
     const scheduleCardRows: any[] = [];
     let snapshotCard: any = null;
+    let needsLocation = false;
     const requestCardRows: any[] = [];
     const choreCardRows: any[] = [];
     let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'reassign_rides' | 'remind'; data: any }[] = [];
@@ -3639,6 +3640,7 @@ start the reply fresh from real data for THIS turn.` : ''}
             for (const item of result.__proposalBatch) proposals.push({ kind: item.__proposal, data: item });
           }
           if (result.__snapshotCard) snapshotCard = result.__snapshotCard;
+          if (result.__needsLocation) needsLocation = true;
           if (Array.isArray(result.__requestCards)) for (const c of result.__requestCards) if (!requestCardRows.some(x => x.id === c.id)) requestCardRows.push(c);
           if (Array.isArray(result.__scheduleCards)) {
             // get_schedule returns the whole family's rows; when the message is about specific people, keep only theirs.
@@ -3666,7 +3668,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, __requestCards, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, __requestCards, __needsLocation, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
           // The schedule tool returns the whole family. When the message is about specific people, hand the model ONLY their
           // events, so it cannot list someone else's ("Dentist · Ugandhar" under a question about Cherry).
@@ -4038,7 +4040,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // this turn — see callModel's own comment) — never part of the app's
     // real AskCubeResponse type (lib/askCubeService.ts), so a normal client
     // simply ignores the extra key; only the QA harness reads it.
-    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: cardsOut, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: cardsOut, needsLocation, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

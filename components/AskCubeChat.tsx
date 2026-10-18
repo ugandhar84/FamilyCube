@@ -105,6 +105,8 @@ interface ChatMessage {
   scheduleEvents?: AskCubeScheduleEvent[];
   choreCards?: AskCubeChore[];
   snapshot?: AskCubeSnapshot;
+  /** The question to re-ask once the person shares their location (set when the assistant needed it). */
+  needsLocationFor?: string;
   requestCards?: AskCubeRequest[];
   // True once this message's typewriter reveal has finished — follow-up
   // chips wait for this rather than just `!sending` (which flips false the
@@ -379,7 +381,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     return [...new Set(prompts)].slice(0, 3);
   }, [upcomingEvents, quests, activeMember?.id, activeMember?.role]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, opts?: { location?: { lat: number; lng: number }; silent?: boolean }) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     // Tapping a suggestion (or Send) hides the keyboard so the reply is visible, not covered.
@@ -406,7 +408,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     }
     // A spoken (or typed) "yes" / "no" answers the draft that is waiting: confirm or discard it, exactly like tapping its button.
     // Only when exactly ONE draft is pending on the latest reply, so it can never confirm the wrong thing.
-    const verdict = spokenVerdict(trimmed);
+    const verdict = opts?.silent ? null : spokenVerdict(trimmed);
     if (verdict) {
       const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
       const pending = (lastAssistant?.proposals ?? [])
@@ -425,8 +427,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     }
     // "Somewhere nearby" needs where they are. Ask first; if they agree, send ONE location with this message only (not saved,
     // never shown to the AI model, used just to look up real places).
-    let oneTimeLocation: { lat: number; lng: number } | undefined;
-    if (/\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest|local)\b/i.test(trimmed)) {
+    let oneTimeLocation: { lat: number; lng: number } | undefined = opts?.location;
+    if (!opts?.silent && !oneTimeLocation && /\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest|local)\b/i.test(trimmed)) {
       const share = await new Promise<boolean>(resolve => Alert.alert(
         'Share your location once?',
         'Ask Cube can find places near you. Your location is used only for this request. It is not saved and is not shown to the AI.',
@@ -442,8 +444,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         } catch { /* send without it; the assistant will say it needs a location */ }
       }
     }
-    setInput('');
-    setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
+    if (!opts?.silent) {
+      setInput('');
+      setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
+    }
     // Was: nothing scrolled here at all — if the user had scrolled up to
     // read earlier messages, their own just-sent message landed off-screen,
     // with no scroll happening until the reply started streaming in
@@ -495,6 +499,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
           chores: res.chores ?? [],
           followUps: res.followUps ?? [],
+          needsLocationFor: (res as any).needsLocation ? trimmed : undefined,
           scheduleEvents: ((res.cards ?? []) as any[]).find(c => c.kind === 'schedule')?.events,
           choreCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'chores')?.chores,
           snapshot: ((res.cards ?? []) as any[]).find(c => c.kind === 'snapshot'),
@@ -1173,6 +1178,30 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     );
                   })() : null}
 
+                  {m.role === 'assistant' && !!m.needsLocationFor && m.revealDone && (
+                    <View style={{ width: '94%', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: RHYTHM.card - 4, gap: RHYTHM.item }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Share your location once?</Text>
+                      <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>Used only to find places near you for this question. It is not saved and not shown to the AI.</Text>
+                      <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
+                        <Pressable onPress={() => setMessages(prev => prev.map(x => x.id === m.id ? { ...x, needsLocationFor: undefined } : x))} accessibilityRole="button"
+                          style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Not now</Text>
+                        </Pressable>
+                        <Pressable accessibilityRole="button" onPress={async () => {
+                          const ask = m.needsLocationFor!;
+                          setMessages(prev => prev.map(x => x.id === m.id ? { ...x, needsLocationFor: undefined } : x));
+                          try {
+                            const perm = await Location.requestForegroundPermissionsAsync();
+                            if (perm.status !== 'granted') { Alert.alert('Location is off', 'Allow location for Family Cube in Settings, or tell me the town or area instead.'); return; }
+                            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                            send(ask, { location: { lat: pos.coords.latitude, lng: pos.coords.longitude }, silent: true });
+                          } catch { Alert.alert('Could not get your location', 'Try again, or tell me the town or area instead.'); }
+                        }} style={{ flex: 1.4, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textInverse }}>Share once</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
                   {m.role === 'assistant' && !!m.snapshot && m.revealDone && (
                     <AskCubeSnapshotCard snapshot={m.snapshot} isParent={activeMember?.role === 'parent'} onAsk={(q) => send(q)} />
                   )}

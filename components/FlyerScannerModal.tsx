@@ -61,6 +61,8 @@ import ProcessingScreen from './flyerScanner/ProcessingScreen';
 import ReviewEventScreen from './flyerScanner/ReviewEventScreen';
 import ReviewTimetableScreen from './flyerScanner/ReviewTimetableScreen';
 import ReviewMultiScreen from './flyerScanner/ReviewMultiScreen';
+import LinkCalendarScreen, { type SchoolCalendarLink } from './flyerScanner/LinkCalendarScreen';
+import { parseIcs, normalizeCalendarUrl, type IcsEvent } from '@/lib/icsParse';
 import {
   CapturedImage, ExtractedEvent, ExtractedPeriod, FlyerResult, Step,
   dateToStr,
@@ -71,9 +73,11 @@ import {
 interface Props {
   visible: boolean;
   onClose: () => void;
+  /** Open on the "link a calendar" page instead of the photo capture page. */
+  startOnLink?: boolean;
 }
 
-export default function FlyerScannerModal({ visible, onClose }: Props) {
+export default function FlyerScannerModal({ visible, onClose, startOnLink }: Props) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
   const { addEvent } = useEventStore();
@@ -123,7 +127,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const kids     = members.filter(m => m.role === 'kid' || m.role === 'teen');
 
   // ── State ──
-  const [step, setStep]               = useState<Step>('capture');
+  const [step, setStep]               = useState<Step>(startOnLink ? 'link' : 'capture');
   const [images, setImages]           = useState<CapturedImage[]>([]);
   const [errorMsg, setError]          = useState('');
   const [flyerResult, setFlyerResult] = useState<FlyerResult | null>(null);
@@ -393,6 +397,15 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
         }
       }
     }
+    // Remember the link (for the chosen children) so it can be synced again later.
+    if (succeeded > 0 && pendingLink.current && familyId) {
+      const pl = pendingLink.current;
+      try {
+        if (pl.id) await supabase.from('school_calendar_links').update({ member_ids: selectedKids, last_synced_at: new Date().toISOString(), last_error: null }).eq('id', pl.id);
+        else await supabase.from('school_calendar_links').insert({ family_id: familyId, name: pl.name, url: pl.url, member_ids: selectedKids, created_by: activeMemberId, last_synced_at: new Date().toISOString() });
+      } catch { /* the dates are in; the link just is not remembered */ }
+      pendingLink.current = null;
+    }
     setImportingMulti(false);
     busyRef.current = false;
     setSaveProgress(null);
@@ -451,14 +464,177 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     setTimeout(resetAndClose, 2600);
   };
 
+  // ── Linked calendars (.ics / webcal) and public holidays ──
+  const [links, setLinks] = useState<SchoolCalendarLink[]>([]);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState('');
+  // The link being previewed: saved after a successful import so it can be synced again later.
+  const pendingLink = useRef<{ id?: string; name: string; url: string } | null>(null);
+  const familyId = activeMember?.familyId;
+
+  const loadLinks = useCallback(async () => {
+    if (!familyId) return;
+    const { data } = await supabase.from('school_calendar_links').select('*').eq('family_id', familyId).order('created_at');
+    setLinks((data ?? []) as SchoolCalendarLink[]);
+  }, [familyId]);
+  useEffect(() => { if (visible) loadLinks(); }, [visible, loadLinks]);
+  useEffect(() => { if (visible && startOnLink) setStep('link'); }, [visible, startOnLink]);
+
+  // Reads a calendar address. Only http(s) is fetched, with a time and size limit.
+  const fetchCalendar = async (rawUrl: string): Promise<IcsEvent[]> => {
+    const url = normalizeCalendarUrl(rawUrl);
+    if (!url) throw new Error('That does not look like a calendar link. It should start with webcal:// or https://');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20_000);
+    try {
+      const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'text/calendar, text/plain, */*' } });
+      if (!res.ok) throw new Error(`The calendar site answered with an error (${res.status}). Check the link and try again.`);
+      const text = await res.text();
+      if (text.length > 4_000_000) throw new Error('That calendar is too large to import.');
+      if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error('That link did not return a calendar. Look for a link ending in .ics or starting with webcal://');
+      const start = dateToStr(new Date(Date.now() - 7 * 86_400_000));
+      const end = dateToStr(new Date(Date.now() + 400 * 86_400_000));
+      return parseIcs(text, start, end);
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw new Error('The calendar took too long to load. Try again in a moment.');
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // One line per day, like a flyer: a multi-day break becomes a run of same-title days that holidayRanges merges back into a range.
+  const toExtracted = (evs: IcsEvent[], category?: string): ExtractedEvent[] => {
+    const out: ExtractedEvent[] = [];
+    for (const ev of evs) {
+      const days = Math.min(31, Math.round((new Date(ev.endDate + 'T12:00:00').getTime() - new Date(ev.startDate + 'T12:00:00').getTime()) / 86_400_000));
+      for (let i = 0; i <= days; i++) {
+        const d = new Date(ev.startDate + 'T12:00:00'); d.setDate(d.getDate() + i);
+        out.push({
+          title: ev.title, category: category ?? (isDayOff({ title: ev.title }) ? 'Holiday' : 'School'),
+          date: dateToStr(d), time: i === 0 ? ev.startTime : null, end_time: i === days ? ev.endTime : null,
+          location: ev.location, organizer: null, description: ev.description, rsvp_deadline: null, cost: null,
+          notes: ev.description, recurring: false, recurrence_desc: null,
+        });
+      }
+    }
+    return out;
+  };
+
+  // Leave out what is already on the calendar (same title and day). If an entry is there for only some of the chosen children,
+  // add the missing children to it instead of creating a second copy.
+  const dropExisting = async (events: ExtractedEvent[], kidIds: string[]): Promise<ExtractedEvent[]> => {
+    if (!familyId || events.length === 0) return events;
+    const dates = events.map(e => e.date!).sort();
+    const { data } = await supabase.from('calendar_events').select('id, title, date, member_id, member_ids')
+      .eq('family_id', familyId).is('deleted_at', null).gte('date', dates[0]).lte('date', dates[dates.length - 1]);
+    const existing = new Map<string, any>();
+    for (const r of data ?? []) existing.set(`${String(r.title).trim().toLowerCase()}|${r.date}`, r);
+    const fresh: ExtractedEvent[] = [];
+    for (const e of events) {
+      const hit = existing.get(`${e.title.trim().toLowerCase()}|${e.date}`);
+      if (!hit) { fresh.push(e); continue; }
+      const have: string[] = hit.member_ids?.length ? hit.member_ids : hit.member_id ? [hit.member_id] : [];
+      const missing = kidIds.filter(k => !have.includes(k));
+      if (kidIds.length > 0 && have.length > 0 && missing.length > 0) {
+        try { await useEventStore.getState().updateEvent(hit.id, { memberIds: [...have, ...missing] } as any); } catch { /* best effort */ }
+      }
+    }
+    return fresh;
+  };
+
+  const startReview = (events: ExtractedEvent[], schoolName: string | null, kidIds: string[]) => {
+    setFlyerResult({ type: 'calendar', calendar: { school: schoolName, events } });
+    const chosen = kidIds.length ? kidIds : kids.map(k => k.id);
+    setSelKids(chosen);
+    // A district calendar mixes every campus. Start with everything ticked EXCEPT entries that name a specific campus (for example
+    // "Richland High School Homecoming") unless that campus is one of the chosen children's schools; the parent can still tick them.
+    const campus = /\b(high school|middle school|elementary|intermediate|junior high|academy)\b|\b[A-Z][a-z]+ (HS|MS|ES)\b/;
+    const mySchools = chosen
+      .map(id => useSchoolStore.getState().schedules.find(sc => sc.memberId === id)?.school ?? '')
+      .join(' ').toLowerCase().split(/[^a-z]+/).filter(w => w.length > 3 && !['school', 'middle', 'high', 'elementary'].includes(w));
+    const keep = (title: string) => !campus.test(title) || mySchools.some(w => title.toLowerCase().includes(w));
+    setSelEvts(new Set(events.map((e, i) => (keep(e.title) ? i : -1)).filter(i => i >= 0)));
+    setStep('multi');
+  };
+
+  const handleLinkPreview = async (rawUrl: string, name: string) => {
+    if (linkBusy) return;
+    setLinkBusy(true); setLinkError('');
+    try {
+      const events = toExtracted(await fetchCalendar(rawUrl));
+      if (events.length === 0) { setLinkError('That calendar has no upcoming dates.'); return; }
+      const fresh = await dropExisting(events, selectedKids);
+      if (fresh.length === 0) { setLinkError('Everything in that calendar is already on your family calendar.'); return; }
+      pendingLink.current = { name: name || 'School calendar', url: rawUrl };
+      startReview(fresh, name || null, []);
+    } catch (e: any) {
+      setLinkError(e?.message ?? 'Could not read that calendar.');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const handleSyncLink = async (link: SchoolCalendarLink) => {
+    if (linkBusy) return;
+    setLinkBusy(true); setLinkError('');
+    try {
+      const events = toExtracted(await fetchCalendar(link.url));
+      const fresh = await dropExisting(events, link.member_ids);
+      await supabase.from('school_calendar_links').update({ last_synced_at: new Date().toISOString(), last_error: null }).eq('id', link.id);
+      loadLinks();
+      if (fresh.length === 0) { showToast(`✓ ${link.name} is up to date`); return; }
+      pendingLink.current = { id: link.id, name: link.name, url: link.url };
+      startReview(fresh, link.name, link.member_ids);
+    } catch (e: any) {
+      const msg = e?.message ?? 'Could not read that calendar.';
+      setLinkError(msg);
+      await supabase.from('school_calendar_links').update({ last_error: msg }).eq('id', link.id);
+      loadLinks();
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const handleRemoveLink = (link: SchoolCalendarLink) => {
+    Alert.alert(`Remove ${link.name}?`, 'Dates already added stay on the calendar. It just stops being linked.', [
+      { text: 'Keep', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => { await supabase.from('school_calendar_links').delete().eq('id', link.id); loadLinks(); } },
+    ]);
+  };
+
+  // Public holidays go on the family calendar for everyone (no child needed).
+  const handlePublicHolidays = async (feed: { key: string; label: string; url: string }) => {
+    if (linkBusy) return;
+    setLinkBusy(true); setLinkError('');
+    try {
+      const events = toExtracted(await fetchCalendar(feed.url), 'Holiday');
+      const fresh = await dropExisting(events, []);
+      if (fresh.length === 0) { showToast(`✓ ${feed.label} holidays are already on the calendar`); return; }
+      if (blockIfPaywalled()) return;
+      const go = await new Promise<boolean>(resolve => Alert.alert(`Add ${fresh.length} ${feed.label} holidays?`, 'They are added to the family calendar for the next year.', [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) }, { text: 'Add', onPress: () => resolve(true) },
+      ]));
+      if (!go) return;
+      const rows = fresh.map(ev => ({ title: ev.title, date: ev.date!, allDay: true, category: 'Holiday', type: 'event' as const, color: BRAND.amber, approvalPending: false }));
+      const res = await useEventStore.getState().addEventsBulk(rows as any);
+      showToast(res.failed === 0 ? `✓ ${res.saved} ${feed.label} holidays added` : `Added ${res.saved}; ${res.failed} could not be added`, res.failed === 0);
+    } catch (e: any) {
+      setLinkError(e?.message ?? 'Could not read that calendar.');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
   const resetAndClose = () => {
-    setStep('capture'); setImages([]); setFlyerResult(null);
+    pendingLink.current = null;
+    setStep(startOnLink ? 'link' : 'capture'); setImages([]); setFlyerResult(null);
     setSelKids([]); setSelEvts(new Set()); setTTKid('');
     setError('');
     onClose();
   };
 
-  const rescan = () => { setStep('capture'); setFlyerResult(null); };
+  const rescan = () => { setStep(pendingLink.current || startOnLink ? 'link' : 'capture'); setFlyerResult(null); };
 
   // ── Event field updater ──
   const updateEvent = (field: keyof ExtractedEvent, value: any) =>
@@ -493,6 +669,16 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
           errorMsg={errorMsg}
           kids={kids} allNames={allNames}
           selectedKids={selectedKids} setSelKids={setSelKids}
+        />
+      )}
+
+      {step === 'link' && (
+        <LinkCalendarScreen
+          colors={colors} isDark={isDark}
+          links={links} kids={kids}
+          busy={linkBusy} errorMsg={linkError}
+          onPreview={handleLinkPreview} onSync={handleSyncLink} onRemove={handleRemoveLink} onHolidays={handlePublicHolidays}
+          onClose={resetAndClose}
         />
       )}
 

@@ -663,6 +663,7 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
   const [createKidId, setCreateKidId] = useState<string | undefined>(undefined);
   const [holidaysMemberId, setHolidaysMemberId] = useState<string | null>(null);
   const [flyerOpen, setFlyerOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
 
   const canvas = isDark ? colors.background : CANVAS;
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
@@ -729,6 +730,16 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
           </View>
         )}
 
+        {/* Link the school's own calendar (holidays and important dates) or a country's public holidays. Parents only. */}
+        {!isOwnScheduleOnly && (
+          <TouchableOpacity onPress={() => setLinkOpen(true)} accessibilityRole="button"
+            style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+              borderWidth: 1, borderColor: border, backgroundColor: isDark ? colors.surface : SURFACE }}>
+            <CalendarDays size={16} color={BLUE} />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Link a school calendar</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Kids — tap Manage to open that child's own page (schedule, holidays, important dates). */}
         <View style={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, gap: RHYTHM.item }}>
           {kids.length === 0 ? (
@@ -783,6 +794,7 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
       )}
 
       <FlyerScannerModal visible={flyerOpen} onClose={() => setFlyerOpen(false)} />
+      <FlyerScannerModal visible={linkOpen} startOnLink onClose={() => setLinkOpen(false)} />
     </View>
   );
 }

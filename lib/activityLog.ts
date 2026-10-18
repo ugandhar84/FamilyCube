@@ -19,6 +19,16 @@ export type ActivityAction =
   | 'redo_disputed' | 'redo_dispute_resolved'
   | 'other';
 
+// Who/what made a change when it was not a plain tap: set while Ask Cube applies a confirmed draft, so the history reads
+// "Time changed by Ugandhar via Cube AI". Cleared shortly after, because the log writes are fire-and-forget.
+let changeSource: string | null = null;
+let clearTimer: ReturnType<typeof setTimeout> | null = null;
+export function setChangeSource(source: string | null, holdMs = 2500) {
+  if (clearTimer) { clearTimeout(clearTimer); clearTimer = null; }
+  changeSource = source;
+  if (source) clearTimer = setTimeout(() => { changeSource = null; clearTimer = null; }, holdMs);
+}
+
 export function logActivity(entry: {
   entityType: ActivityEntityType;
   entityId: string;
@@ -41,6 +51,7 @@ export function logActivity(entry: {
     old_value: entry.oldValue ?? null,
     new_value: entry.newValue ?? null,
     note: entry.note ?? null,
+    source: changeSource,
   }).then(({ error }) => {
     if (error) console.warn('[activityLog] insert failed', error.message);
   });
@@ -55,6 +66,7 @@ export interface ActivityLogRow {
   oldValue: string | null;
   newValue: string | null;
   note: string | null;
+  source: string | null;
   createdAt: string;
 }
 
@@ -76,6 +88,7 @@ export async function fetchActivityLog(entityType: ActivityEntityType, entityId:
     oldValue: row.old_value,
     newValue: row.new_value,
     note: row.note,
+    source: row.source ?? null,
     createdAt: row.created_at,
   }));
 }

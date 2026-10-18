@@ -25,6 +25,8 @@ import { askCube, AskCubeProposal, AskCubeChoreRef } from '@/lib/askCubeService'
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { spokenVerdict } from '@/lib/spokenVerdict';
+import { setChangeSource } from '@/lib/activityLog';
+import * as Location from 'expo-location';
 import { correctSpokenNames } from '@/lib/correctSpokenNames';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -421,6 +423,25 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         return;
       }
     }
+    // "Somewhere nearby" needs where they are. Ask first; if they agree, send ONE location with this message only (not saved,
+    // never shown to the AI model, used just to look up real places).
+    let oneTimeLocation: { lat: number; lng: number } | undefined;
+    if (/\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest|local)\b/i.test(trimmed)) {
+      const share = await new Promise<boolean>(resolve => Alert.alert(
+        'Share your location once?',
+        'Ask Cube can find places near you. Your location is used only for this request. It is not saved and is not shown to the AI.',
+        [{ text: 'Not now', style: 'cancel', onPress: () => resolve(false) }, { text: 'Share once', onPress: () => resolve(true) }],
+      ));
+      if (share) {
+        try {
+          const perm = await Location.requestForegroundPermissionsAsync();
+          if (perm.status === 'granted') {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            oneTimeLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          }
+        } catch { /* send without it; the assistant will say it needs a location */ }
+      }
+    }
     setInput('');
     setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
     // Was: nothing scrolled here at all — if the user had scrolled up to
@@ -433,7 +454,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     setSending(true);
     try {
-      const res = await askCube.send(activeMember.id, trimmed, conversationId);
+      const res = await askCube.send(activeMember.id, trimmed, conversationId, oneTimeLocation);
       setConversationId(res.conversationId);
       const fullText = res.answer;
       const msgId = `local-${Date.now()}-a`;
@@ -682,7 +703,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     }));
   };
 
+  // Every change applied from a confirmed Ask Cube draft is logged as "via Cube AI" in the item's history.
   const createProposal = async (msgId: string, index: number, proposal: AskCubeProposal) => {
+    setChangeSource('Cube AI', 4000);
+    try { return await createProposalInner(msgId, index, proposal); } finally { setChangeSource('Cube AI', 2500); }
+  };
+  const createProposalInner = async (msgId: string, index: number, proposal: AskCubeProposal) => {
     if (proposal.kind === 'meal') {
       setPendingMealCreate({ msgId, index, proposal });
       return;

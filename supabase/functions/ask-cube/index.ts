@@ -15,6 +15,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { logAiUsage } from '../_shared/logAiUsage.ts';
+import { getAppleMapsAccessToken, getAppleMapsCredentials } from '../_shared/appleMapsAuth.ts';
 import { resolveMessage, describeResolution, nextContext } from './resolve.ts';
 
 const CORS = {
@@ -586,6 +587,20 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'find_nearby_places',
+      description: 'Find real places near the person who is asking, using the one-time location they chose to share for THIS message (parks, restaurants, stores, activities...). Use for "somewhere nearby", "near me", "around here", "closest pharmacy". If no location was shared the tool says so: then ask them to tap Share location or to name an area; never invent places. The location is used only for this lookup and is not stored.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to look for, e.g. "park", "ice cream", "urgent care", "hiking trail", "bowling"' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'propose_reminder',
       description: 'Propose sending a push reminder to ONE family member (parent only), e.g. "remind Cherry to finish her homework", "nudge Praveena to confirm the pickup", "remind Ben about the dentist". Does NOT send anything itself — returns a card with a Send button. Write the message in the parent\'s voice as one short friendly sentence, in second person to the recipient, without any names or aliases of other people.',
       parameters: {
@@ -1075,7 +1090,7 @@ async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
   aliasMap: AliasMap, members: { id: string; name: string }[], placeAliasMap: PlaceAliasMap,
-  today: string, nowHHMM: string, tz: string = 'UTC',
+  today: string, nowHHMM: string, tz: string = 'UTC', oneTimeLocation: { lat: number; lng: number } | null = null,
 ) {
   // The model works in aliases ("Person A"), and it often copies them into a title search ("Pick-up · Person A from dance class").
   // Titles are stored with real names, so turn aliases back into names before any search, or nothing would ever match.
@@ -1784,6 +1799,39 @@ async function executeTool(
     };
   }
 
+  if (name === 'find_nearby_places') {
+    if (!oneTimeLocation) return { error: 'No location was shared for this message. Tell the user they can tap "Share location" when you ask, or name a town or area, and never make up places.' };
+    const q = String(args.query ?? '').trim().slice(0, 80);
+    if (!q) return { error: 'Say what to look for (for example park or pharmacy).' };
+    const creds = getAppleMapsCredentials();
+    if (!creds) return { error: 'Place search is not available right now. Tell the user plainly.' };
+    try {
+      const token = await getAppleMapsAccessToken(creds.privateKey, creds.keyId, creds.teamId);
+      const u = new URL('https://maps-api.apple.com/v1/search');
+      u.searchParams.set('q', q);
+      u.searchParams.set('lang', 'en-US');
+      u.searchParams.set('searchLocation', `${oneTimeLocation.lat},${oneTimeLocation.lng}`);
+      u.searchParams.set('userLocation', `${oneTimeLocation.lat},${oneTimeLocation.lng}`);
+      u.searchParams.set('resultTypeFilter', 'Poi');
+      const res = await fetch(u.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return { error: 'The places lookup failed. Tell the user plainly.' };
+      const data = await res.json();
+      const miles = (a: any) => {
+        const R = 3958.8, rad = Math.PI / 180;
+        const dLat = (a.latitude - oneTimeLocation.lat) * rad, dLng = (a.longitude - oneTimeLocation.lng) * rad;
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(oneTimeLocation.lat * rad) * Math.cos(a.latitude * rad) * Math.sin(dLng / 2) ** 2;
+        return 2 * R * Math.asin(Math.sqrt(h));
+      };
+      const places = (data.results ?? []).filter((r: any) => r?.name && r?.coordinate)
+        .map((r: any) => ({ name: r.name, kind: r.poiCategory ?? null, address: (r.formattedAddressLines ?? []).slice(0, 2).join(', '), distanceMiles: Math.round(miles(r.coordinate) * 10) / 10 }))
+        .sort((a: any, b: any) => a.distanceMiles - b.distanceMiles).slice(0, 6);
+      if (!places.length) return { places: [], note: 'Nothing found nearby for that. Say so and offer a different search.' };
+      return { places, note: 'Offer two or three of these by name with the distance. They are real places; do not add details that are not listed.' };
+    } catch (e: any) {
+      return { error: 'The places lookup failed. Tell the user plainly.' };
+    }
+  }
+
   if (name === 'propose_reminder') {
     if (viewerRole !== 'parent' && viewerRole !== 'senior') return { error: 'Only a parent can send reminders to other people. Tell the user that plainly.' };
     const toId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
@@ -2358,6 +2406,12 @@ serve(async (req) => {
     // so it's fine for debugging to see real content here. Never log
     // anything AFTER aliasing is applied as if it were the raw input, and
     // never let this log line leak into any response sent back to a client.
+    // A one-time location the person chose to share with THIS message. Used only by find_nearby_places for this request: never saved,
+    // never logged, and never sent to the AI model (the model only sees the place names that come back).
+    const rawLoc = (body as any).clientLocation;
+    const oneTimeLocation: { lat: number; lng: number } | null =
+      rawLoc && Number.isFinite(rawLoc.lat) && Number.isFinite(rawLoc.lng) && Math.abs(rawLoc.lat) <= 90 && Math.abs(rawLoc.lng) <= 180
+        ? { lat: Number(rawLoc.lat), lng: Number(rawLoc.lng) } : null;
     console.log('[ask-cube] request', { memberId: body.memberId, conversationId: body.conversationId ?? '(new)', message: body.message });
 
     const { data: member } = await supabase.from('members').select('id, name, role, family_id, timezone').eq('id', body.memberId).single();
@@ -2730,9 +2784,9 @@ yourself: see LONG WEEKENDS in the CURRENT CONTEXT block. When the user asks som
 break," or "should we plan something for [a holiday shown above]," use this directly rather than checking each
 holiday's weekday by hand.
 Holiday/trip/vacation/itinerary requests ("what should we do for the long weekend," "plan a trip for Labor Day,"
-"any ideas for the break") are real and should be engaged with, but you have NO maps/places tool and NO knowledge of
+"any ideas for the break") are real and should be engaged with, but you have NO knowledge of
 the family's actual home city or region — never invent or name a specific real place, attraction, restaurant, hotel,
-or "near you" suggestion; doing so would be a fabricated claim about a location you don't actually know. Instead:
+or "near you" suggestion; doing so would be a fabricated claim about a location you don't actually know. The ONE exception: for a "nearby / near me / around here / closest" request, call find_nearby_places (the person may have shared their location once for this message) and name only places it returns, with their distances. If it says no location was shared, say you can search as soon as they share their location (the app offers a Share button), or they can name an area; never guess. Otherwise:
 (1) check the family's OWN calendar via get_schedule across the relevant date range for anything already on it
 (a Holiday-category event, a break already entered, other commitments to plan around), (2) if the user asks what's
 "nearby" or "near us," you may ask them to confirm you can use their location — only member_locations' aliased
@@ -3541,7 +3595,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           // exactly what the model itself sent/received, which is the
           // useful thing to see when debugging "why did it answer this way."
           console.log('[ask-cube] tool_call', { round, name: call.function.name, args });
-          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today, nowHHMM, familyTimeZone);
+          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today, nowHHMM, familyTimeZone, oneTimeLocation);
           console.log('[ask-cube] tool_result', { round, name: call.function.name, result });
 
           // Grounding: only the read-side lookups (never the propose_*

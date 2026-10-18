@@ -2411,9 +2411,9 @@ serve(async (req) => {
     // Deterministic pre-pass: who and when this message is about, worked out by fixed rules before the model runs, plus
     // the instructions that apply to THIS kind of request. The model gets answers, not guesses to make.
     const { data: convCtxRow } = await supabase.from('ask_cube_conversations').select('context').eq('id', conversationId).maybeSingle();
-    const prevCtx = (convCtxRow?.context ?? {}) as { lastMemberId?: string | null; lastDate?: string | null };
+    const prevCtx = (convCtxRow?.context ?? {}) as { lastMemberId?: string | null; lastDate?: string | null; lastItem?: { title: string; kind?: string } | null };
     const resolution = resolveMessage(body.message, (allMembers ?? []) as { id: string; name: string }[], today, prevCtx.lastMemberId ?? null);
-    const resolvedFacts = describeResolution(resolution, (id) => aliasMap.toAlias.get(id) ?? 'someone', viewerAlias);
+    const resolvedFacts = describeResolution(resolution, (id) => aliasMap.toAlias.get(id) ?? 'someone', viewerAlias, prevCtx.lastItem ? { title: realNameToAlias(aliasMap, (allMembers ?? []) as any, prevCtx.lastItem.title), kind: prevCtx.lastItem.kind } : null);
     console.log('[ask-cube] resolved', { intent: resolution.intent, people: resolution.mentionedIds.length, pronoun: !!resolution.pronounId, dates: resolution.dates.map(d => d.date) });
 
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube — that is your ONLY identity, always,
@@ -3673,7 +3673,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
       follow_ups: followUps.length ? followUps : null,
       cards: cardsOut.length ? cardsOut : null,
     });
-    await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString(), context: nextContext(prevCtx, resolution) }).eq('id', conversationId);
+    await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString(), context: nextContext(prevCtx, resolution, proposals.length ? { title: String(proposals[0].data?.title ?? ''), kind: proposals[0].kind } : (choreCardRows.length === 1 ? { title: choreCardRows[0].title, kind: 'chore' } : null)) }).eq('id', conversationId);
 
     // finalText here is already de-aliased back to real names/places — this
     // is genuinely what the client receives, useful for confirming the

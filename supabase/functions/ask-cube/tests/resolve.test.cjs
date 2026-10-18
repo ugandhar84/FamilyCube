@@ -96,4 +96,10 @@ eq('empty', r('').intent, null);
 eq('emoji', r('👍').intent, null);
 eq('long', r('a '.repeat(500)).intent, null);
 
+// "it" resolution and carrying the last item
+eq('itRef set', r('Set a due date for it').itRef, true);
+eq('itRef not set', r("what's on today").itRef, false);
+eq('it directive', /last thing discussed: chore "Trash"/.test(R.describeResolution(r('Set a due date for it'), id=>'P', 'V', {title:'Trash', kind:'chore'})), true);
+eq('item carried', R.nextContext({lastItem:{title:'A'}}, r('hi')).lastItem.title, 'A');
+eq('item replaced', R.nextContext({lastItem:{title:'A'}}, r('hi'), {title:'B'}).lastItem.title, 'B');
 console.log(fail? fail+' FAILED':'all passed'); process.exit(fail?1:0);

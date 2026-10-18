@@ -19,6 +19,8 @@ export interface Resolution {
   pronounUnresolved: boolean;
   /** Dates the message names, resolved from today. */
   dates: { phrase: string; date: string }[];
+  /** "it", "this", "that" used as a reference to something earlier. */
+  itRef: boolean;
   /** A fixed-pattern read of what the message is asking for. */
   intent: Intent;
 }
@@ -102,16 +104,19 @@ export function detectIntent(text: string): Intent {
 }
 
 export function resolveMessage(text: string, members: Person[], today: string, lastMemberId: string | null): Resolution {
-  return { ...resolvePeople(text, members, lastMemberId), dates: resolveDates(text, today), intent: detectIntent(text) };
+  const t = ' ' + text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ') + ' ';
+  const itRef = /\s(it|this|that|those|these)\s/.test(t) && !/\s(what|who|when)\s+(is|are)\s+(it|this|that)\s/.test(t);
+  return { ...resolvePeople(text, members, lastMemberId), dates: resolveDates(text, today), itRef, intent: detectIntent(text) };
 }
 
 /** The block handed to the model: facts, already worked out, in the model's own (alias) vocabulary. */
 export function describeResolution(
-  r: Resolution, toAlias: (id: string) => string, viewerAlias: string,
+  r: Resolution, toAlias: (id: string) => string, viewerAlias: string, lastItem?: { title: string; kind?: string } | null,
 ): string {
   const lines: string[] = [];
   const who = r.mentionedIds.length ? r.mentionedIds : (r.pronounId ? [r.pronounId] : []);
   if (who.length) lines.push(`The message is about: ${who.map(toAlias).join(', ')}${r.pronounId && !r.mentionedIds.length ? ' (a pronoun such as "his" or "her" in the message refers to this person from earlier in the conversation)' : ''}.`);
+  if (r.itRef && lastItem?.title) lines.push(`"it", "this" or "that" in the message means the last thing discussed: ${lastItem.kind ? lastItem.kind + ' ' : ''}"${lastItem.title}". Use it; do not ask which item.`);
   if (r.selfRef) lines.push(`"me"/"my" means ${viewerAlias}.`);
   if (r.pronounUnresolved) lines.push('The message uses a pronoun but nobody was named earlier. Ask ONE short question: who do you mean?');
   for (const d of r.dates) lines.push(`"${d.phrase}" is ${d.date}. Use exactly this date.`);
@@ -142,10 +147,11 @@ const FOCUS: Partial<Record<NonNullable<Intent>, string>> = {
 
 /** What to remember for the next message: the last person and date the conversation was about. */
 export function nextContext(
-  prev: { lastMemberId?: string | null; lastDate?: string | null },
+  prev: { lastMemberId?: string | null; lastDate?: string | null; lastItem?: { title: string; kind?: string } | null },
   r: Resolution,
-): { lastMemberId: string | null; lastDate: string | null } {
+  item?: { title: string; kind?: string } | null,
+): { lastMemberId: string | null; lastDate: string | null; lastItem: { title: string; kind?: string } | null } {
   const lastMemberId = r.mentionedIds.length ? r.mentionedIds[r.mentionedIds.length - 1] : (prev.lastMemberId ?? null);
   const lastDate = r.dates.length ? r.dates[r.dates.length - 1].date : (prev.lastDate ?? null);
-  return { lastMemberId, lastDate };
+  return { lastMemberId, lastDate, lastItem: item ?? prev.lastItem ?? null };
 }

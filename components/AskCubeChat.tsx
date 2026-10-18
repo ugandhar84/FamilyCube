@@ -1146,7 +1146,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     multiline
                     // Grows with the text up to 3 lines, then scrolls inside the box.
                     scrollEnabled={inputHeight >= INPUT_MAX_H}
-                    onContentSizeChange={(e) => setInputHeight(Math.min(INPUT_MAX_H, Math.max(INPUT_MIN_H, Math.ceil(e.nativeEvent.contentSize.height) + 24)))}
+                    onContentSizeChange={(e) => {
+                      // iOS reports the content height WITH the top/bottom padding; Android reports it without.
+                      const h = Math.ceil(e.nativeEvent.contentSize.height) + (Platform.OS === 'android' ? 24 : 0);
+                      setInputHeight(Math.min(INPUT_MAX_H, Math.max(INPUT_MIN_H, h)));
+                    }}
                     style={{ fontSize: 14, lineHeight: 20,
                       color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
                       backgroundColor: isDark ? colors.card : '#FFFFFF', height: input ? inputHeight : INPUT_MIN_H, borderRadius: 15, borderWidth: 1,

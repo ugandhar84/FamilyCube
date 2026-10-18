@@ -1478,7 +1478,7 @@ async function executeTool(
       .ilike('title', `%${search}%`);
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', today); // don't match past events by default, family-local "today"
-    if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+    if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
@@ -1557,7 +1557,7 @@ async function executeTool(
       let q = supabase.from('calendar_events')
         .select('id, title, category, date, start_time, member_id, member_ids')
         .eq('family_id', familyId).is('deleted_at', null).eq('date', args.allOnDate);
-      if (memberId) q = q.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+      if (memberId) q = q.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
       const { data: dayRows, error: dayErr } = await q.order('start_time').limit(12);
       if (dayErr) return { error: dayErr.message };
       const scoped = scopeEventsToViewer(dayRows ?? [], viewerRole, viewerId, viewerName);
@@ -1578,7 +1578,7 @@ async function executeTool(
       .ilike('title', `%${search}%`);
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', today);
-    if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+    if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);

@@ -13,6 +13,7 @@ import * as Location from 'expo-location';
 import { AppState } from 'react-native';
 import { supabase } from './supabase';
 import { encryptLocationText } from './locationCrypto';
+import { movementLabel } from './locationTracking';
 
 const MIN_WRITE_GAP_MS = 4_000;
 const MAX_QUIET_MS = 30_000;       // still write at least this often while the tab is open
@@ -70,6 +71,7 @@ export async function startLiveSelfLocation(memberId: string, familyId: string |
         const row: Record<string, any> = {
           member_id: memberId, family_id: familyId, lat, lng,
           speed_mph: Math.round(speedMps * 2.237),
+          movement: movementLabel(Math.round(speedMps * 2.237)),
           last_updated: new Date().toISOString(),
         };
         const geoMoved = lastGeo ? metersBetween(lastGeo.lat, lastGeo.lng, lat, lng) : Infinity;

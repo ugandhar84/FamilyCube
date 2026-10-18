@@ -31,7 +31,7 @@ import {
   onActivityUpdate, onAccelerometerData, queryHistoricalActivity,
   type ActivityUpdate,
 } from 'core-motion';
-import { setMotionClassification, recordHardBrakeOnActiveTrip, evaluateCrashSignal } from './locationTracking';
+import { setMotionClassification, setMotionKind, recordHardBrakeOnActiveTrip, evaluateCrashSignal } from './locationTracking';
 import { supabase } from './supabase';
 
 // Only trust automotive classification at HIGH confidence — a lower
@@ -67,6 +67,10 @@ export async function startMotionTracking(memberId: string): Promise<void> {
   stopActivitySub = onActivityUpdate((update) => {
     const automotive = isConfidentlyAutomotive(update);
     setMotionClassification(automotive);
+    // Walking, running and cycling are trusted at medium confidence or better (only "low" is ignored).
+    const sure = update.confidence === 'medium' || update.confidence === 'high';
+    setMotionKind(automotive ? 'automotive' : sure && update.running ? 'running' : sure && update.cycling ? 'cycling'
+      : sure && update.walking ? 'walking' : update.stationary && sure ? 'stationary' : null);
 
     if (automotive && !accelerometerSamplingActive) {
       accelerometerSamplingActive = true;

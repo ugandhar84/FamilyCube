@@ -1191,6 +1191,18 @@ async function executeTool(
     if (error) return { error: error.message };
     let rows = data ?? [];
     if (args.relationshipWord) {
+      // The model sometimes passes a person's NAME here ("Cherry") instead of a relationship word. A real name or alias
+      // is the clearest match there is, so resolve it first instead of failing with "couldn't find anyone".
+      const asName = String(args.relationshipWord).toLowerCase().trim();
+      const byName = rows.filter((m: any) => {
+        const full = String(m.name).toLowerCase().trim();
+        return full === asName || full.split(' ')[0] === asName;
+      });
+      const byAliasId = memberIdForAlias(aliasMap, String(args.relationshipWord));
+      const nameHit = byAliasId ? rows.filter((m: any) => m.id === byAliasId) : byName;
+      if (nameHit.length === 1) {
+        rows = nameHit;
+      } else {
       const rel = await matchByRelationship(supabase, familyId, args.relationshipWord);
       if (rel.ambiguousCandidateNames) {
         return { error: `More than one family member matches "${args.relationshipWord}": ${rel.ambiguousCandidateNames.map((n: string) => realNameToAlias(aliasMap, members, n)).join(', ')}. Ask which one they meant.` };
@@ -1199,6 +1211,7 @@ async function executeTool(
         return { error: `Couldn't find anyone in this family matching "${args.relationshipWord}". Tell the user plainly rather than guessing.` };
       }
       rows = rows.filter((m: any) => m.id === rel.id);
+      }
     }
     return {
       members: rows.map((m: any) => ({

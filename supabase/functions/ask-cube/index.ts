@@ -2160,9 +2160,13 @@ serve(async (req) => {
       conversationId = conv.id;
     }
 
-    const { data: priorMessages } = await supabase.from('ask_cube_messages')
-      .select('role, content, tool_calls, tool_call_id, tool_name')
-      .eq('conversation_id', conversationId).order('created_at').limit(30);
+    // The MOST RECENT turns, oldest first. This used to take the first 30 rows of the conversation, so in a long chat the
+    // model saw old messages ("Download photos") and never the last few, which is why follow-ups like "set a due date for it"
+    // lost track of what "it" was.
+    const { data: priorDesc } = await supabase.from('ask_cube_messages')
+      .select('role, content, tool_calls, tool_call_id, tool_name, created_at')
+      .eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(40);
+    const priorMessages = (priorDesc ?? []).slice().reverse();
 
     // Real structural gap (two live-reported bugs): whether a proposal card
     // is still pending, already confirmed, or discarded was something the
@@ -3182,6 +3186,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // real client response type, __meta is already QA-only.
     let lastDebugEmptyReason: any = undefined;
 
+    let draftClaimRetried = false;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const modelCallStarted = Date.now();
       const { reply, modelUsed, usage } = await callModel(messages, TOOLS);
@@ -3350,6 +3355,17 @@ conversation text, so never reference "the suggestions below" in your actual rep
           });
         }
         continue; // let the model see the tool results and respond
+      }
+
+      // Claiming a draft that no tool produced is fabrication ("I've drafted a trash chore" with no card). Catch it once: tell
+      // the model plainly, and let it make the real call or ask the one question it is missing.
+      const claimsDraft = /\b(i'?ve|i have|i)\s+(drafted|created|added|scheduled|set up|cancelled|canceled)\b|take a look below|see (it |the card )?below/i.test(reply.content ?? '');
+      if (claimsDraft && proposals.length === 0 && !draftClaimRetried && round < MAX_TOOL_ROUNDS - 1) {
+        draftClaimRetried = true;
+        console.warn('[ask-cube] reply claimed a draft but no propose_* tool ran; retrying once');
+        messages.push({ role: 'assistant', content: reply.content ?? '' });
+        messages.push({ role: 'user', content: 'SYSTEM NOTE: your last reply said something was drafted or done, but you called no propose_* tool, so nothing exists. If you have what you need, call the right propose_* tool NOW (propose_quest for a chore, propose_event for an event). If a detail is missing (who or when), ask ONE short question instead. Never say you drafted, created or added anything unless a tool just returned it.' });
+        continue;
       }
 
       finalText = reply.content ?? '';

@@ -990,6 +990,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                         content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber}
                         chores={m.chores} linkColor={colors.pink}
                         onChorePress={(choreId) => {
+                          useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
                           onClose();
                           // A bare router.push here bypassed kiosk gating
                           // entirely — '/(tabs)/quests' has no kiosk
@@ -1074,6 +1075,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       events={m.scheduleEvents}
                       canAssign={activeMember?.role === 'parent'}
                       onOpen={(ev) => {
+                        useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
                         onClose();
                         useUIStore.getState().setRequestedEventDetailId(ev.id);
                         navigateFromNotification('/(tabs)/schedule', variant === 'kiosk');

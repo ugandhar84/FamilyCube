@@ -372,6 +372,23 @@ export default function TabLayout() {
   // gate below the same way onFamilyHealthTab does.
   const onSchoolTab = activeTabName === 'school';
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
+  // Detail pages opened from the Ask Cube chat hand back to it: when the page closes (full-bleed turns off again), reopen the chat.
+  const prevFullBleed = useRef(false);
+  useEffect(() => {
+    if (prevFullBleed.current && !fullBleedScreenActive && useUIStore.getState().returnToAskCube) {
+      useUIStore.getState().setReturnToAskCube(false);
+      setAskCubeOpen(true);
+    }
+    prevFullBleed.current = fullBleedScreenActive;
+  }, [fullBleedScreenActive]);
+  // A stale hand-back (the detail page never opened) must not pop the chat open later: drop it when the chat opens normally or after a few seconds.
+  const returnToAskCube = useUIStore(s => s.returnToAskCube);
+  useEffect(() => { if (askCubeOpen) useUIStore.getState().setReturnToAskCube(false); }, [askCubeOpen]);
+  useEffect(() => {
+    if (!returnToAskCube) return;
+    const t = setTimeout(() => { if (!useUIStore.getState().fullBleedScreenActive) useUIStore.getState().setReturnToAskCube(false); }, 8000);
+    return () => clearTimeout(t);
+  }, [returnToAskCube]);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
 

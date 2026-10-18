@@ -116,6 +116,9 @@ interface UIState {
   // event again themselves.
   requestedEventDetailId: string | undefined;
   setRequestedEventDetailId: (v: string | undefined) => void;
+  // Set when a detail page (event, chore) is opened FROM the Ask Cube chat: closing that page brings the chat back.
+  returnToAskCube: boolean;
+  setReturnToAskCube: (v: boolean) => void;
   // One-shot, same pattern as openHealthRecordsComposerRequested — set by
   // HealthRecordsScreen.tsx's flat "Scan prescription / vaccine record →"
   // bottom button (which has no direct handle to HealthTab's own
@@ -146,6 +149,8 @@ export const useUIStore = create<UIState>((set) => ({
   setRequestedTasksSegment: (v) => set({ requestedTasksSegment: v }),
   requestedEventDetailId: undefined,
   setRequestedEventDetailId: (v) => set({ requestedEventDetailId: v }),
+  returnToAskCube: false,
+  setReturnToAskCube: (v) => set({ returnToAskCube: v }),
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   openGroceryComposerRequested: false,

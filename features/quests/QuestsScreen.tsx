@@ -73,6 +73,7 @@ import { PushbackSheet } from '../hub/parent/PushbackSheet';
 import { SubmitQuestSheet } from './components/SubmitQuestSheet';
 import { DelegateQuestSheet } from './components/DelegateQuestSheet';
 import { KudosSheet } from './components/KudosSheet';
+import SmallWinStack from './components/SmallWinStack';
 import { showToast } from '@/components/AppToast';
 import { GEMINI } from '@/constants/geminiRhythm';
 
@@ -1176,31 +1177,22 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
               ))}
             </View>
 
-            {/* ── Figma "celebrate" card: most recent small win ── */}
-            {(() => {
-              const recentWin = quests
-                // Once I have sent appreciation for a win it stays gone (the cheer is saved on the chore), and the next win takes its place.
-                .filter(q => q.status === 'approved' && q.assignedToId && q.assignedToId !== activeMemberId && !(q.cheers ?? []).some(c => c.memberId === activeMemberId))
-                .sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''))
-                [0];
-              const winner = recentWin ? members.find(m => m.id === recentWin.assignedToId) : null;
-              if (!recentWin || !winner || winner.id === activeMemberId) return null;
-              return (
-                <View style={{ marginHorizontal: 14, marginTop: 14, padding: 18, borderRadius: 22, backgroundColor: colors.amberLight }}>
-                  <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.amber }}>SMALL WIN</Text>
-                  <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginTop: 5, marginBottom: 4 }}>
-                    {winner.name.split(' ')[0]} completed "{recentWin.title}"
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>A quick thank-you goes a long way.</Text>
-                  <TouchableOpacity
-                    onPress={() => handleKudosTap(recentWin)}
-                    style={{ alignSelf: 'flex-start', marginTop: 12, paddingVertical: 9, paddingHorizontal: 14,
-                      borderRadius: 12, backgroundColor: colors.card }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.amber }}>Send appreciation ✨</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })()}
+            {/* ── Recent wins as a swipe-away stack: thanking someone is optional ── */}
+            {myId && (
+              <SmallWinStack
+                memberId={myId}
+                colors={colors}
+                wins={quests
+                  // Recent wins from other people that I have not thanked; a thank-you is saved on the chore, so it drops out for good.
+                  .filter(q => q.status === 'approved' && q.assignedToId && q.assignedToId !== activeMemberId
+                    && !(q.cheers ?? []).some(c => c.memberId === activeMemberId)
+                    && Date.now() - new Date(q.approvedAt ?? 0).getTime() < 3 * 86_400_000)
+                  .sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''))
+                  .slice(0, 6)
+                  .map(q => ({ id: q.id, title: q.title, winnerName: (members.find(m => m.id === q.assignedToId)?.name ?? 'Someone').split(' ')[0] }))}
+                onSend={(id, note) => { cheerQuest(id, myId ?? '', { note }); }}
+              />
+            )}
           </>
         )}
       </ScrollView>

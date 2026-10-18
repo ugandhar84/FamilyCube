@@ -56,7 +56,7 @@ export type FlyerResult =
   | { type: 'timetable'; timetable: ExtractedTimetable }
   | { type: 'calendar';  calendar: ExtractedCalendar };
 
-export type Step = 'capture' | 'processing' | 'review' | 'timetable' | 'multi';
+export type Step = 'capture' | 'processing' | 'review' | 'timetable' | 'multi' | 'link';
 
 // Same category vocabulary the rest of the app uses (features/calendar/components/eventForm/types.ts's
 // CATEGORIES) — a scanned flyer's category must be one of these or the calendar_events_category_fk

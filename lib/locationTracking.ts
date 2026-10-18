@@ -634,6 +634,31 @@ const SPEEDING_ALERT_COOLDOWN_MS = 5 * 60_000; // live-requested: re-alert if st
 // motionTracking.ts's own module never loaded) — handleDrivingTrip treats
 // null as "use the speed-only heuristic," never as "definitely not driving."
 let latestMotionClassification: boolean | null = null;
+// What the phone's motion sensor says the person is doing right now (CoreMotion, via lib/motionTracking.ts). More reliable than
+// GPS speed for walking: iOS often reports no speed at all at walking pace, so a walker would otherwise read as standing still.
+export type MotionKind = 'walking' | 'running' | 'cycling' | 'automotive' | 'stationary';
+let latestMotionKind: { kind: MotionKind; at: number } | null = null;
+// CoreMotion only reports when the activity CHANGES, so "walking" must stay valid while the walk continues (not expire after a few
+// minutes of no new report). It is replaced by the next report, or ignored after this long.
+const MOTION_FRESH_MS = 20 * 60_000;
+export function setMotionKind(kind: MotionKind | null) {
+  latestMotionKind = kind ? { kind, at: Date.now() } : null;
+  // The person just started walking or running: leave the battery-saving mode at once instead of waiting for a GPS fix.
+  if (kind === 'walking' || kind === 'running' || kind === 'cycling') evaluatePower(3).catch(() => {});
+}
+function freshMotionKind(): MotionKind | null {
+  return latestMotionKind && Date.now() - latestMotionKind.at < MOTION_FRESH_MS ? latestMotionKind.kind : null;
+}
+/** The label the family map shows: the motion sensor first, then speed. */
+export function movementLabel(speedMph: number): 'driving' | 'walking' | 'running' | 'cycling' | 'stationary' {
+  const k = freshMotionKind();
+  if (k === 'automotive' || speedMph >= 8) return 'driving';
+  if (k === 'running') return 'running';
+  if (k === 'cycling') return 'cycling';
+  if (k === 'walking' || speedMph >= 1.5) return 'walking';
+  return 'stationary';
+}
+
 export function setMotionClassification(isAutomotive: boolean | null) {
   latestMotionClassification = isAutomotive;
   if (isAutomotive === true) evaluatePower(0).catch(() => {}); // the motion sensor says vehicle: go to driving right away
@@ -723,6 +748,25 @@ let powerState: PowerState = initialPowerState();
 let appliedMode: PowerMode | null = null;
 let applyingMode = false;
 let lastWriteAt = 0;
+let fixHistory: { lat: number; lng: number; t: number }[] = [];
+/**
+ * Speed from how far the phone really moved over the last couple of minutes, for when GPS reports none (common at walking pace).
+ * Compared against the OLDEST fix in a 2-minute window (not just the previous one), so a slow walk that moves 20 m per fix still
+ * adds up to a clear speed, and GPS jitter on a stationary phone (small net displacement) does not.
+ */
+function derivedSpeedMph(lat: number, lng: number, accuracy: number | null | undefined): number {
+  const now = Date.now();
+  fixHistory = fixHistory.filter(f => now - f.t <= 120_000);
+  const oldest = fixHistory[0];
+  let mph = 0;
+  if (oldest) {
+    const dt = (now - oldest.t) / 1000;
+    const d = haversineMeters(oldest.lat, oldest.lng, lat, lng);
+    if (dt >= 12 && d > Math.max(10, (accuracy ?? 20) * 0.35)) mph = Math.min(60, Math.round((d / dt) * 2.237));
+  }
+  fixHistory.push({ lat, lng, t: now });
+  return mph;
+}
 const STATIONARY_HEARTBEAT_MS = 10 * 60_000; // a still phone still reports in this often so "last seen" stays honest
 
 function nativeOptionsFor(mode: PowerMode): Location.LocationTaskOptions {
@@ -846,8 +890,11 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
 
     const { latitude: lat, longitude: lng } = loc.coords;
 
-    // Decide how hard the GPS should work from what this fix says (speed, battery, a pending "live" window).
-    await evaluatePower(loc.coords.speed && loc.coords.speed > 0 ? Math.round(loc.coords.speed * 2.237) : 0);
+    // Speed for the power rules and the saved movement: GPS speed, or the distance moved over the last two minutes when GPS gives none.
+    const gpsMph = loc.coords.speed && loc.coords.speed > 0 ? Math.round(loc.coords.speed * 2.237) : 0;
+    const derivedMph = derivedSpeedMph(lat, lng, loc.coords.accuracy);
+    const rawSpeed = gpsMph > 0 ? gpsMph : derivedMph;
+    await evaluatePower(rawSpeed);
 
     // The OS already gates re-delivery on distanceInterval, but double-check
     // here too since some platforms are looser about the threshold — a
@@ -929,7 +976,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // moved noticeably, map never updated, no error shown). Logging here
     // doesn't fix a real RLS mismatch by itself, but makes the next
     // occurrence actually diagnosable instead of a silent no-op.
-    const speedMph = loc.coords.speed ? Math.max(0, Math.round(loc.coords.speed * 2.237)) : 0;
+    const speedMph = rawSpeed;
     const { error: upsertErr } = await withSuppressedNetworkBanner(() => supabase.from('member_locations').upsert({
       member_id: activeMemberId,
       family_id: lastFamilyId,
@@ -939,6 +986,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
       ...(isCharging !== null ? { is_charging: isCharging } : {}),
       speed_mph: speedMph,
+      movement: movementLabel(speedMph),
       last_updated: now,
       // This callback only ever runs while the native background task is
       // genuinely active, so sharing is unconditionally "on" here — explicit,

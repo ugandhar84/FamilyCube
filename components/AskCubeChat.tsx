@@ -24,6 +24,11 @@ import { TYPO } from '@/constants/theme';
 import { askCube, AskCubeProposal, AskCubeChoreRef } from '@/lib/askCubeService';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { spokenVerdict } from '@/lib/spokenVerdict';
+import { setChangeSource } from '@/lib/activityLog';
+import * as Location from 'expo-location';
+import { showAlert } from '@/components/AppAlert';
+import { correctSpokenNames } from '@/lib/correctSpokenNames';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, remindChoreAssignee } from '@/store/choreStore';
@@ -101,6 +106,8 @@ interface ChatMessage {
   scheduleEvents?: AskCubeScheduleEvent[];
   choreCards?: AskCubeChore[];
   snapshot?: AskCubeSnapshot;
+  /** The question to re-ask once the person shares their location (set when the assistant needed it). */
+  needsLocationFor?: string;
   requestCards?: AskCubeRequest[];
   // True once this message's typewriter reveal has finished — follow-up
   // chips wait for this rather than just `!sending` (which flips false the
@@ -375,7 +382,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     return [...new Set(prompts)].slice(0, 3);
   }, [upcomingEvents, quests, activeMember?.id, activeMember?.role]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, opts?: { location?: { lat: number; lng: number }; silent?: boolean }) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     // Tapping a suggestion (or Send) hides the keyboard so the reply is visible, not covered.
@@ -400,8 +407,32 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         { id: `local-${Date.now()}-mod`, role: 'assistant', content: "Let's keep it kind — that message wasn't sent.", timestamp: now }]);
       return;
     }
-    setInput('');
-    setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
+    // A spoken (or typed) "yes" / "no" answers the draft that is waiting: confirm or discard it, exactly like tapping its button.
+    // Only when exactly ONE draft is pending on the latest reply, so it can never confirm the wrong thing.
+    const verdict = opts?.silent ? null : spokenVerdict(trimmed);
+    if (verdict) {
+      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+      const pending = (lastAssistant?.proposals ?? [])
+        .map((p, i) => ({ p, i }))
+        .filter(({ i }) => (lastAssistant?.proposalStatuses?.[i] ?? 'pending') === 'pending');
+      if (lastAssistant && pending.length === 1 && pending[0].p.kind !== 'meal') {
+        const now = new Date().toISOString();
+        setInput('');
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-v`, role: 'user', content: trimmed, timestamp: now }]);
+        if (verdict === 'yes') await createProposal(lastAssistant.id, pending[0].i, pending[0].p);
+        else discardProposal(lastAssistant.id, pending[0].i);
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-vr`, role: 'assistant', content: verdict === 'yes' ? 'Done.' : 'Okay, I discarded it.', timestamp: new Date().toISOString() }]);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+        return;
+      }
+    }
+    // A one-time location only comes from the "Share your location once?" card the assistant shows when it needs one (or from a
+    // card the person already tapped). No blocking dialog here: a native alert cannot appear over this full-screen chat.
+    const oneTimeLocation: { lat: number; lng: number } | undefined = opts?.location;
+    if (!opts?.silent) {
+      setInput('');
+      setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
+    }
     // Was: nothing scrolled here at all — if the user had scrolled up to
     // read earlier messages, their own just-sent message landed off-screen,
     // with no scroll happening until the reply started streaming in
@@ -412,7 +443,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     setSending(true);
     try {
-      const res = await askCube.send(activeMember.id, trimmed, conversationId);
+      const res = await askCube.send(activeMember.id, trimmed, conversationId, oneTimeLocation);
       setConversationId(res.conversationId);
       const fullText = res.answer;
       const msgId = `local-${Date.now()}-a`;
@@ -453,6 +484,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
           chores: res.chores ?? [],
           followUps: res.followUps ?? [],
+          needsLocationFor: (res as any).needsLocation ? trimmed : undefined,
           scheduleEvents: ((res.cards ?? []) as any[]).find(c => c.kind === 'schedule')?.events,
           choreCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'chores')?.chores,
           snapshot: ((res.cards ?? []) as any[]).find(c => c.kind === 'snapshot'),
@@ -661,7 +693,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     }));
   };
 
+  // Every change applied from a confirmed Ask Cube draft is logged as "via Cube AI" in the item's history.
   const createProposal = async (msgId: string, index: number, proposal: AskCubeProposal) => {
+    setChangeSource('Cube AI', 4000);
+    try { return await createProposalInner(msgId, index, proposal); } finally { setChangeSource('Cube AI', 2500); }
+  };
+  const createProposalInner = async (msgId: string, index: number, proposal: AskCubeProposal) => {
     if (proposal.kind === 'meal') {
       setPendingMealCreate({ msgId, index, proposal });
       return;
@@ -1126,6 +1163,30 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     );
                   })() : null}
 
+                  {m.role === 'assistant' && !!m.needsLocationFor && m.revealDone && (
+                    <View style={{ width: '94%', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: RHYTHM.card - 4, gap: RHYTHM.item }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Share your location once?</Text>
+                      <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>Used only to find places near you for this question. It is not saved and not shown to the AI.</Text>
+                      <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
+                        <Pressable onPress={() => setMessages(prev => prev.map(x => x.id === m.id ? { ...x, needsLocationFor: undefined } : x))} accessibilityRole="button"
+                          style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Not now</Text>
+                        </Pressable>
+                        <Pressable accessibilityRole="button" onPress={async () => {
+                          const ask = m.needsLocationFor!;
+                          setMessages(prev => prev.map(x => x.id === m.id ? { ...x, needsLocationFor: undefined } : x));
+                          try {
+                            const perm = await Location.requestForegroundPermissionsAsync();
+                            if (perm.status !== 'granted') { showAlert('Location is off', 'Allow location for Family Cube in Settings, or tell me the town or area instead.'); return; }
+                            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                            send(ask, { location: { lat: pos.coords.latitude, lng: pos.coords.longitude }, silent: true });
+                          } catch { showAlert('Could not get your location', 'Try again, or tell me the town or area instead.'); }
+                        }} style={{ flex: 1.4, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textInverse }}>Share once</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
                   {m.role === 'assistant' && !!m.snapshot && m.revealDone && (
                     <AskCubeSnapshotCard snapshot={m.snapshot} isParent={activeMember?.role === 'parent'} onAsk={(q) => send(q)} />
                   )}
@@ -1265,7 +1326,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     if (voice.state === 'listening') {
                       const transcript = voice.liveTranscript;
                       await voice.stop();
-                      if (transcript.trim()) setInput(transcript);
+                      // Tapping the mic again means "I'm done talking": fix mis-heard family names and send it, so speaking alone is enough.
+                      const fixed = correctSpokenNames(transcript, members.map(m => m.name.split(' ')[0]));
+                      if (fixed.trim()) send(fixed);
                       return;
                     }
                     await voice.start();

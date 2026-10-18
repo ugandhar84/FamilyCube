@@ -146,7 +146,8 @@ export async function registerTripGeofence(tripId: string, lat: number, lng: num
   // ones registered by earlier calls this session) rather than passing
   // only this one trip's region, which would silently drop a sibling
   // trip's geofence the instant a second trip starts.
-  const regions: Location.LocationRegion[] = Object.entries(regionTripMap).map(([id, meta]) => ({
+  // Budget: at most 2 live pickup regions (iOS allows 20 for the whole app, shared with places and stores).
+  const regions: Location.LocationRegion[] = Object.entries(regionTripMap).slice(-2).map(([id, meta]) => ({
     identifier: id, latitude: meta.latitude, longitude: meta.longitude,
     radius: PICKUP_GEOFENCE_RADIUS_METERS, notifyOnEnter: true, notifyOnExit: false,
   }));

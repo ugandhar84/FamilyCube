@@ -532,7 +532,7 @@ export function KioskEventDetailSheet({ event, active, members, onClose, onEditF
                     {i < log.length - 1 && <View style={[s.logLine, { backgroundColor: k.cardBorder }]} />}
                   </View>
                   <View style={{ flex: 1, paddingBottom: 12 }}>
-                    <Text style={[s.personName, { color: k.text }]}>{meta.label}{actor ? <Text style={[s.personSub, { color: k.textMuted }]}>{`  by ${actor.name.split(' ')[0]}`}</Text> : null}</Text>
+                    <Text style={[s.personName, { color: k.text }]}>{meta.label}{actor ? <Text style={[s.personSub, { color: k.textMuted }]}>{`  by ${actor.name.split(' ')[0]}${(r as any).source ? ` via ${(r as any).source}` : ''}`}</Text> : null}</Text>
                     {!!change && <Text style={[s.personSub, { color: k.textMuted }]}>{change}</Text>}
                     <Text style={[s.personSub, { color: k.textFaint }]}>{stamp(r.createdAt)}</Text>
                     {!!r.note && <Text style={[s.personSub, { color: k.textMuted, fontStyle: 'italic' }]}>"{r.note}"</Text>}

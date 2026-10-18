@@ -13,6 +13,7 @@ import * as Location from 'expo-location';
 import { AppState } from 'react-native';
 import { supabase } from './supabase';
 import { encryptLocationText } from './locationCrypto';
+import { movementLabel } from './locationTracking';
 
 const MIN_WRITE_GAP_MS = 4_000;
 const MAX_QUIET_MS = 30_000;       // still write at least this often while the tab is open
@@ -39,6 +40,7 @@ export async function startLiveSelfLocation(memberId: string, familyId: string |
     let last: { lat: number; lng: number; t: number } | null = null;     // last written fix
     let lastGeo: { lat: number; lng: number; t: number } | null = null;  // last reverse-geocoded point
     let prevFix: { lat: number; lng: number; t: number } | null = null;  // previous raw fix, for speed
+    let recent: { lat: number; lng: number; t: number }[] = [];
     let haveGoodFix = false;
     let writing = false;
     let speedMps = 0;
@@ -50,12 +52,17 @@ export async function startLiveSelfLocation(memberId: string, familyId: string |
       if (accuracy != null && accuracy > BAD_ACCURACY_M && haveGoodFix) return;
       if (accuracy != null && accuracy <= BAD_ACCURACY_M) haveGoodFix = true;
 
-      // Speed: trust the GPS reading when it has one, otherwise derive it from the last two fixes.
+      // Speed: trust the GPS reading when it is clearly moving; otherwise use how far the phone really moved over the last two
+      // minutes (a slow walk adds up over several fixes even when each hop is tiny, and jitter on a still phone does not).
       let inst = speed != null && speed >= 0 ? speed : 0;
-      if ((speed == null || speed < 0) && prevFix) {
-        const dt = (now - prevFix.t) / 1000;
-        if (dt > 0.5) inst = metersBetween(prevFix.lat, prevFix.lng, lat, lng) / dt;
+      recent = recent.filter(f => now - f.t <= 120_000);
+      if (inst < 0.7 && recent.length) {
+        const o0 = recent[0];
+        const dt = (now - o0.t) / 1000;
+        const d = metersBetween(o0.lat, o0.lng, lat, lng);
+        if (dt >= 12 && d > Math.max(8, (accuracy ?? 15) * 0.35)) inst = Math.max(inst, d / dt);
       }
+      recent.push({ lat, lng, t: now });
       prevFix = { lat, lng, t: now };
       // Light smoothing so one noisy reading does not flip walking/driving, but a real stop reads as stopped quickly.
       speedMps = inst < 0.5 ? inst : speedMps * 0.4 + inst * 0.6;
@@ -70,6 +77,7 @@ export async function startLiveSelfLocation(memberId: string, familyId: string |
         const row: Record<string, any> = {
           member_id: memberId, family_id: familyId, lat, lng,
           speed_mph: Math.round(speedMps * 2.237),
+          movement: movementLabel(Math.round(speedMps * 2.237)),
           last_updated: new Date().toISOString(),
         };
         const geoMoved = lastGeo ? metersBetween(lastGeo.lat, lastGeo.lng, lat, lng) : Infinity;

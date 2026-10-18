@@ -20,6 +20,7 @@ import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { startLiveSelfLocation } from '@/lib/liveSelfLocation';
+import MovementBadge, { WalkingScene, MOVEMENT_LABEL, MOVEMENT_EMOJI, type MovementKind as MoveKind } from '@/components/MovementBadge';
 import { recordLocationConsent } from '@/lib/locationConsent';
 import { canShareLocation, isChildMember, memberById } from '@/lib/childPrivacy';
 import LocationConsentScreen from '@/components/LocationConsentScreen';
@@ -55,6 +56,7 @@ interface MemberLocation {
   battery_level: number;
   is_charging: boolean;
   speed_mph: number;
+  movement?: string | null;
   status: LocStatus;
   status_text: string | null;
   distance_from_home_miles: number;
@@ -115,17 +117,20 @@ const statusColors = (colors: any): Record<LocStatus, string> => ({
 // walking/jogging pace; above that is a vehicle. Only shown for a LIVE
 // location (isLive gate at the call site) — a stale/no-GPS row has no
 // current speed reading to classify.
-type MovementKind = 'driving' | 'walking' | 'stationary';
+type MovementKind = MoveKind;
 function classifyMovement(speedMph: number): MovementKind {
   if (speedMph > 8) return 'driving';
   if (speedMph > 1.5) return 'walking';
   return 'stationary';
 }
-const MOVEMENT_META: Record<MovementKind, { label: string; Icon: typeof Car }> = {
-  driving:    { label: 'Driving',  Icon: Car },
-  walking:    { label: 'Walking',  Icon: Footprints },
-  stationary: { label: 'Still',    Icon: MapPin },
-};
+/** What the phone itself reported (motion sensor first, then speed) wins over a guess from speed alone. */
+function kindOf(movement: string | null | undefined, speedMph: number): MovementKind {
+  if (movement === 'driving' || movement === 'walking' || movement === 'running' || movement === 'cycling' || movement === 'stationary') {
+    if (movement === 'stationary') return classifyMovement(speedMph);
+    return movement;
+  }
+  return classifyMovement(speedMph);
+}
 
 // Extracted + memoized so ONE family member's location ping (any
 // unrelated row change in member_locations fires this whole screen's
@@ -147,11 +152,11 @@ const MOVEMENT_META: Record<MovementKind, { label: string; Icon: typeof Car }> =
 // exactly Life360's own "only the moved pin redraws, everyone else's
 // avatar stays visually still" behavior.
 const FamilyMapMarker = memo(function FamilyMapMarker({
-  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor, speedMph, isFreshFix, infoColor, g,
+  lat, lng, name, statusText, emoji, avatarUrl, siblingNames, ringColor, speedMph, movement, isFreshFix, infoColor, g,
 }: {
   lat: number; lng: number; name: string; statusText: string;
   emoji?: string; avatarUrl?: string; siblingNames: string[];
-  ringColor: string; speedMph: number; isFreshFix: boolean; infoColor: string;
+  ringColor: string; speedMph: number; movement?: string | null; isFreshFix: boolean; infoColor: string;
   g: { mapPinWrap: any; mapPinAvatar: any; mapPinBadge: any; mapPinTail: any };
 }) {
   // Was a plain Marker with a memoized-but-still-instant coordinate — the
@@ -180,8 +185,8 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // speedMph with no such check, so someone stopped for hours still showed
   // a walking/driving badge on their pin [live-reported: "even they
   // stopped walk[ing]" — pin still showed the footprints icon].
-  const movement = isFreshFix ? classifyMovement(speedMph) : 'stationary';
-  const movementMeta = movement !== 'stationary' ? MOVEMENT_META[movement] : null;
+  const moveKind: MovementKind = isFreshFix ? kindOf(movement, speedMph) : 'stationary';
+  const movementMeta = moveKind !== 'stationary' ? { emoji: MOVEMENT_EMOJI[moveKind] } : null;
   // Was defaulting to react-native-maps' tracksViewChanges=true, which
   // re-snapshots this Marker's custom child view (FamilyAvatar image +
   // badge) into a native bitmap on EVERY render — including every single
@@ -214,12 +219,28 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
   // they keep the freeze-after-mount optimization that's worked
   // correctly for them throughout.
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  // A map marker is a frozen picture, so it cannot run a real animation. For someone who is moving it steps through a few poses
+  // (a swing of the shoe, a bob of the car) about twice a second; each pose is one re-snapshot, and only moving people do this.
+  const [moveFrame, setMoveFrame] = useState(0);
+  const isMoving = !!movementMeta;
+  useEffect(() => {
+    if (!isMoving) { setMoveFrame(0); return; }
+    const id = setInterval(() => setMoveFrame(f => (f + 1) % 4), 600);
+    return () => clearInterval(id);
+  }, [isMoving]);
   useEffect(() => {
     if (avatarUrl) { setTracksViewChanges(true); return; }
     setTracksViewChanges(true);
     const t = setTimeout(() => setTracksViewChanges(false), 300);
     return () => clearTimeout(t);
-  }, [avatarUrl, emoji, ringColor, movementMeta]);
+  }, [avatarUrl, emoji, ringColor, movementMeta, moveFrame]);
+  const stepPose = (() => {
+    const walkingLike = moveKind === 'walking' || moveKind === 'running';
+    const rot = walkingLike ? [6, -4, -14, -4][moveFrame] : 0;
+    const lift = walkingLike ? [0, -1.5, -3, -1.5][moveFrame] : [0, -1, 0, -1][moveFrame];
+    const sway = walkingLike ? [-1.5, 0, 1.5, 0][moveFrame] : 0;
+    return { transform: [{ translateX: sway }, { translateY: lift }, { rotate: `${rot}deg` }] };
+  })();
   return (
     <MarkerAnimated coordinate={animatedCoord as any} title={name} description={statusText} anchor={{ x: 0.5, y: 1 }}
       tracksViewChanges={tracksViewChanges}>
@@ -239,9 +260,15 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
               siblings={siblingNames} ringColor={ringColor} ringWidth={0} size={34} />
           </View>
           {movementMeta && (
-            <View style={[g.mapPinBadge, { backgroundColor: infoColor, borderColor: '#fff' }]}>
-              <movementMeta.Icon size={10} color="#fff" />
-            </View>
+            moveKind === 'walking' || moveKind === 'running' ? (
+              <View style={{ position: 'absolute', right: -8, bottom: -6, borderRadius: 14, borderWidth: 1.5, borderColor: '#FFFFFF', overflow: 'hidden' }}>
+                <WalkingScene size={11} pose={moveFrame} />
+              </View>
+            ) : (
+              <View style={{ position: 'absolute', right: -9, bottom: -5, minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 3, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: infoColor, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={[{ fontSize: 13, lineHeight: 16 }, stepPose]}>{movementMeta.emoji}</Text>
+              </View>
+            )
           )}
         </View>
         <View style={[g.mapPinTail, { borderTopColor: ringColor }]} />
@@ -1044,7 +1071,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
                 name={loc.name} statusText={loc.status_text ?? STATUS_LABELS[loc.status]}
                 emoji={m?.emoji} avatarUrl={m?.avatarUrl}
                 siblingNames={members.map(mb => mb.name)}
-                ringColor={rc} speedMph={loc.speed_mph ?? 0} isFreshFix={isFreshFix}
+                ringColor={rc} speedMph={loc.speed_mph ?? 0} movement={loc.movement} isFreshFix={isFreshFix}
                 infoColor={colors.info}
                 g={g}
               />
@@ -1267,8 +1294,14 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
               <View style={{ marginTop: 4 }}>
                 <FamilyAvatar name={loc.name} emoji={m?.emoji} avatarUrl={m?.avatarUrl}
                   siblings={members.map(mb => mb.name)} ringColor={rc} size={40} />
+                {/* Life360-style: what they are doing, pinned to the bottom-right of their avatar. */}
+                {isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' && (
+                  <View style={{ position: 'absolute', left: 26, bottom: -8, borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
+                    <MovementBadge kind={kindOf(loc.movement, loc.speed_mph ?? 0)} size={12} color={colors.info} />
+                  </View>
+                )}
               </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
+              <View style={{ flex: 1, marginLeft: isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' ? 22 : 12 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>
@@ -1278,16 +1311,16 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
                   {isLive && isFreshFix && (() => {
-                    const movement = classifyMovement(loc.speed_mph ?? 0);
+                    const kind = kindOf(loc.movement, loc.speed_mph ?? 0);
                     // "Still" is the common case (most people most of the
                     // time) — only surface the badge for actual movement,
                     // otherwise it's just noise on nearly every row.
-                    if (movement === 'stationary') return null;
-                    const { label, Icon } = MOVEMENT_META[movement];
+                    if (kind === 'stationary') return null;
                     return (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                        <Icon size={10} color={colors.info} />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.info }}>{label}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.info }}>
+                          {MOVEMENT_LABEL[kind]}{kind === 'driving' && (loc.speed_mph ?? 0) > 0 ? ` · ${fmtSpeed(loc.speed_mph ?? 0)}` : ''}
+                        </Text>
                       </View>
                     );
                   })()}

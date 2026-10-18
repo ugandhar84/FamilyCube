@@ -26,9 +26,9 @@ export interface AskCubeResponse {
 }
 
 export const askCube = {
-  async send(memberId: string, message: string, conversationId?: string): Promise<AskCubeResponse> {
+  async send(memberId: string, message: string, conversationId?: string, clientLocation?: { lat: number; lng: number }): Promise<AskCubeResponse> {
     const { data, error } = await supabase.functions.invoke('ask-cube', {
-      body: { memberId, message, conversationId },
+      body: { memberId, message, conversationId, ...(clientLocation ? { clientLocation } : {}) },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);

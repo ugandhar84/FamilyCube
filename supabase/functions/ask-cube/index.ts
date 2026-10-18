@@ -15,6 +15,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { logAiUsage } from '../_shared/logAiUsage.ts';
+import { getAppleMapsAccessToken, getAppleMapsCredentials } from '../_shared/appleMapsAuth.ts';
 import { resolveMessage, describeResolution, nextContext } from './resolve.ts';
 
 const CORS = {
@@ -481,6 +482,7 @@ const TOOLS = [
         type: 'object',
         properties: {
           targetType:   { type: 'string', enum: ['event', 'chore'], description: 'Which table to search — infer from context (e.g. "soccer practice"/"appointment" is an event, "dishwasher chore"/"trash duty" is a chore). Ask the user only if genuinely ambiguous.' },
+          currentTime:  { type: 'string', description: 'HH:MM 24-hour. The event\'s CURRENT start time, when the user picked one of several by its time ("the 10:15 pickup" -> "22:15"). Omit if not named.' },
           targetSearch: { type: 'string', description: 'Words to match the existing record\'s title, e.g. "soccer practice" or "dishwasher". For reschedule/move/postpone requests where the user only gave a generic noun ("the appointment", "the meeting"), still pass that generic noun here rather than leaving it blank or switching to propose_event — a weak search is better than silently creating a duplicate.' },
           memberName:   { type: 'string', description: 'Whose event/chore this is CURRENTLY, if named — narrows the search when multiple records could match. This does NOT reassign anything; use assignToMemberName for that.' },
           assignToMemberName: { type: 'string', description: 'Only if the user asked to REASSIGN this event/chore to a different family member, e.g. "assign the dishes chore to Ben" or "move Mia\'s pickup ride to Alex instead" — the name of the NEW assignee. Omit entirely if the user did not ask to change who it belongs to.' },
@@ -571,6 +573,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          currentTime:  { type: 'string', description: 'HH:MM 24-hour. The event\'s CURRENT start time, when the user picked one of several by its time ("the 10:15 pickup" -> "22:15"). Omit if not named.' },
           targetSearch: { type: 'string', description: 'Words to match the event\'s title, e.g. "dentist" or "soccer practice". A generic noun ("the appointment") is fine if that\'s all the user gave — still call this rather than doing nothing.' },
           memberName:   { type: 'string', description: 'Whose event this is, if named — narrows the search when multiple events could match' },
           nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("Saturday", "next week") — omit if not implied' },
@@ -578,6 +581,20 @@ const TOOLS = [
           allOnDate:    { type: 'string', description: 'YYYY-MM-DD. Use this INSTEAD of targetSearch when the user wants to cancel ALL of someone\'s events on one day ("cancel all of Cherry\'s events tomorrow", "clear my day"): resolve the day yourself and pass it here with memberName. One draft card per event comes back for the user to confirm.' },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_nearby_places',
+      description: 'Find real places near the person who is asking, using the one-time location they chose to share for THIS message (parks, restaurants, stores, activities...). Use for "somewhere nearby", "near me", "around here", "closest pharmacy". If no location was shared the tool says so: then ask them to tap Share location or to name an area; never invent places. The location is used only for this lookup and is not stored.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to look for, e.g. "park", "ice cream", "urgent care", "hiking trail", "bowling"' },
+        },
+        required: ['query'],
       },
     },
   },
@@ -1052,12 +1069,77 @@ async function pendingRequestRows(supabase: any, familyId: string, members: { id
   ];
 }
 
+/** A title search that survives how people write compounds: "pickup" must find "Pick-up · Cherry", "drop off" must find "Drop-off". */
+function titleVariants(search: string): string[] {
+  const s = search.trim();
+  const out = new Set<string>([s]);
+  const compounds: [RegExp, string[]][] = [
+    [/pick[\s-]*up/i, ['pickup', 'pick-up', 'pick up']],
+    [/drop[\s-]*off/i, ['dropoff', 'drop-off', 'drop off']],
+    [/take[\s-]*out/i, ['takeout', 'take-out', 'take out']],
+    [/check[\s-]*up/i, ['checkup', 'check-up', 'check up']],
+  ];
+  for (const [re, forms] of compounds) if (re.test(s)) for (const f of forms) out.add(s.replace(re, f));
+  return [...out];
+}
+function titleFilter(search: string): string {
+  return titleVariants(search).map(v => `title.ilike.%${v.replace(/[,()%*]/g, ' ')}%`).join(',');
+}
+
+/** Real places near a point, from Apple Maps search. Returns names/addresses/distances only. */
+async function appleNearby(query: string, loc: { lat: number; lng: number }): Promise<{ name: string; kind: string | null; address: string; distanceMiles: number }[] | null> {
+  const creds = getAppleMapsCredentials();
+  if (!creds) return null;
+  try {
+    const token = await getAppleMapsAccessToken(creds.privateKey, creds.keyId, creds.teamId);
+    const u = new URL('https://maps-api.apple.com/v1/search');
+    u.searchParams.set('q', query.slice(0, 80));
+    u.searchParams.set('lang', 'en-US');
+    u.searchParams.set('searchLocation', `${loc.lat},${loc.lng}`);
+    u.searchParams.set('userLocation', `${loc.lat},${loc.lng}`);
+    u.searchParams.set('resultTypeFilter', 'Poi');
+    const res = await fetch(u.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const R = 3958.8, rad = Math.PI / 180;
+    const miles = (c: any) => {
+      const dLat = (c.latitude - loc.lat) * rad, dLng = (c.longitude - loc.lng) * rad;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(loc.lat * rad) * Math.cos(c.latitude * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    };
+    return (data.results ?? []).filter((r: any) => r?.name && r?.coordinate)
+      .map((r: any) => ({ name: r.name, kind: r.poiCategory ?? null, address: (r.formattedAddressLines ?? []).slice(0, 2).join(', '), distanceMiles: Math.round(miles(r.coordinate) * 10) / 10 }))
+      .sort((a: any, b: any) => a.distanceMiles - b.distanceMiles).slice(0, 6);
+  } catch { return null; }
+}
+
+/** What to search for, from the words of the request (a trip or outing needs a few kinds of place). */
+function nearbyQueriesFor(message: string): string[] {
+  const t = message.toLowerCase();
+  const out: string[] = [];
+  const direct = t.match(/\b(park|trail|hike|hiking|museum|zoo|aquarium|movie|cinema|bowling|arcade|playground|library|pharmacy|urgent care|gas station|grocery|restaurant|cafe|coffee|ice cream|pizza|bakery|beach|lake|mall|gym|pool|skating|mini golf|golf|farm|garden)\b/g);
+  if (direct) for (const d of direct) out.push(d === 'hike' || d === 'hiking' ? 'hiking trail' : d);
+  if (/\b(trip|itinerar|outing|day out|things to do|fun|activity|activities|plan)\w*/.test(t)) out.push('park', 'attraction', 'restaurant');
+  if (!out.length) out.push('things to do');
+  return [...new Set(out)].slice(0, 3);
+}
+
 async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
   aliasMap: AliasMap, members: { id: string; name: string }[], placeAliasMap: PlaceAliasMap,
-  today: string, nowHHMM: string, tz: string = 'UTC',
+  today: string, nowHHMM: string, tz: string = 'UTC', oneTimeLocation: { lat: number; lng: number } | null = null,
 ) {
+  // The model works in aliases ("Person A"), and it often copies them into a title search ("Pick-up · Person A from dance class").
+  // Titles are stored with real names, so turn aliases back into names before any search, or nothing would ever match.
+  for (const k of ['targetSearch', 'rewardSearch', 'search'] as const) {
+    if (typeof args?.[k] === 'string') {
+      // First names only: that is how titles are written ("Pick-up · Cherry"), never the full name.
+      let t: string = args[k];
+      for (const [alias, real] of aliasMap.toReal) t = t.split(alias).join(String(real).split(' ')[0]);
+      args[k] = t;
+    }
+  }
   if (name === 'get_family_snapshot') {
     // One look at where the family stands today: chores by state, the day's events done vs coming up, and anything waiting on a parent.
     const isParent = viewerRole === 'parent' || viewerRole === 'senior';
@@ -1540,7 +1622,7 @@ async function executeTool(
       let query = supabase.from('chore_tasks')
         .select('id, title, status, coins_reward, due_date, due_time, assigned_to_id, description, alert_call, alert_call_lead_minutes')
         .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
-        .ilike('title', `%${search}%`);
+        .or(titleFilter(search));
       if (memberId) query = query.eq('assigned_to_id', memberId);
       const { data, error } = await query.limit(5);
       if (error) return { error: error.message };
@@ -1574,7 +1656,7 @@ async function executeTool(
         const { data: eventFallback } = await supabase.from('calendar_events')
           .select('id, title, date, start_time')
           .eq('family_id', familyId).is('deleted_at', null)
-          .ilike('title', `%${search}%`).gte('date', today).order('date').limit(5);
+          .or(titleFilter(search)).gte('date', today).order('date').limit(5);
         if (eventFallback && eventFallback.length > 0) {
           return {
             error: `No chore matched "${search}", but a matching EVENT was found instead. Call propose_update again with targetType: 'event' (not 'chore') for this — do not tell the user nothing was found.`,
@@ -1651,13 +1733,19 @@ async function executeTool(
     let query = supabase.from('calendar_events')
       .select('id, title, category, date, start_time, member_id, member_ids, helper_name, driver_name, alert_call, alert_call_lead_minutes, notes')
       .eq('family_id', familyId).is('deleted_at', null)
-      .ilike('title', `%${search}%`);
+      .or(titleFilter(search));
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', today); // don't match past events by default, family-local "today"
     if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    // The user named one of several by its time ("the 10:15 pickup"): keep just that one.
+    if (typeof args.currentTime === 'string' && /^\d{1,2}:\d{2}$/.test(args.currentTime)) {
+      const want = args.currentTime.padStart(5, '0');
+      const byTime = candidates.filter((e: any) => String(e.start_time ?? '').slice(0, 5) === want);
+      if (byTime.length > 0) candidates = byTime;
+    }
     // Future-only — the date filter above already excludes a past DAY, but
     // a same-day event whose start time has already passed (already
     // running, or already over) is still "today" and would otherwise slip
@@ -1683,7 +1771,7 @@ async function executeTool(
       // could be filed as a chore instead of an event.
       const { data: choreFallback } = await supabase.from('chore_tasks')
         .select('id, title, due_date, due_time, assigned_to_id')
-        .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`).ilike('title', `%${search}%`).limit(5);
+        .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`).or(titleFilter(search)).limit(5);
       if (choreFallback && choreFallback.length > 0) {
         return {
           error: `No event matched "${search}", but a matching CHORE was found instead. Call propose_update again with targetType: 'chore' (not 'event') for this — do not tell the user nothing was found.`,
@@ -1747,6 +1835,16 @@ async function executeTool(
       newAssignee: typeof args.assignToMemberName === 'string' ? args.assignToMemberName : undefined,
       changes,
     };
+  }
+
+  if (name === 'find_nearby_places') {
+    if (!oneTimeLocation) return { __needsLocation: true, error: 'No location was shared for this message. The app is now showing the person a "Share my location once" card under your reply. Say in one short sentence that you can search as soon as they tap it (or they can name a town or area), and never make up places.' };
+    const q = String(args.query ?? '').trim().slice(0, 80);
+    if (!q) return { error: 'Say what to look for (for example park or pharmacy).' };
+    const places = await appleNearby(q, oneTimeLocation);
+    if (places === null) return { error: 'The places lookup failed. Tell the user plainly.' };
+    if (!places.length) return { places: [], note: 'Nothing found nearby for that. Say so and offer a different search.' };
+    return { places, note: 'Offer two or three of these by name with the distance. They are real places; do not add details that are not listed.' };
   }
 
   if (name === 'propose_reminder') {
@@ -1824,13 +1922,18 @@ async function executeTool(
     let query = supabase.from('calendar_events')
       .select('id, title, category, date, start_time, member_id, member_ids')
       .eq('family_id', familyId).is('deleted_at', null)
-      .ilike('title', `%${search}%`);
+      .or(titleFilter(search));
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', today);
     if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    if (typeof args.currentTime === 'string' && /^\d{1,2}:\d{2}$/.test(args.currentTime)) {
+      const want = args.currentTime.padStart(5, '0');
+      const byTime = candidates.filter((e: any) => String(e.start_time ?? '').slice(0, 5) === want);
+      if (byTime.length > 0) candidates = byTime;
+    }
     if (!candidates.length) {
       return { error: `Couldn't find an upcoming event matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or cancel something unrelated.` };
     }
@@ -1919,7 +2022,7 @@ async function executeTool(
     const search = args.rewardSearch ?? '';
     const { data, error } = await supabase.from('rewards')
       .select('id, title, cost, available, eligible_member_ids, max_per_member')
-      .eq('family_id', familyId).eq('available', true).ilike('title', `%${search}%`).limit(5);
+      .eq('family_id', familyId).eq('available', true).or(titleFilter(search)).limit(5);
     if (error) return { error: error.message };
     const candidates = data ?? [];
     if (!candidates.length) {
@@ -2144,7 +2247,7 @@ async function executeTool(
     let query = supabase.from('chore_tasks')
       .select('id, title, status, is_pool, assigned_to_id, created_by_id, requires_photo')
       .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
-      .ilike('title', `%${search}%`);
+      .or(titleFilter(search));
     if (memberId) query = query.eq('assigned_to_id', memberId);
     const { data, error } = await query.limit(5);
     if (error) return { error: error.message };
@@ -2318,6 +2421,12 @@ serve(async (req) => {
     // so it's fine for debugging to see real content here. Never log
     // anything AFTER aliasing is applied as if it were the raw input, and
     // never let this log line leak into any response sent back to a client.
+    // A one-time location the person chose to share with THIS message. Used only by find_nearby_places for this request: never saved,
+    // never logged, and never sent to the AI model (the model only sees the place names that come back).
+    const rawLoc = (body as any).clientLocation;
+    const oneTimeLocation: { lat: number; lng: number } | null =
+      rawLoc && Number.isFinite(rawLoc.lat) && Number.isFinite(rawLoc.lng) && Math.abs(rawLoc.lat) <= 90 && Math.abs(rawLoc.lng) <= 180
+        ? { lat: Number(rawLoc.lat), lng: Number(rawLoc.lng) } : null;
     console.log('[ask-cube] request', { memberId: body.memberId, conversationId: body.conversationId ?? '(new)', message: body.message });
 
     const { data: member } = await supabase.from('members').select('id, name, role, family_id, timezone').eq('id', body.memberId).single();
@@ -2639,6 +2748,17 @@ serve(async (req) => {
     const prevCtx = (convCtxRow?.context ?? {}) as { lastMemberId?: string | null; lastDate?: string | null; lastItem?: { title: string; kind?: string } | null };
     const resolution = resolveMessage(body.message, (allMembers ?? []) as { id: string; name: string }[], today, prevCtx.lastMemberId ?? null);
     const resolvedFacts = describeResolution(resolution, (id) => aliasMap.toAlias.get(id) ?? 'someone', viewerAlias, prevCtx.lastItem ? { title: realNameToAlias(aliasMap, (allMembers ?? []) as any, prevCtx.lastItem.title), kind: prevCtx.lastItem.kind } : null);
+    // The person shared a location once for this message: look up real nearby places NOW and hand them over as facts, so the answer
+    // never depends on the model remembering to call the places tool.
+    let nearbyFacts = '';
+    if (oneTimeLocation && /\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest|find|trip|itinerar|outing|things to do|plan)\w*/i.test(body.message ?? '')) {
+      const lists = await Promise.all(nearbyQueriesFor(body.message ?? '').map(q => appleNearby(q, oneTimeLocation)));
+      const seen = new Set<string>();
+      const lines: string[] = [];
+      for (const l of lists) for (const p of l ?? []) { if (!seen.has(p.name)) { seen.add(p.name); lines.push(`- ${p.name}${p.kind ? ` (${p.kind})` : ''}, ${p.distanceMiles} mi${p.address ? `, ${p.address}` : ''}`); } }
+      if (lines.length) nearbyFacts = `NEARBY PLACES (real, found with the location the person just shared for this message; use ONLY these, with their distances, and never invent others):\n${lines.slice(0, 10).join('\n')}`;
+    }
+    const resolvedFactsAll = [resolvedFacts, nearbyFacts].filter(Boolean).join('\n');
     console.log('[ask-cube] resolved', { intent: resolution.intent, people: resolution.mentionedIds.length, pronoun: !!resolution.pronounId, dates: resolution.dates.map(d => d.date) });
 
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube — that is your ONLY identity, always,
@@ -2690,9 +2810,9 @@ yourself: see LONG WEEKENDS in the CURRENT CONTEXT block. When the user asks som
 break," or "should we plan something for [a holiday shown above]," use this directly rather than checking each
 holiday's weekday by hand.
 Holiday/trip/vacation/itinerary requests ("what should we do for the long weekend," "plan a trip for Labor Day,"
-"any ideas for the break") are real and should be engaged with, but you have NO maps/places tool and NO knowledge of
+"any ideas for the break") are real and should be engaged with, but you have NO knowledge of
 the family's actual home city or region — never invent or name a specific real place, attraction, restaurant, hotel,
-or "near you" suggestion; doing so would be a fabricated claim about a location you don't actually know. Instead:
+or "near you" suggestion; doing so would be a fabricated claim about a location you don't actually know. The ONE exception: for a "nearby / near me / around here / closest" request, call find_nearby_places (the person may have shared their location once for this message) and name only places it returns, with their distances. If it says no location was shared, say you can search as soon as they share their location (the app offers a Share button), or they can name an area; never guess. Otherwise:
 (1) check the family's OWN calendar via get_schedule across the relevant date range for anything already on it
 (a Holiday-category event, a break already entered, other commitments to plan around), (2) if the user asks what's
 "nearby" or "near us," you may ask them to confirm you can use their location — only member_locations' aliased
@@ -3329,7 +3449,7 @@ UPCOMING WEEKDAYS: ${upcomingWeekdaysStr}
 UPCOMING HOLIDAYS: ${upcomingHolidaysStr}
 LONG WEEKENDS: ${longWeekendsStr}
 TALKING TO: ${viewerAlias}, ${({ parent: 'a parent', child: 'a kid', teenager: 'a teen', grandparent: 'a grandparent' } as Record<string, string>)[member.role] ?? member.role} (role: ${member.role}). Greet and thank them by this first name.
-${resolvedFacts ? `FACTS ALREADY WORKED OUT FOR THIS MESSAGE (computed by the app, not guesses, so use them exactly and do not second-guess them):\n${resolvedFacts}\n` : ''}
+${resolvedFactsAll ? `FACTS ALREADY WORKED OUT FOR THIS MESSAGE (computed by the app, not guesses, so use them exactly and do not second-guess them):\n${resolvedFactsAll}\n` : ''}
 ${activePendingProposal
   ? `ACTIVE PENDING DRAFT (ground truth, not something to infer from chat history): there is currently ONE
 unconfirmed proposal card still showing to the user — a "${activePendingProposal.kind}" with this exact data:
@@ -3391,6 +3511,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // user to pick from), and each one needs its own card client-side.
     const scheduleCardRows: any[] = [];
     let snapshotCard: any = null;
+    let needsLocation = false;
     const requestCardRows: any[] = [];
     const choreCardRows: any[] = [];
     let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'reassign_rides' | 'remind'; data: any }[] = [];
@@ -3425,6 +3546,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     let lastDebugEmptyReason: any = undefined;
 
     let draftClaimRetried = false;
+    let emptyRetried = false;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const modelCallStarted = Date.now();
       const { reply, modelUsed, usage } = await callModel(messages, TOOLS);
@@ -3500,7 +3622,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           // exactly what the model itself sent/received, which is the
           // useful thing to see when debugging "why did it answer this way."
           console.log('[ask-cube] tool_call', { round, name: call.function.name, args });
-          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today, nowHHMM, familyTimeZone);
+          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today, nowHHMM, familyTimeZone, oneTimeLocation);
           console.log('[ask-cube] tool_result', { round, name: call.function.name, result });
 
           // Grounding: only the read-side lookups (never the propose_*
@@ -3544,6 +3666,7 @@ start the reply fresh from real data for THIS turn.` : ''}
             for (const item of result.__proposalBatch) proposals.push({ kind: item.__proposal, data: item });
           }
           if (result.__snapshotCard) snapshotCard = result.__snapshotCard;
+          if (result.__needsLocation) needsLocation = true;
           if (Array.isArray(result.__requestCards)) for (const c of result.__requestCards) if (!requestCardRows.some(x => x.id === c.id)) requestCardRows.push(c);
           if (Array.isArray(result.__scheduleCards)) {
             // get_schedule returns the whole family's rows; when the message is about specific people, keep only theirs.
@@ -3571,7 +3694,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, __requestCards, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, __requestCards, __needsLocation, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
           // The schedule tool returns the whole family. When the message is about specific people, hand the model ONLY their
           // events, so it cannot list someone else's ("Dentist · Ugandhar" under a question about Cherry).
@@ -3608,7 +3731,15 @@ start the reply fresh from real data for THIS turn.` : ''}
         continue;
       }
 
-      finalText = reply.content ?? '';
+      // An empty reply shows the user a blank bubble. Ask once more; if it is still empty, say so honestly.
+      if (!(reply.content ?? '').trim() && proposals.length === 0 && !emptyRetried && round < MAX_TOOL_ROUNDS - 1) {
+        emptyRetried = true;
+        console.warn('[ask-cube] empty reply; retrying once');
+        messages.push({ role: 'user', content: 'SYSTEM NOTE: your last reply was empty. Reply to the user now: if their message was a yes, treat it as agreeing to what you just offered and call the matching propose_* tool; otherwise answer or ask one short question.' });
+        continue;
+      }
+
+      finalText = (reply.content ?? '').trim() || "Sorry, I lost track of that. Could you say it once more?";
       break;
     }
 
@@ -3910,11 +4041,23 @@ start the reply fresh from real data for THIS turn.` : ''}
       finalText = kept || `${parts.join(' and ')}.${needs ? ` ${needs} ${needs === 1 ? 'ride still needs' : 'rides still need'} a driver.` : ''}`;
     }
 
+    // The model sometimes asks for the location in its own words instead of calling the places tool. Whenever its reply asks for a
+    // location and none was shared, show the "Share your location once?" card too, so the person can always just tap.
+    if (!oneTimeLocation && !needsLocation && /\b(need|share|know|using|tap)\b[^.?!]{0,40}\b(your|my)\b[^.?!]{0,15}\blocation\b|\bshare location\b|\byour (actual |current )?location\b/i.test(finalText)) {
+      needsLocation = true;
+    }
+
+    // A message that is plainly about "near me" with no shared location always gets the card.
+    if (!oneTimeLocation && /\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest)\b/i.test(body.message ?? '')) needsLocation = true;
+
     // Only keep refs for chores the reply text actually names — a turn can
     // call get_quests broadly (e.g. "what's overdue") and pull back rows
     // that never make it into the final sentence; linking those too would
     // just make unrelated titles elsewhere in a long reply clickable.
     const choreRefs = [...choreRefsMap.values()].filter(r => finalText.includes(r.title));
+
+    // Never save or show a blank bubble.
+    if (!finalText.trim() && proposals.length === 0 && cardsOut.length === 0) finalText = "Sorry, I didn't get an answer for that. Could you try asking once more?";
 
     await supabase.from('ask_cube_messages').insert({
       conversation_id: conversationId, role: 'assistant', content: finalText,
@@ -3935,7 +4078,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // this turn — see callModel's own comment) — never part of the app's
     // real AskCubeResponse type (lib/askCubeService.ts), so a normal client
     // simply ignores the extra key; only the QA harness reads it.
-    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: cardsOut, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: cardsOut, needsLocation, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

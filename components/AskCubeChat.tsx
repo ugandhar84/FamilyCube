@@ -38,6 +38,7 @@ import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
 import AskCubeProposalCard from '@/components/AskCubeProposalCard';
 import AskCubeMessageText from '@/components/AskCubeMessageText';
 import AskCubeScheduleCard, { type AskCubeScheduleEvent } from '@/components/AskCubeScheduleCard';
+import AskCubeSnapshotCard, { type AskCubeSnapshot } from '@/components/AskCubeSnapshotCard';
 import AskCubeChoreCard, { type AskCubeChore } from '@/components/AskCubeChoreCard';
 import { useUIStore } from '@/store/uiStore';
 import { fromRow, remindEventAssignee, type FamilyEvent } from '@/store/eventStore';
@@ -98,6 +99,7 @@ interface ChatMessage {
   followUps?: string[];
   scheduleEvents?: AskCubeScheduleEvent[];
   choreCards?: AskCubeChore[];
+  snapshot?: AskCubeSnapshot;
   // True once this message's typewriter reveal has finished — follow-up
   // chips wait for this rather than just `!sending` (which flips false the
   // instant the message is inserted, well before the typewriter loop
@@ -227,6 +229,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         followUps: Array.isArray((r as any).follow_ups) ? (r as any).follow_ups : undefined,
         scheduleEvents: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'schedule')?.events : undefined,
         choreCards: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'chores')?.chores : undefined,
+        snapshot: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'snapshot') : undefined,
         revealDone: true, // loaded from history — no typewriter reveal to wait for
       };
     }));
@@ -449,6 +452,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           followUps: res.followUps ?? [],
           scheduleEvents: ((res.cards ?? []) as any[]).find(c => c.kind === 'schedule')?.events,
           choreCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'chores')?.chores,
+          snapshot: ((res.cards ?? []) as any[]).find(c => c.kind === 'snapshot'),
         }];
       });
       setSending(false);
@@ -1110,6 +1114,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     );
                   })() : null}
 
+                  {m.role === 'assistant' && !!m.snapshot && m.revealDone && (
+                    <AskCubeSnapshotCard snapshot={m.snapshot} isParent={activeMember?.role === 'parent'} onAsk={(q) => send(q)} />
+                  )}
                   {m.role === 'assistant' && !!m.choreCards?.length && m.revealDone && (
                     <>
                       <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary, marginTop: 4, marginHorizontal: 4 }}>Chores</Text>

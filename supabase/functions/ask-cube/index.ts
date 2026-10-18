@@ -372,6 +372,14 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'get_family_snapshot',
+      description: 'One-shot picture of where the family stands TODAY: chores approved today, waiting for review, sent back, open and overdue; the day\'s events done vs up next; pending kid requests (parents). Use for "snapshot", "overview", "recap", "catch me up", "family history today", "how are we doing", "anything pending/waiting for review". Needs no arguments.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_kid_requests',
       description: 'PARENT-ONLY. Get pending (or recently responded) kid requests — rides, help/tutor, permission, appointments, check-ins, etc. Use for "what requests are waiting", "has anyone asked for anything", "what did X ask for". Needed before you can mention or suggest approving/declining a specific request.',
       parameters: {
@@ -1017,8 +1025,71 @@ async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
   aliasMap: AliasMap, members: { id: string; name: string }[], placeAliasMap: PlaceAliasMap,
-  today: string, nowHHMM: string,
+  today: string, nowHHMM: string, tz: string = 'UTC',
 ) {
+  if (name === 'get_family_snapshot') {
+    // One look at where the family stands today: chores by state, the day's events done vs coming up, and anything waiting on a parent.
+    const isParent = viewerRole === 'parent' || viewerRole === 'senior';
+    const dayOf = (iso: string | null) => iso ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(iso)) : null;
+    const first = (id: string | null) => id ? (members.find(m => m.id === id)?.name.split(' ')[0] ?? null) : null;
+    const mine = (id: string | null) => isParent || !id || id === viewerId;
+    const { data: openRows } = await supabase.from('chore_tasks')
+      .select('id, title, status, due_date, assigned_to_id, coins_reward')
+      .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
+      .in('status', ['todo', 'in_progress', 'claimed', 'pending_approval', 'redo_requested', 'declined']).limit(80);
+    const sinceIso = new Date(Date.now() - 36 * 3_600_000).toISOString();
+    const { data: doneRows } = await supabase.from('chore_tasks')
+      .select('id, title, status, assigned_to_id, approved_at, coins_reward')
+      .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
+      .in('status', ['approved', 'auto_approved', 'completed']).gte('approved_at', sinceIso).limit(60);
+    const open = (openRows ?? []).filter((r: any) => mine(r.assigned_to_id));
+    const approvedToday = (doneRows ?? []).filter((r: any) => mine(r.assigned_to_id) && dayOf(r.approved_at) === today);
+    const pick = (list: any[]) => list.slice(0, 8).map((r: any) => ({ id: r.id, title: r.title, assignee: first(r.assigned_to_id), assigneeId: r.assigned_to_id ?? null, status: r.status, coins: r.coins_reward ?? 0, dueDate: r.due_date ?? null }));
+    const waiting = open.filter((r: any) => r.status === 'pending_approval');
+    const sentBack = open.filter((r: any) => r.status === 'redo_requested' || r.status === 'declined');
+    const overdue = open.filter((r: any) => ['todo', 'in_progress', 'claimed'].includes(r.status) && r.due_date && r.due_date < today);
+    const todo = open.filter((r: any) => ['todo', 'in_progress', 'claimed'].includes(r.status) && !(r.due_date && r.due_date < today));
+    const { data: evRows } = await supabase.from('calendar_events')
+      .select('id, title, category, date, start_time, end_time, member_id, member_ids, driver_name, driver_status, driver_id, helper_id, helper_name, helper_status, ride_required, privacy_level')
+      .eq('family_id', familyId).is('deleted_at', null).eq('date', today).order('start_time').limit(40);
+    const evs = scopeEventsToViewer(evRows ?? [], viewerRole, viewerId, viewerName);
+    const endOf = (e: any) => (e.end_time ?? e.start_time ?? '23:59');
+    const evDone = evs.filter((e: any) => e.start_time && endOf(e) <= nowHHMM);
+    const evNext = evs.filter((e: any) => !(e.start_time && endOf(e) <= nowHHMM));
+    let requests = 0;
+    if (isParent) {
+      const { count } = await supabase.from('kid_requests').select('id', { count: 'exact', head: true }).eq('family_id', familyId).eq('status', 'pending');
+      requests = count ?? 0;
+    }
+    const summary = {
+      date: today,
+      chores: { approvedToday: approvedToday.length, waitingForReview: waiting.length, sentBack: sentBack.length, open: todo.length, overdue: overdue.length },
+      schedule: { doneToday: evDone.length, upNext: evNext.length, needDriver: evNext.filter((e: any) => (e.category === 'Ride' || e.ride_required) && !e.driver_id && !e.driver_name).length },
+      kidRequestsPending: requests,
+    };
+    const lists = { approvedToday: pick(approvedToday), waiting: pick(waiting), sentBack: pick(sentBack), overdue: pick(overdue), open: pick(todo) };
+    const cardEvents = evs.slice(0, 12).map((e: any) => {
+      const ids: string[] = e.member_id ? [e.member_id] : (e.member_ids ?? []);
+      const isRide = e.category === 'Ride' || !!e.ride_required;
+      const driver = e.driver_name ? String(e.driver_name).split(' ')[0] : (e.helper_name ? String(e.helper_name).split(' ')[0] : null);
+      const st = e.driver_name ? e.driver_status : e.helper_status;
+      return { id: e.id, title: e.title, category: e.category, date: e.date, time: e.start_time, endTime: e.end_time ?? null,
+        people: ids.map(first).filter(Boolean), isRide, driver, driverStatus: driver ? (st ?? 'pending') : null,
+        driverId: e.driver_name ? (e.driver_id ?? null) : (e.helper_id ?? null), driverRole: e.driver_name ? 'driver' : 'helper',
+        needsDriver: isRide && !driver && !e.driver_id };
+    });
+    const aliased = (arr: any[]) => arr.map((r: any) => ({ title: r.title, who: r.assigneeId ? (aliasMap.toAlias.get(r.assigneeId) ?? null) : null, due: r.dueDate }));
+    return {
+      __snapshotCard: { summary, lists },
+      __scheduleCards: cardEvents,
+      summary,
+      approvedToday: aliased(lists.approvedToday), waitingForReview: aliased(lists.waiting), sentBack: aliased(lists.sentBack), overdue: aliased(lists.overdue), open: aliased(lists.open),
+      eventsDone: evDone.slice(0, 10).map((e: any) => ({ title: realNameToAlias(aliasMap, members, e.title), time: e.start_time })),
+      eventsUpNext: evNext.slice(0, 10).map((e: any) => ({ title: realNameToAlias(aliasMap, members, e.title), time: e.start_time })),
+      note: 'The app draws a snapshot card with the counts and the day\'s events. Reply with TWO or THREE short sentences: what got done, what is waiting on the parent (review / requests), and what is up next. Do not list items.',
+    };
+  }
+
   if (name === 'get_schedule') {
     // No date-range length limit — a user genuinely asking for months-old
     // data ("what did we have going on back in March") must keep working,
@@ -3221,6 +3292,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
     const scheduleCardRows: any[] = [];
+    let snapshotCard: any = null;
     const choreCardRows: any[] = [];
     let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'reassign_rides'; data: any }[] = [];
     // Deduped by id across every get_quests/get_chore_history call this
@@ -3329,17 +3401,17 @@ start the reply fresh from real data for THIS turn.` : ''}
           // exactly what the model itself sent/received, which is the
           // useful thing to see when debugging "why did it answer this way."
           console.log('[ask-cube] tool_call', { round, name: call.function.name, args });
-          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today, nowHHMM);
+          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today, nowHHMM, familyTimeZone);
           console.log('[ask-cube] tool_result', { round, name: call.function.name, result });
 
           // Grounding: only the read-side lookups (never the propose_*
           // tools, which return a drafted title the model itself invented on
           // purpose) count as "real data the model is now allowed to cite."
-          const GROUNDING_TOOLS = new Set(['get_schedule', 'get_schedule_conflicts', 'get_free_time', 'get_quests', 'get_chore_history', 'get_rewards', 'get_kid_requests', 'get_family_members']);
+          const GROUNDING_TOOLS = new Set(['get_schedule', 'get_schedule_conflicts', 'get_free_time', 'get_quests', 'get_chore_history', 'get_rewards', 'get_kid_requests', 'get_family_members', 'get_family_snapshot']);
           if (GROUNDING_TOOLS.has(call.function.name)) {
             calledAnyToolThisTurn = true;
             const r: any = result;
-            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy, r.requests, r.members].filter(Array.isArray);
+            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy, r.requests, r.members, r.approvedToday, r.waitingForReview, r.sentBack, r.overdue, r.open, r.eventsDone, r.eventsUpNext].filter(Array.isArray);
             // Real live QA bug: this only ever read item.title/item.person,
             // but the actual tool result shapes name people under several
             // OTHER keys — get_schedule's events use driver/helper,
@@ -3350,7 +3422,7 @@ start the reply fresh from real data for THIS turn.` : ''}
             // assignee's alias in a chores answer) got flagged as
             // "unverified" and the whole reply was wrongly discarded.
             for (const pool of pools) for (const item of pool) {
-              for (const key of ['title', 'person', 'assignedTo', 'driver', 'helper', 'from', 'currentAssignee']) {
+              for (const key of ['title', 'person', 'assignedTo', 'who', 'driver', 'helper', 'from', 'currentAssignee']) {
                 if (typeof item?.[key] === 'string') groundedTitles.add(item[key]);
               }
             }
@@ -3372,6 +3444,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           if (Array.isArray(result.__proposalBatch)) {
             for (const item of result.__proposalBatch) proposals.push({ kind: item.__proposal, data: item });
           }
+          if (result.__snapshotCard) snapshotCard = result.__snapshotCard;
           if (Array.isArray(result.__scheduleCards)) {
             // get_schedule returns the whole family's rows; when the message is about specific people, keep only theirs.
             const wantIds = resolution.mentionedIds.length ? resolution.mentionedIds : (resolution.pronounId ? [resolution.pronounId] : []);
@@ -3398,7 +3471,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
           // The schedule tool returns the whole family. When the message is about specific people, hand the model ONLY their
           // events, so it cannot list someone else's ("Dentist · Ugandhar" under a question about Cherry).
@@ -3700,6 +3773,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // When the app draws the events as a card, the reply must not ALSO list them. Drop any list lines the model wrote and
     // keep its sentence; if nothing is left, write a plain summary ourselves.
     const cardsOut: any[] = proposals.length === 0 ? [
+      ...(snapshotCard ? [{ kind: 'snapshot', ...snapshotCard }] : []),
       ...(choreCardRows.length ? [{ kind: 'chores', chores: choreCardRows.slice(0, 20) }] : []),
       ...(scheduleCardRows.length ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : []),
     ] : [];

@@ -372,6 +372,20 @@ FirebaseApp.configure()
       // its own, matching the VoipTokenUpdated pattern above) to mark this
       // reminder answered server-side, so call-reminder-sweeper's missed-
       // call follow-up never fires for a call the person actually picked up.
+      if let id = itemId, let due = dueAtIso,
+         let ackUrl = UserDefaults.standard.string(forKey: "familycube_call_ackUrl_\(uuid)"),
+         let ackToken = UserDefaults.standard.string(forKey: "familycube_call_ackToken_\(uuid)"),
+         let url = URL(string: ackUrl) {
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["itemType": itemType, "itemId": id, "dueAtIso": due, "token": ackToken])
+        var bgTask = UIBackgroundTaskIdentifier.invalid
+        bgTask = UIApplication.shared.beginBackgroundTask { UIApplication.shared.endBackgroundTask(bgTask) }
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+          if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+        }.resume()
+      }
       if let id = itemId, let due = dueAtIso {
         NotificationCenter.default.post(
           name: NSNotification.Name("CallReminderAnswered"),
@@ -832,6 +846,10 @@ FirebaseApp.configure()
     if let v = notes         { d.set(v, forKey: "familycube_call_notes_\(callUUID)") }
     if let v = location      { d.set(v, forKey: "familycube_call_location_\(callUUID)") }
     if let v = subjectName   { d.set(v, forKey: "familycube_call_subject_\(callUUID)") }
+    // Signed answer-acknowledgement the server put in the push: lets the native side tell the server "picked up" even
+    // when the app was killed and JS never boots (see ack-call-reminder).
+    if let v = data["ackUrl"]   as? String { d.set(v, forKey: "familycube_call_ackUrl_\(callUUID)") }
+    if let v = data["ackToken"] as? String { d.set(v, forKey: "familycube_call_ackToken_\(callUUID)") }
 
     RNCallKeep.reportNewIncomingCall(
       callUUID,

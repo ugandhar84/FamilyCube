@@ -6,7 +6,7 @@ export type Person = { id: string; name: string };
 
 export type Intent =
   | 'greeting' | 'identity' | 'cancel_all_day' | 'cancel_one' | 'reschedule' | 'assign_driver' | 'approve'
-  | 'create_event' | 'create_chore' | 'read_schedule' | 'read_chores' | 'grocery' | 'meal' | 'health' | 'location' | null;
+  | 'create_event' | 'create_chore' | 'read_schedule' | 'read_chores' | 'snapshot' | 'grocery' | 'meal' | 'health' | 'location' | null;
 
 export interface Resolution {
   /** People named in the message (real first or full names, any case, with or without 's). */
@@ -93,6 +93,7 @@ export function detectIntent(text: string): Intent {
   if (/\b(medic\w*|vaccin\w*|doses?|health|pharmac\w*|prescription\w*)\b/.test(t) && /\b(what|when|list|show|any|due|missed|miss|did|does|has|have)\b/.test(t)) return 'health';
   if (/\b(grocery|groceries|shopping list|buy|add .* to (the )?list)\b/.test(t)) return 'grocery';
   if (/\b(dinner|lunch|breakfast|meal|recipe|cook)\b/.test(t)) return 'meal';
+  if (/\b(snapshot|overview|recap|summary|catch me up|how are we doing|family (history|status|update)|status of (the )?(family|everyone)|any(thing)? (review|waiting|pending)|review pending|what('s| is) pending)\b/.test(t)) return 'snapshot';
   if (/\b(chore|chores|task|tasks|quest|overdue|to-?do)\b/.test(t) && /\b(what|which|any|list|show|who|how many|overdue|late|open|left)\b/.test(t)) return 'read_chores';
   // A question word first means a read, even when the noun "schedule" appears ("what's on Cherry's schedule").
   const asking = /^(what|what's|whats|which|who|when|where|how|is|are|do|does|any|show|list|tell me|check)\b/.test(t) || /\?\s*$/.test(t);
@@ -138,6 +139,7 @@ const FOCUS: Partial<Record<NonNullable<Intent>, string>> = {
   create_event: 'This is a new calendar item. Use the resolved date and time exactly. If the time or person is missing, ask ONE short question; do not guess.',
   create_chore: 'This is a new chore. Use the resolved due date and person exactly. If the person or due date is missing, ask ONE short question; do not guess.',
   read_schedule: 'This is a schedule question. Call get_schedule for the resolved person and dates. The app draws the events as cards under your message, so do NOT list them. Write ONE or TWO short sentences: the count, then the one thing that needs attention (a ride with nobody driving, a clash, something overdue). If nothing is on, say so plainly and mention the next thing coming up if you know it. Never write section headings such as "Calendar:" or "Chores:". If the question also covers chores, call get_quests too: the app draws both the chores and the schedule as separate cards, so do not list either. Say nothing about chores when there are none.',
+  snapshot: 'This asks where the family stands overall (recap, snapshot, pending, review, history today). Call get_family_snapshot ONCE and nothing else. The app draws a snapshot card with the counts, so write only TWO or THREE short sentences: what got done today, what is waiting on the parent (review, requests), what is up next. Do not list items. Never answer with only one of these areas.',
   read_chores: 'This is a chores question. Call get_quests. The app draws the open chores as a card under your message, so do NOT list them. Write ONE or TWO short sentences: the count and what is overdue. If there are none, say so plainly. Only call a chore overdue when its overdue field is true; a finished or approved chore is done, never overdue or pending.',
   grocery: 'This is about the grocery list. Use the grocery tools only; propose additions as drafts.',
   meal: 'This is about meals. Use the meal tools and recipes already known to the family before suggesting new ones.',

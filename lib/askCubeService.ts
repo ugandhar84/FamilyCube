@@ -20,6 +20,7 @@ export interface AskCubeResponse {
   cards?: (
     | { kind: 'schedule'; events: import('@/components/AskCubeScheduleCard').AskCubeScheduleEvent[] }
     | { kind: 'chores'; chores: import('@/components/AskCubeChoreCard').AskCubeChore[] }
+    | ({ kind: 'snapshot' } & import('@/components/AskCubeSnapshotCard').AskCubeSnapshot)
   )[];
 }
 

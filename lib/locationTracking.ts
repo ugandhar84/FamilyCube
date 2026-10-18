@@ -20,6 +20,7 @@ import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, withSuppressedNetworkBanner, setActiveMemberIdHeaderOverride } from './supabase';
 import { encryptLocationText } from './locationCrypto';
+import { POWER_CONFIG, initialPowerState, nextPowerState, enterLive, LIVE_WINDOW_MS, type PowerMode, type PowerState } from './locationPower';
 
 // Persisted fallback for activeMemberId/lastFamilyId below — was IN-MEMORY
 // ONLY (module-level vars, set only by GpsTab.tsx's mount effect / the
@@ -635,6 +636,7 @@ const SPEEDING_ALERT_COOLDOWN_MS = 5 * 60_000; // live-requested: re-alert if st
 let latestMotionClassification: boolean | null = null;
 export function setMotionClassification(isAutomotive: boolean | null) {
   latestMotionClassification = isAutomotive;
+  if (isAutomotive === true) evaluatePower(0).catch(() => {}); // the motion sensor says vehicle: go to driving right away
 }
 
 let activeTripId: number | null = null;
@@ -714,6 +716,82 @@ let taskDefined = false;
 // encryption added the extra awaits]. Chaining each run onto the previous
 // one's promise makes them run strictly one-at-a-time instead.
 let taskQueue: Promise<void> = Promise.resolve();
+// ─── Adaptive power (Life360-style) ──────────────────────────────────────────────────────────────────────────────────
+// How hard the GPS works depends on what the person is doing — see lib/locationPower.ts for the rules and the reasons.
+const POWER_MODE_KEY = 'familycube_bg_location_power_mode';
+let powerState: PowerState = initialPowerState();
+let appliedMode: PowerMode | null = null;
+let applyingMode = false;
+let lastWriteAt = 0;
+const STATIONARY_HEARTBEAT_MS = 10 * 60_000; // a still phone still reports in this often so "last seen" stays honest
+
+function nativeOptionsFor(mode: PowerMode): Location.LocationTaskOptions {
+  const c = POWER_CONFIG[mode];
+  return {
+    accuracy: c.accuracy === 'high' ? Location.Accuracy.High : Location.Accuracy.Balanced,
+    timeInterval: c.timeInterval,
+    distanceInterval: c.distanceInterval,
+    activityType: c.activity === 'automotive' ? Location.ActivityType.AutomotiveNavigation
+      : c.activity === 'fitness' ? Location.ActivityType.Fitness : Location.ActivityType.Other,
+    // iOS may stop delivering fixes while the phone is clearly stationary and resume on real movement: the largest battery saving.
+    pausesUpdatesAutomatically: c.pauses,
+    showsBackgroundLocationIndicator: true, // iOS blue status-bar pill while active — visible, not sneaky
+    foregroundService: {
+      notificationTitle: 'Family Cube',
+      notificationBody: 'Sharing your location with your family',
+    },
+  };
+}
+
+/** Restarts the native task with the options for `mode`. Safe to call repeatedly; only one switch runs at a time. */
+async function applyPowerMode(mode: PowerMode): Promise<void> {
+  if (applyingMode || mode === appliedMode) return;
+  applyingMode = true;
+  try {
+    const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+    if (!started) return; // sharing is off — never start tracking from here
+    await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, nativeOptionsFor(mode));
+    appliedMode = mode;
+    AsyncStorage.setItem(POWER_MODE_KEY, mode).catch(() => {});
+  } catch (e) {
+    console.warn('[locationTracking] applyPowerMode failed:', (e as Error)?.message ?? e);
+  } finally {
+    applyingMode = false;
+  }
+}
+
+async function readLowPowerMode(): Promise<boolean> {
+  try {
+    const b = getBattery() as any;
+    return !!(b?.isLowPowerModeEnabledAsync && await b.isLowPowerModeEnabledAsync());
+  } catch { return false; }
+}
+
+/** Feed the latest reading into the state machine; switch the native task only when the mode actually changes. */
+async function evaluatePower(speedMph: number): Promise<void> {
+  if (appliedMode === null) appliedMode = ((await AsyncStorage.getItem(POWER_MODE_KEY).catch(() => null)) as PowerMode | null) ?? null;
+  const { level, isCharging } = await readBatteryStatus();
+  const lowPowerMode = await readLowPowerMode();
+  powerState = nextPowerState(powerState, {
+    now: Date.now(), speedMph, automotive: latestMotionClassification,
+    batteryLevel: level, isCharging, lowPowerMode,
+  });
+  if (powerState.mode !== appliedMode) {
+    // Not awaited: this may be running inside the task callback itself, and a restart from within it would stall delivery.
+    setTimeout(() => { applyPowerMode(powerState.mode).catch(() => {}); }, 0);
+  }
+}
+
+/**
+ * Someone opened the Find Family map or tapped refresh on this phone's card: report at a high rate for a short window,
+ * then fall back by itself. No-op while sharing is off.
+ */
+export async function enterLiveMode(): Promise<void> {
+  powerState = enterLive(powerState, Date.now());
+  await evaluatePower(0).catch(() => {});
+}
+
 function ensureTaskDefined(tm: TaskManagerAPI) {
   if (taskDefined || tm.isTaskDefined(LOCATION_TASK_NAME)) { taskDefined = true; return; }
   tm.defineTask(LOCATION_TASK_NAME, ({ data, error }) => {
@@ -768,6 +846,9 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
 
     const { latitude: lat, longitude: lng } = loc.coords;
 
+    // Decide how hard the GPS should work from what this fix says (speed, battery, a pending "live" window).
+    await evaluatePower(loc.coords.speed && loc.coords.speed > 0 ? Math.round(loc.coords.speed * 2.237) : 0);
+
     // The OS already gates re-delivery on distanceInterval, but double-check
     // here too since some platforms are looser about the threshold — a
     // stationary device should never reach the battery read below.
@@ -786,9 +867,13 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // from the last real write, not the last raw callback.
     if (lastFix) {
       const moved = haversineMeters(lastFix.lat, lastFix.lng, lat, lng);
-      if (moved < MIN_DISTANCE_METERS) return;
+      // The gate follows the mode (a live or walking update can be a short hop), and a still phone still reports in every
+      // few minutes so its "last seen" time stays honest.
+      const gate = Math.max(5, Math.min(MIN_DISTANCE_METERS, POWER_CONFIG[powerState.mode].distanceInterval / 2));
+      if (moved < gate && Date.now() - lastWriteAt < STATIONARY_HEARTBEAT_MS) return;
     }
     lastFix = { lat, lng };
+    lastWriteAt = Date.now();
 
     // Always the full exact address, house number included — the old
     // per-member "share exact address" toggle was removed after repeated
@@ -983,33 +1068,12 @@ export async function startBackgroundLocationTracking(memberId: string, familyId
   const already = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
   if (already) return true;
 
-  await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-    // Balanced (not Highest) — network/coarse GPS fixes, not continuous
-    // high-accuracy tracking. This is a "which street is everyone on"
-    // family map, not turn-by-turn navigation, and accuracy is the single
-    // biggest battery-cost lever here.
-    accuracy: Location.Accuracy.Balanced,
-    // Was: timeInterval 1hr (a rarely-hit safety net) + distanceInterval
-    // 80m as the sole real driver — a stale fix from before someone
-    // stopped moving (e.g. "Driving") sat untouched for up to an hour,
-    // read as live the whole time [live-reported: family members actually
-    // home still showed "Driving ... 2h ago" — "I want full experience
-    // like Life360, quick and real-time updates"]. Real-world Life360-
-    // style tracking needs a genuine timer, not just a distance gate that
-    // never fires once movement stops. 2 minutes while the OS is actually
-    // willing to wake this task is a meaningful battery tradeoff (accepted
-    // explicitly), still far short of turn-by-turn navigation polling.
-    // distanceInterval shrunk to match — 80m was tuned for the old
-    // rarely-updating model; a live-feeling map wants a much tighter
-    // "did they actually move" gate too.
-    timeInterval: 2 * 60_000,
-    distanceInterval: 25, // ~0.015 mile — meaningfully live without every GPS jitter counting as movement
-    showsBackgroundLocationIndicator: true, // iOS blue status-bar pill while active — visible, not sneaky
-    foregroundService: {
-      notificationTitle: 'Family Cube',
-      notificationBody: 'Sharing your location with your family',
-    },
-  });
+  // Sharing was just switched on: start in the quick "live" cadence so the first minutes feel instant, then let the
+  // power rules take over (stationary, walking, driving or saver).
+  powerState = enterLive(initialPowerState(), Date.now());
+  appliedMode = 'live';
+  AsyncStorage.setItem(POWER_MODE_KEY, 'live').catch(() => {});
+  await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, nativeOptionsFor('live'));
   return true;
 }
 
@@ -1034,6 +1098,9 @@ export async function stopBackgroundLocationTracking(): Promise<void> {
     // own .catch() (see GpsTab.tsx's `await stopBackgroundLocationTracking()`).
     console.warn('[locationTracking] stopBackgroundLocationTracking failed, treating as already stopped:', (e as Error)?.message ?? e);
   }
+  appliedMode = null;
+  powerState = initialPowerState();
+  AsyncStorage.removeItem(POWER_MODE_KEY).catch(() => {});
   setBackgroundLocationMemberId(null);
 }
 

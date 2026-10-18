@@ -45,6 +45,14 @@ const config = {
       dark: "./assets/icon-dark.png",
       tinted: "./assets/icon-dark.png",
     },
+    // Declares the data the app collects, matching the App Privacy answers in App Store Connect: precise location is collected
+    // for the user's own Find Family feature, linked to their account, never used for tracking or advertising.
+    privacyManifests: {
+      NSPrivacyCollectedDataTypes: [
+        { NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypePreciseLocation", NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"] },
+        { NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeCoarseLocation", NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"] },
+      ],
+    },
     infoPlist: {
       // Lets the app ask whether Google Maps is installed (opens addresses there, else Apple Maps).
       LSApplicationQueriesSchemes: ["comgooglemaps"],
@@ -62,9 +70,9 @@ const config = {
       ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: "Family Cube uses your camera for profile photos and task proof submissions.",
       NSPhotoLibraryUsageDescription: "Family Cube accesses your photos for profile pictures and task completion proof.",
-      NSLocationWhenInUseUsageDescription: "Family Cube uses your location to show family members on the map and set up safe zones.",
-      NSLocationAlwaysAndWhenInUseUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
-      NSLocationAlwaysUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
+      NSLocationWhenInUseUsageDescription: "Family Cube uses your location to show you on your family's Find Family map and to set up safe places like home and school. Only people in your family group can see it.",
+      NSLocationAlwaysAndWhenInUseUsageDescription: "If you turn on location sharing, Family Cube keeps your family updated on where you are, even when the app is closed, and can alert them when you arrive at or leave a safe place. You can turn sharing off at any time in Find Family.",
+      NSLocationAlwaysUsageDescription: "If you turn on location sharing, Family Cube keeps your family updated on where you are, even when the app is closed. You can turn sharing off at any time in Find Family.",
       NSFaceIDUsageDescription: "Family Cube uses Face ID to sign you in quickly and securely.",
       // Required for the core-motion module's CMMotionActivityManager/
       // CMMotionManager use (real driving/crash detection, replacing the
@@ -220,8 +228,8 @@ const config = {
     [
       "expo-location",
       {
-        locationAlwaysAndWhenInUsePermission: "Family Cube uses your location to show family members on the map and set up safe zones.",
-        locationWhenInUsePermission: "Family Cube uses your location to display your position on the family map.",
+        locationAlwaysAndWhenInUsePermission: "If you turn on location sharing, Family Cube keeps your family updated on where you are, even when the app is closed, and can alert them when you arrive at or leave a safe place. You can turn sharing off at any time in Find Family.",
+        locationWhenInUsePermission: "Family Cube uses your location to show you on your family's Find Family map and to set up safe places like home and school. Only people in your family group can see it.",
       },
     ],
     [

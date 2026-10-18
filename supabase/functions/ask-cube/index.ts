@@ -3581,7 +3581,21 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // When the app draws the events as a card, the reply must not ALSO list them. Drop any list lines the model wrote and
     // keep its sentence; if nothing is left, write a plain summary ourselves.
     if (scheduleCardRows.length > 0 && proposals.length === 0) {
-      const kept = finalText.split('\n').filter(l => !/^\s*([•\-*–]|\d+[.)])\s+/.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      const isBullet = (l: string) => /^\s*([•\-*–]|\d+[.)])\s+/.test(l);
+      const plain = (l: string) => l.replace(/\*\*/g, '').replace(/^\s*[•\-*–]\s+/, '').trim().toLowerCase();
+      const titles = scheduleCardRows.map((c: any) => String(c.title ?? '').toLowerCase().trim()).filter(Boolean);
+      // Remove only the list lines that the card already shows (they name one of its events); other bullets (chores,
+      // notes) are real information the card does not carry, so they stay.
+      let lines = finalText.split('\n').filter(l => !(isBullet(l) && titles.some(t => plain(l).includes(t.slice(0, Math.min(t.length, 14))))));
+      // Then drop section headings left with nothing under them ("Calendar:", "Chores:").
+      const isHeading = (l: string) => { const t = l.replace(/\*\*/g, '').trim(); return t.length > 0 && t.length <= 28 && /:$/.test(t) && !isBullet(l); };
+      const nonEmptyAfter = (i: number) => { for (let j = i + 1; j < lines.length; j++) if (lines[j].trim()) return lines[j]; return null; };
+      lines = lines.filter((l, i) => {
+        if (!isHeading(l)) return true;
+        const next = nonEmptyAfter(i);
+        return !!next && !isHeading(next);
+      });
+      const kept = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
       const needs = scheduleCardRows.filter((c: any) => c.needsDriver).length;
       const n = scheduleCardRows.length;
       finalText = kept || `${n === 1 ? 'There is 1 event' : `There are ${n} events`}.${needs ? ` ${needs} ${needs === 1 ? 'ride still needs' : 'rides still need'} a driver.` : ''}`;

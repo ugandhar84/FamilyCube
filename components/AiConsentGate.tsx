@@ -24,13 +24,14 @@ import { Sparkles } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { isChildMember, memberById, hasChildConsent } from '@/lib/childPrivacy';
 
 const CONSENT_VERSION = 'v1';
 
 export const AI_CONSENT_TEXT =
   "Some features in Family Cube — scanning a prescription, flyer, receipt, or medical record, " +
   "and recording a doctor's visit — use AI to read what you upload. To do that, the photo, audio, " +
-  "or document you provide is sent to our AI provider (and a backup provider if needed). " +
+  "or document you provide is sent to Google (its Gemini AI service), a third-party company, and to a backup AI provider if needed. " +
   "We don't send anything else from your account — only the specific item you choose to scan or record.";
 
 async function hasDbConsent(memberId: string): Promise<boolean> {
@@ -46,6 +47,7 @@ async function hasDbConsent(memberId: string): Promise<boolean> {
 let dbConsentMemoCache = new Map<string, boolean>();
 
 export async function hasAiConsent(memberId: string): Promise<boolean> {
+  if (isChildMember(memberById(memberId))) return hasChildConsent(memberId, 'ai');
   if (dbConsentMemoCache.has(memberId)) return dbConsentMemoCache.get(memberId)!;
   const dbConsented = await hasDbConsent(memberId);
   dbConsentMemoCache.set(memberId, dbConsented);
@@ -82,6 +84,21 @@ export default function AiConsentSheet({
   const colors = colorsProp ?? theme.colors;
 
   if (!visible) return null;
+
+  // A child cannot agree for themselves: a parent turns AI helpers on for them in Settings → Children's privacy.
+  if (isChildMember(memberById(memberId))) {
+    return (
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, elevation: 1000, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <View style={{ backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 24, maxWidth: 420, width: '100%', gap: 16 }}>
+          <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Ask a parent</Text>
+          <Text style={{ fontSize: TYPO.body, color: colors.textSecondary, lineHeight: 22 }}>A parent needs to turn on AI helpers for you first. They can do it in Settings → Children’s privacy.</Text>
+          <Pressable onPress={onDecline} style={{ paddingVertical: 12, borderRadius: RADIUS.md, alignItems: 'center', backgroundColor: colors.accent }}>
+            <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#fff' }}>OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, elevation: 1000, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>

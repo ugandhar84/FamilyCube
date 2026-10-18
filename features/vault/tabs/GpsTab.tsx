@@ -20,7 +20,8 @@ import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { startLiveSelfLocation } from '@/lib/liveSelfLocation';
-import { hasLocationConsent, recordLocationConsent } from '@/lib/locationConsent';
+import { recordLocationConsent } from '@/lib/locationConsent';
+import { canShareLocation, isChildMember, memberById } from '@/lib/childPrivacy';
 import LocationConsentScreen from '@/components/LocationConsentScreen';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling, getLastLocationSyncError } from '@/lib/locationTracking';
 import { startMotionTracking, stopMotionTracking } from '@/lib/motionTracking';
@@ -415,7 +416,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
       const { data } = await supabase.from('member_locations').select('share_location_enabled').eq('member_id', activeMemberId).maybeSingle();
       // Never resume silently without this person's recorded consent on this device (Apple 5.1.1): after a reinstall they
       // see the toggle off and turn it on through the disclosure page.
-      if (data?.share_location_enabled && isBackgroundLocationSupported() && await hasLocationConsent(activeMemberId)) {
+      if (data?.share_location_enabled && isBackgroundLocationSupported() && await canShareLocation(activeMemberId)) {
         const ok = await startBackgroundLocationTracking(activeMemberId, familyId).catch(() => false);
         if (ok) {
           setTracking(true);
@@ -489,7 +490,12 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
     }
     // Turning sharing ON needs the person's informed consent first (Apple 5.1.1 / 2.5.4): show the disclosure page, and only
     // after they agree does the system location prompt ever appear.
-    if (!tracking && !skipConsentCheck && !(await hasLocationConsent(activeMemberId))) {
+    if (!tracking && !skipConsentCheck && !(await canShareLocation(activeMemberId))) {
+      if (isChildMember(memberById(activeMemberId))) {
+        // A child cannot agree for themselves: a parent turns this on for them (Settings → Children's privacy).
+        Alert.alert('Ask a parent', 'A parent needs to turn on location sharing for you in Settings → Children’s privacy.');
+        return;
+      }
       setShowConsent(true);
       return;
     }

@@ -33,3 +33,16 @@ Demo account: `<email>` / `<password>` (a family with two members so a second de
 ## Capabilities
 - `UIBackgroundModes`: `location` (this feature), `fetch`, `voip` (call-style reminders). Be ready to explain each one if asked.
 - iOS shows the blue background-location indicator (`showsBackgroundLocationIndicator: true`).
+
+
+---
+
+# Also paste into the review notes: calls, AI, children
+
+**Call-style reminders (CallKit / VoIP push, guideline 2.5.4 and 5):** an optional reminder feature. When a person turns on "Call to remind" for a chore or event, the app rings the phone at the chosen time and reads the reminder aloud, so a task is not missed. It is controlled per person in Settings → Notifications → Call alerts and per item, and can be switched off at any time. Every VoIP push immediately reports a call to CallKit. CallKit is disabled entirely on devices in China. Call alerts are never used for marketing.
+
+**AI features (5.1.1(i), 5.1.2(i)):** Ask Cube and the scanners (flyers, receipts, prescriptions, medical records, doctor-visit recordings) send only what the person types or scans, plus the minimum family context needed to answer, to Google (Gemini), a third-party AI service, with a backup provider if needed. Names, locations and health details are replaced with neutral labels before they are sent. A consent screen naming the provider is shown before first use, and the consent is stored with the exact text that was shown. The provider does not use the data for advertising.
+
+**Children (5.1.4, 1.3):** the app is for families and is not a children's app or in the Kids category. A child cannot consent for themselves to location sharing or to AI features: both are off until a parent turns them on for that child in Settings → Children's privacy, and the server enforces it for AI. Children's accounts are created and managed by a parent. Location is shared only with the child's own family group, never advertising, never sold. Parents can delete a child's profile and data (Settings → Danger zone).
+
+**Age rating:** answer the questionnaire to match: the app contains AI-generated text responses (an assistant), no unrestricted web access, no user-to-user public content (chat is limited to the family group).

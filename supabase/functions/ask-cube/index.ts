@@ -3288,7 +3288,11 @@ conversation text, so never reference "the suggestions below" in your actual rep
             const wantIds = resolution.mentionedIds.length ? resolution.mentionedIds : (resolution.pronounId ? [resolution.pronounId] : []);
             const wantNames = new Set((allMembers ?? []).filter((m: any) => wantIds.includes(m.id)).map((m: any) => String(m.name).split(' ')[0]));
             for (const c of result.__scheduleCards) {
-              if (wantNames.size > 0 && !(c.people ?? []).some((n: string) => wantNames.has(n)) && !(c.driver && wantNames.has(c.driver))) continue;
+              // Keep an event that is ABOUT them (assignee), that they drive or help with, or that names them in its title
+              // ("Pick-up · Cherry" is often saved without an assignee).
+              const titleLower = String(c.title ?? '').toLowerCase();
+              const mentionsThem = [...wantNames].some(n => titleLower.includes(String(n).toLowerCase()));
+              if (wantNames.size > 0 && !(c.people ?? []).some((n: string) => wantNames.has(n)) && !(c.driver && wantNames.has(c.driver)) && !mentionsThem) continue;
               if (!scheduleCardRows.some(x => x.id === c.id)) scheduleCardRows.push(c);
             }
           }

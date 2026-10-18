@@ -22,7 +22,10 @@ import { withinLast24h, localDateStr } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 
-import { GroupBand } from './senior/seniorTheme';
+import { SeniorHeroCard } from './senior/SeniorHeroCard';
+import { SeniorActionGrid, type SeniorGroup } from './senior/SeniorActionGrid';
+import { KidSectionHeader } from './kid/KidSectionHeader';
+import { KidTodaySection } from './kid/KidTodaySection';
 import { EmergencySosCard } from './senior/EmergencySosCard';
 import { YourRidesSection } from './senior/YourRidesSection';
 import { MedicationsCard } from './senior/MedicationsCard';
@@ -826,10 +829,20 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
   };
 
+  // Which "Quick actions" area is open below the grid (one at a time). Starts on Lend a hand when something is waiting there.
+  const [openGroup, setOpenGroup] = useState<SeniorGroup | null>(null);
+  const toggleGroup = (g: SeniorGroup) => setOpenGroup(prev => (prev === g ? null : g));
+  const assignedCount = myDirectPending.length + myOutgoingPending.length + myLockedItems.length;
+  const pendingForMe = dedupMyPendingAssignments.length + assignedCount + (hasCaregiverAccess ? 1 : 0);
+
   return (
     <>
-      {/* ══ TODAY ══ */}
-      <GroupBand label="Today" color={BRAND.teal} colors={colors} />
+      {/* ══ MY DAY — same shell as the other Hubs: hero, safety, today, needs you, quick actions ══ */}
+      <SeniorHeroCard
+        active={active} colors={colors} isDark={isDark}
+        medsTotal={meds.length} medsTaken={Object.values(medsTaken).filter(Boolean).length}
+        confirmedRide={confirmedRide} rideCountdown={rideCountdown} pendingCount={pendingForMe}
+      />
 
       <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark} />
 
@@ -879,6 +892,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
       ))}
 
+      <KidTodaySection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+
+      {(dedupMyPendingAssignments.length > 0 || dedupMyDrivingToday.length > 0 || dedupMyClaimedRides.length > 0 || assignedCount > 0) && (
+        <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
+          <KidSectionHeader label="NEEDS YOU" accent={colors.amber} colors={colors} />
+        </View>
+      )}
+
       <YourRidesSection
         myPendingAssignments={dedupMyPendingAssignments}
         myDrivingToday={dedupMyDrivingToday}
@@ -892,8 +913,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
-
-      <FamilyGamesSection colors={colors} isDark={isDark} />
 
       {/* A parent (or this GP themselves) directly assigned a task via
           addParentQuest — same Accept/Respond, Nudge-back, and locked-item
@@ -939,9 +958,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         </SectionCard>
       )}
 
-      {/* ══ HELP OUT ══ */}
-      <GroupBand label="Help Out" color={BRAND.amber} colors={colors} />
+      {/* ══ QUICK ACTIONS — one area open at a time ══ */}
+      <SeniorActionGrid
+        open={openGroup} onToggle={toggleGroup} colors={colors} isDark={isDark}
+        helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
+      />
 
+      {openGroup === 'help' && (
+        <>
       <LendAHandCard
         cheerleaderMode={cheerleaderMode} setCheerleaderMode={setCheerleaderMode}
         driveWindowDays={driveWindowDays} setDriveWindowDays={setDriveWindowDays}
@@ -967,16 +991,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onClaimRide={handleClaimRide} onPassRide={handlePassRide} onHelpRequest={onHelpRequest}
       />
 
-      <MySponsoredQuestsSection
-        quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
-        colors={colors} isDark={isDark}
-        onEdit={openEditSponsoredQuest}
-        active={active}
-      />
+        </>
+      )}
 
-      {/* ══ MY GRANDKIDS ══ */}
-      <GroupBand label="My Grandkids" color={BRAND.purple} colors={colors} />
-
+      {openGroup === 'kids' && (
+        <>
       <CheerSquadSection
         kidsCheerable={kidsCheerable} kids={kids} allNames={allNames} colors={colors} isDark={isDark}
         cheerChore={cheerChore} active={active}
@@ -992,6 +1011,18 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         active={active}
       />
 
+        </>
+      )}
+
+      {openGroup === 'sponsor' && (
+        <>
+      <MySponsoredQuestsSection
+        quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
+        colors={colors} isDark={isDark}
+        onEdit={openEditSponsoredQuest}
+        active={active}
+      />
+
       <SponsorQuestsSection
         active={active} kids={kids} members={members} allNames={allNames} colors={colors} isDark={isDark}
         chores={chores} grandparentMatches={grandparentMatches} pendingGpApproval={pendingGpApproval}
@@ -1001,6 +1032,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onOpenMatchModal={() => setShowMatchModal(true)}
         onOpenCreateQuestModal={() => setShowCreateQuestModal(true)}
       />
+
+        </>
+      )}
+
+      {openGroup === 'games' && <FamilyGamesSection colors={colors} isDark={isDark} />}
 
       <SavingsMatchModal
         visible={showMatchModal} onClose={() => setShowMatchModal(false)}

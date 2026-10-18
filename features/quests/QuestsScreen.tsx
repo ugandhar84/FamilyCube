@@ -84,7 +84,7 @@ export { AddQuestModal };
 export default function QuestsScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery, hideAiTrigger, onAiStateChange, onExposeAiRunner }: {
   hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
   hideSearchBar?: boolean; externalSearchQuery?: string;
-  // TasksScreen hosts the CubeAI trigger icon on the Chores tab-card
+  // TasksScreen hosts the Cube trigger icon on the Chores tab-card
   // instead of QuestsScreen's own inline pill — hideAiTrigger suppresses
   // that pill, onAiStateChange reports showAiTool/isAiLoading upward so
   // the card's dropdown can reflect the real state, and onExposeAiRunner
@@ -943,7 +943,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         {isParent && isAiLoading && (
           <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12, backgroundColor: colors.primaryLight, borderColor: colors.primary + '40' }]}>
             <ActivityIndicator color={BRAND.purple} size="small" />
-            <Text style={[s.aiLoadingText, { color: colors.primary }]}>CubeAI is analysing your household chores...</Text>
+            <Text style={[s.aiLoadingText, { color: colors.primary }]}>Cube is analysing your household chores...</Text>
           </View>
         )}
         {isParent && !isAiLoading && showAiTool !== 'none' && aiFromCache[showAiTool] && (

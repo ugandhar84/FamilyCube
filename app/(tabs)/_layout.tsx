@@ -313,7 +313,7 @@ function CustomTabBar({ state, navigation }: any) {
 export default function TabLayout() {
   const { colors } = useTheme();
   // Live-reported: a duplicate floating Ask Cube FAB appeared over kiosk
-  // mode's own Tasks tab, on top of KioskHeader's own dedicated Ask Fam
+  // mode's own Tasks tab, on top of KioskHeader's own dedicated Ask Cube
   // button — this shared FAB is phone-navigation-specific (it reads
   // uiStore.activeTabName, a flag kiosk never sets, so it silently rode
   // along with whatever stale tab name the phone side last set) and was
@@ -396,7 +396,7 @@ export default function TabLayout() {
 
   // Route-level backstop: kiosk-awareness otherwise lives ONLY at each
   // navigation call site (navigateFromNotification in kioskNavStore.ts,
-  // used by app/_layout.tsx's notification listener and by Ask Fam's own
+  // used by app/_layout.tsx's notification listener and by Ask Cube's own
   // chore-mention links) — none of tasks.tsx/chat.tsx/store.tsx/gps.tsx/
   // quests.tsx/etc. have any kiosk gate of their own. A bare router.push to
   // any of them (one already existed inside AskCubeChat.tsx before this

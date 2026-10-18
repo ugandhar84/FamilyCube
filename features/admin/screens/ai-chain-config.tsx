@@ -26,7 +26,7 @@ const USE_CASE_LABEL: Record<string, string> = {
   mood_scan: 'Mood Scan', symptom_scan: 'Symptom Scan', vet_chat: 'Vet Chat',
   health_records: 'Health Records', pet_timeline: 'Pet Timeline',
   general_vision: 'General Vision', general_text: 'General Text',
-  ask_cube_chat: 'Ask Fam Chat (not yet live-wired)',
+  ask_cube_chat: 'Ask Cube Chat (not yet live-wired)',
   flyer_parse: 'Flyer Parse (not yet live-wired)',
   grocery_receipt_parse: 'Grocery Receipt Parse (not yet live-wired)',
 };

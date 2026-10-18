@@ -95,7 +95,7 @@ export const askCube = {
     return undefined; // omitting conversationId on the next send() starts a fresh thread
   },
 
-  // Live-requested: "give option to delete Ask Fam threads in both kiosk
+  // Live-requested: "give option to delete Ask Cube threads in both kiosk
   // and mobile from history" — there was previously no way to remove a
   // conversation once it existed, on either surface (AskCubeChat.tsx's
   // history sheet is the one shared component both use). RLS on

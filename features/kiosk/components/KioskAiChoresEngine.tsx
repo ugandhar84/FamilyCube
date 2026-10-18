@@ -1,12 +1,12 @@
 /**
- * KioskAiChoresEngine — kiosk mount of the real CubeAI Chores Engine
+ * KioskAiChoresEngine — kiosk mount of the real Cube Chores Engine
  * (AutoBalance / Spark / Advice), entirely absent from kiosk before this
  * [GAP — Chores-tab mobile-parity audit, D3]. Confirmed by grep: zero
  * references anywhere in KioskTasksTab.tsx to AiEngineBanner, AiTool,
  * AutoBalanceCard, FomoCard, AdviceCard, callAutoBalance, callFomo,
  * callAdvice, or family-ai — a parent standing at kiosk had no access to
  * any of it, while the phone's own Chores toolbar shows a prominent,
- * always-visible "CubeAI" pill.
+ * always-visible "Cube" pill.
  *
  * Reuses the real components directly rather than re-implementing them —
  * AiEngineBanner (the pill + 3-tool row) and AutoBalanceCard/FomoCard/
@@ -151,8 +151,8 @@ export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDa
 
   return (
     <View style={{ width: '100%' }}>
-      {/* Shell matches the approved reference mock's own CubeAI card
-          exactly — icon chip, "CubeAI ●" + a status line, a single
+      {/* Shell matches the approved reference mock's own Cube card
+          exactly — icon chip, "Cube ●" + a status line, a single
           right-aligned action button — rather than AiEngineBanner's own
           small pill-that-expands pattern [live-reported: "you didn't
           match the cubeAI card too"]. The real AutoBalance/Spark/Advice
@@ -165,7 +165,7 @@ export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDa
           onPress={() => setToolsOpen(o => !o)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}
           accessibilityRole="button"
-          accessibilityLabel="CubeAI Chores Engine"
+          accessibilityLabel="Cube Chores Engine"
           accessibilityHint="Opens smart chore tools: Balance, Spark, and Advice"
         >
           <View style={{
@@ -176,7 +176,7 @@ export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDa
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '800', color: k.text }}>CubeAI</Text>
+              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '800', color: k.text }}>Cube</Text>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: k.sage }} />
             </View>
             <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textMuted }} numberOfLines={1}>
@@ -188,7 +188,7 @@ export function KioskAiChoresEngine({ quests, kids, activeMemberId, colors, isDa
             accent={k.primary}
             k={k} isDark={isDark} variant="soft"
             onPress={() => setToolsOpen(o => !o)}
-            accessibilityHint="Toggles the CubeAI tools"
+            accessibilityHint="Toggles the Cube tools"
           />
         </Pressable>
 

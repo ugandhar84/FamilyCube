@@ -109,7 +109,7 @@ export function KioskHomeParent({ active, members, onNavigate, onIntercom, onAsk
         <View style={s.qa}>
           {qbtn('Task', '＋', k.primary, k.onPrimary, () => setShowTask(true))}
           {qbtn('Event', '＋', k.sageSoft, k.sage, () => setShowEvent(true))}
-          {qbtn('Ask Fam', '✨', k.purpleSoft, k.purple, onAskFam ?? (() => {}))}
+          {qbtn('Ask Cube', '✨', k.purpleSoft, k.purple, onAskFam ?? (() => {}))}
           {qbtn('Ride', '🚗', k.primarySoft, k.primary, () => onNavigate('schedule'))}
         </View>
       </View>

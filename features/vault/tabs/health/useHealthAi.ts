@@ -1,7 +1,7 @@
 /**
  * useHealthAi — the Health AI Q&A logic (askAI/shareAiToChat + their state),
  * extracted out of HealthTab.tsx so kiosk can mount a real, standalone
- * CubeAI-style card for Health the same way KioskAiChoresEngine.tsx does
+ * Cube-style card for Health the same way KioskAiChoresEngine.tsx does
  * for Chores [live-reported: "i want to move the cube ai as a separate
  * section similar to the chores"].
  *

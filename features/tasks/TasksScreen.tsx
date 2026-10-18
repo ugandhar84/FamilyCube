@@ -135,7 +135,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
     if (!next) { setScheduleQuery(''); setChoreQuery(''); }
   };
 
-  // CubeAI trigger — moved off the page and onto the Chores card's own
+  // Cube trigger — moved off the page and onto the Chores card's own
   // top-right corner (was QuestsScreen's own inline pill). QuestsScreen
   // still owns the actual AI call (needs its internal quest/cache state);
   // this only hosts the trigger icon + the dropdown of 3 tool buttons,

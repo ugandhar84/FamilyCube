@@ -177,7 +177,7 @@ export default function NotificationPanel({ visible, onClose }: Props) {
     const dest = routeFor(n);
     onClose();
     // Was a bare router.push — a real, reachable escape hatch, same class
-    // of bug already fixed for Ask Fam's chore-mention link this session.
+    // of bug already fixed for Ask Cube's chore-mention link this session.
     // This component is phone-owned (kiosk has its own
     // KioskNotificationPanel), but nothing ever actually prevented it from
     // being opened on a kiosk device too (app/_layout.tsx's setNotifPanelOpen

@@ -74,7 +74,7 @@ const PHONE_ROUTE_TO_KIOSK_TAB: Record<string, KioskNavTab> = {
  * route with no kiosk chrome and no way back short of a force-quit.
  *
  * Any code anywhere in the app that navigates to a '/(tabs)/...' route in
- * response to something a user tapped (a notification, an Ask Fam reply, a
+ * response to something a user tapped (a notification, an Ask Cube reply, a
  * deep link) MUST go through this instead of a bare `router.push` — a bare
  * push bypasses kiosk gating entirely, since kiosk-awareness lives only
  * here and in HubScreen's own deviceClass check, not on the individual tab

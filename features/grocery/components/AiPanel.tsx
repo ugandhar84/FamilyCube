@@ -7,7 +7,7 @@ import { AiSuggestedItem, AI_QUICK_PROMPTS } from './types';
 
 // ─── AI Grocery Sheet ─────────────────────────────────────────────────────────
 
-// Inline AI panel — shown inside the List tab ScrollView (CubeAI-style banner)
+// Inline AI panel — shown inside the List tab ScrollView (Cube-style banner)
 export function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, onAdded }: {
   familyId: string; memberId: string; existingItems: GroceryItem[];
   colors: any; isDark: boolean; onClose: () => void; onAdded: () => void;
@@ -82,7 +82,7 @@ export function AiPanel({ familyId, memberId, existingItems, colors, isDark, onC
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>CubeAI</Text>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Cube</Text>
             <View style={{ backgroundColor: P, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
               <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '700' }}>ACTIVE</Text>
             </View>

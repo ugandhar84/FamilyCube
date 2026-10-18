@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView,
 import { ChefHat, Sparkles, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { GEMINI } from '@/constants/geminiRhythm';
 
-// ─── CubeAI Planner Banner (flat) ──────────────────────────────────────────────
+// ─── Cube Planner Banner (flat) ──────────────────────────────────────────────
 
 export default function AiPlannerBanner({
   colors, isDark, aiOpen, setAiOpen, pulseOpacity, pulseScale,
@@ -30,7 +30,7 @@ export default function AiPlannerBanner({
           </View>
         </View>
         <Text style={{ flex: 1, fontSize: 12, fontWeight: '800', color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textTransform: 'uppercase', letterSpacing: 0.6 }}>
-          CubeAI Meal Planner
+          Cube Meal Planner
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent }}>{aiOpen ? 'Collapse' : 'Open'}</Text>

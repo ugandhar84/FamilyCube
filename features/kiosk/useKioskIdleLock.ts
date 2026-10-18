@@ -4,7 +4,7 @@
  * requested: "we can lock and go if no one using it"). A wall-mounted
  * kitchen tablet left showing whoever last used it is a real privacy
  * concern in a multi-generational household — a kid's Hub, or a parent's
- * Ask Fam conversation, sitting visible to anyone walking by until someone
+ * Ask Cube conversation, sitting visible to anyone walking by until someone
  * happens to switch profiles.
  *
  * React Native has no built-in "any touch happened anywhere" signal — the

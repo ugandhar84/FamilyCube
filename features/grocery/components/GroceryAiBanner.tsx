@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Animated, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-// ─── CubeAI Grocery Banner — Figma white card style ──────────────────────────
+// ─── Cube Grocery Banner — Figma white card style ──────────────────────────
 
 export function GroceryAiBanner({
   isDark, colors, onPriceCheck, pricesLoaded, priceLoading,
@@ -66,7 +66,7 @@ export function GroceryAiBanner({
           </View>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>CubeAI Shopping</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>Cube Shopping</Text>
           <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 2 }}>
             Scan receipts · estimate prices
           </Text>

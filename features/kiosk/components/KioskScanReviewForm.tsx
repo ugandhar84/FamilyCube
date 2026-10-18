@@ -243,7 +243,7 @@ export function KioskScanReviewForm({ visible, scanMode, activeMemberId, members
                       {scanning ? (
                         <>
                           <ActivityIndicator size="large" color={accent} />
-                          <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textMuted, fontWeight: '700' }}>CubeAI is reading your document…</Text>
+                          <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textMuted, fontWeight: '700' }}>Cube is reading your document…</Text>
                         </>
                       ) : (
                         <>

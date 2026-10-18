@@ -16,7 +16,7 @@ THE SHORT VERSION (not a substitute for the full text below)
 
 1. WHAT FAMILY CUBE IS
 
-1.1 The Service. Family Cube (the "Service" or "App") is a family organisation app. Members of a household share a private "family" space to coordinate chores and rewards, a shared calendar and school schedules, group and direct messaging, family location sharing, a coin-based reward store, a photo memories feed, grocery and meal planning, health and medication records and reminders, document and flyer scanning, and an AI assistant (the "AI Assistant") that answers questions and helps create or manage these items from natural-language requests.
+1.1 The Service. Family Cube (the "Service" or "App") is a family organisation app. Members of a household share a private "family" space to coordinate chores and rewards, a shared calendar and school schedules, group and direct messaging, family location sharing, a coin-based reward store, a photo memories feed, grocery and meal planning, health and medication records and reminders, document and flyer scanning, and an AI assistant called "Ask Cube" (the "AI Assistant") that answers questions and helps create or manage these items from natural-language requests.
 
 1.2 Not a social network. Family Cube is for private use inside one self-organised family. It has no public feed, no stranger matching, and no discovery of other users outside a family you create or are invited into.
 

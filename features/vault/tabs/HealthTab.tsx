@@ -31,7 +31,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // still works if ever rendered without a controller.
   healthTab?: 'meds' | 'vax'; setHealthTab?: (t: 'meds' | 'vax') => void;
   // Kiosk-only: KioskHealthAiWidget now mounts the same real useHealthAi
-  // hook as its own standalone CubeAI card above this component
+  // hook as its own standalone Cube card above this component
   // [live-reported: "i want to move the cube ai as a separate section
   // similar to the chores"], so this component's own inline AI pill would
   // otherwise double up with it. Defaults to false — mobile's own
@@ -102,7 +102,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   });
 
   // AI state — extracted into useHealthAi so kiosk can mount the same
-  // real Q&A flow as its own standalone CubeAI card (KioskHealthAiWidget)
+  // real Q&A flow as its own standalone Cube card (KioskHealthAiWidget)
   // instead of only ever rendering inline here.
   const { aiQuery, setAiQuery, aiResult, setAiResult, aiLoading, aiShared, setAiShared, askAI, shareAiToChat, isSensitive } =
     useHealthAi({ members, activeMemberId: activeMember?.id });
@@ -124,7 +124,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // Shared FAB's family-health-tab "+" face (app/(tabs)/_layout.tsx) fires
   // this one-shot flag instead of opening Ask Cube — same pattern
   // TasksScreen.tsx/MemoriesTab.tsx use. Replaces the old
-  // fullBleedScreenActive hide (Health's own CubeAI banner vs. Ask Cube's
+  // fullBleedScreenActive hide (Health's own Cube banner vs. Ask Cube's
   // sparkle competing) — that's moot now since the shared FAB no longer
   // shows the sparkle face on this route at all.
   // Kid/teen/senior can't add a medication or immunization — same

@@ -312,7 +312,7 @@ function AddRecipeDrawer({ visible, onClose, active, isParent, familyId, onSaved
       if (r?.dietaryTags?.length) setTags(r.dietaryTags);
       if (r?.prepMinutes) setPrep(String(r.prepMinutes));
       if (r?.tip) setTip(r.tip);
-      showToast('Recipe refined by Cube AI ✨');
+      showToast('Recipe refined by Cube ✨');
     } catch { showToast('AI refinement failed. Try again.'); } finally { setRefining(false); }
   };
   const stopVoice = async () => { const t = await dictation.stop(); if (t) setSteps(p => (p ? p + '\n' : '') + t); };

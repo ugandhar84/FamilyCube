@@ -577,7 +577,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
         )}
 
         {/* Estimated total + Price Check banner — replaces the collapsible
-            CubeAI card (removed) with one flat, always-visible row showing
+            Cube card (removed) with one flat, always-visible row showing
             the running total next to the action that produces it
             [live-requested: "we can remove the Ai banner from the
             groceries landing page, lets make nice banner for the
@@ -751,7 +751,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Snap a photo to add items</Text>
                 <Text style={{ fontSize: 13, fontWeight: '500', lineHeight: 18, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>
-                  CubeAI reads the photo and adds items for you
+                  Cube reads the photo and adds items for you
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.amber} />
@@ -917,7 +917,7 @@ export default function GroceryScreen({ hideHeader = false, onClose }: { hideHea
         <View style={{ flex: 1, backgroundColor: isDark ? colors.background : GEMINI.canvas }}>
           <View style={{ paddingHorizontal: 20, paddingTop: insets.top, paddingBottom: 16, backgroundColor: isDark ? colors.background : GEMINI.canvas, gap: 12 }}>
             <PageHeading eyebrow="FAMILY CUBE · GROCERIES" title="Purchase History" accent="teal" Icon={ShoppingCart} onTitlePress={requestAnimatedClose} topInset={0} paddingHorizontal={0} />
-            {/* Scan Receipt — moved here from the CubeAI banner's own
+            {/* Scan Receipt — moved here from the Cube banner's own
                 button, since a scanned receipt IS a purchase-history
                 entry; scanning from inside the screen that shows that
                 history is the more direct path [live-requested: "scan

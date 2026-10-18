@@ -268,7 +268,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     await loadConversation(id);
   };
 
-  // Live-requested: "give option to delete Ask Fam threads in both kiosk
+  // Live-requested: "give option to delete Ask Cube threads in both kiosk
   // and mobile from history" — AskCubeChat.tsx is the one shared component
   // both surfaces render, so this one handler covers both. Deleting the
   // conversation currently on screen also clears it back to the empty
@@ -785,7 +785,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // other branches in trusting that check rather than re-deriving it.
       if (d.action === 'claim') claimPoolQuest(d.choreId, activeMember.id);
       else if (d.action === 'approve') approveChore(d.choreId, activeMember.id);
-      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Fam');
+      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Cube');
       else if (d.action === 'complete') submitChore(d.choreId);
       else if (d.action === 'cancel') cancelChore(d.choreId, activeMember.id);
     } else if (proposal.kind === 'kid_request_action') {
@@ -970,7 +970,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                           // does), so on kiosk this stranded the device on
                           // a bare phone-style Quests screen with no way
                           // back short of a force-quit [live-reported: any
-                          // Ask Fam/notification link "should not take to
+                          // Ask Cube/notification link "should not take to
                           // mobile screens where by we stuck to come
                           // back"]. Routed through the same kiosk-safe
                           // helper every other notification/deep-link
@@ -1312,7 +1312,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     return (
       <KioskSlideModal visible={visible} onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }}>
-          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close Ask Fam" />
+          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close Ask Cube" />
           {chatContent}
         </View>
         {overlays}

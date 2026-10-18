@@ -769,7 +769,7 @@ export default function StoreScreen({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>
-                  CubeAI Perk Ideas
+                  Cube Perk Ideas
                 </Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
                   AI-suggested perks tailored for your family

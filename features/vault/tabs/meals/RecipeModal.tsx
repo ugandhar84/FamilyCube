@@ -100,7 +100,7 @@ export default function RecipeModal({ meal, visible, onClose, onEdit, onAddToGro
             <PageHeading
               eyebrow="FAMILY CUBE · MEALS"
               title={meal.title}
-              subtitle={`Planned · ${meal.day}${meal.ai_generated ? ' · CubeAI' : ''}`}
+              subtitle={`Planned · ${meal.day}${meal.ai_generated ? ' · Cube' : ''}`}
               accent="teal"
               Icon={ChefHat}
               onTitlePress={animatedClose}

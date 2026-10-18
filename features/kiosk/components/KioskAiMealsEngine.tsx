@@ -1,5 +1,5 @@
 /**
- * KioskAiMealsEngine — the CubeAI meal planner on the kiosk, matching the phone's
+ * KioskAiMealsEngine — the Cube meal planner on the kiosk, matching the phone's
  * AI planner end to end:
  *   · Generate (family-ai `meal_plan`): 3 options for each day, from the family's
  *     preferences. The last suggestions are cached for the family in
@@ -234,7 +234,7 @@ export function KioskAiMealsEngine({ familyId, members, existingMeals, onPlanSav
     const { addItem, items } = useGroceryStore.getState();
     let n = 0;
     groceryList.forEach(name => {
-      if (!items.some(e => !e.isBought && e.name.toLowerCase() === name.toLowerCase())) { addItem({ name, category: 'Other', notes: 'CubeAI weekly plan', familyId, addedBy: members[0]?.id ?? '', aiGenerated: true }); n++; }
+      if (!items.some(e => !e.isBought && e.name.toLowerCase() === name.toLowerCase())) { addItem({ name, category: 'Other', notes: 'Cube weekly plan', familyId, addedBy: members[0]?.id ?? '', aiGenerated: true }); n++; }
     });
     showToast(n ? `${n} ingredients added to the list` : 'Everything is already on the list');
   };
@@ -255,7 +255,7 @@ export function KioskAiMealsEngine({ familyId, members, existingMeals, onPlanSav
         <View style={[s.hero, { backgroundColor: k.pastelLav, borderColor: k.pastelLavCard }]}>
           <View style={[s.heroIc, { backgroundColor: k.pastelLavCard }]}><Sparkles size={30} color={k.purple} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={[s.heroT, { color: k.text }]}>Plan the week with CubeAI</Text>
+            <Text style={[s.heroT, { color: k.text }]}>Plan the week with Cube</Text>
             <Text style={[s.sub, { color: k.textMuted }]}>Tell it what the family likes. Pick the meals you want, choose the day (this week or next) and the meal type for each, then Confirm plan.</Text>
           </View>
         </View>

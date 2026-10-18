@@ -17,9 +17,9 @@
  *   │ (labelled│                                                       │
  *   │  entries)│                                                       │
  *   │  ────    │                                                       │
- *   │ Ask Fam  │                                                       │
+ *   │ Ask Cube  │                                                       │
  *   └──────────┴───────────────────────────────────────────────────────┘
- * plus three overlays: the ambient standby veil, the Ask Fam drawer, and
+ * plus three overlays: the ambient standby veil, the Ask Cube drawer, and
  * the intercom modal.
  *
  * ── Idle-lock participation is not optional for any of them ─────────────
@@ -29,7 +29,7 @@
  * (KioskIntercomModal does, internally) or is declared to the lock via
  * useKioskLockSuspended (AskCubeChat, below — the local, non-AI
  * KioskAskFamDrawer was retired in favor of the real AI for every role
- * that still has an "Ask Fam"/"Ask Family AI" entry point; see its own
+ * that still has an "Ask Cube"/"Ask Cube" entry point; see its own
  * removal comment further down).
  * Skipping that is the bug KioskActivityContext exists to fix: the busiest
  * moments on the device would register as total inactivity and the lock
@@ -159,7 +159,7 @@ export default function KioskScreen() {
 
   // AskCubeChat renders via a real native Modal, which always sits above
   // regular views in its own native layer regardless of z-index — the lock
-  // screen would otherwise render BEHIND a still-open Ask Fam conversation,
+  // screen would otherwise render BEHIND a still-open Ask Cube conversation,
   // leaving a private AI chat visible under "locked". Same for the new
   // drawer and intercom. Force all three closed the moment kiosk locks,
   // same privacy intent as the lock itself.
@@ -471,7 +471,7 @@ export default function KioskScreen() {
         {/* ── Overlays ──────────────────────────────────────────────── */}
 
         {/* The app's real AI surface, parent-only and unchanged. Distinct
-            from the Ask Fam drawer — see that component's header. */}
+            from the Ask Cube drawer — see that component's header. */}
         {isParent && (
           <AskCubeChat
             visible={askCubeOpen}

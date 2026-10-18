@@ -21,7 +21,11 @@ export function useStickyNotes(active: FamilyMember, members: FamilyMember[]) {
   const [notes, setNotes] = useState<StickyNote[]>([]);
   const load = useCallback(async () => {
     if (!familyId) return;
-    const { data } = await supabase.from('family_sticky_notes').select('*').eq('family_id', familyId).order('created_at', { ascending: false }).limit(8);
+    // Filter to what THIS profile may see on the server, so the 8-note cap counts only notes they can see. (The cap used to be applied
+    // first and the filter after, so notes meant for someone else on the same phone could crowd yours out.)
+    const { data } = await supabase.from('family_sticky_notes').select('*').eq('family_id', familyId)
+      .or(`author_id.eq.${active.id},recipient_ids.is.null,recipient_ids.eq.{},recipient_ids.cs.{${active.id}}`)
+      .order('created_at', { ascending: false }).limit(8);
     if (data) setNotes((data as StickyNote[]).filter(n => n.author_id === active.id || !n.recipient_ids?.length || n.recipient_ids.includes(active.id)));
   }, [familyId, active.id]);
   useEffect(() => {

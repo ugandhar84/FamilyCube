@@ -473,8 +473,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           if (i >= fullText.length) { clearInterval(interval); resolve(); }
         }, 16);
       });
-      scrollRef.current?.scrollToEnd({ animated: true });
+      // Cards, pills and proposals mount only once revealDone flips, which
+      // grows the content after this scroll — keep pinning to the bottom
+      // while that late content lays out so the answer is never cut off.
+      stickToBottom.current = true;
+      setTimeout(() => { stickToBottom.current = false; }, 1200);
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, revealDone: true } : m));
+      for (const delay of [0, 80, 250, 600]) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
     } catch (e: any) {
       setMessages(prev => [...prev, { id: `local-${Date.now()}-err`, role: 'assistant', content: "Sorry, I couldn't reach the server — try again in a moment.", timestamp: new Date().toISOString() }]);
       setSending(false);

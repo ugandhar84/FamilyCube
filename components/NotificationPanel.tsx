@@ -52,7 +52,8 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
     // ride_confirmed_for_kid) — deep-link to the Schedule tab where the
     // event and its driver-status chips live. Schedule is the calendar's
     // own segment inside the merged Tasks tab (features/tasks/TasksScreen.tsx).
-    case 'Schedule': return '/(tabs)/tasks';
+    // Schedule is its own bottom tab now (app/(tabs)/schedule.tsx), no longer a segment of Tasks.
+    case 'Schedule': return '/(tabs)/schedule';
     // Kid requests / help requests are reviewed inline on the parent Hub
     // (ActionNeededSection) — there's no dedicated Requests/Help screen to
     // deep-link into further.
@@ -65,7 +66,8 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
     // Member/profile management (PIN changed, role changed, temp-approver
     // grant/revoke, new member joined) all live on the Profile tab's member
     // list — there's no separate "Roster" route.
-    case 'Roster':   return '/(tabs)/profile';
+    // The old Profile/Apps tab route no longer exists; member and PIN changes live on the Family tab (gps.tsx -> FamilyScreen).
+    case 'Roster':   return '/(tabs)/gps';
     // Grocery/meal/medication alerts previously had NO case here at all —
     // every one of them fell through the type-based fallback below (which
     // also didn't cover most of these types) straight to the generic Hub
@@ -89,7 +91,7 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
   if (type.startsWith('quest_') || type === 'force_assigned' || type === 'chore_ghosted'
       || type === 'deadline_reminder' || type === 'deadline_overdue' || type === 'penalty_applied'
       || type === 'bonus_activated' || type === 'bonus_expiring' || type.startsWith('chore_handoff_')) return '/(tabs)/tasks';
-  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid' || type === 'ride_pool_opened') return '/(tabs)/tasks';
+  if (type.startsWith('ride_assignment_') || type === 'ride_confirmed_for_kid' || type === 'ride_pool_opened') return '/(tabs)/schedule';
   if (type === 'coins_awarded' || type === 'reward_redeemed' || type === 'reward_decision') return '/(tabs)/store';
   if (type === 'chat_message') return '/(tabs)/chat';
   if (type.startsWith('kid_request')) return '/(tabs)';

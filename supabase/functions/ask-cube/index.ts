@@ -4015,6 +4015,12 @@ start the reply fresh from real data for THIS turn.` : ''}
       finalText = kept || `${parts.join(' and ')}.${needs ? ` ${needs} ${needs === 1 ? 'ride still needs' : 'rides still need'} a driver.` : ''}`;
     }
 
+    // The model sometimes asks for the location in its own words instead of calling the places tool. Whenever its reply asks for a
+    // location and none was shared, show the "Share your location once?" card too, so the person can always just tap.
+    if (!oneTimeLocation && !needsLocation && /\b(need|share|know|using|tap)\b[^.?!]{0,40}\b(your|my)\b[^.?!]{0,15}\blocation\b|\bshare location\b|\byour (actual |current )?location\b/i.test(finalText)) {
+      needsLocation = true;
+    }
+
     // Only keep refs for chores the reply text actually names — a turn can
     // call get_quests broadly (e.g. "what's overdue") and pull back rows
     // that never make it into the final sentence; linking those too would

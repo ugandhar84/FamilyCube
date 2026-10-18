@@ -661,6 +661,13 @@ function notifyRideAssignment(
   }).catch(e => console.warn('[eventStore] ride notify failed:', e?.message));
 }
 
+/** Nudge the person holding a still-unconfirmed ride/helper assignment — same push the original offer used. */
+export function remindEventAssignee(ev: { id: string; title: string; time?: string | null }, assigneeId: string, actorId: string) {
+  notifyRideAssignment('ride_assignment_offered', [assigneeId], actorId, {
+    eventTitle: ev.title, eventId: ev.id, eventTime: ev.time, byName: memberById(actorId)?.name,
+  });
+}
+
 function today(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;

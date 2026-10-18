@@ -40,7 +40,7 @@ import AskCubeMessageText from '@/components/AskCubeMessageText';
 import AskCubeScheduleCard, { type AskCubeScheduleEvent } from '@/components/AskCubeScheduleCard';
 import AskCubeChoreCard, { type AskCubeChore } from '@/components/AskCubeChoreCard';
 import { useUIStore } from '@/store/uiStore';
-import { fromRow, type FamilyEvent } from '@/store/eventStore';
+import { fromRow, remindEventAssignee, type FamilyEvent } from '@/store/eventStore';
 import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
@@ -168,6 +168,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   // Right after a chat opens, keep it pinned to the newest message while the content (long replies, cards) finishes laying out.
   const stickToBottom = useRef(false);
   const [detailEv, setDetailEv] = useState<FamilyEvent | null>(null);
+  const [scheduleDone, setScheduleDone] = useState<Record<string, string>>({});
 
   const THINKING_WORDS = ['Thinking', 'Crafting', 'Pursuing', 'Digging in', 'Piecing it together'];
   const [thinkingWord, setThinkingWord] = useState(THINKING_WORDS[0]);
@@ -1123,6 +1124,20 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     <AskCubeScheduleCard
                       events={m.scheduleEvents}
                       canAssign={activeMember?.role === 'parent'}
+                      viewerId={activeMember?.id}
+                      doneKeys={scheduleDone}
+                      onAction={async (ev, action) => {
+                        if (!activeMember) return;
+                        const mark = (t: string) => setScheduleDone(d => ({ ...d, [ev.id]: t }));
+                        if (action === 'take') {
+                          if (await useEventStore.getState().reassignEvent(ev.id, activeMember.id, 'driver', activeMember.id)) mark('You are driving ✓');
+                        } else if (action === 'confirm') {
+                          if (await useEventStore.getState().confirmEventAssignment(ev.id, activeMember.id, ev.driverRole ?? 'driver')) mark('Confirmed ✓');
+                        } else if (ev.driverId) {
+                          remindEventAssignee(ev, ev.driverId, activeMember.id);
+                          mark('Reminded ✓');
+                        }
+                      }}
                       onOpen={async (ev) => {
                         // Open the event's detail page right here, on top of the chat: closing it lands back in the chat with
                         // nothing reloaded. Fetched by id because the event may be on a day the Schedule tab has not loaded.

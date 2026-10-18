@@ -1040,6 +1040,7 @@ async function executeTool(
         id: e.id, title: e.title, category: e.category, date: e.date, time: e.start_time, endTime: e.end_time ?? null,
         people: ids.map(realOf).filter(Boolean),
         isRide, driver, driverStatus: driver ? (status ?? 'pending') : null,
+        driverId: e.driver_name ? (e.driver_id ?? null) : (e.helper_id ?? null), driverRole: e.driver_name ? 'driver' : 'helper',
         needsDriver: isRide && !driver && !e.driver_id,
       };
     });

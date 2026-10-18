@@ -10,6 +10,7 @@ import { RHYTHM } from '@/constants/theme';
 export interface AskCubeScheduleEvent {
   id: string; title: string; category?: string | null; date: string; time?: string | null; endTime?: string | null;
   people: string[]; isRide: boolean; driver: string | null; driverStatus: string | null; needsDriver: boolean;
+  driverId?: string | null; driverRole?: 'driver' | 'helper';
 }
 
 function localToday(): string {
@@ -32,9 +33,14 @@ function parts(t?: string | null): { time: string; ampm: string } | null {
   return { time: `${h % 12 || 12}:${String(m).padStart(2, '0')}`, ampm: h >= 12 ? 'PM' : 'AM' };
 }
 
-export default function AskCubeScheduleCard({ events, canAssign, onOpen, onAssign }: {
+export type ScheduleAction = 'take' | 'confirm' | 'remind';
+
+export default function AskCubeScheduleCard({ events, canAssign, viewerId, doneKeys, onOpen, onAssign, onAction }: {
   events: AskCubeScheduleEvent[];
   canAssign: boolean;
+  viewerId?: string | null;
+  doneKeys?: Record<string, string>;
+  onAction?: (ev: AskCubeScheduleEvent, action: ScheduleAction) => void;
   onOpen: (ev: AskCubeScheduleEvent) => void;
   onAssign: (ev: AskCubeScheduleEvent) => void;
 }) {
@@ -79,12 +85,26 @@ export default function AskCubeScheduleCard({ events, canAssign, onOpen, onAssig
                   <Text numberOfLines={2} style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary, lineHeight: 18 }}>{ev.title}</Text>
                   {!!status && <Text style={{ fontSize: 12, fontWeight: '700', color: status.color, marginTop: 2 }}>{status.text}</Text>}
                 </View>
-                {ev.needsDriver && canAssign ? (
-                  <Pressable onPress={() => onAssign(ev)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Assign a driver"
-                    style={{ minHeight: 36, paddingHorizontal: 12, borderRadius: 11, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textInverse }}>Assign</Text>
-                  </Pressable>
-                ) : null}
+                {(() => {
+                  const btn = (label: string, onPress: () => void, primary = true) => (
+                    <Pressable onPress={onPress} hitSlop={6} accessibilityRole="button" accessibilityLabel={label}
+                      style={{ minHeight: 36, paddingHorizontal: 12, borderRadius: 11, backgroundColor: primary ? colors.primary : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: primary ? colors.textInverse : colors.textPrimary }}>{label}</Text>
+                    </Pressable>
+                  );
+                  const done = doneKeys?.[ev.id];
+                  if (done) return <Text style={{ fontSize: 12, fontWeight: '800', color: colors.success }}>{done}</Text>;
+                  const pending = !!ev.driver && ev.driverStatus != null && ev.driverStatus !== 'confirmed' && ev.driverStatus !== 'rejected';
+                  if (ev.needsDriver && canAssign) return (
+                    <View style={{ gap: 6 }}>
+                      {btn('Take it', () => onAction?.(ev, 'take'))}
+                      {btn('Assign', () => onAssign(ev), false)}
+                    </View>
+                  );
+                  if (pending && ev.driverId && ev.driverId === viewerId) return btn('Confirm', () => onAction?.(ev, 'confirm'));
+                  if (pending && ev.driverId && canAssign) return btn('Remind', () => onAction?.(ev, 'remind'), false);
+                  return null;
+                })()}
               </Pressable>
             );
           })}

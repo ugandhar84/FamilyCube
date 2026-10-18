@@ -338,9 +338,6 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     return [...new Set(prompts)].slice(0, 3);
   }, [upcomingEvents, quests, activeMember?.id, activeMember?.role]);
 
-  const [inputHeight, setInputHeight] = useState(50);
-  useEffect(() => { if (!input) setInputHeight(50); }, [input]);
-
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
@@ -1144,17 +1141,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     placeholderTextColor={colors.textTertiary}
                     editable={voice.state !== 'listening'}
                     multiline
-                    // Grows with the text up to 3 lines, then scrolls inside the box.
-                    scrollEnabled={inputHeight >= INPUT_MAX_H}
-                    onContentSizeChange={(e) => {
-                      // iOS reports the content height WITH the top/bottom padding; Android reports it without.
-                      const h = Math.ceil(e.nativeEvent.contentSize.height) + (Platform.OS === 'android' ? 24 : 0);
-                      setInputHeight(Math.min(INPUT_MAX_H, Math.max(INPUT_MIN_H, h)));
-                    }}
+                    // Native auto-grow: one line at rest, one more per wrapped line up to 3, then it scrolls inside the box.
                     style={{ fontSize: 14, lineHeight: 20,
                       color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
-                      backgroundColor: isDark ? colors.card : '#FFFFFF', height: input ? inputHeight : INPUT_MIN_H, borderRadius: 15, borderWidth: 1,
-                      paddingTop: 12, paddingBottom: 12, textAlignVertical: 'top',
+                      backgroundColor: isDark ? colors.card : '#FFFFFF', minHeight: INPUT_MIN_H, maxHeight: INPUT_MAX_H, borderRadius: 15, borderWidth: 1,
+                      paddingTop: 13, paddingBottom: 13, textAlignVertical: 'top',
                       borderColor: voice.state === 'listening' ? colors.danger + '60' : (isDark ? colors.border : '#daddE8'),
                       paddingHorizontal: 14, paddingRight: input && voice.state !== 'listening' ? 36 : 14 }}
                   />

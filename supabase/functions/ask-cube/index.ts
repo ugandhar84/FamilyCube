@@ -1558,7 +1558,8 @@ async function executeTool(
       let q = supabase.from('calendar_events')
         .select('id, title, category, date, start_time, member_id, member_ids')
         .eq('family_id', familyId).is('deleted_at', null).eq('date', args.allOnDate);
-      if (memberId) q = q.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
+      // Everything this person is on: events about them, ones they attend, and ones they are driving or helping with.
+      if (memberId) q = q.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"],driver_id.eq.${memberId},helper_id.eq.${memberId}`);
       const { data: dayRows, error: dayErr } = await q.order('start_time').limit(12);
       if (dayErr) return { error: dayErr.message };
       const scoped = scopeEventsToViewer(dayRows ?? [], viewerRole, viewerId, viewerName);

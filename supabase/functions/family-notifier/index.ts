@@ -187,6 +187,7 @@ type NotifType =
   // parent-to-parent offer/accept/decline on a driver or helper assignment,
   // plus a final one-time confirmation to the requesting kid.
   | 'ride_assignment_offered'
+  | 'ride_assignment_reminder'
   | 'ride_assignment_accepted'
   | 'ride_assignment_declined'
   // Live QA finding (docs/qa_reassign_takeover_audit.html, Medium): a
@@ -363,7 +364,7 @@ const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
   schedule_conflict: 'family',
   pool_unclaimed_urgent: 'chores', approval_cutoff_nudge: 'chores', approval_cutoff_escalated: 'chores',
   chore_handoff_offered: 'chores', chore_handoff_accepted: 'chores', chore_handoff_declined: 'chores',
-  ride_assignment_offered: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
+  ride_assignment_offered: 'family', ride_assignment_reminder: 'family', ride_assignment_accepted: 'family', ride_assignment_declined: 'family',
   ride_assignment_overridden: 'family',
   ride_confirmed_for_kid: 'family', ride_pool_opened: 'family',
   ride_driver_needed: 'family',
@@ -898,6 +899,15 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       return {
         title: '🚗 Pickup/Drop-off Assigned',
         body: `${p.byName ?? 'A parent'} assigned you for pickup/drop-off — "${p.eventTitle}"${t ? ` at ${t}` : ''}.`,
+        sound: 'default',
+        data: { screen: 'Schedule', eventId: p.eventId },
+      };
+    }
+    case 'ride_assignment_reminder': {
+      const t = to12Hour(p.eventTime as string);
+      return {
+        title: '⏰ Please confirm your pickup',
+        body: `${p.byName ?? 'A parent'} is waiting for you to confirm "${p.eventTitle}"${t ? ` at ${t}` : ''}.`,
         sound: 'default',
         data: { screen: 'Schedule', eventId: p.eventId },
       };

@@ -1134,8 +1134,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                         } else if (action === 'confirm') {
                           if (await useEventStore.getState().confirmEventAssignment(ev.id, activeMember.id, ev.driverRole ?? 'driver')) mark('Confirmed ✓');
                         } else if (ev.driverId) {
-                          remindEventAssignee(ev, ev.driverId, activeMember.id);
-                          mark('Reminded ✓');
+                          mark(remindEventAssignee(ev, ev.driverId, activeMember.id) ? 'Reminded ✓' : 'Just reminded');
                         }
                       }}
                       onOpen={async (ev) => {

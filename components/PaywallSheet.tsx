@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
-  TextInput, Modal, KeyboardAvoidingView, Platform,
-} from 'react-native';
+  TextInput, Modal, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import FullPageOverlay from '@/components/FullPageOverlay';
@@ -399,6 +399,15 @@ export default function PaywallSheet({
         <Text style={[s.legal, { color: colors.textSecondary }]}>
           Payment will be charged to your Apple ID at confirmation. Subscription renews automatically unless cancelled at least 24 hours before the current period ends. Manage or cancel in Settings › Subscriptions.
         </Text>
+        {/* App Store guideline 3.1.2: working links to the Terms of Use (EULA) and the Privacy Policy on the subscription screen. */}
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 18, paddingBottom: 8 }}>
+          <TouchableOpacity onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="link">
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary, textDecorationLine: 'underline' }}>Terms of Use</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { onClose(); router.push('/terms'); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="link">
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary, textDecorationLine: 'underline' }}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
 

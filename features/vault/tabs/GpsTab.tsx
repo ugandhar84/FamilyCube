@@ -261,8 +261,8 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
           </View>
           {movementMeta && (
             moveKind === 'walking' || moveKind === 'running' ? (
-              <View style={{ position: 'absolute', right: -16, bottom: -6, borderRadius: 14, borderWidth: 1.5, borderColor: infoColor, overflow: 'hidden' }}>
-                <WalkingScene size={9} pose={moveFrame} />
+              <View style={{ position: 'absolute', right: -8, bottom: -6, borderRadius: 14, borderWidth: 1.5, borderColor: '#FFFFFF', overflow: 'hidden' }}>
+                <WalkingScene size={11} pose={moveFrame} />
               </View>
             ) : (
               <View style={{ position: 'absolute', right: -9, bottom: -5, minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 3, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: infoColor, alignItems: 'center', justifyContent: 'center' }}>
@@ -1296,12 +1296,12 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
                   siblings={members.map(mb => mb.name)} ringColor={rc} size={40} />
                 {/* Life360-style: what they are doing, pinned to the bottom-right of their avatar. */}
                 {isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' && (
-                  <View style={{ position: 'absolute', left: 28, bottom: -9, borderRadius: 13, overflow: 'hidden', borderWidth: 1.5, borderColor: colors.info, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ position: 'absolute', left: 26, bottom: -8, borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
                     <MovementBadge kind={kindOf(loc.movement, loc.speed_mph ?? 0)} size={12} color={colors.info} />
                   </View>
                 )}
               </View>
-              <View style={{ flex: 1, marginLeft: isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' ? 30 : 12 }}>
+              <View style={{ flex: 1, marginLeft: isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' ? 22 : 12 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>

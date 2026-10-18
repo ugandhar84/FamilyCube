@@ -48,7 +48,8 @@ function Sneaker({ size }: { size: number }) {
 export function WalkingScene({ size = 12, pose, step, ground, dust }: {
   size?: number; pose?: number; step?: Animated.Value; ground?: Animated.Value; dust?: Animated.Value[];
 }) {
-  const w = Math.round(size * 3.1), h = Math.round(size * 1.9);
+  // A circle, so it sits cleanly on the corner of an avatar.
+  const w = Math.round(size * 2.2), h = w;
   const lift = step ? step.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -size * 0.2, 0] }) : null;
   const tilt = step ? step.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['5deg', '-12deg', '5deg'] }) : null;
   const ahead = step ? step.interpolate({ inputRange: [0, 1], outputRange: [-size * 0.1, size * 0.1] }) : null;
@@ -57,9 +58,9 @@ export function WalkingScene({ size = 12, pose, step, ground, dust }: {
   const dashW = size * 0.45, dashGap = size * 0.45;
 
   return (
-    <View style={{ width: w, height: h, borderRadius: h / 2, overflow: 'hidden', backgroundColor: SAND, justifyContent: 'flex-end' }}>
+    <View style={{ width: w, height: h, borderRadius: h / 2, overflow: 'hidden', backgroundColor: SAND, justifyContent: 'flex-end', alignItems: 'center' }}>
       {/* the dirt path */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: Math.max(4, size * 0.5), backgroundColor: PATH_BROWN }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: Math.max(5, size * 0.62), backgroundColor: PATH_BROWN }}>
         {slide ? (
           <Animated.View style={{ flexDirection: 'row', gap: dashGap, height: '100%', alignItems: 'center', transform: [{ translateX: slide }] }}>
             {Array.from({ length: Math.ceil(w / (dashW + dashGap)) + 3 }).map((_, i) => (
@@ -77,7 +78,7 @@ export function WalkingScene({ size = 12, pose, step, ground, dust }: {
       {/* dust puffs drifting back from the heel */}
       {dust?.map((d, i) => (
         <Animated.View key={i} pointerEvents="none" style={{
-          position: 'absolute', left: w * 0.34, bottom: Math.max(4, size * 0.5) - 1, width: size * 0.34, height: size * 0.34, borderRadius: size * 0.17, backgroundColor: DUST,
+          position: 'absolute', left: w * 0.3, bottom: Math.max(5, size * 0.62) - 1, width: size * 0.34, height: size * 0.34, borderRadius: size * 0.17, backgroundColor: DUST,
           opacity: d.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.9, 0] }),
           transform: [{ translateX: d.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 1.1] }) },
             { translateY: d.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 0.35] }) },
@@ -85,12 +86,12 @@ export function WalkingScene({ size = 12, pose, step, ground, dust }: {
         }} />
       ))}
       {staticT && pose != null && [0, 1, 2].map(i => (
-        <View key={i} style={{ position: 'absolute', left: w * (0.3 - i * 0.1), bottom: Math.max(4, size * 0.5) + i, width: size * 0.3, height: size * 0.3, borderRadius: size * 0.15, backgroundColor: DUST, opacity: 0.8 - i * 0.2 }} />
+        <View key={i} style={{ position: 'absolute', left: w * (0.3 - i * 0.07), bottom: Math.max(5, size * 0.62) + i, width: size * 0.3, height: size * 0.3, borderRadius: size * 0.15, backgroundColor: DUST, opacity: 0.8 - i * 0.2 }} />
       ))}
       {/* the shoe */}
-      <Animated.View style={{ alignItems: 'center', marginBottom: Math.max(3, size * 0.42),
+      <Animated.View style={{ alignItems: 'center', marginBottom: Math.max(4, size * 0.5),
         transform: step ? [{ translateX: ahead! }, { translateY: lift! }, { rotate: tilt! }] : [{ translateY: staticT?.y ?? 0 }, { rotate: `${staticT?.rot ?? 0}deg` }] }}>
-        <Sneaker size={size} />
+        <Sneaker size={size * 0.8} />
       </Animated.View>
     </View>
   );

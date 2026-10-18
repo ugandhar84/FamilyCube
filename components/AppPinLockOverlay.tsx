@@ -14,12 +14,8 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useTheme } from '@/lib/ThemeContext';
 import { wasReminderCallJustAnswered } from '@/lib/callAlert';
 import PinEntryModal from './PinEntryModal';
-import { wasEnteredByParent } from '@/lib/pinPolicy';
-
-// Same 5-minute threshold as the Face ID re-lock in app/_layout.tsx — only
-// re-challenge after genuine backgrounding, not a brief bounce (a share
-// sheet, a permission prompt, a quick app-switcher peek).
-const LOCK_AFTER_MS = 900_000; // 15 minutes away
+import { wasEnteredByParent, hydrateEnteredByParent } from '@/lib/pinPolicy';
+import { awayMs, stampActive, shouldLock } from '@/lib/appLock';
 
 export default function AppPinLockOverlay() {
   const { isDark } = useTheme();
@@ -28,64 +24,54 @@ export default function AppPinLockOverlay() {
   const activeMember = members.find(m => m.id === activeMemberId) ?? null;
 
   const [pinChallengeVisible, setPinChallengeVisible] = useState(false);
-  const backgroundedAt = useRef<number | null>(null);
-  // Ref mirror of activeMember so the AppState listener (created once) always
-  // reads the CURRENT member, not whichever was active when the effect ran.
+  // Ref mirror of activeMember so the AppState listener (created once) always reads the CURRENT member.
   const activeMemberRef = useRef(activeMember);
   useEffect(() => { activeMemberRef.current = activeMember; }, [activeMember]);
+  const challengeShownRef = useRef(false);
+  useEffect(() => { challengeShownRef.current = pinChallengeVisible; }, [pinChallengeVisible]);
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'background') {
-        if (backgroundedAt.current == null) backgroundedAt.current = Date.now();
-        return;
-      }
-      if (next !== 'active') return; // ignore 'inactive' (e.g. a share sheet)
-      const awayMs = backgroundedAt.current != null ? Date.now() - backgroundedAt.current : 0;
-      backgroundedAt.current = null;
-      if (awayMs < LOCK_AFTER_MS) return;
-      // Same skip the sibling biometric re-lock check in app/_layout.tsx
-      // applies — answering a call reminder backgrounds the app for the
-      // call's duration (easily past LOCK_AFTER_MS), and forcing a PIN
-      // re-entry the instant that call is answered is an unwanted
-      // interruption for a resume the user didn't actually initiate.
-      if (wasReminderCallJustAnswered()) return;
-      // Challenge only if the CURRENT active member actually has a PIN set —
-      // re-read via the ref at fire time, not a stale closure value.
-      if (activeMemberRef.current?.pinEnabled && activeMemberRef.current?.pin && !wasEnteredByParent(activeMemberRef.current.id)) {
-        setPinChallengeVisible(true);
-      }
+  // The single decision (see lib/appLock.ts): ask for the PIN only when the app is in the foreground AND has been unused for a
+  // while. Called when a member becomes available and every time the app becomes active; it never runs for a background restart.
+  const evaluate = useRef(async () => {
+    if (challengeShownRef.current) return;
+    const m = activeMemberRef.current;
+    if (!m) return;
+    await hydrateEnteredByParent();
+    // If (tabs)/_layout.tsx is about to swap the active member back to the real owner, wait for that first.
+    const { hasPendingOwnerReset } = await import('@/lib/biometrics');
+    if (await hasPendingOwnerReset()) return;
+    const away = await awayMs();
+    const lock = shouldLock(away, {
+      appIsActive: AppState.currentState === 'active',
+      callJustAnswered: wasReminderCallJustAnswered(),
+      hasPin: !!(m.pinEnabled && m.pin),
+      enteredByParent: wasEnteredByParent(m.id),
     });
-    return () => sub.remove();
-  }, []);
+    if (lock) setPinChallengeVisible(true);
+    else if (AppState.currentState === 'active') stampActive();
+  }).current;
 
-  // Cold boot never fires AppState's background→active transition — there
-  // is no prior backgrounded timestamp to compare against on a freshly
-  // launched process, so the listener above alone would never challenge a
-  // PIN-enabled profile resumed via a full app relaunch (only via
-  // background/foreground). Challenge once, the first time a PIN-enabled
-  // member actually becomes available after mount/app-open — same
-  // "resuming a PIN-protected profile always needs the PIN" principle,
-  // just for the launch path the AppState listener structurally can't see.
-  const challengedOnMount = useRef(false);
   useEffect(() => {
-    if (challengedOnMount.current) return;
-    if (!activeMember) return; // members not loaded yet — wait for the real value
-    (async () => {
-      // If (tabs)/_layout.tsx is about to swap activeMemberId back to the
-      // real owner (a plain cold boot with no biometric lock, or a Face ID
-      // restore), wait for that to actually happen first — otherwise this
-      // can momentarily challenge for whichever member was last-persisted
-      // (possibly a kid's PIN) a split second before the reset fires,
-      // which is confusing even though it's not actually a security hole.
-      const { hasPendingOwnerReset } = await import('@/lib/biometrics');
-      if (await hasPendingOwnerReset()) return; // re-runs via the activeMember effect once the reset lands
-      challengedOnMount.current = true;
-      if (activeMember.pinEnabled && activeMember.pin && !wasEnteredByParent(activeMember.id)) {
-        setPinChallengeVisible(true);
-      }
-    })();
-  }, [activeMember]);
+    let tick: ReturnType<typeof setInterval> | null = null;
+    const startTick = () => { if (!tick) tick = setInterval(() => { if (AppState.currentState === 'active' && !challengeShownRef.current) stampActive(); }, 30_000); };
+    const stopTick = () => { if (tick) { clearInterval(tick); tick = null; } };
+    if (AppState.currentState === 'active') startTick();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') { startTick(); evaluate().catch(() => {}); return; }
+      // Leaving the foreground (inactive or background): remember when. A brief interruption then returns within seconds.
+      stopTick();
+      if (!challengeShownRef.current) stampActive();
+    });
+    return () => { sub.remove(); stopTick(); };
+  }, [evaluate]);
+
+  // First evaluation once a member is known (cold start in the foreground). A background restart is skipped inside evaluate().
+  const evaluatedOnMount = useRef(false);
+  useEffect(() => {
+    if (evaluatedOnMount.current || !activeMember) return;
+    evaluatedOnMount.current = true;
+    evaluate().catch(() => {});
+  }, [activeMember, evaluate]);
 
   // If the active member changes to one without a PIN while the challenge
   // is up (shouldn't normally happen, but guards against a stale overlay),
@@ -109,7 +95,7 @@ export default function AppPinLockOverlay() {
         resume
         visible={pinChallengeVisible}
         member={activeMember}
-        onSuccess={() => setPinChallengeVisible(false)}
+        onSuccess={() => { setPinChallengeVisible(false); stampActive(); }}
         // No real "cancel" destination exists here — this isn't a profile
         // switch the user can back out of, it's a resume challenge for the
         // profile they're already on. Keep the blur+challenge up rather

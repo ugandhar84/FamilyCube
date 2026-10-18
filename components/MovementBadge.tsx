@@ -23,23 +23,30 @@ const PATH_BROWN = '#B07A4C';
 const PATH_DARK = '#8E5E37';
 const DUST = 'rgba(222,196,160,0.95)';
 
+// A blue running shoe, side view facing right: blue upper in two shades, grey collar, white laces and a thick white sole.
 function Sneaker({ size }: { size: number }) {
-  const w = size * 1.5, h = size * 0.95;
+  const w = size * 1.7, h = size * 1.06;
   return (
-    <Svg width={w} height={h} viewBox="0 0 32 20">
+    <Svg width={w} height={h} viewBox="0 0 64 40">
       {/* sole */}
-      <Path d="M2 14.2 Q2 17.6 5.4 17.6 L27.6 17.6 Q31 17.6 30.2 14.6 L29.4 12.8 L2 12.8 Z" fill="#FFFFFF" stroke="#CFC8BE" strokeWidth={0.9} />
-      <Path d="M2.6 15.4 L29.8 15.4" stroke="#E5DFD6" strokeWidth={0.9} />
-      {/* upper */}
-      <Path d="M3 12.8 L3 7.6 Q3 5.2 5.4 5.2 L10 5.2 Q12.2 8.6 16.4 9.8 L24.6 10.8 Q29.4 11.4 29.4 12.8 Z" fill="#FFFFFF" stroke="#D6D0C6" strokeWidth={0.9} />
-      {/* toe cap and heel tab */}
-      <Path d="M22.4 10.6 Q27.6 11 29.4 12.8 L22.4 12.8 Z" fill="#F2EDE5" />
-      <Path d="M3 7.6 L3 12.8 L7 12.8 L7 6.2 Z" fill="#F2EDE5" />
-      {/* a soft tan accent stripe and laces */}
-      <Path d="M8.4 12.8 Q13 11.2 19 12.8" stroke="#C9A27A" strokeWidth={1.2} fill="none" strokeLinecap="round" />
-      <Line x1="11.6" y1="7.6" x2="13.4" y2="9.2" stroke="#B9B2A6" strokeWidth={0.9} strokeLinecap="round" />
-      <Line x1="14.4" y1="8.6" x2="16.2" y2="10" stroke="#B9B2A6" strokeWidth={0.9} strokeLinecap="round" />
-      <Line x1="17.4" y1="9.4" x2="19.2" y2="10.6" stroke="#B9B2A6" strokeWidth={0.9} strokeLinecap="round" />
+      <Path d="M5 30 L58 30 Q61.5 31 60.5 34.2 Q58.5 37.5 54 37.5 L10 37.5 Q5 37.5 5 33 Z" fill="#EEF2F5" stroke="#C3CED8" strokeWidth={1} />
+      <Path d="M7 35.4 L56 35.4" stroke="#D3DCE4" strokeWidth={1} />
+      {/* upper: deep blue base, lighter blue toe, darker heel */}
+      <Path d="M6 30 L6 16 Q6 12 10 12 L20 11 Q24 20 34 23 L52 25 Q60 26 60.5 30 Z" fill="#1F7FD0" />
+      <Path d="M30 24 L52 25 Q60 26 60.5 30 L35 30 Q31 28 30 24 Z" fill="#2AA4F0" />
+      <Path d="M6 30 L6 17 Q6 13 10 13 L13.5 13 L13.5 30 Z" fill="#1666B0" />
+      <Path d="M15 28.4 Q26 27.4 34 24" stroke="#1666B0" strokeWidth={2} fill="none" strokeLinecap="round" />
+      {/* collar and tongue */}
+      <Path d="M10 12 L20 11 L22.4 15.4 Q15.5 15.6 11 15.2 Z" fill="#5C7284" />
+      <Path d="M10 12 Q15 9.4 20 11" stroke="#B5C0CA" strokeWidth={1.7} fill="none" strokeLinecap="round" />
+      <Path d="M19.4 10.4 L25.6 8.2 L28 13 L22.6 15.4 Z" fill="#EEF2F5" stroke="#B5C0CA" strokeWidth={1} />
+      {/* white laces */}
+      <Line x1="23" y1="15" x2="30.4" y2="18" stroke="#AEBAC5" strokeWidth={3} strokeLinecap="round" />
+      <Line x1="27" y1="12.6" x2="33" y2="19.6" stroke="#AEBAC5" strokeWidth={3} strokeLinecap="round" />
+      <Line x1="31" y1="17" x2="37" y2="21.4" stroke="#AEBAC5" strokeWidth={3} strokeLinecap="round" />
+      <Line x1="23" y1="14.6" x2="30.4" y2="17.6" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" />
+      <Line x1="27" y1="12.2" x2="33" y2="19.2" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" />
+      <Line x1="31" y1="16.6" x2="37" y2="21" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -91,7 +98,7 @@ export function WalkingScene({ size = 12, pose, step, ground, dust }: {
       {/* the shoe */}
       <Animated.View style={{ alignItems: 'center', marginBottom: Math.max(4, size * 0.5),
         transform: step ? [{ translateX: ahead! }, { translateY: lift! }, { rotate: tilt! }] : [{ translateY: staticT?.y ?? 0 }, { rotate: `${staticT?.rot ?? 0}deg` }] }}>
-        <Sneaker size={size * 0.8} />
+        <Sneaker size={size * 0.9} />
       </Animated.View>
     </View>
   );

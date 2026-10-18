@@ -39,6 +39,8 @@ import AskCubeProposalCard from '@/components/AskCubeProposalCard';
 import AskCubeMessageText from '@/components/AskCubeMessageText';
 import AskCubeScheduleCard, { type AskCubeScheduleEvent } from '@/components/AskCubeScheduleCard';
 import { useUIStore } from '@/store/uiStore';
+import { fromRow, type FamilyEvent } from '@/store/eventStore';
+import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
 import type { FamilyMember } from '@/store/familyStore';
@@ -163,6 +165,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const scrollRef = useRef<ScrollView>(null);
   // Right after a chat opens, keep it pinned to the newest message while the content (long replies, cards) finishes laying out.
   const stickToBottom = useRef(false);
+  const [detailEv, setDetailEv] = useState<FamilyEvent | null>(null);
 
   const THINKING_WORDS = ['Thinking', 'Crafting', 'Pursuing', 'Digging in', 'Piecing it together'];
   const [thinkingWord, setThinkingWord] = useState(THINKING_WORDS[0]);
@@ -257,6 +260,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     (async () => {
       const latest = await askCube.getLatestConversation(activeMember.id);
       if (latest && latest !== conversationId) await loadConversation(latest);
+      // Reopening the same thread keeps its scroll position from last time; always land on the newest message instead.
+      stickToBottom.current = true;
+      setTimeout(() => { stickToBottom.current = false; }, 1200);
+      for (const delay of [0, 60, 200, 500]) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, activeMember.id]);
@@ -1091,11 +1098,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     <AskCubeScheduleCard
                       events={m.scheduleEvents}
                       canAssign={activeMember?.role === 'parent'}
-                      onOpen={(ev) => {
-                        useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
-                        onClose();
-                        useUIStore.getState().setRequestedEventDetailId(ev.id);
-                        navigateFromNotification('/(tabs)/schedule', variant === 'kiosk');
+                      onOpen={async (ev) => {
+                        // Open the event's detail page right here, on top of the chat: closing it lands back in the chat with
+                        // nothing reloaded. Fetched by id because the event may be on a day the Schedule tab has not loaded.
+                        const { data } = await supabase.from('calendar_events').select('*').eq('id', ev.id).maybeSingle();
+                        if (data) setDetailEv(fromRow(data));
                       }}
                       onAssign={(ev) => send(`Who can drive "${ev.title}" on ${ev.date}${ev.time ? ` at ${ev.time}` : ''}?`)}
                     />
@@ -1219,6 +1226,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
               </Text>
             </View>
       </View>
+      {detailEv && (
+        <EventDetailScreen
+          ev={detailEv}
+          onClose={() => setDetailEv(null)}
+          onDelete={async (id) => { await useEventStore.getState().deleteEvent(id); setDetailEv(null); }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 

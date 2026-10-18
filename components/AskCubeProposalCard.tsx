@@ -48,6 +48,7 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'pink' },
   kid_request_action: { label: 'Request draft', icon: HandHeart, accent: 'pink' },
   reassign_rides: { label: 'Plan', icon: Clock, accent: 'pink' },
+  remind:       { label: 'Reminder draft',   icon: Clock,         accent: 'pink' },
 };
 
 // Plain-English label per action kind — shown as the card's main line
@@ -457,6 +458,7 @@ export default function AskCubeProposalCard({
     : proposal.kind === 'redemption' ? 'Redeem'
     : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
     : proposal.kind === 'cancel_event' ? 'Cancel event'
+    : proposal.kind === 'remind' ? 'Send reminder'
     : proposal.kind === 'reassign_rides' ? `Move ${(d.items ?? []).length} ${(d.items ?? []).length === 1 ? 'ride' : 'rides'}`
     : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
     : proposal.kind === 'quest' ? 'Add chore'
@@ -466,6 +468,7 @@ export default function AskCubeProposalCard({
   // What the button becomes once it has been confirmed.
   const doneLabel = proposal.kind === 'cancel_event' ? 'Cancelled'
     : proposal.kind === 'reassign_rides' ? 'Moved'
+    : proposal.kind === 'remind' ? 'Sent'
     : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Updated'
     : proposal.kind === 'redemption' ? 'Redeemed'
     : proposal.kind === 'chore_action' || proposal.kind === 'kid_request_action' ? 'Done'
@@ -724,6 +727,18 @@ export default function AskCubeProposalCard({
         {!!d.reason && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.reason}"</Text>
         )}
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'remind') {
+    const toName = memberName(members, d.memberId) ?? d.memberAlias;
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{toName ? `Remind ${toName}` : 'Send a reminder'}</Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.text}"</Text>
         {Actions}
       </View>
     );

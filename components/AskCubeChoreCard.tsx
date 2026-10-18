@@ -20,9 +20,9 @@ function niceDate(iso: string): string {
 
 export type ChoreAction = 'approve' | 'remind';
 
-export default function AskCubeChoreCard({ chores, canManage, doneKeys, onOpen, onAction }: {
+export default function AskCubeChoreCard({ chores, canManage, doneKeys, onOpen, onAction, onApproveAll }: {
   chores: AskCubeChore[]; canManage?: boolean; doneKeys?: Record<string, string>;
-  onOpen: (c: AskCubeChore) => void; onAction?: (c: AskCubeChore, a: ChoreAction) => void;
+  onOpen: (c: AskCubeChore) => void; onAction?: (c: AskCubeChore, a: ChoreAction) => void; onApproveAll?: (list: AskCubeChore[]) => void;
 }) {
   const { colors } = useTheme();
   const today = localToday();
@@ -31,6 +31,17 @@ export default function AskCubeChoreCard({ chores, canManage, doneKeys, onOpen, 
 
   return (
     <View style={{ width: '94%', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, overflow: 'hidden' }}>
+      {canManage && onApproveAll && (() => {
+        const waiting = sorted.filter(c => c.status === 'pending_approval' && !doneKeys?.[c.id]);
+        if (waiting.length < 2) return null;
+        return (
+          <Pressable onPress={() => onApproveAll(waiting)} accessibilityRole="button" accessibilityLabel={`Approve all ${waiting.length}`}
+            style={{ minHeight: 40, paddingHorizontal: RHYTHM.card - 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primaryLight }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{waiting.length} waiting for review</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>Approve all</Text>
+          </Pressable>
+        );
+      })()}
       {sorted.map((c, i) => {
         const overdue = !!c.dueDate && c.dueDate < today;
         const chip = overdue

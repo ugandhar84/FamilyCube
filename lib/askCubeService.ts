@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export interface AskCubeProposal {
-  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'kid_request_action' | 'reassign_rides';
+  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'kid_request_action' | 'reassign_rides' | 'remind';
   data: Record<string, any>;
 }
 
@@ -20,6 +20,7 @@ export interface AskCubeResponse {
   cards?: (
     | { kind: 'schedule'; events: import('@/components/AskCubeScheduleCard').AskCubeScheduleEvent[] }
     | { kind: 'chores'; chores: import('@/components/AskCubeChoreCard').AskCubeChore[] }
+    | { kind: 'requests'; requests: import('@/components/AskCubeRequestCard').AskCubeRequest[] }
     | ({ kind: 'snapshot' } & import('@/components/AskCubeSnapshotCard').AskCubeSnapshot)
   )[];
 }

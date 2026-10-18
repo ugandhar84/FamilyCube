@@ -6,7 +6,7 @@ export type Person = { id: string; name: string };
 
 export type Intent =
   | 'greeting' | 'identity' | 'cancel_all_day' | 'cancel_one' | 'reschedule' | 'assign_driver' | 'approve'
-  | 'create_event' | 'create_chore' | 'read_schedule' | 'read_chores' | 'snapshot' | 'grocery' | 'meal' | 'health' | 'location' | null;
+  | 'create_event' | 'create_chore' | 'read_schedule' | 'read_chores' | 'snapshot' | 'conflicts' | 'resolve_conflicts' | 'read_requests' | 'grocery' | 'meal' | 'health' | 'location' | null;
 
 export interface Resolution {
   /** People named in the message (real first or full names, any case, with or without 's). */
@@ -93,6 +93,9 @@ export function detectIntent(text: string): Intent {
   if (/\b(medic\w*|vaccin\w*|doses?|health|pharmac\w*|prescription\w*)\b/.test(t) && /\b(what|when|list|show|any|due|missed|miss|did|does|has|have)\b/.test(t)) return 'health';
   if (/\b(grocery|groceries|shopping list|buy|add .* to (the )?list)\b/.test(t)) return 'grocery';
   if (/\b(dinner|lunch|breakfast|meal|recipe|cook)\b/.test(t)) return 'meal';
+  if (/\b(resolve|fix|sort out|handle)\b/.test(t) && /\b(conflict\w*|clash\w*|them|double.?book\w*)\b/.test(t)) return 'resolve_conflicts';
+  if (/\b(conflict\w*|double.?book\w*|clash\w*|overlap\w*)\b/.test(t) && !/\b(resolve|fix)\b/.test(t)) return 'conflicts';
+  if (/\b(requests?|redemptions?|redeem(ed)?)\b/.test(t) && /\b(what|which|any|show|list|pending|waiting|new|open)\b/.test(t) && !/\b(approve|decline|reject)\b/.test(t)) return 'read_requests';
   if (/\b(snapshot|overview|recap|summary|catch me up|how are we doing|family (history|status|update)|status of (the )?(family|everyone)|any(thing)? (review|waiting|pending)|review pending|what('s| is) pending)\b/.test(t)) return 'snapshot';
   if (/\b(chore|chores|task|tasks|quest|overdue|to-?do)\b/.test(t) && /\b(what|which|any|list|show|who|how many|overdue|late|open|left)\b/.test(t)) return 'read_chores';
   // A question word first means a read, even when the noun "schedule" appears ("what's on Cherry's schedule").
@@ -139,6 +142,9 @@ const FOCUS: Partial<Record<NonNullable<Intent>, string>> = {
   create_event: 'This is a new calendar item. Use the resolved date and time exactly. If the time or person is missing, ask ONE short question; do not guess.',
   create_chore: 'This is a new chore. Use the resolved due date and person exactly. If the person or due date is missing, ask ONE short question; do not guess.',
   read_schedule: 'This is a schedule question. Call get_schedule for the resolved person and dates. The app draws the events as cards under your message, so do NOT list them. Write ONE or TWO short sentences: the count, then the one thing that needs attention (a ride with nobody driving, a clash, something overdue). If nothing is on, say so plainly and mention the next thing coming up if you know it. Never write section headings such as "Calendar:" or "Chores:". If the question also covers chores, call get_quests too: the app draws both the chores and the schedule as separate cards, so do not list either. Say nothing about chores when there are none.',
+  read_requests: 'This asks what kid requests or reward requests are waiting. Parents only. Call get_kid_requests (pending). The app draws the requests as a card with Approve and Decline on each row, so do NOT list them. Write ONE short sentence with the count (kid requests and reward requests) and say nothing is approved until they tap. If none, say so plainly.',
+  resolve_conflicts: 'The parent wants the scheduling conflicts fixed. Call get_schedule_conflicts for today through the end of this week. For the first clash, find who is free at that time with get_free_time, then call propose_update (targetType event) to hand the pick-up or ride to the free person with assignToMemberName. Offer ONE fix at a time, in one short sentence naming who and why. If nobody is free, say so and offer to move the time instead. Never claim you cannot change events from chat.',
+  conflicts: 'This asks about scheduling conflicts. Call get_schedule_conflicts for the resolved dates (default: today through the end of this week), once. The app draws the clashing events as a card, so do not list them. Say who is double-booked and which two events clash, in one or two sentences, then offer to hand one of them to someone free. If there are none, say so in one short sentence. For a follow-up like "how are those conflicting", explain ONLY the clashes the tool returned (the person and the two events with their times); never invent a clash the tool did not return, never apologise or say "you are right to question that".',
   snapshot: 'This asks where the family stands overall (recap, snapshot, pending, review, history today). Call get_family_snapshot ONCE and nothing else. The app draws a snapshot card with the counts, so write only TWO or THREE short sentences: what got done today, what is waiting on the parent (review, requests), what is up next. Do not list items. Never answer with only one of these areas.',
   read_chores: 'This is a chores question. Call get_quests. The app draws the open chores as a card under your message, so do NOT list them. Write ONE or TWO short sentences: the count and what is overdue. If there are none, say so plainly. Only call a chore overdue when its overdue field is true; a finished or approved chore is done, never overdue or pending.',
   grocery: 'This is about the grocery list. Use the grocery tools only; propose additions as drafts.',

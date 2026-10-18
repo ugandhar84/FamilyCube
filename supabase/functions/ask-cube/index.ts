@@ -245,7 +245,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'get_schedule_conflicts',
-      description: 'Find scheduling conflicts (double-bookings) in a date range — the same person or the same helper/driver assigned to two events less than 30 minutes apart. Use for "any conflicts today/this week", "is anyone double-booked".',
+      description: 'Find scheduling conflicts (double-bookings) in a date range — anyone (the person an event is about, an attendee, or its driver/helper) needed at two events that overlap or start within 30 minutes of each other. Use for "any conflicts today/this week", "is anyone double-booked".',
       parameters: {
         type: 'object',
         properties: {
@@ -578,6 +578,21 @@ const TOOLS = [
           allOnDate:    { type: 'string', description: 'YYYY-MM-DD. Use this INSTEAD of targetSearch when the user wants to cancel ALL of someone\'s events on one day ("cancel all of Cherry\'s events tomorrow", "clear my day"): resolve the day yourself and pass it here with memberName. One draft card per event comes back for the user to confirm.' },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_reminder',
+      description: 'Propose sending a push reminder to ONE family member (parent only), e.g. "remind Cherry to finish her homework", "nudge Praveena to confirm the pickup", "remind Ben about the dentist". Does NOT send anything itself — returns a card with a Send button. Write the message in the parent\'s voice as one short friendly sentence, in second person to the recipient, without any names or aliases of other people.',
+      parameters: {
+        type: 'object',
+        properties: {
+          memberName: { type: 'string', description: 'Who to remind' },
+          message:    { type: 'string', description: 'The reminder text, one short sentence addressed to them ("Please finish your homework before dinner.")' },
+        },
+        required: ['memberName', 'message'],
       },
     },
   },
@@ -1021,6 +1036,22 @@ function scopeEventsToViewer(events: any[], viewerRole: string, viewerId: string
   });
 }
 
+/** Pending kid requests and reward redemptions as card rows (real first names), for a parent to approve or decline in place. */
+async function pendingRequestRows(supabase: any, familyId: string, members: { id: string; name: string }[], onlyMemberId?: string | null) {
+  const first = (id: string | null) => id ? (members.find(m => m.id === id)?.name.split(' ')[0] ?? null) : null;
+  let rq = supabase.from('kid_requests').select('id, type, detail, from_member_id, requested_at, scheduled_date, scheduled_time')
+    .eq('family_id', familyId).eq('status', 'pending').order('requested_at', { ascending: false }).limit(12);
+  if (onlyMemberId) rq = rq.eq('from_member_id', onlyMemberId);
+  let rd = supabase.from('reward_redemptions').select('id, reward_title, coin_cost, member_id, requested_at')
+    .eq('family_id', familyId).eq('status', 'pending').order('requested_at', { ascending: false }).limit(12);
+  if (onlyMemberId) rd = rd.eq('member_id', onlyMemberId);
+  const [{ data: reqs }, { data: reds }] = await Promise.all([rq, rd]);
+  return [
+    ...(reqs ?? []).map((r: any) => ({ id: r.id, kind: 'kid_request', title: r.detail || r.type, label: r.type, who: first(r.from_member_id), whoId: r.from_member_id, when: r.scheduled_date ? `${r.scheduled_date}${r.scheduled_time ? ' ' + r.scheduled_time : ''}` : null, coins: 0 })),
+    ...(reds ?? []).map((r: any) => ({ id: r.id, kind: 'redemption', title: r.reward_title, label: 'Reward', who: first(r.member_id), whoId: r.member_id, when: null, coins: r.coin_cost ?? 0 })),
+  ];
+}
+
 async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
@@ -1066,6 +1097,7 @@ async function executeTool(
       chores: { approvedToday: approvedToday.length, waitingForReview: waiting.length, sentBack: sentBack.length, open: todo.length, overdue: overdue.length },
       schedule: { doneToday: evDone.length, upNext: evNext.length, needDriver: evNext.filter((e: any) => (e.category === 'Ride' || e.ride_required) && !e.driver_id && !e.driver_name).length },
       kidRequestsPending: requests,
+      rewardRequestsPending: isParent ? (await supabase.from('reward_redemptions').select('id', { count: 'exact', head: true }).eq('family_id', familyId).eq('status', 'pending')).count ?? 0 : 0,
     };
     const lists = { approvedToday: pick(approvedToday), waiting: pick(waiting), sentBack: pick(sentBack), overdue: pick(overdue), open: pick(todo) };
     const cardEvents = evs.slice(0, 12).map((e: any) => {
@@ -1079,7 +1111,11 @@ async function executeTool(
         needsDriver: isRide && !driver && !e.driver_id };
     });
     const aliased = (arr: any[]) => arr.map((r: any) => ({ title: r.title, who: r.assigneeId ? (aliasMap.toAlias.get(r.assigneeId) ?? null) : null, due: r.dueDate }));
+    const actionable = [...waiting, ...sentBack, ...overdue].slice(0, 12);
+    const requestRows = isParent ? await pendingRequestRows(supabase, familyId, members) : [];
     return {
+      __requestCards: requestRows,
+      __choreCards: actionable.map((r: any) => ({ id: r.id, title: r.title, status: r.status, coins: r.coins_reward ?? 0, dueDate: r.due_date ?? null, assignee: first(r.assigned_to_id), assigneeId: r.assigned_to_id ?? null })),
       __snapshotCard: { summary, lists },
       __scheduleCards: cardEvents,
       summary,
@@ -1152,54 +1188,67 @@ async function executeTool(
 
   if (name === 'get_schedule_conflicts') {
     const { data, error } = await supabase.from('calendar_events')
-      .select('id, title, category, date, start_time, member_id, helper_name, helper_status')
+      .select('id, title, category, date, start_time, end_time, member_id, member_ids, driver_id, driver_name, driver_status, helper_id, helper_name, helper_status, privacy_level')
       .eq('family_id', familyId)
       .gte('date', args.startDate).lte('date', args.endDate)
       .is('deleted_at', null).not('start_time', 'is', null)
       .order('date').order('start_time');
     if (error) return { error: error.message };
     const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
-    // Same <30-min overlap window and two conflict classes (same person
-    // double-booked; same helper/driver assigned twice) ParentView.tsx's
-    // own client-side Hub banner already uses — ported here rather than
-    // reimplemented differently, so Ask Cube's answer always agrees with
-    // what the Hub itself would flag.
-    const minutesBetween = (t1: string, t2: string) => {
-      const [h1, m1] = t1.split(':').map(Number);
-      const [h2, m2] = t2.split(':').map(Number);
-      return Math.abs((h1 * 60 + m1) - (h2 * 60 + m2));
-    };
-    const conflicts: { eventA: string; eventB: string; date: string; reason: string }[] = [];
+    // Everyone an event needs on the clock: the person it is about, attendees, and a driver/helper who has not turned it down.
+    const peopleOf = (e: any): string[] => [...new Set([
+      ...(e.member_id ? [e.member_id] : []), ...((e.member_ids ?? []) as string[]),
+      ...(e.driver_id && e.driver_status !== 'rejected' ? [e.driver_id] : []),
+      ...(e.helper_id && e.helper_status !== 'rejected' ? [e.helper_id] : []),
+    ])];
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    // An event with no end time is treated as one hour long; two events clash when their spans overlap or start within 30 minutes.
+    const span = (e: any): [number, number] => { const st = toMin(e.start_time); return [st, e.end_time ? Math.max(toMin(e.end_time), st + 1) : st + 60]; };
+    const first = (id: string) => members.find(m => m.id === id)?.name.split(' ')[0] ?? 'Someone';
+    const conflicts: { eventA: string; eventB: string; date: string; reason: string; people: string[]; timeA: string; timeB: string }[] = [];
+    const cards: any[] = [];
     const byDate = new Map<string, any[]>();
-    for (const e of scoped) {
-      if (!byDate.has(e.date)) byDate.set(e.date, []);
-      byDate.get(e.date)!.push(e);
-    }
+    for (const e of scoped) { if (!byDate.has(e.date)) byDate.set(e.date, []); byDate.get(e.date)!.push(e); }
     for (const [date, dayEvents] of byDate) {
       for (let i = 0; i < dayEvents.length; i++) {
         for (let j = i + 1; j < dayEvents.length; j++) {
           const a = dayEvents[i], b = dayEvents[j];
-          if (minutesBetween(a.start_time, b.start_time) >= 30) continue;
-          if (a.member_id && a.member_id === b.member_id) {
-            conflicts.push({
-              eventA: realNameToAlias(aliasMap, members, a.title), eventB: realNameToAlias(aliasMap, members, b.title),
-              date, reason: `${aliasMap.toAlias.get(a.member_id) ?? 'Someone'} is double-booked`,
-            });
-          } else if (a.helper_name && a.helper_name === b.helper_name && a.helper_status !== 'rejected' && b.helper_status !== 'rejected') {
-            conflicts.push({
-              eventA: realNameToAlias(aliasMap, members, a.title), eventB: realNameToAlias(aliasMap, members, b.title),
-              date, reason: `${realNameToAlias(aliasMap, members, a.helper_name)} is assigned to both`,
-            });
+          const [a1, a2] = span(a), [b1, b2] = span(b);
+          const near = Math.abs(a1 - b1) < 30 || (a1 < b2 && b1 < a2);
+          if (!near) continue;
+          const shared = peopleOf(a).filter(id => peopleOf(b).includes(id));
+          if (!shared.length) continue;
+          conflicts.push({
+            eventA: realNameToAlias(aliasMap, members, a.title), eventB: realNameToAlias(aliasMap, members, b.title), date,
+            people: shared.map(id => aliasMap.toAlias.get(id) ?? 'Someone'),
+            reason: `${shared.map(id => aliasMap.toAlias.get(id) ?? 'Someone').join(' and ')} ${shared.length > 1 ? 'are' : 'is'} needed at both`,
+            timeA: a.start_time, timeB: b.start_time,
+          });
+          for (const e of [a, b]) {
+            if (cards.some(c => c.id === e.id)) continue;
+            const isRide = e.category === 'Ride' || !!e.ride_required;
+            const driver = e.driver_name ? String(e.driver_name).split(' ')[0] : (e.helper_name ? String(e.helper_name).split(' ')[0] : null);
+            const st = e.driver_name ? e.driver_status : e.helper_status;
+            cards.push({ id: e.id, title: e.title, category: e.category, date: e.date, time: e.start_time, endTime: e.end_time ?? null,
+              people: peopleOf(e).map(first), isRide, driver, driverStatus: driver ? (st ?? 'pending') : null,
+              driverId: e.driver_name ? (e.driver_id ?? null) : (e.helper_id ?? null), driverRole: e.driver_name ? 'driver' : 'helper',
+              needsDriver: isRide && !driver && !e.driver_id });
           }
         }
       }
     }
-    return { conflicts };
+    return {
+      conflicts,
+      __scheduleCards: cards.slice(0, 12),
+      note: conflicts.length
+        ? 'The app draws the clashing events as a card. In ONE or TWO sentences say who is double-booked and which two events clash, then offer to fix it by handing one of them to someone free (use get_free_time to find who).'
+        : 'No clashes found. Say so in one short sentence.',
+    };
   }
 
   if (name === 'get_free_time') {
     const { data, error } = await supabase.from('calendar_events')
-      .select('title, date, start_time, end_time, member_id, member_ids')
+      .select('title, date, start_time, end_time, member_id, member_ids, driver_id, driver_status, helper_id, helper_status, privacy_level, category')
       .eq('family_id', familyId).eq('date', args.date)
       .is('deleted_at', null).not('start_time', 'is', null)
       .order('start_time');
@@ -1212,33 +1261,40 @@ async function executeTool(
       targetId = id;
       if (!targetId) return { error: `Couldn't find a family member named "${args.memberName}".` };
     }
-    const relevant = targetId
-      ? scoped.filter((e: any) => e.member_id === targetId || e.member_ids?.includes(targetId))
-      : scoped;
+    // Anyone an event ties up: the person it is about, attendees, and a driver/helper who has not turned it down.
+    const peopleOf = (e: any): string[] => [...new Set([
+      ...(e.member_id ? [e.member_id] : []), ...((e.member_ids ?? []) as string[]),
+      ...(e.driver_id && e.driver_status !== 'rejected' ? [e.driver_id] : []),
+      ...(e.helper_id && e.helper_status !== 'rejected' ? [e.helper_id] : []),
+    ])];
+    const toMinutes = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const spanOf = (e: any): [number, number] => { const st = toMinutes(e.start_time); return [st, e.end_time ? Math.max(toMinutes(e.end_time), st + 1) : st + 60]; }; // no end on file -> assume 1hr
+    const relevant = targetId ? scoped.filter((e: any) => peopleOf(e).includes(targetId)) : scoped;
     if (args.time) {
-      // "Is X free at 3pm" — busy only if an event's [start, end) window
-      // actually covers that instant, not just "something's on that day."
-      const askedMinutes = (() => { const [h, m] = args.time.split(':').map(Number); return h * 60 + m; })();
-      const toMinutes = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-      const busyWith = relevant.filter((e: any) => {
-        const start = toMinutes(e.start_time);
-        const end = e.end_time ? toMinutes(e.end_time) : start + 60; // no end_time on file -> assume 1hr block
-        return askedMinutes >= start && askedMinutes < end;
+      // "Is X free at 3pm" / "who can drive at 5" — busy only if an event's window actually covers that instant.
+      const asked = toMinutes(args.time);
+      const coversAsked = (e: any) => { const [s0, e0] = spanOf(e); return asked >= s0 && asked < e0; };
+      // Also treat a ride that STARTS within 30 minutes either side as a clash for drivers (they cannot be in two places).
+      const busyWith = relevant.filter(coversAsked);
+      const roster = (targetId ? members.filter(m => m.id === targetId) : members);
+      const people = roster.map(m => {
+        const mine = scoped.filter((e: any) => peopleOf(e).includes(m.id) && coversAsked(e));
+        return { person: aliasMap.toAlias.get(m.id) ?? 'Someone', free: mine.length === 0, busyWith: mine.map((e: any) => realNameToAlias(aliasMap, members, e.title)) };
       });
       return {
         checkedTime: args.time,
+        people,
         busy: busyWith.map((e: any) => ({
           person: e.member_id ? (aliasMap.toAlias.get(e.member_id) ?? 'Someone') : 'Family',
           title: realNameToAlias(aliasMap, members, e.title),
         })),
       };
     }
-    // No specific time — list the day's busy blocks so the model can reason
-    // about gaps between them itself, rather than this function guessing
-    // what counts as a "usable" free window.
+    // No specific time — list the day's busy blocks so the model can reason about gaps between them itself.
     return {
       busyBlocks: relevant.map((e: any) => ({
         person: e.member_id ? (aliasMap.toAlias.get(e.member_id) ?? 'Someone') : 'Family',
+        also: peopleOf(e).filter(id => id !== e.member_id).map(id => aliasMap.toAlias.get(id) ?? 'Someone'),
         title: realNameToAlias(aliasMap, members, e.title), start: e.start_time, end: e.end_time,
       })),
     };
@@ -1609,11 +1665,19 @@ async function executeTool(
     // ones not the nowrunning or the pasts"]. An all-day event (no
     // start_time) has no clock time to compare, so it's always still
     // future as long as its date is.
-    const alreadyStarted = candidates.find((e: any) => e.date === today && e.start_time && e.start_time <= nowHHMM);
-    candidates = candidates.filter((e: any) => !(e.date === today && e.start_time && e.start_time <= nowHHMM));
+    // Moving a started/missed event to a LATER time is exactly what someone does after missing it, so a reschedule whose
+    // new date/time is still ahead is allowed; only edits that leave it in the past are blocked.
+    const movesToFuture = (e: any) => {
+      const nd = typeof args.date === 'string' ? args.date : e.date;
+      const nt = typeof args.time === 'string' ? args.time : e.start_time;
+      return nd > today || (nd === today && !!nt && nt > nowHHMM);
+    };
+    const isPast = (e: any) => e.date === today && e.start_time && e.start_time <= nowHHMM && !((typeof args.date === 'string' || typeof args.time === 'string') && movesToFuture(e));
+    const alreadyStarted = candidates.find((e: any) => isPast(e));
+    candidates = candidates.filter((e: any) => !isPast(e));
     if (!candidates.length) {
       if (alreadyStarted) {
-        return { error: `"${realNameToAlias(aliasMap, members, alreadyStarted.title)}" matched, but it's already started or passed today — only an upcoming event can be rescheduled/reassigned/changed. Tell the user plainly rather than proposing a change to something already underway or over.` };
+        return { error: `"${realNameToAlias(aliasMap, members, alreadyStarted.title)}" matched, but it's already started or passed today — only an upcoming event can be changed, or this one can be moved to a later time. Tell the user plainly that it already happened today and ask whether they want to move it to a LATER time (give the new time) — never say you cannot change events from chat, and never send them to another tab.` };
       }
       // Same reciprocal check as the chore branch above — a household term
       // could be filed as a chore instead of an event.
@@ -1636,6 +1700,7 @@ async function executeTool(
     }
     const ev = candidates[0];
     const changes: Record<string, any> = {};
+    let driverTo: { memberId: string; role: 'driver' | 'helper' } | undefined;
     if (typeof args.title === 'string') changes.title = args.title;
     if (typeof args.date === 'string') changes.date = args.date;
     if (typeof args.time === 'string') changes.time = args.time;
@@ -1654,19 +1719,44 @@ async function executeTool(
       if (!newAssigneeId) {
         return { error: `Couldn't find a family member named "${args.assignToMemberName}" to reassign this event to. Tell the user plainly rather than proposing an update with no real assignee change.` };
       }
-      changes.memberId = newAssigneeId;
-      changes.memberIds = [];
+      // On a ride, "give it to X" means X DRIVES it. The event's own person (who is being picked up) never changes.
+      const isRideEv = ev.category === 'Ride' || !!ev.ride_required || !!ev.driver_name || !!ev.helper_name;
+      if (isRideEv) {
+        const role: 'driver' | 'helper' = (ev.helper_name && !ev.driver_name) ? 'helper' : 'driver';
+        if (!Object.keys(changes).length) {
+          return {
+            __proposal: 'reassign_rides',
+            toMemberId: newAssigneeId, toAlias: aliasMap.toAlias.get(newAssigneeId) ?? null,
+            items: [{ eventId: ev.id, title: realNameToAlias(aliasMap, members, ev.title), date: ev.date, time: ev.start_time, role }],
+          };
+        }
+        driverTo = { memberId: newAssigneeId, role };
+      } else {
+        changes.memberId = newAssigneeId;
+        changes.memberIds = [];
+      }
     }
     if (!Object.keys(changes).length) {
       return { error: 'No actual field changes were specified — ask the user what they want changed about this event.' };
     }
     return {
       __proposal: 'update_event',
+      driverTo,
       eventId: ev.id, title: realNameToAlias(aliasMap, members, ev.title), date: ev.date, time: ev.start_time,
       currentAssignee: ev.member_id ? (aliasMap.toAlias.get(ev.member_id) ?? 'Unknown') : null,
       newAssignee: typeof args.assignToMemberName === 'string' ? args.assignToMemberName : undefined,
       changes,
     };
+  }
+
+  if (name === 'propose_reminder') {
+    if (viewerRole !== 'parent' && viewerRole !== 'senior') return { error: 'Only a parent can send reminders to other people. Tell the user that plainly.' };
+    const toId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    if (!toId) return { error: `Couldn't find a family member named "${args.memberName}". Tell the user plainly.` };
+    if (toId === viewerId) return { error: 'That is the person asking. Tell them you can only remind other people.' };
+    const text = String(args.message ?? '').trim().slice(0, 200);
+    if (!text) return { error: 'Ask what the reminder should say.' };
+    return { __proposal: 'remind', memberId: toId, memberAlias: aliasMap.toAlias.get(toId) ?? null, text };
   }
 
   if (name === 'propose_reassign_rides') {
@@ -1813,6 +1903,7 @@ async function executeTool(
       // other get_* tool's results, so a request's detail text and the
       // kid's name become citable the same way an event title or member
       // name does, without teaching that pass a new field-name pair.
+      ...(status === 'pending' ? { __requestCards: await pendingRequestRows(supabase, familyId, members, args.memberName ? (await resolveMemberId(supabase, familyId, args.memberName, aliasMap)) : null) } : {}),
       requests: (data ?? []).map((r: any) => ({
         type: r.type, title: r.detail, status: r.status,
         person: aliasMap.toAlias.get(r.from_member_id) ?? 'Unknown',
@@ -3293,8 +3384,9 @@ start the reply fresh from real data for THIS turn.` : ''}
     // user to pick from), and each one needs its own card client-side.
     const scheduleCardRows: any[] = [];
     let snapshotCard: any = null;
+    const requestCardRows: any[] = [];
     const choreCardRows: any[] = [];
-    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'reassign_rides'; data: any }[] = [];
+    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'reassign_rides' | 'remind'; data: any }[] = [];
     // Deduped by id across every get_quests/get_chore_history call this
     // turn — used client-side only, to linkify a chore's title wherever it
     // appears in the model's reply text. Never sent to the model itself.
@@ -3411,7 +3503,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           if (GROUNDING_TOOLS.has(call.function.name)) {
             calledAnyToolThisTurn = true;
             const r: any = result;
-            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy, r.requests, r.members, r.approvedToday, r.waitingForReview, r.sentBack, r.overdue, r.open, r.eventsDone, r.eventsUpNext].filter(Array.isArray);
+            const pools = [r.events, r.quests, r.completed, r.rewards, r.busyBlocks, r.busy, r.requests, r.members, r.approvedToday, r.waitingForReview, r.sentBack, r.overdue, r.open, r.eventsDone, r.eventsUpNext, r.conflicts].filter(Array.isArray);
             // Real live QA bug: this only ever read item.title/item.person,
             // but the actual tool result shapes name people under several
             // OTHER keys — get_schedule's events use driver/helper,
@@ -3422,7 +3514,7 @@ start the reply fresh from real data for THIS turn.` : ''}
             // assignee's alias in a chores answer) got flagged as
             // "unverified" and the whole reply was wrongly discarded.
             for (const pool of pools) for (const item of pool) {
-              for (const key of ['title', 'person', 'assignedTo', 'who', 'driver', 'helper', 'from', 'currentAssignee']) {
+              for (const key of ['title', 'eventA', 'eventB', 'person', 'assignedTo', 'who', 'driver', 'helper', 'from', 'currentAssignee']) {
                 if (typeof item?.[key] === 'string') groundedTitles.add(item[key]);
               }
             }
@@ -3445,6 +3537,7 @@ start the reply fresh from real data for THIS turn.` : ''}
             for (const item of result.__proposalBatch) proposals.push({ kind: item.__proposal, data: item });
           }
           if (result.__snapshotCard) snapshotCard = result.__snapshotCard;
+          if (Array.isArray(result.__requestCards)) for (const c of result.__requestCards) if (!requestCardRows.some(x => x.id === c.id)) requestCardRows.push(c);
           if (Array.isArray(result.__scheduleCards)) {
             // get_schedule returns the whole family's rows; when the message is about specific people, keep only theirs.
             const wantIds = resolution.mentionedIds.length ? resolution.mentionedIds : (resolution.pronounId ? [resolution.pronounId] : []);
@@ -3471,7 +3564,7 @@ start the reply fresh from real data for THIS turn.` : ''}
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, __snapshotCard, __requestCards, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
           // The schedule tool returns the whole family. When the message is about specific people, hand the model ONLY their
           // events, so it cannot list someone else's ("Dentist · Ugandhar" under a question about Cherry).
@@ -3775,6 +3868,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     const cardsOut: any[] = proposals.length === 0 ? [
       ...(snapshotCard ? [{ kind: 'snapshot', ...snapshotCard }] : []),
       ...(choreCardRows.length ? [{ kind: 'chores', chores: choreCardRows.slice(0, 20) }] : []),
+      ...(requestCardRows.length ? [{ kind: 'requests', requests: requestCardRows.slice(0, 20) }] : []),
       ...(scheduleCardRows.length ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : []),
     ] : [];
     if (cardsOut.length > 0) {

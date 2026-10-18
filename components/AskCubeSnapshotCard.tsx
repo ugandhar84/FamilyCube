@@ -12,6 +12,7 @@ export interface AskCubeSnapshot {
     chores: { approvedToday: number; waitingForReview: number; sentBack: number; open: number; overdue: number };
     schedule: { doneToday: number; upNext: number; needDriver: number };
     kidRequestsPending: number;
+    rewardRequestsPending?: number;
   };
 }
 
@@ -44,6 +45,7 @@ export default function AskCubeSnapshotCard({ snapshot, isParent, onAsk }: { sna
         <Tile n={s.schedule.upNext} label="Up next" tone={colors.primary} />
         {s.schedule.needDriver > 0 && <Tile n={s.schedule.needDriver} label="Need a driver" tone={colors.danger} />}
         {isParent && <Tile n={s.kidRequestsPending} label="Requests" tone={colors.amber} q="Any kid requests pending?" />}
+        {isParent && (s.rewardRequestsPending ?? 0) > 0 && <Tile n={s.rewardRequestsPending ?? 0} label="Rewards" tone={colors.amber} q="Any reward requests pending?" />}
       </View>
     </View>
   );

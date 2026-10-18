@@ -38,6 +38,7 @@ import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
 import AskCubeProposalCard from '@/components/AskCubeProposalCard';
 import AskCubeMessageText from '@/components/AskCubeMessageText';
 import AskCubeScheduleCard, { type AskCubeScheduleEvent } from '@/components/AskCubeScheduleCard';
+import AskCubeRequestCard, { type AskCubeRequest } from '@/components/AskCubeRequestCard';
 import AskCubeSnapshotCard, { type AskCubeSnapshot } from '@/components/AskCubeSnapshotCard';
 import AskCubeChoreCard, { type AskCubeChore } from '@/components/AskCubeChoreCard';
 import { useUIStore } from '@/store/uiStore';
@@ -100,6 +101,7 @@ interface ChatMessage {
   scheduleEvents?: AskCubeScheduleEvent[];
   choreCards?: AskCubeChore[];
   snapshot?: AskCubeSnapshot;
+  requestCards?: AskCubeRequest[];
   // True once this message's typewriter reveal has finished — follow-up
   // chips wait for this rather than just `!sending` (which flips false the
   // instant the message is inserted, well before the typewriter loop
@@ -230,6 +232,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         scheduleEvents: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'schedule')?.events : undefined,
         choreCards: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'chores')?.chores : undefined,
         snapshot: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'snapshot') : undefined,
+        requestCards: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'requests')?.requests : undefined,
         revealDone: true, // loaded from history — no typewriter reveal to wait for
       };
     }));
@@ -453,6 +456,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           scheduleEvents: ((res.cards ?? []) as any[]).find(c => c.kind === 'schedule')?.events,
           choreCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'chores')?.chores,
           snapshot: ((res.cards ?? []) as any[]).find(c => c.kind === 'snapshot'),
+          requestCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'requests')?.requests,
         }];
       });
       setSending(false);
@@ -816,6 +820,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // telling the user the update happened when it hadn't.
       try {
         await updateEvent(d.eventId, d.changes ?? {});
+        if (d.driverTo?.memberId) await useEventStore.getState().reassignEvent(d.eventId, d.driverTo.memberId, d.driverTo.role, activeMember.id);
       } catch (e: any) {
         setMessages(prev => [...prev, { id: `local-${Date.now()}-updateerr`, role: 'assistant',
           content: "Sorry, that event update didn't go through — please try again from the Schedule tab.", timestamp: new Date().toISOString() }]);
@@ -862,6 +867,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // already resolved the exact event server-side, so this just applies
       // the same deleteEvent(id) the rest of the app already trusts.
       deleteEvent(d.eventId);
+    } else if (proposal.kind === 'remind') {
+      // A real push plus a notification-bell entry, exactly like the nudge buttons elsewhere.
+      supabase.functions.invoke('family-notifier', {
+        body: { type: 'custom', familyId: activeMember.familyId, memberIds: [d.memberId], persist: true, excludeMemberId: activeMember.id,
+          payload: { title: `⏰ Reminder from ${activeMember.name.split(' ')[0]}`, body: d.text, data: {} } },
+      }).catch(() => {});
     } else if (proposal.kind === 'reassign_rides') {
       // Same store action as the Take over / Reassign taps; a self-assignment is confirmed by the server, others get the usual offer push.
       for (const it of (d.items ?? []) as { eventId: string; role: 'driver' | 'helper' }[]) {
@@ -892,6 +903,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       chore_action: chorActionToast[d.action] ?? 'Done',
       cancel_event: 'Event cancelled',
       reassign_rides: 'Rides moved',
+      remind: 'Reminder sent',
       kid_request_action: kidRequestActionToast[d.action] ?? 'Done',
     };
     showToast(toastByKind[proposal.kind] ?? 'Done');
@@ -1124,6 +1136,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                         chores={m.choreCards}
                         canManage={activeMember?.role === 'parent'}
                         doneKeys={scheduleDone}
+                        onApproveAll={async (list) => {
+                          if (!activeMember) return;
+                          for (const c of list) await useChoreStore.getState().approveChore(c.id, activeMember.id);
+                          setScheduleDone(d => ({ ...d, ...Object.fromEntries(list.map(c => [c.id, 'Approved ✓'])) }));
+                        }}
                         onAction={async (c, action) => {
                           if (!activeMember) return;
                           if (action === 'approve') {
@@ -1138,6 +1155,27 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                           useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
                           onClose();
                           navigateFromNotification({ pathname: '/(tabs)/quests', params: { questId: c.id } }, variant === 'kiosk');
+                        }}
+                      />
+                    </>
+                  )}
+                  {m.role === 'assistant' && !!m.requestCards?.length && m.revealDone && activeMember?.role === 'parent' && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary, marginTop: 4, marginHorizontal: 4 }}>Requests</Text>
+                      <AskCubeRequestCard
+                        requests={m.requestCards}
+                        doneKeys={scheduleDone}
+                        onAction={async (r, action) => {
+                          if (!activeMember) return;
+                          if (r.kind === 'kid_request') {
+                            if (action === 'approve') await approveKidRequest(r.id, activeMember.id);
+                            else await declineKidRequest(r.id, activeMember.id);
+                          } else if (action === 'approve') {
+                            await useRewardStore.getState().approveRedemption(r.id, activeMember.id);
+                          } else {
+                            await useRewardStore.getState().rejectRedemption(r.id, activeMember.id);
+                          }
+                          setScheduleDone(d => ({ ...d, [r.id]: action === 'approve' ? 'Approved ✓' : 'Declined ✓' }));
                         }}
                       />
                     </>

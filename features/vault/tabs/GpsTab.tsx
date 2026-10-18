@@ -1274,12 +1274,12 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
                   siblings={members.map(mb => mb.name)} ringColor={rc} size={40} />
                 {/* Life360-style: what they are doing, pinned to the bottom-right of their avatar. */}
                 {isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' && (
-                  <View style={{ position: 'absolute', left: 29, bottom: -9, borderRadius: 11, paddingHorizontal: 2, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.info, alignItems: 'center', justifyContent: 'center' }}>
-                    <MovementBadge kind={kindOf(loc.movement, loc.speed_mph ?? 0)} size={10} color={colors.info} />
+                  <View style={{ position: 'absolute', left: 28, bottom: -9, borderRadius: 11, paddingHorizontal: 2, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.info, alignItems: 'center', justifyContent: 'center' }}>
+                    <MovementBadge kind={kindOf(loc.movement, loc.speed_mph ?? 0)} size={12} color={colors.info} />
                   </View>
                 )}
               </View>
-              <View style={{ flex: 1, marginLeft: isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' ? 30 : 12 }}>
+              <View style={{ flex: 1, marginLeft: isLive && isFreshFix && kindOf(loc.movement, loc.speed_mph ?? 0) !== 'stationary' ? 22 : 12 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>

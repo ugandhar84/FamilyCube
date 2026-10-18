@@ -39,8 +39,7 @@ export default function MovementBadge({ kind, size = 14, color, animated = true 
 
   const lane = color ?? '#8A8A8A';
   const walkingLike = kind === 'walking' || kind === 'running';
-  // Wide enough for BOTH shoes (and their swing) so neither is clipped.
-  const w = Math.round(size * (walkingLike ? 3.4 : 2.4));
+  const w = Math.round(size * (walkingLike ? 1.9 : 2.4));
   const h = size + 8;
   const lift = size * 0.32;
 
@@ -55,18 +54,14 @@ export default function MovementBadge({ kind, size = 14, color, animated = true 
   );
 
   if (walkingLike) {
-    // Two shoes in opposite phase: one lifts and swings forward while the other stays planted.
-    const aY = step.interpolate({ inputRange: [0, 1], outputRange: [0, -lift] });
-    const bY = step.interpolate({ inputRange: [0, 1], outputRange: [-lift, 0] });
-    const aR = step.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-18deg'] });
-    const bR = step.interpolate({ inputRange: [0, 1], outputRange: ['-18deg', '0deg'] });
+    // One shoe taking steps: it lifts and tilts forward, swings ahead, then plants — repeating over a ground line that slides past.
+    const lift = step.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -size * 0.34, 0] });
+    const ahead = step.interpolate({ inputRange: [0, 1], outputRange: [-size * 0.18, size * 0.18] });
+    const tilt = step.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['8deg', '-20deg', '8deg'] });
     return (
-      <View style={{ width: w, height: h, overflow: 'hidden', justifyContent: 'flex-end' }}>
+      <View style={{ width: w, height: h, overflow: 'hidden', justifyContent: 'flex-end', alignItems: 'center' }}>
         {dashes}
-        <View style={{ flexDirection: 'row', gap: size * 0.3, paddingLeft: size * 0.35, marginBottom: 4 }}>
-          <Animated.Text style={{ fontSize: size, lineHeight: size + 2, transform: [{ translateY: aY }, { rotate: aR }] }}>👟</Animated.Text>
-          <Animated.Text style={{ fontSize: size, lineHeight: size + 2, transform: [{ translateY: bY }, { rotate: bR }] }}>👟</Animated.Text>
-        </View>
+        <Animated.Text style={{ fontSize: size, lineHeight: size + 2, marginBottom: 4, transform: [{ translateX: ahead }, { translateY: lift }, { rotate: tilt }] }}>👟</Animated.Text>
       </View>
     );
   }

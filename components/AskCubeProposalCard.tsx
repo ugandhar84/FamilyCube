@@ -5,7 +5,7 @@
  * "what am I confirming" mental model differ a lot per type (a grocery
  * proposal is a list of items, a meal is a recipe-style hero, etc).
  */
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, Image, TextInput } from 'react-native';
 import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2, Users, HandHeart } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -186,6 +186,27 @@ function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: 
 // identical to editing it anywhere else in the app, with zero extra AI
 // round-trip. Only rendered when the caller supplies onChange (a still-
 // pending proposal) — same opt-in pattern as ReminderPicker/StorePicker.
+/** One calm summary line under the title; "Edit" opens the pickers. Same data and handlers, less clutter. */
+function EditableSummary({ parts, colors, locked, children }: {
+  parts: (string | null | undefined | false)[]; colors: any; locked?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const line = parts.filter(Boolean).join(' · ');
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>{line}</Text>
+        {!locked && (
+          <Pressable onPress={() => setOpen(o => !o)} hitSlop={8} accessibilityRole="button" accessibilityLabel={open ? 'Close editing' : 'Edit details'}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>{open ? 'Done' : 'Edit'}</Text>
+          </Pressable>
+        )}
+      </View>
+      {open && !locked ? <View style={{ gap: 10 }}>{children}</View> : null}
+    </View>
+  );
+}
+
 export function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onChange }: {
   dateStr?: string | null; timeStr?: string | null;
   accent: string; colors: any; isDark: boolean;
@@ -423,7 +444,7 @@ export default function AskCubeProposalCard({
   const Header = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
       <Icon size={14} color={accent} />
-      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      <Text style={{ fontSize: 11, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.8 }}>
         {meta.label}
       </Text>
     </View>
@@ -593,40 +614,23 @@ export default function AskCubeProposalCard({
   if (proposal.kind === 'quest') {
     const assignee = memberName(members, d.memberId);
     const assignedToAdult = !!d.memberId && members.find(m => m.id === d.memberId)?.role === 'parent';
+    const today = todayLocal();
+    const when = d.dueDate
+      ? `${d.dueDate === today ? 'today' : fmtDate(d.dueDate, d.dueDate)}${d.dueTime ? ` ${fmtTime(d.dueTime, d.dueTime)}` : ''}`
+      : null;
+    const reminder = d.alertCall ? (d.alertCallLeadMinutes ? `call reminder ${d.alertCallLeadMinutes} min before` : 'call reminder on time') : null;
     return (
       <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
-        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {!assignedToAdult && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Coins size={12} color={accent} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accent }}>{d.coins ?? 20} coins</Text>
-            </View>
-          )}
-          {!!assignee && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <User size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{assignee}</Text>
-            </View>
-          )}
+        <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, lineHeight: 22 }}>{d.title}</Text>
+        <EditableSummary
+          colors={colors} locked={added || discarded}
+          parts={[assignee, !assignedToAdult ? `${d.coins ?? 20} coins` : null, when, d.photoRequired ? 'photo required' : null, formatRecurrence(d.recurrenceRule), reminder]}>
           {!!d.dueDate && (
             <DateTimeEditRow dateStr={d.dueDate} timeStr={d.dueTime} accent={accent} colors={colors} isDark={isDark} onChange={onChangeDateTime} />
           )}
-          {!!d.photoRequired && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Camera size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Photo required</Text>
-            </View>
-          )}
-          {!!formatRecurrence(d.recurrenceRule) && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Repeat size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{formatRecurrence(d.recurrenceRule)}</Text>
-            </View>
-          )}
-        </View>
-        <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
+          <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
+        </EditableSummary>
         {Actions}
       </View>
     );

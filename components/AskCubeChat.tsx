@@ -102,6 +102,18 @@ interface ChatMessage {
   revealDone?: boolean;
 }
 
+/** Older saved replies kept empty section headings ("Calendar:", "Chores:"); drop a short heading that has nothing under it. */
+function tidyHistoryText(text: string): string {
+  const lines = text.split('\n');
+  const isHeading = (l: string) => { const t = l.replace(/\*\*/g, '').trim(); return t.length > 0 && t.length <= 28 && /:$/.test(t) && !/^\s*([•\-*–]|\d+[.)])\s/.test(l); };
+  const out = lines.filter((l, i) => {
+    if (!isHeading(l)) return true;
+    for (let j = i + 1; j < lines.length; j++) if (lines[j].trim()) return !isHeading(lines[j]);
+    return false;
+  });
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 const INPUT_MIN_H = 50;
 const INPUT_MAX_H = 84; // three lines of 20pt text plus padding
 
@@ -149,6 +161,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const [sending, setSending] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  // Right after a chat opens, keep it pinned to the newest message while the content (long replies, cards) finishes laying out.
+  const stickToBottom = useRef(false);
 
   const THINKING_WORDS = ['Thinking', 'Crafting', 'Pursuing', 'Digging in', 'Piecing it together'];
   const [thinkingWord, setThinkingWord] = useState(THINKING_WORDS[0]);
@@ -200,11 +214,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // semantics) only for rows written before this column existed.
       const persistedStatuses = Array.isArray((r as any).proposal_statuses) ? (r as any).proposal_statuses as ProposalStatus[] : null;
       return {
-        id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
+        id: r.id, role: r.role as 'user' | 'assistant', content: r.role === 'assistant' ? tidyHistoryText(r.content ?? '') : (r.content ?? ''), timestamp: r.created_at,
         proposals,
         proposalStatuses: proposals.map((_, i) => persistedStatuses?.[i] ?? (r.proposal_status as ProposalStatus) ?? 'pending'),
         chores: Array.isArray((r as any).chore_refs) ? (r as any).chore_refs : undefined,
         followUps: Array.isArray((r as any).follow_ups) ? (r as any).follow_ups : undefined,
+        scheduleEvents: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'schedule')?.events : undefined,
         revealDone: true, // loaded from history — no typewriter reveal to wait for
       };
     }));
@@ -214,7 +229,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     // couple of times over the next layout passes rather than relying
     // on a single rAF landing after the ScrollView has measured.
     setShowScrollToBottom(false);
-    for (const delay of [0, 50, 150]) {
+    stickToBottom.current = true;
+    setTimeout(() => { stickToBottom.current = false; }, 1200);
+    for (const delay of [0, 50, 150, 400]) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
     }
   };
@@ -923,7 +940,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         )}
 
             <View style={{ flex: 1 }}>
-            <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.page, gap: RHYTHM.item }}
+            <ScrollView ref={scrollRef} style={{ flex: 1 }} onContentSizeChange={() => { if (stickToBottom.current) scrollRef.current?.scrollToEnd({ animated: false }); }} contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.page, gap: RHYTHM.item }}
               keyboardShouldPersistTaps="handled"
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;

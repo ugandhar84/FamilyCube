@@ -55,7 +55,7 @@ export const askCube = {
 
   async getMessages(conversationId: string) {
     const { data, error } = await supabase.from('ask_cube_messages')
-      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, follow_ups, created_at')
+      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, follow_ups, cards, created_at')
       .eq('conversation_id', conversationId)
       // tool rows (raw JSON results) and assistant rows that only carry
       // tool_calls (content null) are internal to the model loop — the chat
@@ -63,6 +63,8 @@ export const askCube = {
       // cards, never a tool's raw JSON payload.
       .in('role', ['user', 'assistant'])
       .not('content', 'is', null)
+      // The model-loop rows that only carried tool calls are saved with an EMPTY string, which showed up as blank bubbles.
+      .neq('content', '')
       .order('created_at');
     if (error) throw error;
     return data ?? [];

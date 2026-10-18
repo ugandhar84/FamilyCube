@@ -3612,6 +3612,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
       proposal: proposals.length ? proposals : null, proposal_status: proposals.length ? 'pending' : null,
       chore_refs: choreRefs.length ? choreRefs : null,
       follow_ups: followUps.length ? followUps : null,
+      cards: scheduleCardRows.length && proposals.length === 0 ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : null,
     });
     await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString(), context: nextContext(prevCtx, resolution) }).eq('id', conversationId);
 

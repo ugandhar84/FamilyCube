@@ -16,6 +16,8 @@ export interface AskCubeResponse {
   proposals: AskCubeProposal[];
   chores: AskCubeChoreRef[];
   followUps: string[];
+  /** Structured answers the app draws as cards under the reply (currently: schedule). */
+  cards?: { kind: 'schedule'; events: import('@/components/AskCubeScheduleCard').AskCubeScheduleEvent[] }[];
 }
 
 export const askCube = {
@@ -25,7 +27,7 @@ export const askCube = {
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
-    return { ...data, proposals: data?.proposals ?? [], chores: data?.chores ?? [], followUps: data?.followUps ?? [] } as AskCubeResponse;
+    return { ...data, proposals: data?.proposals ?? [], chores: data?.chores ?? [], followUps: data?.followUps ?? [], cards: data?.cards ?? [] } as AskCubeResponse;
   },
 
   // Most-recently-updated conversation for this member, if any — so

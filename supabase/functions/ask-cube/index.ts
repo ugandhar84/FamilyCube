@@ -1010,7 +1010,7 @@ async function executeTool(
     // `.limit(50)` below), so an unusually broad ask doesn't return an
     // unbounded result set into the model's own context.
     const { data, error } = await supabase.from('calendar_events')
-      .select('title, category, date, start_time, member_id, member_ids, helper_name, helper_status, driver_name, driver_status')
+      .select('id, title, category, date, start_time, end_time, ride_required, driver_id, member_id, member_ids, helper_name, helper_status, driver_name, driver_status')
       .eq('family_id', familyId)
       .gte('date', args.startDate).lte('date', args.endDate)
       .is('deleted_at', null)
@@ -1029,7 +1029,21 @@ async function executeTool(
     // an unassigned/shared event) so the model can actually filter by
     // relationship/name correctly instead of hallucinating from prose.
     const idToAlias = (id: string) => aliasMap.toAlias.get(id) ?? null;
-    return { events: scoped.map((e: any) => {
+    const realOf = (id: string) => members.find(m => m.id === id)?.name.split(' ')[0] ?? null;
+    // The same rows, with REAL names, for the app to draw as cards under the reply. Never sent to the model.
+    const scheduleCards = scoped.slice(0, 24).map((e: any) => {
+      const ids: string[] = e.member_id ? [e.member_id] : (e.member_ids ?? []);
+      const isRide = e.category === 'Ride' || !!e.ride_required;
+      const driver = e.driver_name ? String(e.driver_name).split(' ')[0] : (e.helper_name ? String(e.helper_name).split(' ')[0] : null);
+      const status = e.driver_name ? e.driver_status : e.helper_status;
+      return {
+        id: e.id, title: e.title, category: e.category, date: e.date, time: e.start_time, endTime: e.end_time ?? null,
+        people: ids.map(realOf).filter(Boolean),
+        isRide, driver, driverStatus: driver ? (status ?? 'pending') : null,
+        needsDriver: isRide && !driver && !e.driver_id,
+      };
+    });
+    return { __scheduleCards: scheduleCards, events: scoped.map((e: any) => {
       const assigneeIds: string[] = e.member_id ? [e.member_id] : (e.member_ids ?? []);
       const personAliases = assigneeIds.map(idToAlias).filter(Boolean);
       return {
@@ -3119,6 +3133,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // Collected across the WHOLE loop, not just the final round — a single
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
+    const scheduleCardRows: any[] = [];
     let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event'; data: any }[] = [];
     // Deduped by id across every get_quests/get_chore_history call this
     // turn — used client-side only, to linkify a chore's title wherever it
@@ -3268,13 +3283,22 @@ conversation text, so never reference "the suggestions below" in your actual rep
           if (Array.isArray(result.__proposalBatch)) {
             for (const item of result.__proposalBatch) proposals.push({ kind: item.__proposal, data: item });
           }
+          if (Array.isArray(result.__scheduleCards)) {
+            // get_schedule returns the whole family's rows; when the message is about specific people, keep only theirs.
+            const wantIds = resolution.mentionedIds.length ? resolution.mentionedIds : (resolution.pronounId ? [resolution.pronounId] : []);
+            const wantNames = new Set((allMembers ?? []).filter((m: any) => wantIds.includes(m.id)).map((m: any) => String(m.name).split(' ')[0]));
+            for (const c of result.__scheduleCards) {
+              if (wantNames.size > 0 && !(c.people ?? []).some((n: string) => wantNames.has(n)) && !(c.driver && wantNames.has(c.driver))) continue;
+              if (!scheduleCardRows.some(x => x.id === c.id)) scheduleCardRows.push(c);
+            }
+          }
           if (Array.isArray(result.__choreRefs)) {
             for (const ref of result.__choreRefs) choreRefsMap.set(ref.id, ref);
           }
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, __proposalBatch, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, __scheduleCards, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
 
           const resultStr = JSON.stringify(modelResult);
@@ -3574,7 +3598,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // this turn — see callModel's own comment) — never part of the app's
     // real AskCubeResponse type (lib/askCubeService.ts), so a normal client
     // simply ignores the extra key; only the QA harness reads it.
-    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: scheduleCardRows.length && proposals.length === 0 ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : [], __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

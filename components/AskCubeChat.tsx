@@ -37,6 +37,8 @@ import { checkProfanity } from '@/lib/contentModeration';
 import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
 import AskCubeProposalCard from '@/components/AskCubeProposalCard';
 import AskCubeMessageText from '@/components/AskCubeMessageText';
+import AskCubeScheduleCard, { type AskCubeScheduleEvent } from '@/components/AskCubeScheduleCard';
+import { useUIStore } from '@/store/uiStore';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
 import type { FamilyMember } from '@/store/familyStore';
@@ -91,6 +93,7 @@ interface ChatMessage {
   // see ask-cube/index.ts's system prompt) — rendered as tappable chips
   // right under this reply. Undefined/empty when nothing specific applied.
   followUps?: string[];
+  scheduleEvents?: AskCubeScheduleEvent[];
   // True once this message's typewriter reveal has finished — follow-up
   // chips wait for this rather than just `!sending` (which flips false the
   // instant the message is inserted, well before the typewriter loop
@@ -416,6 +419,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
           chores: res.chores ?? [],
           followUps: res.followUps ?? [],
+          scheduleEvents: (res.cards ?? []).find(c => c.kind === 'schedule')?.events,
         }];
       });
       setSending(false);
@@ -1065,6 +1069,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     );
                   })() : null}
 
+                  {m.role === 'assistant' && !!m.scheduleEvents?.length && m.revealDone && (
+                    <AskCubeScheduleCard
+                      events={m.scheduleEvents}
+                      canAssign={activeMember?.role === 'parent'}
+                      onOpen={(ev) => {
+                        onClose();
+                        useUIStore.getState().setRequestedEventDetailId(ev.id);
+                        navigateFromNotification('/(tabs)/schedule', variant === 'kiosk');
+                      }}
+                      onAssign={(ev) => send(`Who can drive "${ev.title}" on ${ev.date}${ev.time ? ` at ${ev.time}` : ''}?`)}
+                    />
+                  )}
                   {/* Only on the LAST assistant message, not stale ones from
                       earlier in the conversation — tapping a suggestion from
                       three exchanges ago against the CURRENT state would be

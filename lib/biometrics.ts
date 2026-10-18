@@ -134,7 +134,14 @@ export async function setBiometricEnabled(enabled: boolean): Promise<void> {
 // ── Credential storage (for re-auth after biometric) ─────────────
 
 export async function saveBiometricCredentials(email: string, password: string): Promise<void> {
-  await SecureStore.setItemAsync(BIOMETRIC_CREDENTIALS_KEY, JSON.stringify({ email, password }));
+  const value = JSON.stringify({ email, password });
+  const opts = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
+  try {
+    await SecureStore.setItemAsync(BIOMETRIC_CREDENTIALS_KEY, value, opts);
+  } catch {
+    await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY).catch(() => {});
+    await SecureStore.setItemAsync(BIOMETRIC_CREDENTIALS_KEY, value, opts);
+  }
 }
 
 export async function getBiometricCredentials(): Promise<{ email: string; password: string } | null> {
@@ -170,11 +177,19 @@ export async function clearBiometricCredentials(): Promise<void> {
 // approach banking apps use for "Log in with Face ID".
 
 export async function saveBiometricSession(accessToken: string, refreshToken: string): Promise<void> {
+  const value = JSON.stringify({ access_token: accessToken, refresh_token: refreshToken });
+  // "User interaction is not allowed" is the keychain refusing a write while the phone is locked or protected data is not yet
+  // available (sign-out and token refresh can fire in the background). AFTER_FIRST_UNLOCK lets the write succeed any time
+  // after the first unlock since boot. An older item saved with the stricter default can block the update, so on failure it
+  // is removed and written fresh.
+  const opts = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
   try {
-    await SecureStore.setItemAsync(
-      BIOMETRIC_SESSION_KEY,
-      JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
-    );
+    try {
+      await SecureStore.setItemAsync(BIOMETRIC_SESSION_KEY, value, opts);
+    } catch {
+      await SecureStore.deleteItemAsync(BIOMETRIC_SESSION_KEY).catch(() => {});
+      await SecureStore.setItemAsync(BIOMETRIC_SESSION_KEY, value, opts);
+    }
     console.log('[Bio] saveBiometricSession: write completed for key', BIOMETRIC_SESSION_KEY);
   } catch (e: any) {
     // Was silently swallowed by the caller's own try/catch — reported live:
@@ -183,7 +198,7 @@ export async function saveBiometricSession(accessToken: string, refreshToken: st
     // actually succeeded) yet the very next Face ID login attempt got
     // "Sign in required," meaning getBiometricSession() found nothing.
     // Logging the real failure here instead of let it vanish silently.
-    console.error('[Bio] saveBiometricSession FAILED:', e?.message, e);
+    console.warn('[Bio] saveBiometricSession FAILED:', e?.message);
     throw e;
   }
 }

@@ -25,6 +25,7 @@ import FlyerScannerModal from '@/components/FlyerScannerModal';
 import PinEntryModal from '@/components/PinEntryModal';
 import type { FamilyMember } from '@/store/familyStore';
 import { ParentView } from './ParentView';
+import { ReviewConflictModal } from './parent/ReviewConflictModal';
 import { HubStickyNotes } from './HubStickyNotes';
 import { HubMyList } from './HubMyList';
 import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScreen';
@@ -133,6 +134,7 @@ export default function HubScreen() {
   // here; ParentView gets plain callbacks plus a ref for the "open full
   // form" handoff back into its own AddQuestModal/AddEventModal pair.
   const [showDescribeTask, setShowDescribeTask] = useState(false);
+  const [conflictReview, setConflictReview] = useState<{ event: any; related: { title: string; detail: string; meta: string }[] } | null>(null);
   const [showDescribeEvent, setShowDescribeEvent] = useState(false);
   // Same fullBleedScreenActive gate TasksScreen/CalendarScreen already use
   // for their own JustDescribeIt*Screen instances — hides the shared Ask
@@ -717,6 +719,7 @@ export default function HubScreen() {
             onDescribeEvent={() => setShowDescribeEvent(true)}
             describeFullFormRef={describeFullFormRef}
             onReviewOpen={() => setShowReviewInbox(true)}
+            onReviewConflict={(event, related) => setConflictReview({ event, related })}
             onRidesOpen={() => setShowRidesRoom(true)}
             onDispatchDirect={(memberId, etaMinutes, eventId) => {
               if (!familyId) return;
@@ -804,6 +807,15 @@ export default function HubScreen() {
           dead/unused for the same reason). */}
       <AddEventModal visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />
+      <ReviewConflictModal
+        visible={!!conflictReview}
+        onClose={() => setConflictReview(null)}
+        conflictEvent={conflictReview?.event ?? null}
+        relatedContext={conflictReview?.related ?? []}
+        onApprove={() => {
+          if (conflictReview?.event) useEventStore.getState().updateEvent(conflictReview.event.id, { conflictAcknowledged: true });
+        }}
+      />
 
       {/* Parent Hub's "Add a task"/"Schedule" quick actions — rendered here,
           not inside ParentView, so each is a true full-page replacement

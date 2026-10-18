@@ -901,7 +901,8 @@ function RootNavigator() {
         const m = s.members.find((mm: any) => mm.id === targetMemberId);
         const familyId = (m as any)?.familyId;
         if (targetMemberId && familyId) {
-          import('@/lib/locationTracking').then(({ reportLiveLocationNow }) => {
+          import('@/lib/locationTracking').then(({ reportLiveLocationNow, enterLiveMode }) => {
+            enterLiveMode().catch(() => {}); // someone is looking: report quickly for the next couple of minutes
             reportLiveLocationNow(targetMemberId, familyId);
           }).catch(() => {});
         }

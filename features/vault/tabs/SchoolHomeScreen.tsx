@@ -39,7 +39,6 @@ import { ClassEditScreen } from './school/ClassEditScreen';
 import { termsOf, guessCurrentTerm, periodsInTerm, prettySubject } from './school/schoolUtils';
 import { HolidayEditScreen } from './school/HolidayEditScreen';
 import { ImportantDateEditScreen } from './school/ImportantDateEditScreen';
-import { SchoolDayScreen } from './school/SchoolDayScreen';
 
 // "Gemini rhythm" tokens (CLAUDE.md rule 6 exception, 2026-10-10) — warm
 // cream canvas + bright white shadowed cards + deep forest-slate text,
@@ -309,9 +308,9 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
 }
 
 /** One child's own School page: Schedule (today / week), Holidays (from – to) and Important dates. */
-function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpenHolidays, onCreateSchedule }: {
+function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenHolidays, onCreateSchedule }: {
   kid: FamilyMember; colors: any; isDark: boolean; canEdit: boolean;
-  onClose: () => void; onOpenDay: () => void; onOpenHolidays: () => void; onCreateSchedule: () => void;
+  onClose: () => void; onOpenHolidays: () => void; onCreateSchedule: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const schedule = useSchoolStore(s => s.schedules.find(sc => sc.memberId === kid.id));
@@ -478,9 +477,6 @@ function KidSchoolPage({ kid, colors, isDark, canEdit, onClose, onOpenDay, onOpe
                     <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>+ Add a class</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity onPress={onOpenDay} style={{ minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Open the full day →</Text>
-                </TouchableOpacity>
                 {canEdit && (
                   <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
                     <TouchableOpacity onPress={onCreateSchedule} style={{ flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: border, backgroundColor: cardBg }}>
@@ -663,7 +659,6 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
 
   const [manageKidId, setManageKidId] = useState<string | null>(null);
   const schedules = useSchoolStore(s => s.schedules);
-  const [openDayMemberId, setOpenDayMemberId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createKidId, setCreateKidId] = useState<string | undefined>(undefined);
   const [holidaysMemberId, setHolidaysMemberId] = useState<string | null>(null);
@@ -680,7 +675,6 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
     ? `${todayLine} · your own school records`
     : `${todayLine} · All children · parent-managed school records`;
 
-  const openDayScreenMember = members.find(m => m.id === openDayMemberId);
   const holidaysMember = members.find(m => m.id === holidaysMemberId);
 
   return (
@@ -762,21 +756,8 @@ export default function SchoolHomeScreen({ colors, isDark, isKid, isTeen, onClos
           kid={members.find(m => m.id === manageKidId)!}
           colors={colors} isDark={isDark} canEdit={!isOwnScheduleOnly}
           onClose={() => setManageKidId(null)}
-          onOpenDay={() => setOpenDayMemberId(manageKidId)}
           onOpenHolidays={() => setHolidaysMemberId(manageKidId)}
           onCreateSchedule={() => { setCreateKidId(manageKidId ?? undefined); setCreateOpen(true); }}
-        />
-      )}
-
-      {openDayScreenMember && (
-        <SchoolDayScreen
-          visible={!!openDayMemberId}
-          colors={colors} isDark={isDark}
-          memberId={openDayScreenMember.id}
-          memberName={openDayScreenMember.name}
-          onClose={() => setOpenDayMemberId(null)}
-          onOpenHolidays={() => { setHolidaysMemberId(openDayScreenMember.id); }}
-          zIndex={60}
         />
       )}
 

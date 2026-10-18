@@ -19,6 +19,10 @@ import { showToast } from '@/components/AppToast';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
+import { startLiveSelfLocation } from '@/lib/liveSelfLocation';
+import { recordLocationConsent } from '@/lib/locationConsent';
+import { canShareLocation, isChildMember, memberById } from '@/lib/childPrivacy';
+import LocationConsentScreen from '@/components/LocationConsentScreen';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling, getLastLocationSyncError } from '@/lib/locationTracking';
 import { startMotionTracking, stopMotionTracking } from '@/lib/motionTracking';
 import CubeSpinner from '@/components/CubeSpinner';
@@ -255,6 +259,9 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
   // Ref, not state — must NOT itself trigger a re-render when flipped, it
   // only gates whether a future load() call is allowed to show the
   // spinner. See load()'s own comment below for the full bug this fixes.
+  const [showConsent, setShowConsent] = useState(false);
+  const liveReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveReloadPending = useRef(false);
   const hasLoadedOnceRef = useRef(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
@@ -407,7 +414,9 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
       // DB says they wanted sharing on, auto-resume it here instead of
       // waiting for them to notice and re-toggle.
       const { data } = await supabase.from('member_locations').select('share_location_enabled').eq('member_id', activeMemberId).maybeSingle();
-      if (data?.share_location_enabled && isBackgroundLocationSupported()) {
+      // Never resume silently without this person's recorded consent on this device (Apple 5.1.1): after a reinstall they
+      // see the toggle off and turn it on through the disclosure page.
+      if (data?.share_location_enabled && isBackgroundLocationSupported() && await canShareLocation(activeMemberId)) {
         const ok = await startBackgroundLocationTracking(activeMemberId, familyId).catch(() => false);
         if (ok) {
           setTracking(true);
@@ -427,18 +436,67 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
     // identical fix in FamilyRadarSection.tsx for the full explanation.
     const channelName = `member_locations_live_${Math.random().toString(36).slice(2)}`;
     const ch = supabase.channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations' }, () => {
+        // Pings can arrive every few seconds from several phones: reload at most about once a second so the map stays smooth.
+        if (liveReloadTimer.current) { liveReloadPending.current = true; return; }
+        load();
+        liveReloadTimer.current = setTimeout(() => {
+          liveReloadTimer.current = null;
+          if (liveReloadPending.current) { liveReloadPending.current = false; load(); }
+        }, 900);
+      })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { supabase.removeChannel(ch); if (liveReloadTimer.current) { clearTimeout(liveReloadTimer.current); liveReloadTimer.current = null; } };
   }, [load]);
 
-  const toggleTracking = async () => {
+  // The moment this tab opens (and sharing is on): get a high-accuracy fix for this person, then keep streaming it while the
+  // tab stays open, so everyone sees movement live. Also asks the other members' phones for a fresh fix once per open.
+  useEffect(() => {
+    if (!tracking || !activeMemberId) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    startLiveSelfLocation(activeMemberId, familyId ?? null).then(fn => { if (cancelled) fn(); else stop = fn; });
+    return () => { cancelled = true; stop?.(); };
+  }, [tracking, activeMemberId, familyId]);
+
+  // While the map is open, ask the other sharing phones to report quickly: once on open, then again every ~100 s (their "live"
+  // window lasts two minutes, then they fall back to saving battery by themselves).
+  const sharingOthersRef = useRef<string[]>([]);
+  useEffect(() => {
+    sharingOthersRef.current = locations.filter(l => l.member_id !== activeMemberId && (l as any).share_location_enabled).map(l => l.member_id);
+  }, [locations, activeMemberId]);
+  useEffect(() => {
+    if (!activeMemberId || !familyId) return;
+    const ping = () => {
+      const others = sharingOthersRef.current;
+      if (others.length === 0) return;
+      supabase.functions.invoke('family-notifier', {
+        body: { type: 'location_request', familyId, memberIds: others, excludeMemberId: activeMemberId, payload: { fromMemberId: activeMemberId }, persist: false },
+      }).catch(() => {});
+    };
+    const first = setTimeout(ping, 1500);
+    const timer = setInterval(ping, 100_000);
+    return () => { clearTimeout(first); clearInterval(timer); };
+  }, [activeMemberId, familyId]);
+
+  const runToggleTracking = async (skipConsentCheck: boolean) => {
     if (!activeMemberId) return;
     if (!isBackgroundLocationSupported()) {
       Alert.alert(
         'Update needed',
         'Location sharing needs a fresh app build to work on this device. Ask whoever maintains the app to rebuild and reinstall it, then this will work.',
       );
+      return;
+    }
+    // Turning sharing ON needs the person's informed consent first (Apple 5.1.1 / 2.5.4): show the disclosure page, and only
+    // after they agree does the system location prompt ever appear.
+    if (!tracking && !skipConsentCheck && !(await canShareLocation(activeMemberId))) {
+      if (isChildMember(memberById(activeMemberId))) {
+        // A child cannot agree for themselves: a parent turns this on for them (Settings → Children's privacy).
+        Alert.alert('Ask a parent', 'A parent needs to turn on location sharing for you in Settings → Children’s privacy.');
+        return;
+      }
+      setShowConsent(true);
       return;
     }
     setTogglingTrack(true);
@@ -488,6 +546,9 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
       setTogglingTrack(false);
     }
   };
+
+  // Event handlers pass their own arguments, so the public handler takes none.
+  const toggleTracking = () => { runToggleTracking(false); };
 
   const updateStatus = async (memberId: string, status: LocStatus) => {
     setUpdatingId(memberId);
@@ -602,7 +663,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
         await load();
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const { latitude: lat, longitude: lng } = pos.coords;
       // Was never captured here — only the background task wrote speed_mph,
       // so a manual refresh silently left it stale/zero. GPS speed is
@@ -975,7 +1036,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
             const rc = roleColor(loc.role);
             const m = members.find(mb => mb.id === loc.member_id);
             const fixAgeMs = loc.last_updated ? Date.now() - new Date(loc.last_updated).getTime() : Infinity;
-            const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 10 * 60_000;
+            const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 4 * 60_000;
             return (
               <FamilyMapMarker
                 key={loc.member_id}
@@ -1171,7 +1232,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
           // movement badge on how stale the fix actually is, not just
           // whether lat/lng exist at all.
           const fixAgeMs = loc.last_updated ? Date.now() - new Date(loc.last_updated).getTime() : Infinity;
-          const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 10 * 60_000;
+          const isFreshFix = Number.isFinite(fixAgeMs) && fixAgeMs < 4 * 60_000;
           const sharingOff = loc.share_location_enabled === false;
           const isExpanded = expandedId === loc.member_id;
 
@@ -1499,6 +1560,16 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
           <PlaceEditorPage place={editingPlace} onClose={requestAnimatedClose} />
         ) : null}
       </FullPageOverlay>
+
+      <LocationConsentScreen
+        visible={showConsent}
+        onClose={() => setShowConsent(false)}
+        onAgree={async () => {
+          if (activeMemberId) await recordLocationConsent(activeMemberId);
+          setShowConsent(false);
+          runToggleTracking(true);
+        }}
+      />
     </View>
   );
 }

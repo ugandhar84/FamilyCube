@@ -28,7 +28,6 @@ import { FamilyPulseCard } from './parent/FamilyPulseCard';
 import { ProfileSwitcherCard } from './parent/ProfileSwitcherCard';
 import { NeedsYouCard, type NeedsYouItem } from './parent/NeedsYouCard';
 import { TonightMealCard } from './parent/TonightMealCard';
-import { ReviewConflictModal } from './parent/ReviewConflictModal';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 import { TrialNagBanner } from './parent/TrialNagBanner';
@@ -45,8 +44,10 @@ import { useParentStores } from './parent/hooks/useParentStores';
 import { useParentEventClassification } from './parent/hooks/useParentEventClassification';
 import { useParentModals } from './parent/hooks/useParentModals';
 
-export function ParentView({ focusKey = 1, active, members, colors, isDark, onScanFlyer, onDescribeTask, onDescribeEvent, describeFullFormRef, onReviewOpen, onRidesOpen, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
+export function ParentView({ focusKey = 1, active, members, colors, isDark, onScanFlyer, onDescribeTask, onDescribeEvent, describeFullFormRef, onReviewOpen, onReviewConflict, onRidesOpen, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
   focusKey?: number;
+  /** Opens the one-decision page. It lives in HubScreen, outside this ScrollView, like every other full-page screen. */
+  onReviewConflict?: (event: any, related: { title: string; detail: string; meta: string }[]) => void;
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onScanFlyer: () => void;
@@ -548,7 +549,6 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
   // ReviewConflictModal's own open state — declared here (not down by its
   // JSX usage) since the conflict card's onReview below needs to call it.
-  const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
   // ─── Needs You: one card PER CATEGORY, not a single winner-takes-all slot ──
   // Live direction: "i think for each category we should show each .. with
@@ -659,7 +659,7 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         reason: conflictReasons?.get(conflictEvent.id) ?? 'Confirmed but never started — check in.',
         dueDate: conflictEvent.date, dueTime: conflictEvent.time,
       },
-      onReview: () => setReviewModalOpen(true),
+      onReview: () => onReviewConflict?.(conflictEvent, needsYouRelatedContext),
     });
   }
 
@@ -972,16 +972,6 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
           onDispatch={onDispatchDirect}
         />
       )}
-
-      <ReviewConflictModal
-        visible={reviewModalOpen}
-        onClose={() => setReviewModalOpen(false)}
-        conflictEvent={conflictEvent ?? null}
-        relatedContext={needsYouRelatedContext}
-        onApprove={() => {
-          if (conflictEvent) updateEvent(conflictEvent.id, { conflictAcknowledged: true });
-        }}
-      />
 
       <PushbackSheet
         target={pushbackSheet}

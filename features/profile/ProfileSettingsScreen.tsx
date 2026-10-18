@@ -22,6 +22,7 @@ import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMemb
 import { useChoreStore } from '@/store/choreStore';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
+import { isChildMember, hasChildConsent, setChildConsent } from '@/lib/childPrivacy';
 import { setFamilyPhotoFrameEnabled } from '@/features/hub/parent/FamilyPhotoFrameCard';
 import { showAlert } from '@/components/AppAlert';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
@@ -1032,6 +1033,46 @@ function TypeToConfirmRow({
   );
 }
 
+// Children's privacy — a parent decides, for each child, whether the child's location may be shared and whether the child
+// may use the AI helpers (which send what they type or scan to a third-party AI provider). A child cannot agree for themselves.
+function ChildrenPrivacySection({ parent, children, colors, isDark }: { parent: any; children: any[]; colors: any; isDark: boolean }) {
+  const [on, setOn] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const next: Record<string, boolean> = {};
+      for (const c of children) {
+        next[`${c.id}:ai`] = await hasChildConsent(c.id, 'ai');
+        next[`${c.id}:location`] = await hasChildConsent(c.id, 'location');
+      }
+      if (alive) setOn(next);
+    })();
+    return () => { alive = false; };
+  }, [children.map(c => c.id).join(',')]);
+  const flip = async (child: any, kind: 'ai' | 'location', value: boolean) => {
+    setOn(o => ({ ...o, [`${child.id}:${kind}`]: value }));
+    const ok = await setChildConsent(parent.id, parent.familyId, child.id, kind, value);
+    if (!ok) setOn(o => ({ ...o, [`${child.id}:${kind}`]: !value }));
+  };
+  const track = { false: isDark ? colors.border : GEMINI.border, true: colors.primary };
+  return (
+    <>
+      <SectionHeader label="Children’s privacy" colors={colors} isDark={isDark} />
+      <Text style={{ fontSize: TYPO.caption, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight, marginBottom: 10 }}>
+        Children cannot agree to these for themselves. Both are off until you turn them on, and you can turn them off at any time.
+      </Text>
+      {children.map(c => (
+        <View key={c.id}>
+          <Row icon="location-outline" label={`${c.name.split(' ')[0]} can share their location`} subtitle="Shows on the family map, even when the app is closed" colors={colors} isDark={isDark}
+            right={<Switch value={!!on[`${c.id}:location`]} onValueChange={v => flip(c, 'location', v)} trackColor={track} thumbColor="#fff" />} />
+          <Row icon="sparkles-outline" label={`${c.name.split(' ')[0]} can use AI helpers`} subtitle="Sends what they type or scan to Google’s Gemini AI service" colors={colors} isDark={isDark}
+            right={<Switch value={!!on[`${c.id}:ai`]} onValueChange={v => flip(c, 'ai', v)} trackColor={track} thumbColor="#fff" />} />
+        </View>
+      ))}
+    </>
+  );
+}
+
 export default function ProfileSettingsScreen({ hideBackButton = false, hideSensitiveAdminRows = false, hideHero = false, columns = 1, notificationsShell, currencyShell, familyNameShell, termsShell, memberSheetShell, dataRecoveryShell, inviteShell }: {
   hideBackButton?: boolean; hideSensitiveAdminRows?: boolean;
   // Kiosk-only: the identity card (avatar/name/role, tappable to edit) is
@@ -1462,6 +1503,15 @@ export default function ProfileSettingsScreen({ hideBackButton = false, hideSens
             collapsed into one summary row that opens NotificationsSheet
             (categories, quiet hours, call alerts all together), same
             "tap a row → bottom sheet" pattern the app uses elsewhere. */}
+        {activeMember?.role === 'parent' && allMembers.some(m => isChildMember(m)) && (
+          <View style={[{ marginBottom: 24 }, columns > 1 && {
+            backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
+            borderRadius: RADIUS.lg, padding: 14,
+          }]}>
+            <ChildrenPrivacySection parent={activeMember} children={allMembers.filter(m => isChildMember(m))} colors={colors} isDark={isDark} />
+          </View>
+        )}
+
         <View style={[{ marginBottom: 24 }, columns > 1 && {
           backgroundColor: isDark ? colors.card : GEMINI.cardBg, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border,
           borderRadius: RADIUS.lg, padding: 14,

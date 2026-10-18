@@ -2332,6 +2332,13 @@ serve(async (req) => {
       return json({ error: 'Unauthorized' }, 403);
     }
 
+    // A child cannot agree to AI use for themselves: a parent must have turned it on for them (child_consents). Enforced here too,
+    // so a modified or old client cannot send a child's messages to the AI provider without that consent.
+    if (member.role === 'kid' || member.role === 'child') {
+      const { data: consent } = await supabase.from('child_consents').select('id').eq('member_id', member.id).eq('kind', 'ai').maybeSingle();
+      if (!consent) return json({ error: 'A parent needs to turn on AI helpers for this child first.', code: 'child_consent_required' }, 403);
+    }
+
     // Per-member rate limit: stops a stuck client or a script from running up model cost and from hammering the data tools.
     {
       const since = new Date(Date.now() - 10 * 60_000).toISOString();

@@ -4,6 +4,17 @@ import { parseLocalDate } from '@/lib/dates';
 // already handed in and waiting on a parent's review.
 const NOT_ACTIONABLE = ['approved', 'auto_approved', 'completed', 'done', 'declined', 'cancelled', 'archived', 'pending_approval'];
 
+/**
+ * A task someone made for themselves (created and assigned to the same person, trusted, worth nothing) is private to
+ * them. True when this task is private AND belongs to someone other than `myId`, so counts and badges must skip it.
+ * Same rule as isPersonalTask in store/choreAdapter (kept here so this file stays free of store imports).
+ */
+export function isPrivateToOthers(c: any, myId?: string | null): boolean {
+  const worth = (c.basePoints || c.coinsReward || 0) + (c.bonusCoins || 0);
+  const personal = !!c.createdById && c.createdById === c.assignedToId && !!c.trustedAutoApprove && worth === 0;
+  return personal && c.assignedToId !== myId;
+}
+
 /** Same rule QuestCard uses for its "Overdue" badge: the due DATE is before today (a chore due today is not overdue until tomorrow). */
 export function isChoreOverdue(c: { dueDate?: string | null; status: string; instanceDate?: string | null }, now: Date = new Date()): boolean {
   if (!c.dueDate || NOT_ACTIONABLE.includes(c.status)) return false;
@@ -27,6 +38,7 @@ export function countOverdueChores(
   let n = 0;
   for (const c of chores) {
     if (!isChoreOverdue(c)) continue;
+    if (isPrivateToOthers(c, member.id)) continue;
     if (isParent || c.assignedToId === member.id) n++;
   }
   return n;

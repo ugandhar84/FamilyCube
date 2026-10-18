@@ -8,9 +8,11 @@
  * AddIntakeChooser already uses, transcribed on-device, sent as a normal
  * chat turn once the user stops speaking.
  */
+import { RHYTHM } from '@/constants/theme';
+import { PageHeading } from '@/components/PageHeading';
 import { KioskSlideModal } from '@/features/kiosk/components/KioskSlideModal';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard } from 'react-native';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -305,29 +307,39 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   // nothing specific to surface (e.g. a brand new family with no data yet).
   const starterPrompts = useMemo(() => {
     const todayStr = todayLocal();
+    const isParent = activeMember?.role === 'parent';
+    const short = (t: string) => (t.length > 28 ? `${t.slice(0, 27).trim()}…` : t);
     const prompts: string[] = [];
 
+    // Only prompts that are true for THIS person right now: built from their own real data, never a made-up example.
+    const mine = (id?: string | null) => !id || id === activeMember?.id;
     const nextEvent = upcomingEvents
-      .filter(e => e.date >= todayStr)
+      .filter(e => e.date >= todayStr && (isParent || mine(e.memberId) || e.memberIds?.includes(activeMember?.id ?? '')))
       .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))[0];
-    if (nextEvent) prompts.push(`Remind me about ${nextEvent.title}`);
+    if (nextEvent) prompts.push(`What's on ${nextEvent.date === todayStr ? 'today' : 'next'}?`);
 
-    const openQuest = quests.find(q => q.isPool && q.status === 'todo');
-    if (openQuest) prompts.push(`Who can do "${openQuest.title}"?`);
+    const myTodo = quests.filter(q => q.status === 'todo' && (isParent || q.assignedToId === activeMember?.id));
+    const overdue = myTodo.find(q => q.dueDate && q.dueDate < todayStr);
+    if (overdue) prompts.push(isParent ? "What's overdue?" : 'What chores are late?');
+    else if (myTodo.length > 0) prompts.push(isParent ? "What chores are open?" : 'What chores do I have?');
 
-    const overdueQuest = quests.find(q => q.status === 'todo' && q.dueDate && q.dueDate < todayStr);
-    if (overdueQuest) prompts.push(`What's overdue?`);
+    const pool = quests.find(q => q.isPool && q.status === 'todo');
+    if (pool) prompts.push(`Who can do "${short(pool.title)}"?`);
+
+    if (isParent) {
+      const pending = quests.some(q => q.status === 'pending_approval');
+      if (pending) prompts.push('What needs my approval?');
+    }
 
     prompts.push("What's going on this week?");
-    prompts.push('Has anyone done the trash?');
-    // De-dupe (a generic fallback could coincidentally match something
-    // already added above) and cap at 3 — enough to be useful, not a wall.
     return [...new Set(prompts)].slice(0, 3);
-  }, [upcomingEvents, quests]);
+  }, [upcomingEvents, quests, activeMember?.id, activeMember?.role]);
 
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    // Tapping a suggestion (or Send) hides the keyboard so the reply is visible, not covered.
+    Keyboard.dismiss();
     // Fail-SAFE, not fail-open: block sending unless consent has been
     // POSITIVELY confirmed. The async DB/AsyncStorage check
     // (useAskCubeConsent) hasn't necessarily resolved yet on a fresh app
@@ -860,43 +872,51 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
         }
       >
 
-        {/* Breadcrumb — left-aligned, ReviewInbox style */}
-        {!isKiosk && (
-          <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 2 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.6 }}>
-              FAMILY CUBE · AI
-            </Text>
-            <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink }}>← Hub</Text>
+        {/* Standard page heading (phone): tap the title to go back; history and new-chat sit beside it. */}
+        {!isKiosk ? (
+          <PageHeading
+            eyebrow="FAMILY CUBE · AI"
+            title="Ask Cube"
+            subtitle="Private family assistant"
+            accent="pink"
+            Icon={Sparkles}
+            topInset={0}
+            onTitlePress={onClose}
+            right={(
+              <View style={{ flexDirection: 'row', gap: RHYTHM.inline }}>
+                <Pressable onPress={openHistory} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Chat history"
+                  style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight }}>
+                  <History size={18} color={colors.pink} />
+                </Pressable>
+                <Pressable onPress={startNewChat} disabled={messages.length === 0 && !conversationId} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                  accessibilityRole="button" accessibilityLabel="New chat"
+                  style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight,
+                    opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
+                  <SquarePen size={18} color={colors.pink} />
+                </Pressable>
+              </View>
+            )}
+          />
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: RHYTHM.page, paddingBottom: RHYTHM.item }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.4 }}>Ask Cube</Text>
+              <Text style={{ fontSize: 13, color: colors.pink, marginTop: 1, fontWeight: '600' }}>Private family assistant</Text>
+            </View>
+            <Pressable onPress={openHistory} hitSlop={12} accessibilityRole="button" accessibilityLabel="Chat history"
+              style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight, marginRight: RHYTHM.inline }}>
+              <History size={18} color={colors.pink} />
+            </Pressable>
+            <Pressable onPress={startNewChat} disabled={messages.length === 0 && !conversationId} hitSlop={12} accessibilityRole="button" accessibilityLabel="New chat"
+              style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight,
+                opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
+              <SquarePen size={18} color={colors.pink} />
             </Pressable>
           </View>
         )}
 
-        {/* Page title row — ReviewInbox style: title left, icon buttons right */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,
-          paddingTop: 8, paddingBottom: 14,
-          borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : colors.pinkLight }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>Ask Cube</Text>
-            <Text style={{ fontSize: 13, color: colors.pink, marginTop: 1, fontWeight: '600' }}>Private family assistant</Text>
-          </View>
-          {/* Icon buttons: white circle on pinkLight bg — ReviewInbox pattern */}
-          <Pressable onPress={openHistory} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: isDark ? colors.surface : colors.pinkLight, marginRight: 8 }}>
-            <History size={17} color={colors.pink} />
-          </Pressable>
-          <Pressable onPress={startNewChat} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-            disabled={messages.length === 0 && !conversationId}
-            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: isDark ? colors.surface : colors.pinkLight,
-              opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
-            <SquarePen size={17} color={colors.pink} />
-          </Pressable>
-        </View>
-
             <View style={{ flex: 1 }}>
-            <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12 }}
+            <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.page, gap: RHYTHM.item }}
               keyboardShouldPersistTaps="handled"
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -923,7 +943,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       <Sparkles size={24} color={colors.pink} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Help with the family load</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>{`${new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, ${activeMember?.name?.split(' ')[0] ?? 'there'}`}</Text>
                       <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 17 }}>
                         Ask about plans, tasks, meals, rides, or messages.
                       </Text>
@@ -1062,23 +1082,6 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       ))}
                     </View>
                   )}
-                  {/* "Add to plan" / "Share with family" — only when no proposals,
-                      or all proposals are still pending (hide once acted on) */}
-                  {m.role === 'assistant' && m.id !== messages[0]?.id && m.content && m.revealDone &&
-                    !m.proposals?.length && (
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                      <Pressable onPress={() => send('Add that to the plan')}
-                        style={{ borderRadius: 20, borderWidth: 1.5, borderColor: colors.pink + '60',
-                          backgroundColor: colors.pinkLight, paddingHorizontal: 14, paddingVertical: 8 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>+ Add to plan</Text>
-                      </Pressable>
-                      <Pressable onPress={() => send('Share this with the family')}
-                        style={{ borderRadius: 20, borderWidth: 1.5, borderColor: colors.pink + '60',
-                          backgroundColor: colors.pinkLight, paddingHorizontal: 14, paddingVertical: 8 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Share with family</Text>
-                      </Pressable>
-                    </View>
-                  )}
                 </View>
               ))}
               {sending && (
@@ -1107,7 +1110,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
 
             {/* Figma compose bar: white input + lavender "Ask" button */}
             <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#e8e8ee',
-              paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
+              paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.inline }}>
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {/* Mic */}
                 <Pressable

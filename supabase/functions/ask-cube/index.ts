@@ -576,6 +576,23 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'propose_reassign_rides',
+      description: 'Propose handing over SEVERAL rides/pickups/helper roles to one person in one go (parent only), e.g. "move all of Praveena\'s pickups this week to me", "I will take every ride that has no driver tomorrow", "give Cherry\'s Saturday rides to Ugandhar". Returns ONE plan card listing every ride, applied with one tap. Does NOT change anything itself. For a single ride use propose_update with assignToMemberName instead. fromMemberName = whose rides to take over (omit to pick up the rides that have nobody driving).',
+      parameters: {
+        type: 'object',
+        properties: {
+          toMemberName:   { type: 'string', description: 'Who will drive/help from now on. "me"/"I" means the person asking.' },
+          fromMemberName: { type: 'string', description: 'The person whose rides are being moved. Omit to take only rides with nobody assigned.' },
+          startDate:      { type: 'string', description: 'YYYY-MM-DD first day, inclusive' },
+          endDate:        { type: 'string', description: 'YYYY-MM-DD last day, inclusive' },
+        },
+        required: ['toMemberName', 'startDate', 'endDate'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'propose_kid_request_action',
       description: 'Propose approving or declining an already-existing kid request (a ride, help/tutor, permission, appointment, check-in, or other request a kid sent to a parent — NOT a chore, use propose_chore_action for those). Does NOT perform the action — returns a proposal card the user must confirm. Parent/approver only. Use whenever the user asks to approve/decline/accept/reject a specific kid request by description, e.g. "approve Mia\'s ride request", "decline the tutor request from Leo", "say yes to the permission request about the sleepover". Looks the request up by requester name and/or description the same way propose_update does — never guess which request if more than one matches.',
       parameters: {
@@ -1578,6 +1595,44 @@ async function executeTool(
       currentAssignee: ev.member_id ? (aliasMap.toAlias.get(ev.member_id) ?? 'Unknown') : null,
       newAssignee: typeof args.assignToMemberName === 'string' ? args.assignToMemberName : undefined,
       changes,
+    };
+  }
+
+  if (name === 'propose_reassign_rides') {
+    if (viewerRole !== 'parent') return { error: 'Only a parent can hand rides over to someone. Tell the user that plainly.' };
+    const dateOk = (d: any) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+    if (!dateOk(args.startDate) || !dateOk(args.endDate)) return { error: 'Need a start and end date (YYYY-MM-DD) — ask which days they mean.' };
+    const toName = /^(me|myself|i)$/i.test(String(args.toMemberName ?? '').trim()) ? viewerName : args.toMemberName;
+    const toId = await resolveMemberId(supabase, familyId, toName, aliasMap);
+    if (!toId) return { error: `Couldn't find a family member named "${args.toMemberName}". Tell the user plainly.` };
+    let fromId: string | null = null;
+    if (args.fromMemberName) {
+      fromId = await resolveMemberId(supabase, familyId, args.fromMemberName, aliasMap);
+      if (!fromId) return { error: `Couldn't find a family member named "${args.fromMemberName}". Tell the user plainly.` };
+    }
+    const { data: rideRows, error: rideErr } = await supabase.from('calendar_events')
+      .select('id, title, date, start_time, category, ride_required, driver_id, driver_name, helper_id, helper_name')
+      .eq('family_id', familyId).is('deleted_at', null)
+      .gte('date', args.startDate).lte('date', args.endDate)
+      .order('date').order('start_time').limit(60);
+    if (rideErr) return { error: rideErr.message };
+    const items: any[] = [];
+    for (const e of (rideRows ?? []) as any[]) {
+      const isRide = e.category === 'Ride' || !!e.ride_required;
+      if (!isRide) continue;
+      const hasDriver = !!(e.driver_id || e.driver_name);
+      const hasHelper = !!(e.helper_id || e.helper_name);
+      let role: 'driver' | 'helper' | null = null;
+      if (fromId) { if (e.driver_id === fromId) role = 'driver'; else if (e.helper_id === fromId) role = 'helper'; }
+      else if (!hasDriver && !hasHelper) role = 'driver';
+      if (!role || (role === 'driver' ? e.driver_id : e.helper_id) === toId) continue;
+      items.push({ eventId: e.id, title: realNameToAlias(aliasMap, members, e.title), date: e.date, time: e.start_time, role });
+    }
+    if (!items.length) return { error: 'No matching rides were found in that range. Tell the user plainly that there is nothing to move.' };
+    return {
+      __proposal: 'reassign_rides',
+      toMemberId: toId, toAlias: aliasMap.toAlias.get(toId) ?? null, items: items.slice(0, 20),
+      note: `Drafted ONE plan card with ${items.length} ride(s). In one short sentence say how many rides it covers and that nothing changes until they tap the button on the card. Do not list the rides again.`,
     };
   }
 
@@ -2896,7 +2951,7 @@ not once with a vague/blank targetSearch hoping it matches everything — a sing
 on ONE chore. The same applies to a bulk/vague CANCEL EVENT request with no real title to search on ("cancel all her
 fun stuff this weekend", "clear my whole day tomorrow") — call get_schedule first for that range to see the actual
 distinct events, then call propose_cancel_event once per real event you found, never with a non-title phrase like
-"fun stuff" as targetSearch (that has nothing to match against and risks a wrong or empty result). For "cancel ALL of <person>'s events <day>" or "clear my day" specifically, call propose_cancel_event ONCE with allOnDate (the resolved YYYY-MM-DD) and memberName; it returns one draft card per event, so never loop and never say you hit a technical problem just because several events match. These only PROPOSE, they do not create, change, or perform anything
+"fun stuff" as targetSearch (that has nothing to match against and risks a wrong or empty result). To move SEVERAL rides to one person at once ("I'll take all of Praveena's pickups this week", "give me every ride with no driver tomorrow"), call propose_reassign_rides ONCE with the resolved date range — never call propose_update in a loop. For "cancel ALL of <person>'s events <day>" or "clear my day" specifically, call propose_cancel_event ONCE with allOnDate (the resolved YYYY-MM-DD) and memberName; it returns one draft card per event, so never loop and never say you hit a technical problem just because several events match. These only PROPOSE, they do not create, change, or perform anything
 When the user wants to approve/decline a KID REQUEST (a ride, help/tutor, permission, appointment, check-in, or
 other request a kid sent — never a chore, propose_chore_action covers those), use propose_kid_request_action.
 "Approve Mia's ride request" -> action: 'approve'. "Decline the tutor request from Leo" -> action: 'decline'.
@@ -3167,7 +3222,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     // user to pick from), and each one needs its own card client-side.
     const scheduleCardRows: any[] = [];
     const choreCardRows: any[] = [];
-    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event'; data: any }[] = [];
+    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'reassign_rides'; data: any }[] = [];
     // Deduped by id across every get_quests/get_chore_history call this
     // turn — used client-side only, to linkify a chore's title wherever it
     // appears in the model's reply text. Never sent to the model itself.

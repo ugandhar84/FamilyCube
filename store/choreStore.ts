@@ -640,6 +640,18 @@ function notifyChorePing(
   }).catch(e => console.warn('[choreStore] nudge notify failed:', e?.message));
 }
 
+const lastChoreRemindAt = new Map<string, number>();
+/** Ping the person who owns an open chore (push + notification bell). At most once per 15 minutes per chore. */
+export function remindChoreAssignee(chore: { id: string; title: string; assigneeId?: string | null }, actorId: string, actorName?: string): boolean {
+  if (!chore.assigneeId) return false;
+  const now = Date.now();
+  if (now - (lastChoreRemindAt.get(chore.id) ?? 0) < 15 * 60 * 1000) return false;
+  lastChoreRemindAt.set(chore.id, now);
+  notifyChorePing(getFamilyId() ?? undefined, chore.assigneeId, actorId, '⏰ Reminder about a chore',
+    `${actorName ?? 'A parent'} is checking in on "${chore.title}".`, { screen: 'Tasks', choreId: chore.id });
+  return true;
+}
+
 // Mirrors eventStore.ts's logUpdateActivity — one row per meaningful field
 // change, covering the transitions a family actually wants in the shared
 // history sheet (claim/submit/approve/decline, reassignment, reward edits,

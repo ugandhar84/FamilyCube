@@ -18,7 +18,12 @@ function niceDate(iso: string): string {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function AskCubeChoreCard({ chores, onOpen }: { chores: AskCubeChore[]; onOpen: (c: AskCubeChore) => void }) {
+export type ChoreAction = 'approve' | 'remind';
+
+export default function AskCubeChoreCard({ chores, canManage, doneKeys, onOpen, onAction }: {
+  chores: AskCubeChore[]; canManage?: boolean; doneKeys?: Record<string, string>;
+  onOpen: (c: AskCubeChore) => void; onAction?: (c: AskCubeChore, a: ChoreAction) => void;
+}) {
   const { colors } = useTheme();
   const today = localToday();
   const rank = (c: AskCubeChore) => (c.dueDate && c.dueDate < today ? 0 : c.dueDate === today ? 1 : c.dueDate ? 2 : 3);
@@ -46,6 +51,21 @@ export default function AskCubeChoreCard({ chores, onOpen }: { chores: AskCubeCh
               </View>
             </View>
             {!!sub && <Text style={{ fontSize: 12, color: colors.textSecondary }}>{sub}</Text>}
+            {(() => {
+              const done = doneKeys?.[c.id];
+              if (done) return <Text style={{ fontSize: 12, fontWeight: '800', color: colors.success }}>{done}</Text>;
+              if (!canManage) return null;
+              const act: ChoreAction | null = c.status === 'pending_approval' ? 'approve' : c.assigneeId ? 'remind' : null;
+              if (!act) return null;
+              const primary = act === 'approve';
+              return (
+                <Pressable onPress={() => onAction?.(c, act)} hitSlop={6} accessibilityRole="button" accessibilityLabel={primary ? 'Approve' : 'Remind'}
+                  style={{ alignSelf: 'flex-start', minHeight: 36, paddingHorizontal: 14, borderRadius: 11, marginTop: 2,
+                    backgroundColor: primary ? colors.primary : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: primary ? colors.textInverse : colors.textPrimary }}>{primary ? 'Approve' : 'Remind'}</Text>
+                </Pressable>
+              );
+            })()}
           </Pressable>
         );
       })}

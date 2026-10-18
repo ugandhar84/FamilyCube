@@ -47,6 +47,7 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'pink' },
   cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'pink' },
   kid_request_action: { label: 'Request draft', icon: HandHeart, accent: 'pink' },
+  reassign_rides: { label: 'Plan', icon: Clock, accent: 'pink' },
 };
 
 // Plain-English label per action kind — shown as the card's main line
@@ -456,6 +457,7 @@ export default function AskCubeProposalCard({
     : proposal.kind === 'redemption' ? 'Redeem'
     : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
     : proposal.kind === 'cancel_event' ? 'Cancel event'
+    : proposal.kind === 'reassign_rides' ? `Move ${(d.items ?? []).length} ${(d.items ?? []).length === 1 ? 'ride' : 'rides'}`
     : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
     : proposal.kind === 'quest' ? 'Add chore'
     : proposal.kind === 'event' ? 'Add event'
@@ -463,6 +465,7 @@ export default function AskCubeProposalCard({
     : 'Create';
   // What the button becomes once it has been confirmed.
   const doneLabel = proposal.kind === 'cancel_event' ? 'Cancelled'
+    : proposal.kind === 'reassign_rides' ? 'Moved'
     : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Updated'
     : proposal.kind === 'redemption' ? 'Redeemed'
     : proposal.kind === 'chore_action' || proposal.kind === 'kid_request_action' ? 'Done'
@@ -721,6 +724,26 @@ export default function AskCubeProposalCard({
         {!!d.reason && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.reason}"</Text>
         )}
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'reassign_rides') {
+    const toName = memberName(members, d.toMemberId) ?? d.toAlias;
+    const items: { eventId: string; title: string; date: string; time?: string | null; role: string }[] = d.items ?? [];
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{toName ? `${toName} takes ${items.length === 1 ? 'this ride' : `these ${items.length} rides`}` : `Move ${items.length} rides`}</Text>
+        <View style={{ gap: 6 }}>
+          {items.map(it => (
+            <View key={it.eventId} style={{ flexDirection: 'row', gap: 10, alignItems: 'baseline' }}>
+              <Text style={{ width: 92, fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{fmtDate(it.date)}{it.time ? ` · ${fmtTime(it.time)}` : ''}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }}>{it.title}</Text>
+            </View>
+          ))}
+        </View>
         {Actions}
       </View>
     );

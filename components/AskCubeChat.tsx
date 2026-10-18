@@ -26,7 +26,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { useChoreStore } from '@/store/choreStore';
+import { useChoreStore, remindChoreAssignee } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
@@ -858,6 +858,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // already resolved the exact event server-side, so this just applies
       // the same deleteEvent(id) the rest of the app already trusts.
       deleteEvent(d.eventId);
+    } else if (proposal.kind === 'reassign_rides') {
+      // Same store action as the Take over / Reassign taps; a self-assignment is confirmed by the server, others get the usual offer push.
+      for (const it of (d.items ?? []) as { eventId: string; role: 'driver' | 'helper' }[]) {
+        await useEventStore.getState().reassignEvent(it.eventId, d.toMemberId, it.role, activeMember.id);
+      }
     }
     // Every branch above is a real DB write once confirmed — same "any
     // update to the DB gets a toast" rule every manual create/edit/delete
@@ -882,6 +887,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       update_event: 'Event updated', update_chore: 'Chore updated',
       chore_action: chorActionToast[d.action] ?? 'Done',
       cancel_event: 'Event cancelled',
+      reassign_rides: 'Rides moved',
       kid_request_action: kidRequestActionToast[d.action] ?? 'Done',
     };
     showToast(toastByKind[proposal.kind] ?? 'Done');
@@ -1109,6 +1115,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary, marginTop: 4, marginHorizontal: 4 }}>Chores</Text>
                       <AskCubeChoreCard
                         chores={m.choreCards}
+                        canManage={activeMember?.role === 'parent'}
+                        doneKeys={scheduleDone}
+                        onAction={async (c, action) => {
+                          if (!activeMember) return;
+                          if (action === 'approve') {
+                            await useChoreStore.getState().approveChore(c.id, activeMember.id);
+                            setScheduleDone(d => ({ ...d, [c.id]: 'Approved ✓' }));
+                          } else {
+                            const sent = remindChoreAssignee({ id: c.id, title: c.title, assigneeId: c.assigneeId }, activeMember.id, activeMember.name.split(' ')[0]);
+                            setScheduleDone(d => ({ ...d, [c.id]: sent ? 'Reminded ✓' : 'Just reminded' }));
+                          }
+                        }}
                         onOpen={(c) => {
                           useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
                           onClose();

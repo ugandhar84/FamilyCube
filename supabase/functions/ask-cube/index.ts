@@ -3654,7 +3654,15 @@ start the reply fresh from real data for THIS turn.` : ''}
       const titles = [...scheduleCardRows, ...choreCardRows].map((c: any) => String(c.title ?? '').toLowerCase().trim()).filter(Boolean);
       // Remove only the list lines that the card already shows (they name one of its events); other bullets (chores,
       // notes) are real information the card does not carry, so they stay.
-      let lines = finalText.split('\n').filter(l => !(isBullet(l) && titles.some(t => plain(l).includes(t.slice(0, Math.min(t.length, 14))))));
+      // Compare on letters and digits only, so "Pick-up — today" still matches the card title "Pick-up · Cherry".
+      const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const t12 = (t: any) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`; };
+      const times = scheduleCardRows.map((c: any) => t12(c.time)).filter(Boolean) as string[];
+      const namesCard = (l: string) => {
+        const nl = norm(plain(l));
+        return titles.some(t => nl.includes(norm(t).slice(0, Math.min(norm(t).length, 8)))) || times.some(tm => nl.includes(norm(tm)));
+      };
+      let lines = finalText.split('\n').filter(l => !(isBullet(l) && namesCard(l)));
       // Then drop section headings left with nothing under them ("Calendar:", "Chores:").
       const isHeading = (l: string) => { const t = l.replace(/\*\*/g, '').trim(); return t.length > 0 && t.length <= 28 && /:$/.test(t) && !isBullet(l); };
       const nonEmptyAfter = (i: number) => { for (let j = i + 1; j < lines.length; j++) if (lines[j].trim()) return lines[j]; return null; };

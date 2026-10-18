@@ -99,6 +99,9 @@ interface ChatMessage {
   revealDone?: boolean;
 }
 
+const INPUT_MIN_H = 50;
+const INPUT_MAX_H = 84; // three lines of 20pt text plus padding
+
 export default function AskCubeChat({ visible, onClose, activeMember, members, variant = 'sheet', inline = false }: {
   visible: boolean;
   onClose: () => void;
@@ -334,6 +337,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     prompts.push("What's going on this week?");
     return [...new Set(prompts)].slice(0, 3);
   }, [upcomingEvents, quests, activeMember?.id, activeMember?.role]);
+
+  const [inputHeight, setInputHeight] = useState(50);
+  useEffect(() => { if (!input) setInputHeight(50); }, [input]);
 
   const send = async (text: string) => {
     const trimmed = text.trim();
@@ -1111,7 +1117,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
             {/* Figma compose bar: white input + lavender "Ask" button */}
             <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#e8e8ee',
               paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.inline }}>
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
                 {/* Mic */}
                 <Pressable
                   onPress={async () => {
@@ -1137,13 +1143,16 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     placeholder="Ask anything about family life"
                     placeholderTextColor={colors.textTertiary}
                     editable={voice.state !== 'listening'}
-                    style={{ fontSize: 14,
+                    multiline
+                    // Grows with the text up to 3 lines, then scrolls inside the box.
+                    scrollEnabled={inputHeight >= INPUT_MAX_H}
+                    onContentSizeChange={(e) => setInputHeight(Math.min(INPUT_MAX_H, Math.max(INPUT_MIN_H, Math.ceil(e.nativeEvent.contentSize.height) + 24)))}
+                    style={{ fontSize: 14, lineHeight: 20,
                       color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
-                      backgroundColor: isDark ? colors.card : '#FFFFFF', height: 50, borderRadius: 15, borderWidth: 1,
+                      backgroundColor: isDark ? colors.card : '#FFFFFF', height: input ? inputHeight : INPUT_MIN_H, borderRadius: 15, borderWidth: 1,
+                      paddingTop: 12, paddingBottom: 12, textAlignVertical: 'top',
                       borderColor: voice.state === 'listening' ? colors.danger + '60' : (isDark ? colors.border : '#daddE8'),
                       paddingHorizontal: 14, paddingRight: input && voice.state !== 'listening' ? 36 : 14 }}
-                    onSubmitEditing={() => send(input)}
-                    returnKeyType="send"
                   />
                   {!!input && voice.state !== 'listening' && (
                     <Pressable onPress={() => setInput('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

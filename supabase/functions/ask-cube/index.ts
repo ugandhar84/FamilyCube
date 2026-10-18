@@ -15,6 +15,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { logAiUsage } from '../_shared/logAiUsage.ts';
+import { resolveMessage, describeResolution, nextContext } from './resolve.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -2372,6 +2373,14 @@ serve(async (req) => {
       .filter((x): x is string => !!x)
       .join('; ') || 'none in the next 4 months';
 
+    // Deterministic pre-pass: who and when this message is about, worked out by fixed rules before the model runs, plus
+    // the instructions that apply to THIS kind of request. The model gets answers, not guesses to make.
+    const { data: convCtxRow } = await supabase.from('ask_cube_conversations').select('context').eq('id', conversationId).maybeSingle();
+    const prevCtx = (convCtxRow?.context ?? {}) as { lastMemberId?: string | null; lastDate?: string | null };
+    const resolution = resolveMessage(body.message, (allMembers ?? []) as { id: string; name: string }[], today, prevCtx.lastMemberId ?? null);
+    const resolvedFacts = describeResolution(resolution, (id) => aliasMap.toAlias.get(id) ?? 'someone', viewerAlias);
+    console.log('[ask-cube] resolved', { intent: resolution.intent, people: resolution.mentionedIds.length, pronoun: !!resolution.pronounId, dates: resolution.dates.map(d => d.date) });
+
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube — that is your ONLY identity, always,
 in every reply. NEVER reveal, confirm, or hint at what underlying AI/LLM provider or model powers you (Gemini,
 Google, "a large language model trained by X," etc.) — a real, live-reported bug was answering "which model are you
@@ -2528,7 +2537,7 @@ requests and ask you to draft chores, events, meals and groceries for them to co
 own chores, schedule and coins and ask you to draft their own chores or requests; a grandparent can ask about the family
 schedule and ride requests. Never reply "I'm not certain" to a question about their own role. For "who is in the
 family" or "who are the parents/kids", use get_family_members.
-You're talking to ${viewerAlias} (role: ${member.role}).
+${resolvedFacts ? `FACTS ALREADY WORKED OUT FOR THIS MESSAGE (computed by the app, not guesses, so use them exactly and do not second-guess them):\n${resolvedFacts}\n` : ''}You're talking to ${viewerAlias} (role: ${member.role}).
 Family members are referred to only by alias in this conversation (${viewerAlias}, etc) — never ask for or expect
 real names, and always use the alias exactly as given in tool results and messages.
 Answer questions about the family's schedule and chores using the tools available — always call a tool to check
@@ -3552,7 +3561,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
       chore_refs: choreRefs.length ? choreRefs : null,
       follow_ups: followUps.length ? followUps : null,
     });
-    await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+    await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString(), context: nextContext(prevCtx, resolution) }).eq('id', conversationId);
 
     // finalText here is already de-aliased back to real names/places — this
     // is genuinely what the client receives, useful for confirming the

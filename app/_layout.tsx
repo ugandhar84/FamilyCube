@@ -42,6 +42,7 @@ import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useHelpStore } from '@/store/helpStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
+import { useUIStore } from '@/store/uiStore';
 import { useKioskNavStore, navigateFromNotification, type KioskNavTab } from '@/store/kioskNavStore';
 import AppPinLockOverlay from '@/components/AppPinLockOverlay';
 import { useFamilyStore } from '@/store/familyStore';
@@ -694,6 +695,11 @@ function RootNavigator() {
         // live `notifications` table and actually shows the item.
         const dest = data?.type ? routeForNotification(data.type, data) : null;
         if (dest) {
+          // An event notification opens that event's detail on the Schedule tab, not just the tab.
+          const evId = (data as any)?.eventId ?? (data as any)?.event_id ?? (data as any)?.payload?.eventId;
+          if (dest === '/(tabs)/schedule' && evId && !isKioskDevice) {
+            useUIStore.getState().setRequestedEventDetailId(String(evId));
+          }
           console.log('[Notification] Routing to', dest, 'for type:', data?.type);
           navigateFromNotification(dest, isKioskDevice);
         } else if (isKioskDevice) {

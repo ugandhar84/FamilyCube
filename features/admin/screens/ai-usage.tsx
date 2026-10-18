@@ -17,7 +17,7 @@ import {
 import { showAlert } from '@/components/AppAlert';
 
 const SERVICE_LABEL: Record<string, string> = {
-  ask_cube: 'Ask Fam', family_ai: 'Family AI', flyer_parse: 'Flyer Scan',
+  ask_cube: 'Ask Cube', family_ai: 'Family AI', flyer_parse: 'Flyer Scan',
   parse_prescription: 'Prescription Scan', grocery_receipt_parse: 'Receipt Scan',
   analyze_medical_record: 'Medical Record Scan', analyze_appointment_recording: 'Appointment Recording',
   grocery_ai_suggest: 'Grocery Suggestions', moderate_message: 'Chat Moderation',

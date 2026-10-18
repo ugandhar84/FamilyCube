@@ -30,6 +30,15 @@ interface RingPayload {
   subjectName?: string;
 }
 
+// Signed proof that THIS push may mark THIS reminder answered. The phone sends it straight to ack-call-reminder from
+// native code, so a call picked up with the app killed still cancels the follow-up (no login session needed).
+async function ackToken(itemType: string, itemId: string, dueAtIso: string): Promise<string> {
+  const dueKey = new Date(Math.floor(new Date(dueAtIso).getTime() / 60000) * 60000).toISOString();
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${itemType}|${itemId}|${dueKey}`));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ─── iOS: APNs PushKit via JWT (ES256) provider auth ──────────────────────────
 // Reuses one signed JWT for up to ~55 minutes (Apple's token lifetime cap is
 // 60 min) instead of re-signing per request.
@@ -111,6 +120,8 @@ async function sendApnsVoip(token: string, payload: RingPayload, recipientName?:
     itemType: payload.itemType,
     itemId: payload.itemId,
     dueAtIso: payload.dueAtIso,
+    ackUrl: `${Deno.env.get('SUPABASE_URL')}/functions/v1/ack-call-reminder`,
+    ackToken: await ackToken(payload.itemType, payload.itemId, payload.dueAtIso),
     ...(recipientName ? { recipientName } : {}),
     ...(payload.category ? { category: payload.category } : {}),
     ...(payload.notes ? { notes: payload.notes } : {}),

@@ -112,7 +112,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
       if (r?.prepMinutes) setNewPrepMins(String(r.prepMinutes));
       if (r?.tip) setAiTip(r.tip);
       if (r?.imageUrl) setNewImageUrl(r.imageUrl);
-      showToast('Recipe refined by Cube AI ✨');
+      showToast('Recipe refined by Cube ✨');
     } catch {
       showToast('AI refinement failed — try again');
     } finally {
@@ -324,7 +324,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
             </Text>
             <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
               {isParent
-                ? 'Record ingredients and steps — Cube AI can clean it up and generate a photo.'
+                ? 'Record ingredients and steps — Cube can clean it up and generate a photo.'
                 : "Record your recipe and send it to your parents to review."}
             </Text>
           </View>
@@ -535,7 +535,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
                   Add a photo
                 </Text>
                 <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center', paddingHorizontal: 28 }}>
-                  Browse your library, or refine with Cube AI below to auto-generate one.
+                  Browse your library, or refine with Cube below to auto-generate one.
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                   backgroundColor: colors.primaryLight, borderRadius: 20,
@@ -711,7 +711,7 @@ export default function FamilyRecipeBookPage({ onClose }: { onClose: () => void 
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: (isDark ? colors.textPrimary : GEMINI.titleColor) }}>
-                  {refining ? 'Cube AI is refining…' : 'Refine with Cube AI'}
+                  {refining ? 'Cube is refining…' : 'Refine with Cube'}
                 </Text>
                 <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), marginTop: 2, lineHeight: 18 }}>
                   {refining

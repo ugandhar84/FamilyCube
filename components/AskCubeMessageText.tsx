@@ -124,17 +124,17 @@ function renderLine(
     return (
       <View key={lineKey} style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
         <Text style={{ fontSize: TYPO.body, color, lineHeight: 22 }}>•</Text>
-        <Text style={{ flexShrink: 1, fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
+        <Text selectable style={{ flexShrink: 1, fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
       </View>
     );
   }
   if (isHeaderLine) {
     return (
-      <Text key={lineKey} style={{ fontSize: TYPO.body, lineHeight: 22, marginTop: 6, letterSpacing: 0.2 }}>{inline}</Text>
+      <Text selectable key={lineKey} style={{ fontSize: TYPO.body, lineHeight: 22, marginTop: 6, letterSpacing: 0.2 }}>{inline}</Text>
     );
   }
   return (
-    <Text key={lineKey} style={{ fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
+    <Text selectable key={lineKey} style={{ fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
   );
 }
 

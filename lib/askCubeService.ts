@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export interface AskCubeProposal {
-  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'kid_request_action';
+  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event' | 'kid_request_action' | 'reassign_rides' | 'remind';
   data: Record<string, any>;
 }
 
@@ -16,6 +16,13 @@ export interface AskCubeResponse {
   proposals: AskCubeProposal[];
   chores: AskCubeChoreRef[];
   followUps: string[];
+  /** Structured answers the app draws as cards under the reply (currently: schedule). */
+  cards?: (
+    | { kind: 'schedule'; events: import('@/components/AskCubeScheduleCard').AskCubeScheduleEvent[] }
+    | { kind: 'chores'; chores: import('@/components/AskCubeChoreCard').AskCubeChore[] }
+    | { kind: 'requests'; requests: import('@/components/AskCubeRequestCard').AskCubeRequest[] }
+    | ({ kind: 'snapshot' } & import('@/components/AskCubeSnapshotCard').AskCubeSnapshot)
+  )[];
 }
 
 export const askCube = {
@@ -25,7 +32,7 @@ export const askCube = {
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
-    return { ...data, proposals: data?.proposals ?? [], chores: data?.chores ?? [], followUps: data?.followUps ?? [] } as AskCubeResponse;
+    return { ...data, proposals: data?.proposals ?? [], chores: data?.chores ?? [], followUps: data?.followUps ?? [], cards: data?.cards ?? [] } as AskCubeResponse;
   },
 
   // Most-recently-updated conversation for this member, if any — so
@@ -53,7 +60,7 @@ export const askCube = {
 
   async getMessages(conversationId: string) {
     const { data, error } = await supabase.from('ask_cube_messages')
-      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, follow_ups, created_at')
+      .select('id, role, content, proposal, proposal_status, proposal_statuses, chore_refs, follow_ups, cards, created_at')
       .eq('conversation_id', conversationId)
       // tool rows (raw JSON results) and assistant rows that only carry
       // tool_calls (content null) are internal to the model loop — the chat
@@ -61,6 +68,8 @@ export const askCube = {
       // cards, never a tool's raw JSON payload.
       .in('role', ['user', 'assistant'])
       .not('content', 'is', null)
+      // The model-loop rows that only carried tool calls are saved with an EMPTY string, which showed up as blank bubbles.
+      .neq('content', '')
       .order('created_at');
     if (error) throw error;
     return data ?? [];
@@ -95,7 +104,7 @@ export const askCube = {
     return undefined; // omitting conversationId on the next send() starts a fresh thread
   },
 
-  // Live-requested: "give option to delete Ask Fam threads in both kiosk
+  // Live-requested: "give option to delete Ask Cube threads in both kiosk
   // and mobile from history" — there was previously no way to remove a
   // conversation once it existed, on either surface (AskCubeChat.tsx's
   // history sheet is the one shared component both use). RLS on

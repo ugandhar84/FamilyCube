@@ -1612,7 +1612,7 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate, initialCo
       <View style={[s.twoColRow, isNarrowBoardLayout && s.twoColRowStacked]}>
       <View style={[s.centerCol, isNarrowBoardLayout && s.colFullWidth]}>
 
-      {/* ── CubeAI Chores Engine [GAP — audit D3] ───────────────────────
+      {/* ── Cube Chores Engine [GAP — audit D3] ───────────────────────
           Same real AutoBalance/Spark/Advice engine the phone's own
           Chores toolbar always shows — entirely absent from kiosk
           before this (confirmed via grep: zero references anywhere in

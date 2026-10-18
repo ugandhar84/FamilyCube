@@ -233,7 +233,7 @@ export function KioskReceiptScanSheet({ visible, onClose, familyId, memberId, me
             {scanning ? (
               <>
                 <ActivityIndicator size="large" color={k.gold} />
-                <Text style={[s.scanningText, { color: k.textMuted }]}>CubeAI is reading your receipt…</Text>
+                <Text style={[s.scanningText, { color: k.textMuted }]}>Cube is reading your receipt…</Text>
               </>
             ) : (
               <>

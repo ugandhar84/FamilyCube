@@ -249,7 +249,7 @@ export function ReceiptScanSheet({
         </View>
 
         <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19 }}>
-          Choose a source. CubeAI reads a receipt or a photo of your groceries and lists out each item so you can add them straight to your Shopping List.
+          Choose a source. Cube reads a receipt or a photo of your groceries and lists out each item so you can add them straight to your Shopping List.
         </Text>
 
         {/* Receipt vs plain-photo toggle — sent to the AI explicitly so it
@@ -272,7 +272,7 @@ export function ReceiptScanSheet({
         {scanning && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: accentL, borderRadius: 14, padding: 12 }}>
             <ActivityIndicator size="small" color={accent} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: titleC, flex: 1 }}>CubeAI is reading your photo…</Text>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: titleC, flex: 1 }}>Cube is reading your photo…</Text>
           </View>
         )}
 

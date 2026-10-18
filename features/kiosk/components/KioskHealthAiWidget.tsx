@@ -1,6 +1,6 @@
 /**
  * KioskHealthAiWidget — kiosk mount of the real Health AI Q&A flow
- * (useHealthAi's askAI/shareAiToChat), as its own standalone CubeAI-style
+ * (useHealthAi's askAI/shareAiToChat), as its own standalone Cube-style
  * card, matching KioskAiChoresEngine.tsx's own shell pattern
  * [live-reported: "i want to move the cube ai as a separate section
  * similar to the chores"] — Health's AI assistant was only ever available
@@ -40,14 +40,14 @@ export function KioskHealthAiWidget({ members, activeMemberId, isDark, k }: {
 
   return (
     <View style={{ width: '100%' }}>
-      {/* Shell matches KioskAiChoresEngine's own CubeAI card exactly — icon
-          chip, "CubeAI ●" + status line, one right-aligned action button. */}
+      {/* Shell matches KioskAiChoresEngine's own Cube card exactly — icon
+          chip, "Cube ●" + status line, one right-aligned action button. */}
       <WidgetCard k={k} isDark={isDark} style={{ borderRadius: KIOSK_RADIUS.xl }}>
         <Pressable
           onPress={() => setOpen(o => !o)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: KIOSK_SPACE.sm }}
           accessibilityRole="button"
-          accessibilityLabel="Health CubeAI"
+          accessibilityLabel="Health Cube"
           accessibilityHint="Ask a general health question"
         >
           <View style={{
@@ -58,7 +58,7 @@ export function KioskHealthAiWidget({ members, activeMemberId, isDark, k }: {
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '800', color: k.text }}>CubeAI</Text>
+              <Text style={{ fontSize: KIOSK_TYPO.body, fontWeight: '800', color: k.text }}>Cube</Text>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: k.sage }} />
             </View>
             <Text style={{ fontSize: KIOSK_TYPO.caption, color: k.textMuted }} numberOfLines={1}>
@@ -66,7 +66,7 @@ export function KioskHealthAiWidget({ members, activeMemberId, isDark, k }: {
             </Text>
           </View>
           <ActionButton
-            label={open ? 'Close' : 'Ask CubeAI'}
+            label={open ? 'Close' : 'Ask Cube'}
             accent={k.danger}
             k={k} isDark={isDark} variant="soft"
             onPress={() => setOpen(o => !o)}
@@ -96,7 +96,7 @@ export function KioskHealthAiWidget({ members, activeMemberId, isDark, k }: {
                 k={k} isDark={isDark} variant="solid"
                 disabled={aiLoading || !aiQuery.trim()}
                 onPress={() => askAI()}
-                accessibilityHint="Send your question to Health CubeAI"
+                accessibilityHint="Send your question to Health Cube"
               />
             </View>
 

@@ -49,10 +49,10 @@ export function ParentStatsColumn({
   /** Opens the real AskCubeChat AI (KioskScreen.tsx wires this to the same
    *  askCubeOpen state the header's own Ask Cube button uses) — live-
    *  corrected: this slot was "Message the kids" (a quick note to family
-   *  chat), swapped back to the Ask Fam feature this column's pinned-action
+   *  chat), swapped back to the Ask Cube feature this column's pinned-action
    *  slot originally carried, and later upgraded from the local, non-AI
    *  KioskAskFamDrawer lookup to the real AI to match mobile's parent
-   *  experience [live-requested: "Have Ask Fam actually call the real AI
+   *  experience [live-requested: "Have Ask Cube actually call the real AI
    *  backend"]. */
   onAskFam: () => void;
   /** Long-press on the identity card below opens the real
@@ -134,11 +134,11 @@ export function ParentStatsColumn({
       </WidgetCard>
 
       {/* Own ScrollView, same "scrolls independently, pinned action stays
-          put" shape as KioskScreen.tsx's shared nav rail (its Ask Fam card
+          put" shape as KioskScreen.tsx's shared nav rail (its Ask Cube card
           below the tab list) — a real multi-column page has each column
           handle its own overflow, not one shared page-level scroll. Now
           holds the tab list + stats only — identity is the sticky header
-          above it, Ask Family AI is the pinned footer below it. */}
+          above it, Ask Cube is the pinned footer below it. */}
       <ScrollView style={s.statsColScrollBody} contentContainerStyle={s.statsColScroll} showsVerticalScrollIndicator={false}>
         {/* This column's own copy of the tab list — the actual replacement
             for KioskScreen.tsx's shared nav rail, hidden for a parent on
@@ -178,9 +178,9 @@ export function ParentStatsColumn({
 
       </ScrollView>
 
-      {/* "Ask Fam" — shortened from "Ask Family AI" with no subtitle
+      {/* "Ask Cube" — shortened from "Ask Cube" with no subtitle
           [live-requested: "In the first column instead of the ask FAmily
-          AI - jus tname it Ask Fam no subtitle needed and make this
+          AI - jus tname it Ask Cube no subtitle needed and make this
           animated pulse"]. Opens the real AI (AskCubeChat) for a parent —
           see KioskScreen.tsx's own onAskFam wiring; this button's own
           behavior is unchanged, only its label/subtitle/animation. */}
@@ -188,12 +188,12 @@ export function ParentStatsColumn({
         onPress={onAskFam}
         style={({ pressed }) => [s.askFamBtn, { backgroundColor: pressed ? k.cardHover : k.text }]}
         accessibilityRole="button"
-        accessibilityLabel="Ask Fam"
+        accessibilityLabel="Ask Cube"
         accessibilityHint="Ask the family AI anything"
       >
         <View style={s.askFamRow}>
           <PulseSparkle color={k.purple} />
-          <Text style={[s.askFamText, { color: k.card }]}>Ask Fam</Text>
+          <Text style={[s.askFamText, { color: k.card }]}>Ask Cube</Text>
         </View>
       </Pressable>
     </View>
@@ -220,7 +220,7 @@ function PulseSparkle({ color }: { color: string }) {
   const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] });
   return (
     <Animated.View style={{ transform: [{ scale }], opacity }}>
-      {/* Filled, not just outlined [live-requested: "Ask Fam!  aicon should
+      {/* Filled, not just outlined [live-requested: "Ask Cube!  aicon should
           fill with color"]. */}
       <Sparkles size={16} color={color} fill={color} />
     </Animated.View>
@@ -231,7 +231,7 @@ const s = StyleSheet.create({
   // width set inline per-render from colWidth (real window-relative), not
   // here — see the component body's own comment.
   // flex:1 so the ScrollView between the sticky identity header and the
-  // pinned Ask Family AI footer actually claims the real remaining
+  // pinned Ask Cube footer actually claims the real remaining
   // vertical space, rather than just stacking by content height.
   //
   // width, NOT flex — this column is itself a child of KioskScreen.tsx's
@@ -262,7 +262,7 @@ const s = StyleSheet.create({
   // flex:1 here is correct — this is INSIDE statsCol (a flexDirection:
   // 'column' by default), where flex:1 correctly means "fill remaining
   // VERTICAL space" between the sticky identity header above and the
-  // pinned Ask Family AI footer below.
+  // pinned Ask Cube footer below.
   statsColScrollBody: { flex: 1 },
   statsColScroll: { gap: KIOSK_SPACE.md, paddingBottom: KIOSK_SPACE.md },
   // Mock's exact .identity padding (22px 20px) — overrides WidgetCard's
@@ -282,8 +282,8 @@ const s = StyleSheet.create({
     minHeight: KIOSK_HIT.control,
   },
   railTabLabel: { fontSize: KIOSK_TYPO.caption, fontWeight: '700' },
-  // No subtitle line now — just the icon + short "Ask Fam" label, centered
-  // in a shorter button [live-requested: "jus tname it Ask Fam no
+  // No subtitle line now — just the icon + short "Ask Cube" label, centered
+  // in a shorter button [live-requested: "jus tname it Ask Cube no
   // subtitle needed"].
   askFamBtn: {
     borderRadius: KIOSK_RADIUS.sm, paddingVertical: KIOSK_SPACE.sm,

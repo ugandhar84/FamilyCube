@@ -8,9 +8,11 @@
  * AddIntakeChooser already uses, transcribed on-device, sent as a normal
  * chat turn once the user stops speaking.
  */
+import { RHYTHM } from '@/constants/theme';
+import { PageHeading } from '@/components/PageHeading';
 import { KioskSlideModal } from '@/features/kiosk/components/KioskSlideModal';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard } from 'react-native';
 import SwipeBackWrapper from '@/components/SwipeBackWrapper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -24,7 +26,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { useChoreStore } from '@/store/choreStore';
+import { useChoreStore, remindChoreAssignee } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
@@ -35,6 +37,13 @@ import { checkProfanity } from '@/lib/contentModeration';
 import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
 import AskCubeProposalCard from '@/components/AskCubeProposalCard';
 import AskCubeMessageText from '@/components/AskCubeMessageText';
+import AskCubeScheduleCard, { type AskCubeScheduleEvent } from '@/components/AskCubeScheduleCard';
+import AskCubeRequestCard, { type AskCubeRequest } from '@/components/AskCubeRequestCard';
+import AskCubeSnapshotCard, { type AskCubeSnapshot } from '@/components/AskCubeSnapshotCard';
+import AskCubeChoreCard, { type AskCubeChore } from '@/components/AskCubeChoreCard';
+import { useUIStore } from '@/store/uiStore';
+import { fromRow, remindEventAssignee, type FamilyEvent } from '@/store/eventStore';
+import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
 import type { FamilyMember } from '@/store/familyStore';
@@ -89,6 +98,10 @@ interface ChatMessage {
   // see ask-cube/index.ts's system prompt) — rendered as tappable chips
   // right under this reply. Undefined/empty when nothing specific applied.
   followUps?: string[];
+  scheduleEvents?: AskCubeScheduleEvent[];
+  choreCards?: AskCubeChore[];
+  snapshot?: AskCubeSnapshot;
+  requestCards?: AskCubeRequest[];
   // True once this message's typewriter reveal has finished — follow-up
   // chips wait for this rather than just `!sending` (which flips false the
   // instant the message is inserted, well before the typewriter loop
@@ -96,6 +109,21 @@ interface ChatMessage {
   // text. Always true for messages loaded from history (no typewriter).
   revealDone?: boolean;
 }
+
+/** Older saved replies kept empty section headings ("Calendar:", "Chores:"); drop a short heading that has nothing under it. */
+function tidyHistoryText(text: string): string {
+  const lines = text.split('\n');
+  const isHeading = (l: string) => { const t = l.replace(/\*\*/g, '').trim(); return t.length > 0 && t.length <= 28 && /:$/.test(t) && !/^\s*([•\-*–]|\d+[.)])\s/.test(l); };
+  const out = lines.filter((l, i) => {
+    if (!isHeading(l)) return true;
+    for (let j = i + 1; j < lines.length; j++) if (lines[j].trim()) return !isHeading(lines[j]);
+    return false;
+  });
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+const INPUT_MIN_H = 50;
+const INPUT_MAX_H = 84; // three lines of 20pt text plus padding
 
 export default function AskCubeChat({ visible, onClose, activeMember, members, variant = 'sheet', inline = false }: {
   visible: boolean;
@@ -141,6 +169,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   const [sending, setSending] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  // Right after a chat opens, keep it pinned to the newest message while the content (long replies, cards) finishes laying out.
+  const stickToBottom = useRef(false);
+  const [detailEv, setDetailEv] = useState<FamilyEvent | null>(null);
+  const [scheduleDone, setScheduleDone] = useState<Record<string, string>>({});
 
   const THINKING_WORDS = ['Thinking', 'Crafting', 'Pursuing', 'Digging in', 'Piecing it together'];
   const [thinkingWord, setThinkingWord] = useState(THINKING_WORDS[0]);
@@ -192,11 +224,15 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // semantics) only for rows written before this column existed.
       const persistedStatuses = Array.isArray((r as any).proposal_statuses) ? (r as any).proposal_statuses as ProposalStatus[] : null;
       return {
-        id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
+        id: r.id, role: r.role as 'user' | 'assistant', content: r.role === 'assistant' ? tidyHistoryText(r.content ?? '') : (r.content ?? ''), timestamp: r.created_at,
         proposals,
         proposalStatuses: proposals.map((_, i) => persistedStatuses?.[i] ?? (r.proposal_status as ProposalStatus) ?? 'pending'),
         chores: Array.isArray((r as any).chore_refs) ? (r as any).chore_refs : undefined,
         followUps: Array.isArray((r as any).follow_ups) ? (r as any).follow_ups : undefined,
+        scheduleEvents: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'schedule')?.events : undefined,
+        choreCards: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'chores')?.chores : undefined,
+        snapshot: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'snapshot') : undefined,
+        requestCards: Array.isArray((r as any).cards) ? (r as any).cards.find((c: any) => c?.kind === 'requests')?.requests : undefined,
         revealDone: true, // loaded from history — no typewriter reveal to wait for
       };
     }));
@@ -206,7 +242,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     // couple of times over the next layout passes rather than relying
     // on a single rAF landing after the ScrollView has measured.
     setShowScrollToBottom(false);
-    for (const delay of [0, 50, 150]) {
+    stickToBottom.current = true;
+    setTimeout(() => { stickToBottom.current = false; }, 1200);
+    for (const delay of [0, 50, 150, 400]) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
     }
   };
@@ -232,6 +270,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     (async () => {
       const latest = await askCube.getLatestConversation(activeMember.id);
       if (latest && latest !== conversationId) await loadConversation(latest);
+      // Reopening the same thread keeps its scroll position from last time; always land on the newest message instead.
+      stickToBottom.current = true;
+      setTimeout(() => { stickToBottom.current = false; }, 1200);
+      for (const delay of [0, 60, 200, 500]) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, activeMember.id]);
@@ -268,7 +310,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     await loadConversation(id);
   };
 
-  // Live-requested: "give option to delete Ask Fam threads in both kiosk
+  // Live-requested: "give option to delete Ask Cube threads in both kiosk
   // and mobile from history" — AskCubeChat.tsx is the one shared component
   // both surfaces render, so this one handler covers both. Deleting the
   // conversation currently on screen also clears it back to the empty
@@ -305,29 +347,39 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   // nothing specific to surface (e.g. a brand new family with no data yet).
   const starterPrompts = useMemo(() => {
     const todayStr = todayLocal();
+    const isParent = activeMember?.role === 'parent';
+    const short = (t: string) => (t.length > 28 ? `${t.slice(0, 27).trim()}…` : t);
     const prompts: string[] = [];
 
+    // Only prompts that are true for THIS person right now: built from their own real data, never a made-up example.
+    const mine = (id?: string | null) => !id || id === activeMember?.id;
     const nextEvent = upcomingEvents
-      .filter(e => e.date >= todayStr)
+      .filter(e => e.date >= todayStr && (isParent || mine(e.memberId) || e.memberIds?.includes(activeMember?.id ?? '')))
       .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))[0];
-    if (nextEvent) prompts.push(`Remind me about ${nextEvent.title}`);
+    if (nextEvent) prompts.push(`What's on ${nextEvent.date === todayStr ? 'today' : 'next'}?`);
 
-    const openQuest = quests.find(q => q.isPool && q.status === 'todo');
-    if (openQuest) prompts.push(`Who can do "${openQuest.title}"?`);
+    const myTodo = quests.filter(q => q.status === 'todo' && (isParent || q.assignedToId === activeMember?.id));
+    const overdue = myTodo.find(q => q.dueDate && q.dueDate < todayStr);
+    if (overdue) prompts.push(isParent ? "What's overdue?" : 'What chores are late?');
+    else if (myTodo.length > 0) prompts.push(isParent ? "What chores are open?" : 'What chores do I have?');
 
-    const overdueQuest = quests.find(q => q.status === 'todo' && q.dueDate && q.dueDate < todayStr);
-    if (overdueQuest) prompts.push(`What's overdue?`);
+    const pool = quests.find(q => q.isPool && q.status === 'todo');
+    if (pool) prompts.push(`Who can do "${short(pool.title)}"?`);
+
+    if (isParent) {
+      const pending = quests.some(q => q.status === 'pending_approval');
+      if (pending) prompts.push('What needs my approval?');
+    }
 
     prompts.push("What's going on this week?");
-    prompts.push('Has anyone done the trash?');
-    // De-dupe (a generic fallback could coincidentally match something
-    // already added above) and cap at 3 — enough to be useful, not a wall.
     return [...new Set(prompts)].slice(0, 3);
-  }, [upcomingEvents, quests]);
+  }, [upcomingEvents, quests, activeMember?.id, activeMember?.role]);
 
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    // Tapping a suggestion (or Send) hides the keyboard so the reply is visible, not covered.
+    Keyboard.dismiss();
     // Fail-SAFE, not fail-open: block sending unless consent has been
     // POSITIVELY confirmed. The async DB/AsyncStorage check
     // (useAskCubeConsent) hasn't necessarily resolved yet on a fresh app
@@ -401,6 +453,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
           chores: res.chores ?? [],
           followUps: res.followUps ?? [],
+          scheduleEvents: ((res.cards ?? []) as any[]).find(c => c.kind === 'schedule')?.events,
+          choreCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'chores')?.chores,
+          snapshot: ((res.cards ?? []) as any[]).find(c => c.kind === 'snapshot'),
+          requestCards: ((res.cards ?? []) as any[]).find(c => c.kind === 'requests')?.requests,
         }];
       });
       setSending(false);
@@ -426,8 +482,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           if (i >= fullText.length) { clearInterval(interval); resolve(); }
         }, 16);
       });
-      scrollRef.current?.scrollToEnd({ animated: true });
+      // Cards, pills and proposals mount only once revealDone flips, which
+      // grows the content after this scroll — keep pinning to the bottom
+      // while that late content lays out so the answer is never cut off.
+      stickToBottom.current = true;
+      setTimeout(() => { stickToBottom.current = false; }, 1200);
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, revealDone: true } : m));
+      for (const delay of [0, 80, 250, 600]) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
     } catch (e: any) {
       setMessages(prev => [...prev, { id: `local-${Date.now()}-err`, role: 'assistant', content: "Sorry, I couldn't reach the server — try again in a moment.", timestamp: new Date().toISOString() }]);
       setSending(false);
@@ -759,6 +820,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // telling the user the update happened when it hadn't.
       try {
         await updateEvent(d.eventId, d.changes ?? {});
+        if (d.driverTo?.memberId) await useEventStore.getState().reassignEvent(d.eventId, d.driverTo.memberId, d.driverTo.role, activeMember.id);
       } catch (e: any) {
         setMessages(prev => [...prev, { id: `local-${Date.now()}-updateerr`, role: 'assistant',
           content: "Sorry, that event update didn't go through — please try again from the Schedule tab.", timestamp: new Date().toISOString() }]);
@@ -785,7 +847,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // other branches in trusting that check rather than re-deriving it.
       if (d.action === 'claim') claimPoolQuest(d.choreId, activeMember.id);
       else if (d.action === 'approve') approveChore(d.choreId, activeMember.id);
-      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Fam');
+      else if (d.action === 'decline') declineChoreAssignment(d.choreId, activeMember.id, d.reason ?? 'Declined via Ask Cube');
       else if (d.action === 'complete') submitChore(d.choreId);
       else if (d.action === 'cancel') cancelChore(d.choreId, activeMember.id);
     } else if (proposal.kind === 'kid_request_action') {
@@ -805,6 +867,17 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       // already resolved the exact event server-side, so this just applies
       // the same deleteEvent(id) the rest of the app already trusts.
       deleteEvent(d.eventId);
+    } else if (proposal.kind === 'remind') {
+      // A real push plus a notification-bell entry, exactly like the nudge buttons elsewhere.
+      supabase.functions.invoke('family-notifier', {
+        body: { type: 'custom', familyId: activeMember.familyId, memberIds: [d.memberId], persist: true, excludeMemberId: activeMember.id,
+          payload: { title: `⏰ Reminder from ${activeMember.name.split(' ')[0]}`, body: d.text, data: {} } },
+      }).catch(() => {});
+    } else if (proposal.kind === 'reassign_rides') {
+      // Same store action as the Take over / Reassign taps; a self-assignment is confirmed by the server, others get the usual offer push.
+      for (const it of (d.items ?? []) as { eventId: string; role: 'driver' | 'helper' }[]) {
+        await useEventStore.getState().reassignEvent(it.eventId, d.toMemberId, it.role, activeMember.id);
+      }
     }
     // Every branch above is a real DB write once confirmed — same "any
     // update to the DB gets a toast" rule every manual create/edit/delete
@@ -829,6 +902,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       update_event: 'Event updated', update_chore: 'Chore updated',
       chore_action: chorActionToast[d.action] ?? 'Done',
       cancel_event: 'Event cancelled',
+      reassign_rides: 'Rides moved',
+      remind: 'Reminder sent',
       kid_request_action: kidRequestActionToast[d.action] ?? 'Done',
     };
     showToast(toastByKind[proposal.kind] ?? 'Done');
@@ -852,51 +927,59 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       <View
         style={
           inline
-            ? { flex: 1, backgroundColor: '#FFFFFF' }
+            ? { flex: 1, backgroundColor: isDark ? colors.background : '#FFFFFF' }
             : isKiosk
-              ? { backgroundColor: '#FFFFFF', width: 480, maxWidth: '100%', height: '100%',
+              ? { backgroundColor: isDark ? colors.background : '#FFFFFF', width: 480, maxWidth: '100%', height: '100%',
                   borderLeftWidth: 1, borderLeftColor: colors.border, paddingTop: 14, overflow: 'hidden' }
-              : { flex: 1, backgroundColor: '#FFFFFF', paddingTop: insets.top }
+              : { flex: 1, backgroundColor: isDark ? colors.background : '#FFFFFF', paddingTop: insets.top }
         }
       >
 
-        {/* Breadcrumb — left-aligned, ReviewInbox style */}
-        {!isKiosk && (
-          <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 2 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.6 }}>
-              FAMILY CUBE · AI
-            </Text>
-            <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.pink }}>← Hub</Text>
+        {/* Standard page heading (phone): tap the title to go back; history and new-chat sit beside it. */}
+        {!isKiosk ? (
+          <PageHeading
+            eyebrow="FAMILY CUBE · AI"
+            title="Ask Cube"
+            subtitle="Private family assistant"
+            accent="pink"
+            Icon={Sparkles}
+            topInset={0}
+            onTitlePress={onClose}
+            right={(
+              <View style={{ flexDirection: 'row', gap: RHYTHM.inline }}>
+                <Pressable onPress={openHistory} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Chat history"
+                  style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight }}>
+                  <History size={18} color={colors.pink} />
+                </Pressable>
+                <Pressable onPress={startNewChat} disabled={messages.length === 0 && !conversationId} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                  accessibilityRole="button" accessibilityLabel="New chat"
+                  style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight,
+                    opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
+                  <SquarePen size={18} color={colors.pink} />
+                </Pressable>
+              </View>
+            )}
+          />
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: RHYTHM.page, paddingBottom: RHYTHM.item }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.4 }}>Ask Cube</Text>
+              <Text style={{ fontSize: 13, color: colors.pink, marginTop: 1, fontWeight: '600' }}>Private family assistant</Text>
+            </View>
+            <Pressable onPress={openHistory} hitSlop={12} accessibilityRole="button" accessibilityLabel="Chat history"
+              style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight, marginRight: RHYTHM.inline }}>
+              <History size={18} color={colors.pink} />
+            </Pressable>
+            <Pressable onPress={startNewChat} disabled={messages.length === 0 && !conversationId} hitSlop={12} accessibilityRole="button" accessibilityLabel="New chat"
+              style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : colors.pinkLight,
+                opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
+              <SquarePen size={18} color={colors.pink} />
             </Pressable>
           </View>
         )}
 
-        {/* Page title row — ReviewInbox style: title left, icon buttons right */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,
-          paddingTop: 8, paddingBottom: 14,
-          borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : colors.pinkLight }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>AskFam</Text>
-            <Text style={{ fontSize: 13, color: colors.pink, marginTop: 1, fontWeight: '600' }}>Private family assistant</Text>
-          </View>
-          {/* Icon buttons: white circle on pinkLight bg — ReviewInbox pattern */}
-          <Pressable onPress={openHistory} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: isDark ? colors.surface : colors.pinkLight, marginRight: 8 }}>
-            <History size={17} color={colors.pink} />
-          </Pressable>
-          <Pressable onPress={startNewChat} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-            disabled={messages.length === 0 && !conversationId}
-            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: isDark ? colors.surface : colors.pinkLight,
-              opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
-            <SquarePen size={17} color={colors.pink} />
-          </Pressable>
-        </View>
-
             <View style={{ flex: 1 }}>
-            <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12 }}
+            <ScrollView ref={scrollRef} style={{ flex: 1 }} onContentSizeChange={() => { if (stickToBottom.current) scrollRef.current?.scrollToEnd({ animated: false }); }} contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.page, gap: RHYTHM.item }}
               keyboardShouldPersistTaps="handled"
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -923,7 +1006,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       <Sparkles size={24} color={colors.pink} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Help with the family load</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>{`${new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, ${activeMember?.name?.split(' ')[0] ?? 'there'}`}</Text>
                       <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 17 }}>
                         Ask about plans, tasks, meals, rides, or messages.
                       </Text>
@@ -948,7 +1031,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                   {/* Figma: small sender label above each bubble */}
                   <Text style={{ fontSize: 9, fontWeight: '700', color: colors.pink,
                     marginBottom: 3, marginHorizontal: 4 }}>
-                    {m.role === 'assistant' ? 'AskFam' : 'You'}
+                    {m.role === 'assistant' ? 'Ask Cube' : 'You'}
                   </Text>
                   <View style={{ maxWidth: m.role === 'user' ? '85%' : '92%', borderRadius: 18,
                     paddingHorizontal: 15, paddingVertical: m.role === 'user' ? 11 : 14,
@@ -957,12 +1040,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     borderBottomRightRadius: m.role === 'user' ? 4 : 18,
                     borderBottomLeftRadius: m.role === 'user' ? 18 : 4 }}>
                     {m.role === 'user' ? (
-                      <Text style={{ fontSize: 16, color: colors.textPrimary, lineHeight: 23 }}>{m.content}</Text>
+                      <Text selectable style={{ fontSize: 16, color: colors.textPrimary, lineHeight: 23 }}>{m.content}</Text>
                     ) : (
                       <AskCubeMessageText
                         content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber}
                         chores={m.chores} linkColor={colors.pink}
                         onChorePress={(choreId) => {
+                          useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
                           onClose();
                           // A bare router.push here bypassed kiosk gating
                           // entirely — '/(tabs)/quests' has no kiosk
@@ -970,7 +1054,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                           // does), so on kiosk this stranded the device on
                           // a bare phone-style Quests screen with no way
                           // back short of a force-quit [live-reported: any
-                          // Ask Fam/notification link "should not take to
+                          // Ask Cube/notification link "should not take to
                           // mobile screens where by we stuck to come
                           // back"]. Routed through the same kiosk-safe
                           // helper every other notification/deep-link
@@ -1042,6 +1126,89 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     );
                   })() : null}
 
+                  {m.role === 'assistant' && !!m.snapshot && m.revealDone && (
+                    <AskCubeSnapshotCard snapshot={m.snapshot} isParent={activeMember?.role === 'parent'} onAsk={(q) => send(q)} />
+                  )}
+                  {m.role === 'assistant' && !!m.choreCards?.length && m.revealDone && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary, marginTop: 4, marginHorizontal: 4 }}>Chores</Text>
+                      <AskCubeChoreCard
+                        chores={m.choreCards}
+                        canManage={activeMember?.role === 'parent'}
+                        doneKeys={scheduleDone}
+                        onApproveAll={async (list) => {
+                          if (!activeMember) return;
+                          for (const c of list) await useChoreStore.getState().approveChore(c.id, activeMember.id);
+                          setScheduleDone(d => ({ ...d, ...Object.fromEntries(list.map(c => [c.id, 'Approved ✓'])) }));
+                        }}
+                        onAction={async (c, action) => {
+                          if (!activeMember) return;
+                          if (action === 'approve') {
+                            await useChoreStore.getState().approveChore(c.id, activeMember.id);
+                            setScheduleDone(d => ({ ...d, [c.id]: 'Approved ✓' }));
+                          } else {
+                            const sent = remindChoreAssignee({ id: c.id, title: c.title, assigneeId: c.assigneeId }, activeMember.id, activeMember.name.split(' ')[0]);
+                            setScheduleDone(d => ({ ...d, [c.id]: sent ? 'Reminded ✓' : 'Just reminded' }));
+                          }
+                        }}
+                        onOpen={(c) => {
+                          useUIStore.getState().setReturnToAskCube(variant !== 'kiosk');
+                          onClose();
+                          navigateFromNotification({ pathname: '/(tabs)/quests', params: { questId: c.id } }, variant === 'kiosk');
+                        }}
+                      />
+                    </>
+                  )}
+                  {m.role === 'assistant' && !!m.requestCards?.length && m.revealDone && activeMember?.role === 'parent' && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary, marginTop: 4, marginHorizontal: 4 }}>Requests</Text>
+                      <AskCubeRequestCard
+                        requests={m.requestCards}
+                        doneKeys={scheduleDone}
+                        onAction={async (r, action) => {
+                          if (!activeMember) return;
+                          if (r.kind === 'kid_request') {
+                            if (action === 'approve') await approveKidRequest(r.id, activeMember.id);
+                            else await declineKidRequest(r.id, activeMember.id);
+                          } else if (action === 'approve') {
+                            await useRewardStore.getState().approveRedemption(r.id, activeMember.id);
+                          } else {
+                            await useRewardStore.getState().rejectRedemption(r.id, activeMember.id);
+                          }
+                          setScheduleDone(d => ({ ...d, [r.id]: action === 'approve' ? 'Approved ✓' : 'Declined ✓' }));
+                        }}
+                      />
+                    </>
+                  )}
+                  {m.role === 'assistant' && !!m.scheduleEvents?.length && m.revealDone && (
+                    <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.textTertiary, marginTop: 4, marginHorizontal: 4 }}>Schedule</Text>
+                  )}
+                  {m.role === 'assistant' && !!m.scheduleEvents?.length && m.revealDone && (
+                    <AskCubeScheduleCard
+                      events={m.scheduleEvents}
+                      canAssign={activeMember?.role === 'parent'}
+                      viewerId={activeMember?.id}
+                      doneKeys={scheduleDone}
+                      onAction={async (ev, action) => {
+                        if (!activeMember) return;
+                        const mark = (t: string) => setScheduleDone(d => ({ ...d, [ev.id]: t }));
+                        if (action === 'take') {
+                          if (await useEventStore.getState().reassignEvent(ev.id, activeMember.id, 'driver', activeMember.id)) mark('You are driving ✓');
+                        } else if (action === 'confirm') {
+                          if (await useEventStore.getState().confirmEventAssignment(ev.id, activeMember.id, ev.driverRole ?? 'driver')) mark('Confirmed ✓');
+                        } else if (ev.driverId) {
+                          mark(remindEventAssignee(ev, ev.driverId, activeMember.id) ? 'Reminded ✓' : 'Just reminded');
+                        }
+                      }}
+                      onOpen={async (ev) => {
+                        // Open the event's detail page right here, on top of the chat: closing it lands back in the chat with
+                        // nothing reloaded. Fetched by id because the event may be on a day the Schedule tab has not loaded.
+                        const { data } = await supabase.from('calendar_events').select('*').eq('id', ev.id).maybeSingle();
+                        if (data) setDetailEv(fromRow(data));
+                      }}
+                      onAssign={(ev) => send(`Who can drive "${ev.title}" on ${ev.date}${ev.time ? ` at ${ev.time}` : ''}?`)}
+                    />
+                  )}
                   {/* Only on the LAST assistant message, not stale ones from
                       earlier in the conversation — tapping a suggestion from
                       three exchanges ago against the CURRENT state would be
@@ -1060,23 +1227,6 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                           <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.pink }}>{f}</Text>
                         </Pressable>
                       ))}
-                    </View>
-                  )}
-                  {/* "Add to plan" / "Share with family" — only when no proposals,
-                      or all proposals are still pending (hide once acted on) */}
-                  {m.role === 'assistant' && m.id !== messages[0]?.id && m.content && m.revealDone &&
-                    !m.proposals?.length && (
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                      <Pressable onPress={() => send('Add that to the plan')}
-                        style={{ borderRadius: 20, borderWidth: 1.5, borderColor: colors.pink + '60',
-                          backgroundColor: colors.pinkLight, paddingHorizontal: 14, paddingVertical: 8 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>+ Add to plan</Text>
-                      </Pressable>
-                      <Pressable onPress={() => send('Share this with the family')}
-                        style={{ borderRadius: 20, borderWidth: 1.5, borderColor: colors.pink + '60',
-                          backgroundColor: colors.pinkLight, paddingHorizontal: 14, paddingVertical: 8 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink }}>Share with family</Text>
-                      </Pressable>
                     </View>
                   )}
                 </View>
@@ -1107,8 +1257,8 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
 
             {/* Figma compose bar: white input + lavender "Ask" button */}
             <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#e8e8ee',
-              paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: RHYTHM.inline }}>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
                 {/* Mic */}
                 <Pressable
                   onPress={async () => {
@@ -1134,13 +1284,14 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     placeholder="Ask anything about family life"
                     placeholderTextColor={colors.textTertiary}
                     editable={voice.state !== 'listening'}
-                    style={{ fontSize: 14,
+                    multiline
+                    // Native auto-grow: one line at rest, one more per wrapped line up to 3, then it scrolls inside the box.
+                    style={{ fontSize: 14, lineHeight: 20,
                       color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
-                      backgroundColor: '#FFFFFF', height: 50, borderRadius: 15, borderWidth: 1,
+                      backgroundColor: isDark ? colors.card : '#FFFFFF', minHeight: INPUT_MIN_H, maxHeight: INPUT_MAX_H, borderRadius: 15, borderWidth: 1,
+                      paddingTop: 13, paddingBottom: 13, textAlignVertical: 'top',
                       borderColor: voice.state === 'listening' ? colors.danger + '60' : (isDark ? colors.border : '#daddE8'),
                       paddingHorizontal: 14, paddingRight: input && voice.state !== 'listening' ? 36 : 14 }}
-                    onSubmitEditing={() => send(input)}
-                    returnKeyType="send"
                   />
                   {!!input && voice.state !== 'listening' && (
                     <Pressable onPress={() => setInput('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1173,10 +1324,17 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
               {/* Figma: privacy note */}
               <Text style={{ fontSize: 9, color: colors.textTertiary, lineHeight: 14,
                 marginTop: 8, marginBottom: Math.max(10, insets.bottom + 2) }}>
-                AskFam suggests actions. Nothing is added, changed, or shared until you confirm it.
+                Ask Cube suggests actions. Nothing is added, changed, or shared until you confirm it.
               </Text>
             </View>
       </View>
+      {detailEv && (
+        <EventDetailScreen
+          ev={detailEv}
+          onClose={() => setDetailEv(null)}
+          onDelete={async (id) => { await useEventStore.getState().deleteEvent(id); setDetailEv(null); }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 
@@ -1312,7 +1470,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
     return (
       <KioskSlideModal visible={visible} onRequestClose={onClose}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', flexDirection: 'row', justifyContent: 'flex-end' }}>
-          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close Ask Fam" />
+          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close Ask Cube" />
           {chatContent}
         </View>
         {overlays}

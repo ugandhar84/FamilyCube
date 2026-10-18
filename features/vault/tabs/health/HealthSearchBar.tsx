@@ -5,7 +5,7 @@ import { hf } from './styles';
 /**
  * HealthSearchBar — search input + filter icon, extracted out of
  * HealthRecordsList.tsx so HealthTab.tsx can place it in the same row as
- * the CubeAI Health pill (side by side) instead of on its own row below,
+ * the Cube Health pill (side by side) instead of on its own row below,
  * which left a large dead gap between the two (live-reported).
  */
 export default function HealthSearchBar({
@@ -28,7 +28,7 @@ export default function HealthSearchBar({
     ? (v: string) => setMedSearch(v)
     : (v: string) => setVaxSearch(v);
 
-  // Matches CubeAI Health pill's own height exactly: that pill's tap
+  // Matches Cube Health pill's own height exactly: that pill's tap
   // target is a 24px icon circle + paddingVertical: 9 (HealthAiAssistant.tsx),
   // so this row uses the same paddingVertical: 9 and a 42px filter button
   // (24 + 9*2), rather than hf.searchRow's own paddingVertical: 9 +

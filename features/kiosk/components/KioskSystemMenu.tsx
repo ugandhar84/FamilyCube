@@ -4,7 +4,7 @@
  *   · every profile in the family, one tap to switch (a member with a PIN
  *     still goes through PinEntryModal, exactly as the old header did)
  *   · the actions the header used to carry — Notifications, Announcement,
- *     Ask Fam (parent), theme, Edit my profile
+ *     Ask Cube (parent), theme, Edit my profile
  *   · Lock, bottom-right like a power button
  * Not a native Modal (so touches count as activity for the idle lock); the PIN
  * and notification sheets it opens ARE Modals and hold the lock off themselves.
@@ -134,7 +134,7 @@ export function KioskSystemMenu({
             <View style={s.tiles}>
               {tile('Notifications', Bell, k.pastelPrimaryCard, k.terracotta, () => setNotifOpen(true), unread)}
               {tile('Announce', Megaphone, k.pastelAmberCard, k.gold, () => { onClose(); onIntercom(); })}
-              {onAskFam && tile('Ask Fam', Sparkles, k.pastelLavCard, k.purple, () => { onClose(); onAskFam(); })}
+              {onAskFam && tile('Ask Cube', Sparkles, k.pastelLavCard, k.purple, () => { onClose(); onAskFam(); })}
               {tile(themeLabel, ThemeIcon, k.pastelSageCard, k.sage, cycleTheme)}
               {tile(navSide ? 'Nav: bottom' : 'Nav: side', PanelLeft, k.pastelLavCard, k.purple, () => { setNavSide(!navSide); onClose(); })}
               {tile('My profile', UserCircle2, k.well, k.textMuted, () => { onClose(); onEditProfile(); })}

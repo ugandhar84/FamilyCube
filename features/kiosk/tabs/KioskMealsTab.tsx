@@ -30,11 +30,11 @@
  *   · NO stove/oven timer widget. The mockup has one; the owner ruled it
  *     out of scope. Nothing here schedules or counts anything.
  *
- * AI meal generation (MealsTab's CubeAI planner: the family-ai edge
+ * AI meal generation (MealsTab's Cube planner: the family-ai edge
  * function, the multi-step select-and-confirm phase) was originally scoped
  * OUT for the same "doesn't shrink onto a glanceable kitchen panel usefully"
  * reasoning as the timer — reversed on request, matching the same
- * treatment KioskAiChoresEngine already gives the Chores tab's own CubeAI
+ * treatment KioskAiChoresEngine already gives the Chores tab's own Cube
  * engine [live-requested: "need to ai section similar to the chores ,, to
  * match the mobile functionality"]. It lives behind a "Plan with AI"
  * button (parent-only) that opens KioskAiMealsEngine as a right-side
@@ -826,7 +826,7 @@ export function KioskMealsTab({ active, members }: { active: FamilyMember; membe
         sub={{
           plan: `${meals.length + nextMeals.length} meals planned`,
           recipes: `${recipeCount.approved} family recipes`,
-          ai: 'Plan the week with CubeAI',
+          ai: 'Plan the week with Cube',
           list: `${items.length} to buy`,
           runs: `${runs.filter(r => r.status === 'active').length} active · ${runs.filter(r => r.status === 'draft').length} planned`,
           history: 'Purchases by date',

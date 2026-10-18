@@ -313,7 +313,7 @@ function CustomTabBar({ state, navigation }: any) {
 export default function TabLayout() {
   const { colors } = useTheme();
   // Live-reported: a duplicate floating Ask Cube FAB appeared over kiosk
-  // mode's own Tasks tab, on top of KioskHeader's own dedicated Ask Fam
+  // mode's own Tasks tab, on top of KioskHeader's own dedicated Ask Cube
   // button — this shared FAB is phone-navigation-specific (it reads
   // uiStore.activeTabName, a flag kiosk never sets, so it silently rode
   // along with whatever stale tab name the phone side last set) and was
@@ -372,6 +372,29 @@ export default function TabLayout() {
   // gate below the same way onFamilyHealthTab does.
   const onSchoolTab = activeTabName === 'school';
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
+  // Detail pages opened from the Ask Cube chat hand back to it: when the page closes (full-bleed turns off again), reopen the chat.
+  const prevFullBleed = useRef(false);
+  useEffect(() => {
+    if (prevFullBleed.current && !fullBleedScreenActive && useUIStore.getState().returnToAskCube) {
+      useUIStore.getState().setReturnToAskCube(false);
+      setAskCubeOpen(true);
+    }
+    prevFullBleed.current = fullBleedScreenActive;
+  }, [fullBleedScreenActive]);
+  const openAskCubeRequested = useUIStore(s => s.openAskCubeRequested);
+  useEffect(() => {
+    if (!openAskCubeRequested) return;
+    useUIStore.getState().setOpenAskCubeRequested(false);
+    setAskCubeOpen(true);
+  }, [openAskCubeRequested]);
+  // A stale hand-back (the detail page never opened) must not pop the chat open later: drop it when the chat opens normally or after a few seconds.
+  const returnToAskCube = useUIStore(s => s.returnToAskCube);
+  useEffect(() => { if (askCubeOpen) useUIStore.getState().setReturnToAskCube(false); }, [askCubeOpen]);
+  useEffect(() => {
+    if (!returnToAskCube) return;
+    const t = setTimeout(() => { if (!useUIStore.getState().fullBleedScreenActive) useUIStore.getState().setReturnToAskCube(false); }, 8000);
+    return () => clearTimeout(t);
+  }, [returnToAskCube]);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
 
@@ -396,7 +419,7 @@ export default function TabLayout() {
 
   // Route-level backstop: kiosk-awareness otherwise lives ONLY at each
   // navigation call site (navigateFromNotification in kioskNavStore.ts,
-  // used by app/_layout.tsx's notification listener and by Ask Fam's own
+  // used by app/_layout.tsx's notification listener and by Ask Cube's own
   // chore-mention links) — none of tasks.tsx/chat.tsx/store.tsx/gps.tsx/
   // quests.tsx/etc. have any kiosk gate of their own. A bare router.push to
   // any of them (one already existed inside AskCubeChat.tsx before this

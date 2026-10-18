@@ -448,8 +448,8 @@ export default function AiSuggestionsPage({
               eyebrow="FAMILY CUBE · MEALS"
               title="A little inspiration"
               subtitle={hasSuggestions
-                ? `CubeAI · ${totalSelected === 0 ? 'none selected' : `${totalSelected} selected`}`
-                : 'CubeAI · weekly meal ideas'}
+                ? `Cube · ${totalSelected === 0 ? 'none selected' : `${totalSelected} selected`}`
+                : 'Cube · weekly meal ideas'}
               accent="pink"
               Icon={Sparkles}
               onTitlePress={onClose}
@@ -486,7 +486,7 @@ export default function AiSuggestionsPage({
                   </Text>
                   {aiLoading && (
                     <Text style={{ fontSize: 13, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), textAlign: 'center', lineHeight: 19 }}>
-                      CubeAI is picking meals that match your family's tastes.
+                      Cube is picking meals that match your family's tastes.
                     </Text>
                   )}
                 </View>

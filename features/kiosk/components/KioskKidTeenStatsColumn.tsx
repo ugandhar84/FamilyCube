@@ -169,9 +169,9 @@ export function KioskKidTeenStatsColumn({
           </WidgetCard>
         )}
       </ScrollView>
-      {/* Ask Fam removed for kid/teen — same "no AI-shaped surface" scope
+      {/* Ask Cube removed for kid/teen — same "no AI-shaped surface" scope
           decision already applied to senior [live-requested: "remove the
-          askFam for kids and teaans as well.."]. Ask Fam itself remains
+          askFam for kids and teaans as well.."]. Ask Cube itself remains
           real AI now (Ask Cube backend) and is parent-only. */}
     </View>
   );

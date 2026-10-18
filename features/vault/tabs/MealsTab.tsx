@@ -56,7 +56,7 @@ export default function MealsTab({ colors, isDark, weekOverride, onAddReady, onF
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  // Meal add/edit/delete + the CubeAI planner are now parent-only
+  // Meal add/edit/delete + the Cube planner are now parent-only
   // [live-requested: "remove meal editing /add/delete only give readonly
   // access .. with recipie share.. kube ai we can blur and show the
   // overleay parents ony access? / even mobile should do same"] — a

@@ -645,7 +645,7 @@ function otherParentIds(excludeIds: (string | null | undefined)[]): string[] {
 }
 
 function notifyRideAssignment(
-  type: 'ride_assignment_offered' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened' | 'ride_driver_needed',
+  type: 'ride_assignment_offered' | 'ride_assignment_reminder' | 'ride_assignment_accepted' | 'ride_assignment_declined' | 'ride_assignment_overridden' | 'ride_confirmed_for_kid' | 'ride_pool_opened' | 'ride_driver_needed',
   memberIds: string[],
   excludeMemberId: string | null,
   payload: Record<string, unknown>,
@@ -659,6 +659,19 @@ function notifyRideAssignment(
       excludeMemberId: excludeMemberId ?? undefined,
     },
   }).catch(e => console.warn('[eventStore] ride notify failed:', e?.message));
+}
+
+/** Nudge the person holding a still-unconfirmed ride/helper assignment — same push the original offer used. */
+const lastReminderAt = new Map<string, number>();
+export function remindEventAssignee(ev: { id: string; title: string; time?: string | null }, assigneeId: string, actorId: string): boolean {
+  const key = `${ev.id}:${assigneeId}`;
+  const now = Date.now();
+  if (now - (lastReminderAt.get(key) ?? 0) < 15 * 60 * 1000) return false;
+  lastReminderAt.set(key, now);
+  notifyRideAssignment('ride_assignment_reminder', [assigneeId], actorId, {
+    eventTitle: ev.title, eventId: ev.id, eventTime: ev.time, byName: memberById(actorId)?.name,
+  });
+  return true;
 }
 
 function today(): string {

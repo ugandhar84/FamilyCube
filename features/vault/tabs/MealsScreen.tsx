@@ -239,7 +239,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
         generated_at: new Date().toISOString(),
       }, { onConflict: 'family_id,week_of' }).then(() => {});
     } catch {
-      Alert.alert('CubeAI', 'Couldn\'t generate plan. Check connection and try again.');
+      Alert.alert('Cube', 'Couldn\'t generate plan. Check connection and try again.');
       setShowInspirationPage(false);
     }
     setAiLoading(false);
@@ -330,7 +330,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
 
   const isKid = (activeMember as any)?.role === 'kid';
 
-  // "A little inspiration" is CubeAI planning the WEEK — dropped for kids
+  // "A little inspiration" is Cube planning the WEEK — dropped for kids
   // specifically (teens keep it) rather than letting them browse-then-save,
   // since every AI idea a kid taps "Save to recipe book" on would otherwise
   // land in the parent review queue as a low-effort pick [live-requested:
@@ -350,7 +350,7 @@ export default function MealsScreen({ onClose }: { onClose?: () => void } = {}) 
     ...(isKid ? [] : [{
       key: 'ai',
       title: 'A little inspiration',
-      subtitle: 'CubeAI suggests meals for the week — pick your favourites and add them in one tap',
+      subtitle: 'Cube suggests meals for the week — pick your favourites and add them in one tap',
       icon: Sparkles,
       color: colors.pink,
       bg: colors.pinkLight,

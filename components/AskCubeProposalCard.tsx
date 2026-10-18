@@ -5,7 +5,7 @@
  * "what am I confirming" mental model differ a lot per type (a grocery
  * proposal is a list of items, a meal is a recipe-style hero, etc).
  */
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, Image, TextInput } from 'react-native';
 import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store, Trash2, Users, HandHeart } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -47,6 +47,8 @@ const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; acc
   chore_action: { label: 'Action draft',     icon: ClipboardList, accent: 'pink' },
   cancel_event: { label: 'Cancel draft',     icon: Trash2,        accent: 'pink' },
   kid_request_action: { label: 'Request draft', icon: HandHeart, accent: 'pink' },
+  reassign_rides: { label: 'Plan', icon: Clock, accent: 'pink' },
+  remind:       { label: 'Reminder draft',   icon: Clock,         accent: 'pink' },
 };
 
 // Plain-English label per action kind — shown as the card's main line
@@ -186,6 +188,27 @@ function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: 
 // identical to editing it anywhere else in the app, with zero extra AI
 // round-trip. Only rendered when the caller supplies onChange (a still-
 // pending proposal) — same opt-in pattern as ReminderPicker/StorePicker.
+/** One calm summary line under the title; "Edit" opens the pickers. Same data and handlers, less clutter. */
+function EditableSummary({ parts, colors, locked, children }: {
+  parts: (string | null | undefined | false)[]; colors: any; locked?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const line = parts.filter(Boolean).join(' · ');
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, color: colors.textSecondary }}>{line}</Text>
+        {!locked && (
+          <Pressable onPress={() => setOpen(o => !o)} hitSlop={8} accessibilityRole="button" accessibilityLabel={open ? 'Close editing' : 'Edit details'}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>{open ? 'Done' : 'Edit'}</Text>
+          </Pressable>
+        )}
+      </View>
+      {open && !locked ? <View style={{ gap: 10 }}>{children}</View> : null}
+    </View>
+  );
+}
+
 export function DateTimeEditRow({ dateStr, timeStr, accent, colors, isDark, onChange }: {
   dateStr?: string | null; timeStr?: string | null;
   accent: string; colors: any; isDark: boolean;
@@ -423,7 +446,7 @@ export default function AskCubeProposalCard({
   const Header = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
       <Icon size={14} color={accent} />
-      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      <Text style={{ fontSize: 11, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.8 }}>
         {meta.label}
       </Text>
     </View>
@@ -435,16 +458,29 @@ export default function AskCubeProposalCard({
     : proposal.kind === 'redemption' ? 'Redeem'
     : proposal.kind === 'chore_action' ? (CHORE_ACTION_LABEL[d.action] ?? 'Confirm')
     : proposal.kind === 'cancel_event' ? 'Cancel event'
+    : proposal.kind === 'remind' ? 'Send reminder'
+    : proposal.kind === 'reassign_rides' ? `Move ${(d.items ?? []).length} ${(d.items ?? []).length === 1 ? 'ride' : 'rides'}`
     : proposal.kind === 'kid_request_action' ? (KID_REQUEST_ACTION_LABEL[d.action] ?? 'Confirm')
+    : proposal.kind === 'quest' ? 'Add chore'
+    : proposal.kind === 'event' ? 'Add event'
+    : proposal.kind === 'meal' ? 'Add to plan'
     : 'Create';
+  // What the button becomes once it has been confirmed.
+  const doneLabel = proposal.kind === 'cancel_event' ? 'Cancelled'
+    : proposal.kind === 'reassign_rides' ? 'Moved'
+    : proposal.kind === 'remind' ? 'Sent'
+    : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Updated'
+    : proposal.kind === 'redemption' ? 'Redeemed'
+    : proposal.kind === 'chore_action' || proposal.kind === 'kid_request_action' ? 'Done'
+    : 'Added';
 
   const Actions = added ? (
-    <View style={{ borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-      backgroundColor: colors.success + '18', marginTop: 2 }}>
-      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.success }}>✓ Done</Text>
+    <View style={{ borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: colors.success + '1F', marginTop: 2 }}>
+      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.success }}>✓ {doneLabel}</Text>
     </View>
   ) : discarded ? (
-    <View style={{ borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+    <View style={{ borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center',
       backgroundColor: colors.border + '60', marginTop: 2 }}>
       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{discardedLabel ?? 'Discarded'}</Text>
     </View>
@@ -453,16 +489,17 @@ export default function AskCubeProposalCard({
       <Pressable
         onPress={() => { if (!added && !discarded) onDiscard(); }}
         disabled={added || discarded}
-        style={{ flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-          backgroundColor: isDark ? colors.surface : '#FFFFFF',
-          borderWidth: 1, borderColor: colors.border }}>
+        accessibilityRole="button" accessibilityLabel="Discard"
+        style={{ flex: 1, borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
       </Pressable>
       <Pressable
         onPress={() => { if (!added && !discarded) onCreate(); }}
         disabled={added || discarded}
-        style={{ flex: 2, borderRadius: 12, paddingVertical: 11, alignItems: 'center', backgroundColor: accent }}>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>{createLabel}</Text>
+        accessibilityRole="button" accessibilityLabel={createLabel}
+        style={{ flex: 1.7, borderRadius: 13, minHeight: 42, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textInverse }}>{createLabel}</Text>
       </Pressable>
     </View>
   );
@@ -473,10 +510,10 @@ export default function AskCubeProposalCard({
   // detail the user was just reviewing and read as the item vanishing
   // outright rather than a recorded decision.
   const cardBase = {
-    marginTop: 8, maxWidth: '90%' as const,
-    backgroundColor: isDark ? colors.surface : '#F4F3FA',
-    borderRadius: 16, borderWidth: 1.5,
-    borderColor: discarded ? colors.border : (isDark ? accent + '40' : accent + '30'),
+    marginTop: 8, maxWidth: '94%' as const,
+    backgroundColor: colors.card,
+    borderRadius: 16, borderWidth: 1,
+    borderColor: colors.border,
     padding: 16, gap: 10,
     opacity: discarded ? 0.5 : 1,
   };
@@ -497,10 +534,10 @@ export default function AskCubeProposalCard({
     // compact grid card above — a no-op fallback instead of `disabled`.
     const handleExpand = onExpand ?? (() => {});
     return (
-      <View style={{ marginTop: 8, maxWidth: '90%',
-        backgroundColor: isDark ? colors.surface : '#F4F3FA',
-        borderRadius: 16, borderWidth: 1.5,
-        borderColor: (discarded ? colors.border : accent + '30'),
+      <View style={{ marginTop: 8, maxWidth: '94%',
+        backgroundColor: colors.card,
+        borderRadius: 16, borderWidth: 1,
+        borderColor: colors.border,
         overflow: 'hidden', opacity: discarded ? 0.5 : 1 }}>
         {/* Real dish photo when the model supplied one, else the emoji hero.
             The whole card (not just the hero band) opens the recipe detail
@@ -583,40 +620,23 @@ export default function AskCubeProposalCard({
   if (proposal.kind === 'quest') {
     const assignee = memberName(members, d.memberId);
     const assignedToAdult = !!d.memberId && members.find(m => m.id === d.memberId)?.role === 'parent';
+    const today = todayLocal();
+    const when = d.dueDate
+      ? `${d.dueDate === today ? 'today' : fmtDate(d.dueDate, d.dueDate)}${d.dueTime ? ` ${fmtTime(d.dueTime, d.dueTime)}` : ''}`
+      : null;
+    const reminder = d.alertCall ? (d.alertCallLeadMinutes ? `call reminder ${d.alertCallLeadMinutes} min before` : 'call reminder on time') : null;
     return (
       <View style={cardBase} pointerEvents={cardPointerEvents}>
         {Header}
-        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {!assignedToAdult && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Coins size={12} color={accent} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accent }}>{d.coins ?? 20} coins</Text>
-            </View>
-          )}
-          {!!assignee && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <User size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{assignee}</Text>
-            </View>
-          )}
+        <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, lineHeight: 22 }}>{d.title}</Text>
+        <EditableSummary
+          colors={colors} locked={added || discarded}
+          parts={[assignee, !assignedToAdult ? `${d.coins ?? 20} coins` : null, when, d.photoRequired ? 'photo required' : null, formatRecurrence(d.recurrenceRule), reminder]}>
           {!!d.dueDate && (
             <DateTimeEditRow dateStr={d.dueDate} timeStr={d.dueTime} accent={accent} colors={colors} isDark={isDark} onChange={onChangeDateTime} />
           )}
-          {!!d.photoRequired && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Camera size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Photo required</Text>
-            </View>
-          )}
-          {!!formatRecurrence(d.recurrenceRule) && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Repeat size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{formatRecurrence(d.recurrenceRule)}</Text>
-            </View>
-          )}
-        </View>
-        <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
+          <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
+        </EditableSummary>
         {Actions}
       </View>
     );
@@ -707,6 +727,38 @@ export default function AskCubeProposalCard({
         {!!d.reason && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.reason}"</Text>
         )}
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'remind') {
+    const toName = memberName(members, d.memberId) ?? d.memberAlias;
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{toName ? `Remind ${toName}` : 'Send a reminder'}</Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{d.text}"</Text>
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'reassign_rides') {
+    const toName = memberName(members, d.toMemberId) ?? d.toAlias;
+    const items: { eventId: string; title: string; date: string; time?: string | null; role: string }[] = d.items ?? [];
+    return (
+      <View style={cardBase} pointerEvents={cardPointerEvents}>
+        {Header}
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{toName ? `${toName} takes ${items.length === 1 ? 'this ride' : `these ${items.length} rides`}` : `Move ${items.length} rides`}</Text>
+        <View style={{ gap: 6 }}>
+          {items.map(it => (
+            <View key={it.eventId} style={{ flexDirection: 'row', gap: 10, alignItems: 'baseline' }}>
+              <Text style={{ width: 92, fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{fmtDate(it.date)}{it.time ? ` · ${fmtTime(it.time)}` : ''}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }}>{it.title}</Text>
+            </View>
+          ))}
+        </View>
         {Actions}
       </View>
     );

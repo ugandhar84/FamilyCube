@@ -1,5 +1,5 @@
 /**
- * AiEngineBanner — CubeAI Chores Engine, collapsed to a small pill button by
+ * AiEngineBanner — Cube Chores Engine, collapsed to a small pill button by
  * default. Tapping it slides open to the right, expanding into the 3 tool
  * buttons (Auto-Balance, Spark, Advice) inline in a single row instead of a
  * full-width banner permanently occupying the top of the screen. Each tool
@@ -91,7 +91,7 @@ export function AiEngineBanner({ showAiTool, isAiLoading, onRunAI, colors }: Pro
           </View>
           {!expanded && (
             <>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.primary }}>CubeAI</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.primary }}>Cube</Text>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success }} />
               {isAiLoading && <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 2 }} />}
             </>

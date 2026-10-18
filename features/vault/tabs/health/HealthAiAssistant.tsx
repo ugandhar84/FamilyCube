@@ -66,7 +66,7 @@ export default function HealthAiAssistant({
             </View>
             {!aiOpen && (
               <>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.accent }}>CubeAI Health</Text>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: colors.accent }}>Cube Health</Text>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success }} />
                 {(aiLoading || scanning) && <ActivityIndicator size="small" color={colors.accent} style={{ marginLeft: 2 }} />}
               </>

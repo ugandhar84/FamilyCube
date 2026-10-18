@@ -67,7 +67,9 @@ export function ReviewConflictModal({
         />
 
         <ScrollView
-          style={{ flexGrow: 0, flexShrink: 1 }}
+          style={{ flex: 1 }}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
           contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: RHYTHM.section }}
           showsVerticalScrollIndicator={false}
         >
@@ -107,9 +109,9 @@ export function ReviewConflictModal({
           </AnimatedPressable>
           <AnimatedPressable
             onPress={() => { onApprove(); onClose(); }}
-            style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.pink }}
+            style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.primary }}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#FFFFFF' }}>Approve plan →</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textInverse }}>Approve plan →</Text>
           </AnimatedPressable>
         </View>
       </View>

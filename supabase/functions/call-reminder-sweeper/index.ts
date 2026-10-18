@@ -323,7 +323,7 @@ serve(async (req) => {
           ? supabase.from('chore_tasks').select('id, title, assigned_to_id, description, family_id, status').in('id', choreIds)
           : Promise.resolve({ data: [] as any[] }),
         eventIds.length
-          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids, family_id, driver_id, driver_status, helper_id, helper_status').in('id', eventIds).is('deleted_at', null)
+          ? supabase.from('calendar_events').select('id, title, location, notes, member_id, member_ids, family_id, driver_id, driver_status, helper_id, helper_status, acknowledged_by').in('id', eventIds).is('deleted_at', null)
           : Promise.resolve({ data: [] as any[] }),
       ]);
       const choreById = Object.fromEntries((missedChores ?? []).map((c: any) => [c.id, c]));
@@ -376,6 +376,17 @@ serve(async (req) => {
               ...(source.member_id ? [source.member_id] : []),
               ...(source.member_ids ?? []),
             ])];
+        // Someone who already acted on this event — acknowledged it, or confirmed their own driver/helper
+        // assignment — has dealt with it; ringing them again 3 minutes later is the "why do I keep getting
+        // the snooze call" bug. Only the people still unresolved get the follow-up.
+        if (!isChore) {
+          const handled = new Set<string>([
+            ...((source.acknowledged_by ?? []) as string[]),
+            ...(source.driver_status === 'confirmed' && source.driver_id ? [source.driver_id] : []),
+            ...(source.helper_status === 'confirmed' && source.helper_id ? [source.helper_id] : []),
+          ]);
+          for (let i = memberIds.length - 1; i >= 0; i--) if (handled.has(memberIds[i] as string)) memberIds.splice(i, 1);
+        }
         if (memberIds.length === 0) continue;
 
         const [{ data: voipTokenRows }, { data: expoTokenRows }, { data: memberRows2 }] = await Promise.all([

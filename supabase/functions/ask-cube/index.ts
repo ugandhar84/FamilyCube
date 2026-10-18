@@ -1077,6 +1077,16 @@ async function executeTool(
   aliasMap: AliasMap, members: { id: string; name: string }[], placeAliasMap: PlaceAliasMap,
   today: string, nowHHMM: string, tz: string = 'UTC',
 ) {
+  // The model works in aliases ("Person A"), and it often copies them into a title search ("Pick-up · Person A from dance class").
+  // Titles are stored with real names, so turn aliases back into names before any search, or nothing would ever match.
+  for (const k of ['targetSearch', 'rewardSearch', 'search'] as const) {
+    if (typeof args?.[k] === 'string') {
+      // First names only: that is how titles are written ("Pick-up · Cherry"), never the full name.
+      let t: string = args[k];
+      for (const [alias, real] of aliasMap.toReal) t = t.split(alias).join(String(real).split(' ')[0]);
+      args[k] = t;
+    }
+  }
   if (name === 'get_family_snapshot') {
     // One look at where the family stands today: chores by state, the day's events done vs coming up, and anything waiting on a parent.
     const isParent = viewerRole === 'parent' || viewerRole === 'senior';
@@ -3455,6 +3465,7 @@ start the reply fresh from real data for THIS turn.` : ''}
     let lastDebugEmptyReason: any = undefined;
 
     let draftClaimRetried = false;
+    let emptyRetried = false;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const modelCallStarted = Date.now();
       const { reply, modelUsed, usage } = await callModel(messages, TOOLS);
@@ -3638,7 +3649,15 @@ start the reply fresh from real data for THIS turn.` : ''}
         continue;
       }
 
-      finalText = reply.content ?? '';
+      // An empty reply shows the user a blank bubble. Ask once more; if it is still empty, say so honestly.
+      if (!(reply.content ?? '').trim() && proposals.length === 0 && !emptyRetried && round < MAX_TOOL_ROUNDS - 1) {
+        emptyRetried = true;
+        console.warn('[ask-cube] empty reply; retrying once');
+        messages.push({ role: 'user', content: 'SYSTEM NOTE: your last reply was empty. Reply to the user now: if their message was a yes, treat it as agreeing to what you just offered and call the matching propose_* tool; otherwise answer or ask one short question.' });
+        continue;
+      }
+
+      finalText = (reply.content ?? '').trim() || "Sorry, I lost track of that. Could you say it once more?";
       break;
     }
 

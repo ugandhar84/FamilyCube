@@ -24,6 +24,8 @@ import { TYPO } from '@/constants/theme';
 import { askCube, AskCubeProposal, AskCubeChoreRef } from '@/lib/askCubeService';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { spokenVerdict } from '@/lib/spokenVerdict';
+import { correctSpokenNames } from '@/lib/correctSpokenNames';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, remindChoreAssignee } from '@/store/choreStore';
@@ -399,6 +401,25 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: now },
         { id: `local-${Date.now()}-mod`, role: 'assistant', content: "Let's keep it kind — that message wasn't sent.", timestamp: now }]);
       return;
+    }
+    // A spoken (or typed) "yes" / "no" answers the draft that is waiting: confirm or discard it, exactly like tapping its button.
+    // Only when exactly ONE draft is pending on the latest reply, so it can never confirm the wrong thing.
+    const verdict = spokenVerdict(trimmed);
+    if (verdict) {
+      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+      const pending = (lastAssistant?.proposals ?? [])
+        .map((p, i) => ({ p, i }))
+        .filter(({ i }) => (lastAssistant?.proposalStatuses?.[i] ?? 'pending') === 'pending');
+      if (lastAssistant && pending.length === 1 && pending[0].p.kind !== 'meal') {
+        const now = new Date().toISOString();
+        setInput('');
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-v`, role: 'user', content: trimmed, timestamp: now }]);
+        if (verdict === 'yes') await createProposal(lastAssistant.id, pending[0].i, pending[0].p);
+        else discardProposal(lastAssistant.id, pending[0].i);
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-vr`, role: 'assistant', content: verdict === 'yes' ? 'Done.' : 'Okay, I discarded it.', timestamp: new Date().toISOString() }]);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+        return;
+      }
     }
     setInput('');
     setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
@@ -1265,7 +1286,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     if (voice.state === 'listening') {
                       const transcript = voice.liveTranscript;
                       await voice.stop();
-                      if (transcript.trim()) setInput(transcript);
+                      // Tapping the mic again means "I'm done talking": fix mis-heard family names and send it, so speaking alone is enough.
+                      const fixed = correctSpokenNames(transcript, members.map(m => m.name.split(' ')[0]));
+                      if (fixed.trim()) send(fixed);
                       return;
                     }
                     await voice.start();

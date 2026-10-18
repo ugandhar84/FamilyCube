@@ -977,7 +977,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     borderBottomRightRadius: m.role === 'user' ? 4 : 18,
                     borderBottomLeftRadius: m.role === 'user' ? 18 : 4 }}>
                     {m.role === 'user' ? (
-                      <Text style={{ fontSize: 16, color: colors.textPrimary, lineHeight: 23 }}>{m.content}</Text>
+                      <Text selectable style={{ fontSize: 16, color: colors.textPrimary, lineHeight: 23 }}>{m.content}</Text>
                     ) : (
                       <AskCubeMessageText
                         content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber}

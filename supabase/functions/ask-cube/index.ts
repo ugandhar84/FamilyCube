@@ -3304,6 +3304,18 @@ conversation text, so never reference "the suggestions below" in your actual rep
           // model's context. Strip it before stringifying for messages/log.
           const { __choreRefs, __proposalBatch, __scheduleCards, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
+          // The schedule tool returns the whole family. When the message is about specific people, hand the model ONLY their
+          // events, so it cannot list someone else's ("Dentist · Ugandhar" under a question about Cherry).
+          if (call.function.name === 'get_schedule' && Array.isArray((modelResult as any).events)) {
+            const wantIdsM = resolution.mentionedIds.length ? resolution.mentionedIds : (resolution.pronounId ? [resolution.pronounId] : []);
+            const wantAliasM = wantIdsM.map((id: string) => aliasMap.toAlias.get(id)).filter(Boolean) as string[];
+            if (wantAliasM.length > 0) {
+              const before = (modelResult as any).events.length;
+              (modelResult as any).events = (modelResult as any).events.filter((e: any) =>
+                wantAliasM.some(al => String(e.person ?? '').includes(al) || e.driver === al || e.helper === al || String(e.title ?? '').includes(al)));
+              (modelResult as any).note = `Already limited to events for ${wantAliasM.join(' and ')} (${(modelResult as any).events.length} of ${before} family events). Do not mention anyone else's events.`;
+            }
+          }
 
           const resultStr = JSON.stringify(modelResult);
           messages.push({ role: 'tool', tool_call_id: call.id, name: call.function.name, content: resultStr });

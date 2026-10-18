@@ -1086,6 +1086,44 @@ function titleFilter(search: string): string {
   return titleVariants(search).map(v => `title.ilike.%${v.replace(/[,()%*]/g, ' ')}%`).join(',');
 }
 
+/** Real places near a point, from Apple Maps search. Returns names/addresses/distances only. */
+async function appleNearby(query: string, loc: { lat: number; lng: number }): Promise<{ name: string; kind: string | null; address: string; distanceMiles: number }[] | null> {
+  const creds = getAppleMapsCredentials();
+  if (!creds) return null;
+  try {
+    const token = await getAppleMapsAccessToken(creds.privateKey, creds.keyId, creds.teamId);
+    const u = new URL('https://maps-api.apple.com/v1/search');
+    u.searchParams.set('q', query.slice(0, 80));
+    u.searchParams.set('lang', 'en-US');
+    u.searchParams.set('searchLocation', `${loc.lat},${loc.lng}`);
+    u.searchParams.set('userLocation', `${loc.lat},${loc.lng}`);
+    u.searchParams.set('resultTypeFilter', 'Poi');
+    const res = await fetch(u.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const R = 3958.8, rad = Math.PI / 180;
+    const miles = (c: any) => {
+      const dLat = (c.latitude - loc.lat) * rad, dLng = (c.longitude - loc.lng) * rad;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(loc.lat * rad) * Math.cos(c.latitude * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    };
+    return (data.results ?? []).filter((r: any) => r?.name && r?.coordinate)
+      .map((r: any) => ({ name: r.name, kind: r.poiCategory ?? null, address: (r.formattedAddressLines ?? []).slice(0, 2).join(', '), distanceMiles: Math.round(miles(r.coordinate) * 10) / 10 }))
+      .sort((a: any, b: any) => a.distanceMiles - b.distanceMiles).slice(0, 6);
+  } catch { return null; }
+}
+
+/** What to search for, from the words of the request (a trip or outing needs a few kinds of place). */
+function nearbyQueriesFor(message: string): string[] {
+  const t = message.toLowerCase();
+  const out: string[] = [];
+  const direct = t.match(/\b(park|trail|hike|hiking|museum|zoo|aquarium|movie|cinema|bowling|arcade|playground|library|pharmacy|urgent care|gas station|grocery|restaurant|cafe|coffee|ice cream|pizza|bakery|beach|lake|mall|gym|pool|skating|mini golf|golf|farm|garden)\b/g);
+  if (direct) for (const d of direct) out.push(d === 'hike' || d === 'hiking' ? 'hiking trail' : d);
+  if (/\b(trip|itinerar|outing|day out|things to do|fun|activity|activities|plan)\w*/.test(t)) out.push('park', 'attraction', 'restaurant');
+  if (!out.length) out.push('things to do');
+  return [...new Set(out)].slice(0, 3);
+}
+
 async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
@@ -1803,33 +1841,10 @@ async function executeTool(
     if (!oneTimeLocation) return { __needsLocation: true, error: 'No location was shared for this message. The app is now showing the person a "Share my location once" card under your reply. Say in one short sentence that you can search as soon as they tap it (or they can name a town or area), and never make up places.' };
     const q = String(args.query ?? '').trim().slice(0, 80);
     if (!q) return { error: 'Say what to look for (for example park or pharmacy).' };
-    const creds = getAppleMapsCredentials();
-    if (!creds) return { error: 'Place search is not available right now. Tell the user plainly.' };
-    try {
-      const token = await getAppleMapsAccessToken(creds.privateKey, creds.keyId, creds.teamId);
-      const u = new URL('https://maps-api.apple.com/v1/search');
-      u.searchParams.set('q', q);
-      u.searchParams.set('lang', 'en-US');
-      u.searchParams.set('searchLocation', `${oneTimeLocation.lat},${oneTimeLocation.lng}`);
-      u.searchParams.set('userLocation', `${oneTimeLocation.lat},${oneTimeLocation.lng}`);
-      u.searchParams.set('resultTypeFilter', 'Poi');
-      const res = await fetch(u.toString(), { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) return { error: 'The places lookup failed. Tell the user plainly.' };
-      const data = await res.json();
-      const miles = (a: any) => {
-        const R = 3958.8, rad = Math.PI / 180;
-        const dLat = (a.latitude - oneTimeLocation.lat) * rad, dLng = (a.longitude - oneTimeLocation.lng) * rad;
-        const h = Math.sin(dLat / 2) ** 2 + Math.cos(oneTimeLocation.lat * rad) * Math.cos(a.latitude * rad) * Math.sin(dLng / 2) ** 2;
-        return 2 * R * Math.asin(Math.sqrt(h));
-      };
-      const places = (data.results ?? []).filter((r: any) => r?.name && r?.coordinate)
-        .map((r: any) => ({ name: r.name, kind: r.poiCategory ?? null, address: (r.formattedAddressLines ?? []).slice(0, 2).join(', '), distanceMiles: Math.round(miles(r.coordinate) * 10) / 10 }))
-        .sort((a: any, b: any) => a.distanceMiles - b.distanceMiles).slice(0, 6);
-      if (!places.length) return { places: [], note: 'Nothing found nearby for that. Say so and offer a different search.' };
-      return { places, note: 'Offer two or three of these by name with the distance. They are real places; do not add details that are not listed.' };
-    } catch (e: any) {
-      return { error: 'The places lookup failed. Tell the user plainly.' };
-    }
+    const places = await appleNearby(q, oneTimeLocation);
+    if (places === null) return { error: 'The places lookup failed. Tell the user plainly.' };
+    if (!places.length) return { places: [], note: 'Nothing found nearby for that. Say so and offer a different search.' };
+    return { places, note: 'Offer two or three of these by name with the distance. They are real places; do not add details that are not listed.' };
   }
 
   if (name === 'propose_reminder') {
@@ -2733,6 +2748,17 @@ serve(async (req) => {
     const prevCtx = (convCtxRow?.context ?? {}) as { lastMemberId?: string | null; lastDate?: string | null; lastItem?: { title: string; kind?: string } | null };
     const resolution = resolveMessage(body.message, (allMembers ?? []) as { id: string; name: string }[], today, prevCtx.lastMemberId ?? null);
     const resolvedFacts = describeResolution(resolution, (id) => aliasMap.toAlias.get(id) ?? 'someone', viewerAlias, prevCtx.lastItem ? { title: realNameToAlias(aliasMap, (allMembers ?? []) as any, prevCtx.lastItem.title), kind: prevCtx.lastItem.kind } : null);
+    // The person shared a location once for this message: look up real nearby places NOW and hand them over as facts, so the answer
+    // never depends on the model remembering to call the places tool.
+    let nearbyFacts = '';
+    if (oneTimeLocation && /\b(near ?by|near me|near us|around here|close to (me|us|here)|closest|nearest|find|trip|itinerar|outing|things to do|plan)\w*/i.test(body.message ?? '')) {
+      const lists = await Promise.all(nearbyQueriesFor(body.message ?? '').map(q => appleNearby(q, oneTimeLocation)));
+      const seen = new Set<string>();
+      const lines: string[] = [];
+      for (const l of lists) for (const p of l ?? []) { if (!seen.has(p.name)) { seen.add(p.name); lines.push(`- ${p.name}${p.kind ? ` (${p.kind})` : ''}, ${p.distanceMiles} mi${p.address ? `, ${p.address}` : ''}`); } }
+      if (lines.length) nearbyFacts = `NEARBY PLACES (real, found with the location the person just shared for this message; use ONLY these, with their distances, and never invent others):\n${lines.slice(0, 10).join('\n')}`;
+    }
+    const resolvedFactsAll = [resolvedFacts, nearbyFacts].filter(Boolean).join('\n');
     console.log('[ask-cube] resolved', { intent: resolution.intent, people: resolution.mentionedIds.length, pronoun: !!resolution.pronounId, dates: resolution.dates.map(d => d.date) });
 
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube — that is your ONLY identity, always,
@@ -3423,7 +3449,7 @@ UPCOMING WEEKDAYS: ${upcomingWeekdaysStr}
 UPCOMING HOLIDAYS: ${upcomingHolidaysStr}
 LONG WEEKENDS: ${longWeekendsStr}
 TALKING TO: ${viewerAlias}, ${({ parent: 'a parent', child: 'a kid', teenager: 'a teen', grandparent: 'a grandparent' } as Record<string, string>)[member.role] ?? member.role} (role: ${member.role}). Greet and thank them by this first name.
-${resolvedFacts ? `FACTS ALREADY WORKED OUT FOR THIS MESSAGE (computed by the app, not guesses, so use them exactly and do not second-guess them):\n${resolvedFacts}\n` : ''}
+${resolvedFactsAll ? `FACTS ALREADY WORKED OUT FOR THIS MESSAGE (computed by the app, not guesses, so use them exactly and do not second-guess them):\n${resolvedFactsAll}\n` : ''}
 ${activePendingProposal
   ? `ACTIVE PENDING DRAFT (ground truth, not something to infer from chat history): there is currently ONE
 unconfirmed proposal card still showing to the user — a "${activePendingProposal.kind}" with this exact data:
@@ -4029,6 +4055,9 @@ start the reply fresh from real data for THIS turn.` : ''}
     // that never make it into the final sentence; linking those too would
     // just make unrelated titles elsewhere in a long reply clickable.
     const choreRefs = [...choreRefsMap.values()].filter(r => finalText.includes(r.title));
+
+    // Never save or show a blank bubble.
+    if (!finalText.trim() && proposals.length === 0 && cardsOut.length === 0) finalText = "Sorry, I didn't get an answer for that. Could you try asking once more?";
 
     await supabase.from('ask_cube_messages').insert({
       conversation_id: conversationId, role: 'assistant', content: finalText,

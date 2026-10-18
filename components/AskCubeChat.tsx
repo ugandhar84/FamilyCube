@@ -852,11 +852,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
       <View
         style={
           inline
-            ? { flex: 1, backgroundColor: '#FFFFFF' }
+            ? { flex: 1, backgroundColor: isDark ? colors.background : '#FFFFFF' }
             : isKiosk
-              ? { backgroundColor: '#FFFFFF', width: 480, maxWidth: '100%', height: '100%',
+              ? { backgroundColor: isDark ? colors.background : '#FFFFFF', width: 480, maxWidth: '100%', height: '100%',
                   borderLeftWidth: 1, borderLeftColor: colors.border, paddingTop: 14, overflow: 'hidden' }
-              : { flex: 1, backgroundColor: '#FFFFFF', paddingTop: insets.top }
+              : { flex: 1, backgroundColor: isDark ? colors.background : '#FFFFFF', paddingTop: insets.top }
         }
       >
 
@@ -877,7 +877,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
           paddingTop: 8, paddingBottom: 14,
           borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : colors.pinkLight }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>AskFam</Text>
+            <Text style={{ fontSize: 29, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>Ask Cube</Text>
             <Text style={{ fontSize: 13, color: colors.pink, marginTop: 1, fontWeight: '600' }}>Private family assistant</Text>
           </View>
           {/* Icon buttons: white circle on pinkLight bg — ReviewInbox pattern */}
@@ -948,7 +948,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                   {/* Figma: small sender label above each bubble */}
                   <Text style={{ fontSize: 9, fontWeight: '700', color: colors.pink,
                     marginBottom: 3, marginHorizontal: 4 }}>
-                    {m.role === 'assistant' ? 'AskFam' : 'You'}
+                    {m.role === 'assistant' ? 'Ask Cube' : 'You'}
                   </Text>
                   <View style={{ maxWidth: m.role === 'user' ? '85%' : '92%', borderRadius: 18,
                     paddingHorizontal: 15, paddingVertical: m.role === 'user' ? 11 : 14,
@@ -1136,7 +1136,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                     editable={voice.state !== 'listening'}
                     style={{ fontSize: 14,
                       color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
-                      backgroundColor: '#FFFFFF', height: 50, borderRadius: 15, borderWidth: 1,
+                      backgroundColor: isDark ? colors.card : '#FFFFFF', height: 50, borderRadius: 15, borderWidth: 1,
                       borderColor: voice.state === 'listening' ? colors.danger + '60' : (isDark ? colors.border : '#daddE8'),
                       paddingHorizontal: 14, paddingRight: input && voice.state !== 'listening' ? 36 : 14 }}
                     onSubmitEditing={() => send(input)}
@@ -1173,7 +1173,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
               {/* Figma: privacy note */}
               <Text style={{ fontSize: 9, color: colors.textTertiary, lineHeight: 14,
                 marginTop: 8, marginBottom: Math.max(10, insets.bottom + 2) }}>
-                AskFam suggests actions. Nothing is added, changed, or shared until you confirm it.
+                Ask Cube suggests actions. Nothing is added, changed, or shared until you confirm it.
               </Text>
             </View>
       </View>

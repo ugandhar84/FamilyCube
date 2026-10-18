@@ -3574,6 +3574,15 @@ conversation text, so never reference "the suggestions below" in your actual rep
     followUps = followUps.map(f => aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, f)));
     followUps = sanitizeFollowUps(followUps, { role: member.role, userMessage: body.message, hadProposals: (proposals?.length ?? 0) > 0, replyText: finalText });
 
+    // When the app draws the events as a card, the reply must not ALSO list them. Drop any list lines the model wrote and
+    // keep its sentence; if nothing is left, write a plain summary ourselves.
+    if (scheduleCardRows.length > 0 && proposals.length === 0) {
+      const kept = finalText.split('\n').filter(l => !/^\s*([•\-*–]|\d+[.)])\s+/.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      const needs = scheduleCardRows.filter((c: any) => c.needsDriver).length;
+      const n = scheduleCardRows.length;
+      finalText = kept || `${n === 1 ? 'There is 1 event' : `There are ${n} events`}.${needs ? ` ${needs} ${needs === 1 ? 'ride still needs' : 'rides still need'} a driver.` : ''}`;
+    }
+
     // Only keep refs for chores the reply text actually names — a turn can
     // call get_quests broadly (e.g. "what's overdue") and pull back rows
     // that never make it into the final sentence; linking those too would

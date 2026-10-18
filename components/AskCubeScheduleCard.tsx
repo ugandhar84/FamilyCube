@@ -46,7 +46,7 @@ export default function AskCubeScheduleCard({ events, canAssign, onOpen, onAssig
   const today = localToday();
 
   return (
-    <View style={{ maxWidth: '94%', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, overflow: 'hidden' }}>
+    <View style={{ width: '94%', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, overflow: 'hidden' }}>
       {[...byDay.entries()].map(([date, list], gi) => (
         <View key={date}>
           <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: colors.textTertiary,

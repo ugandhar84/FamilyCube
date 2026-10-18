@@ -41,6 +41,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
+import { isPrivateToOthers } from '@/lib/overdue';
 import { useChoreStore } from '@/store/choreStore';
 import { useNotifStore } from '@/store/notifStore';
 import { useUIStore } from '@/store/uiStore';
@@ -232,6 +233,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
         : (!isKidOrTeen || c.assignedToId === activeMemberId || (c.isPool && c.status === 'todo' && !c.inviteGrandparents));
     for (const c of chores) {
       if (!isRelevant(c)) continue;
+      if (isPrivateToOthers(c, activeMemberId)) continue; // somebody else's private to-do never counts
       if (c.status === 'todo' || c.status === 'gp_offer_pending') pending++;
       else if (c.status === 'in_progress' || c.status === 'pending_approval' || c.status === 'pending_grandparent_approval' || c.status === 'pending_parent_approval') active++;
     }
@@ -363,16 +365,18 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
   // ScrollView via headerContent so it scrolls with content.
   const todayISO = new Date().toISOString().slice(0, 10);
   const doneToday = chores.filter(c =>
+    !isPrivateToOthers(c, activeMemberId) &&
     (c.status === 'approved' || c.status === 'auto_approved' || c.status === 'completed') &&
     ((c.approvedAt ?? c.createdAt ?? '').slice(0, 10) === todayISO)
   ).length;
   const stillOpen = choreCounts.pending + choreCounts.active;
-  const helpers = chores.filter(c => c.status === 'in_progress' || c.status === 'pending_approval').length;
+  const helpers = chores.filter(c => !isPrivateToOthers(c, activeMemberId) && (c.status === 'in_progress' || c.status === 'pending_approval')).length;
 
   const todayStr = localDateStr(new Date());
   const todayEventCount = events.filter(e => e.date === todayStr).length;
   const overdueCount = chores.filter(c => {
     if (!c.dueDate) return false;
+    if (isPrivateToOthers(c, activeMemberId)) return false;
     if (['done','approved','archived','cancelled','completed','auto_approved'].includes(c.status)) return false;
     return c.dueDate < todayStr && (activeMember?.role === 'parent' || c.assignedToId === activeMemberId);
   }).length;

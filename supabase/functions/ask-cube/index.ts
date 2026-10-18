@@ -481,6 +481,7 @@ const TOOLS = [
         type: 'object',
         properties: {
           targetType:   { type: 'string', enum: ['event', 'chore'], description: 'Which table to search — infer from context (e.g. "soccer practice"/"appointment" is an event, "dishwasher chore"/"trash duty" is a chore). Ask the user only if genuinely ambiguous.' },
+          currentTime:  { type: 'string', description: 'HH:MM 24-hour. The event\'s CURRENT start time, when the user picked one of several by its time ("the 10:15 pickup" -> "22:15"). Omit if not named.' },
           targetSearch: { type: 'string', description: 'Words to match the existing record\'s title, e.g. "soccer practice" or "dishwasher". For reschedule/move/postpone requests where the user only gave a generic noun ("the appointment", "the meeting"), still pass that generic noun here rather than leaving it blank or switching to propose_event — a weak search is better than silently creating a duplicate.' },
           memberName:   { type: 'string', description: 'Whose event/chore this is CURRENTLY, if named — narrows the search when multiple records could match. This does NOT reassign anything; use assignToMemberName for that.' },
           assignToMemberName: { type: 'string', description: 'Only if the user asked to REASSIGN this event/chore to a different family member, e.g. "assign the dishes chore to Ben" or "move Mia\'s pickup ride to Alex instead" — the name of the NEW assignee. Omit entirely if the user did not ask to change who it belongs to.' },
@@ -571,6 +572,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          currentTime:  { type: 'string', description: 'HH:MM 24-hour. The event\'s CURRENT start time, when the user picked one of several by its time ("the 10:15 pickup" -> "22:15"). Omit if not named.' },
           targetSearch: { type: 'string', description: 'Words to match the event\'s title, e.g. "dentist" or "soccer practice". A generic noun ("the appointment") is fine if that\'s all the user gave — still call this rather than doing nothing.' },
           memberName:   { type: 'string', description: 'Whose event this is, if named — narrows the search when multiple events could match' },
           nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("Saturday", "next week") — omit if not implied' },
@@ -1050,6 +1052,23 @@ async function pendingRequestRows(supabase: any, familyId: string, members: { id
     ...(reqs ?? []).map((r: any) => ({ id: r.id, kind: 'kid_request', title: r.detail || r.type, label: r.type, who: first(r.from_member_id), whoId: r.from_member_id, when: r.scheduled_date ? `${r.scheduled_date}${r.scheduled_time ? ' ' + r.scheduled_time : ''}` : null, coins: 0 })),
     ...(reds ?? []).map((r: any) => ({ id: r.id, kind: 'redemption', title: r.reward_title, label: 'Reward', who: first(r.member_id), whoId: r.member_id, when: null, coins: r.coin_cost ?? 0 })),
   ];
+}
+
+/** A title search that survives how people write compounds: "pickup" must find "Pick-up · Cherry", "drop off" must find "Drop-off". */
+function titleVariants(search: string): string[] {
+  const s = search.trim();
+  const out = new Set<string>([s]);
+  const compounds: [RegExp, string[]][] = [
+    [/pick[\s-]*up/i, ['pickup', 'pick-up', 'pick up']],
+    [/drop[\s-]*off/i, ['dropoff', 'drop-off', 'drop off']],
+    [/take[\s-]*out/i, ['takeout', 'take-out', 'take out']],
+    [/check[\s-]*up/i, ['checkup', 'check-up', 'check up']],
+  ];
+  for (const [re, forms] of compounds) if (re.test(s)) for (const f of forms) out.add(s.replace(re, f));
+  return [...out];
+}
+function titleFilter(search: string): string {
+  return titleVariants(search).map(v => `title.ilike.%${v.replace(/[,()%*]/g, ' ')}%`).join(',');
 }
 
 async function executeTool(
@@ -1540,7 +1559,7 @@ async function executeTool(
       let query = supabase.from('chore_tasks')
         .select('id, title, status, coins_reward, due_date, due_time, assigned_to_id, description, alert_call, alert_call_lead_minutes')
         .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
-        .ilike('title', `%${search}%`);
+        .or(titleFilter(search));
       if (memberId) query = query.eq('assigned_to_id', memberId);
       const { data, error } = await query.limit(5);
       if (error) return { error: error.message };
@@ -1574,7 +1593,7 @@ async function executeTool(
         const { data: eventFallback } = await supabase.from('calendar_events')
           .select('id, title, date, start_time')
           .eq('family_id', familyId).is('deleted_at', null)
-          .ilike('title', `%${search}%`).gte('date', today).order('date').limit(5);
+          .or(titleFilter(search)).gte('date', today).order('date').limit(5);
         if (eventFallback && eventFallback.length > 0) {
           return {
             error: `No chore matched "${search}", but a matching EVENT was found instead. Call propose_update again with targetType: 'event' (not 'chore') for this — do not tell the user nothing was found.`,
@@ -1651,13 +1670,19 @@ async function executeTool(
     let query = supabase.from('calendar_events')
       .select('id, title, category, date, start_time, member_id, member_ids, helper_name, driver_name, alert_call, alert_call_lead_minutes, notes')
       .eq('family_id', familyId).is('deleted_at', null)
-      .ilike('title', `%${search}%`);
+      .or(titleFilter(search));
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', today); // don't match past events by default, family-local "today"
     if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    // The user named one of several by its time ("the 10:15 pickup"): keep just that one.
+    if (typeof args.currentTime === 'string' && /^\d{1,2}:\d{2}$/.test(args.currentTime)) {
+      const want = args.currentTime.padStart(5, '0');
+      const byTime = candidates.filter((e: any) => String(e.start_time ?? '').slice(0, 5) === want);
+      if (byTime.length > 0) candidates = byTime;
+    }
     // Future-only — the date filter above already excludes a past DAY, but
     // a same-day event whose start time has already passed (already
     // running, or already over) is still "today" and would otherwise slip
@@ -1683,7 +1708,7 @@ async function executeTool(
       // could be filed as a chore instead of an event.
       const { data: choreFallback } = await supabase.from('chore_tasks')
         .select('id, title, due_date, due_time, assigned_to_id')
-        .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`).ilike('title', `%${search}%`).limit(5);
+        .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`).or(titleFilter(search)).limit(5);
       if (choreFallback && choreFallback.length > 0) {
         return {
           error: `No event matched "${search}", but a matching CHORE was found instead. Call propose_update again with targetType: 'chore' (not 'event') for this — do not tell the user nothing was found.`,
@@ -1824,13 +1849,18 @@ async function executeTool(
     let query = supabase.from('calendar_events')
       .select('id, title, category, date, start_time, member_id, member_ids')
       .eq('family_id', familyId).is('deleted_at', null)
-      .ilike('title', `%${search}%`);
+      .or(titleFilter(search));
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', today);
     if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.["${memberId}"]`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    if (typeof args.currentTime === 'string' && /^\d{1,2}:\d{2}$/.test(args.currentTime)) {
+      const want = args.currentTime.padStart(5, '0');
+      const byTime = candidates.filter((e: any) => String(e.start_time ?? '').slice(0, 5) === want);
+      if (byTime.length > 0) candidates = byTime;
+    }
     if (!candidates.length) {
       return { error: `Couldn't find an upcoming event matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or cancel something unrelated.` };
     }
@@ -1919,7 +1949,7 @@ async function executeTool(
     const search = args.rewardSearch ?? '';
     const { data, error } = await supabase.from('rewards')
       .select('id, title, cost, available, eligible_member_ids, max_per_member')
-      .eq('family_id', familyId).eq('available', true).ilike('title', `%${search}%`).limit(5);
+      .eq('family_id', familyId).eq('available', true).or(titleFilter(search)).limit(5);
     if (error) return { error: error.message };
     const candidates = data ?? [];
     if (!candidates.length) {
@@ -2144,7 +2174,7 @@ async function executeTool(
     let query = supabase.from('chore_tasks')
       .select('id, title, status, is_pool, assigned_to_id, created_by_id, requires_photo')
       .eq('family_id', familyId).or(`is_personal.is.null,is_personal.eq.false,assigned_to_id.eq.${viewerId}`)
-      .ilike('title', `%${search}%`);
+      .or(titleFilter(search));
     if (memberId) query = query.eq('assigned_to_id', memberId);
     const { data, error } = await query.limit(5);
     if (error) return { error: error.message };

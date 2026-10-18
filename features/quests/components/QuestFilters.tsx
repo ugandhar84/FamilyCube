@@ -9,7 +9,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 
-export type TabStatus = 'all' | 'todo' | 'review' | 'completed';
+export type TabStatus = 'all' | 'todo' | 'overdue' | 'review' | 'completed';
 
 const ThumbsUpIcon = ({ c }: { c: string }) => (
   <Svg width={11} height={11} viewBox="0 0 24 24">
@@ -31,11 +31,13 @@ interface Props {
   colors: any;
   onSetKidFilter: (f: string) => void;
   onSetTabStatus: (t: TabStatus) => void;
+  /** Overdue chores this person can see; shown as a red count on the Overdue tab. */
+  overdueCount?: number;
 }
 
 export function QuestFilters({
   kidFilter, tabStatus, isKid, isParentOrSenior, isSenior, kids, isDark, colors,
-  onSetKidFilter, onSetTabStatus,
+  onSetKidFilter, onSetTabStatus, overdueCount = 0,
 }: Props) {
   const pillBase = {
     flexDirection: 'row' as const, alignItems: 'center' as const,
@@ -48,6 +50,7 @@ export function QuestFilters({
   // alongside active ones instead of being segregated into their own view.
   const STATUS_TABS: { key: TabStatus; label: string }[] = [
     { key: 'todo',      label: 'To Do' },
+    { key: 'overdue',   label: 'Overdue' },
     { key: 'review',    label: 'Waiting' },
     { key: 'completed', label: 'Completed' },
     { key: 'all',       label: 'All' },
@@ -163,6 +166,11 @@ export function QuestFilters({
                 }}>
                   {tab.label}
                 </Text>
+                {tab.key === 'overdue' && overdueCount > 0 && (
+                  <View style={{ position: 'absolute', top: 2, right: 4, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#FFFFFF' }}>{overdueCount > 99 ? '99+' : overdueCount}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}

@@ -16,6 +16,7 @@
  *  - Senior sees approve/decline but NOT AI engine or + Quest button
  */
 import { useUIStore } from '@/store/uiStore';
+import { isChoreOverdue } from '@/lib/overdue';
 import { confirmDeleteChore } from '@/lib/confirmDeleteChore';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
@@ -515,6 +516,19 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   };
 
   // ── Quest filtering ───────────────────────────────────────────────────────────
+  // Overdue chores this person can see (a parent sees every visible one; everyone else only their own). Drives the Overdue tab.
+  const overdueVisible = useMemo(
+    () => quests.filter(q => isChoreOverdue(q) && (isParentOrSenior || q.assignedToId === activeMember?.id)).length,
+    [quests, isParentOrSenior, activeMember?.id],
+  );
+  // The Tasks header tiles can ask for a tab ("overdue", "review", ...).
+  const tasksTabRequest = useUIStore(s => s.tasksTabRequest);
+  useEffect(() => {
+    if (!tasksTabRequest) return;
+    if (['todo', 'overdue', 'review', 'completed', 'all'].includes(tasksTabRequest)) setTabStatus(tasksTabRequest as TabStatus);
+    useUIStore.getState().setTasksTabRequest(null);
+  }, [tasksTabRequest]);
+
   const filteredQuests = useMemo(() => {
     // A chore with ANY live System-A assignment (PENDING, SNOOZED, ACCEPTED,
     // or locked/PARKED) must never also render as a plain open/pool
@@ -616,6 +630,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
 
     if (kidFilter !== 'cheer' && tabStatus !== 'all') {
       if (tabStatus === 'todo')      list = list.filter(q => q.status === 'todo' || q.status === 'claimed');
+      else if (tabStatus === 'overdue')   list = list.filter(q => isChoreOverdue(q));
       else if (tabStatus === 'review')    list = list.filter(q => q.status === 'pending_approval');
       else if (tabStatus === 'completed') list = list.filter(q => q.status === 'approved' || q.status === 'done');
     }
@@ -975,6 +990,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
           colors={colors}
           onSetKidFilter={setKidFilter}
           onSetTabStatus={setTabStatus}
+          overdueCount={overdueVisible}
         />
 
         {/* ── Sibling Cheer Panel — kid/teen only, see QuestFilters ── */}
@@ -999,6 +1015,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                 <View style={[s.emptyBox, { backgroundColor: cardBg, borderColor: cardBord }]}>
                   <Text style={[s.emptyText, { color: colors.textTertiary }]}>
                     {tabStatus === 'todo'        ? 'All caught up! No tasks pending 🎉'
+                     : tabStatus === 'overdue'   ? 'Nothing overdue 🎉'
                      : tabStatus === 'review'    ? 'No chores awaiting review'
                      : tabStatus === 'completed' ? 'No completed chores yet'
                      : 'No chores found for this filter'}
@@ -1162,7 +1179,8 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
             {/* ── Figma "celebrate" card: most recent small win ── */}
             {(() => {
               const recentWin = quests
-                .filter(q => q.status === 'approved' && q.assignedToId)
+                // Once I have sent appreciation for a win it stays gone (the cheer is saved on the chore), and the next win takes its place.
+                .filter(q => q.status === 'approved' && q.assignedToId && q.assignedToId !== activeMemberId && !(q.cheers ?? []).some(c => c.memberId === activeMemberId))
                 .sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''))
                 [0];
               const winner = recentWin ? members.find(m => m.id === recentWin.assignedToId) : null;

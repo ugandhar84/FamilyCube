@@ -34,14 +34,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Animated, ActivityIndicator, Pressable } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarDays, ListChecks, Layers, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
-import { isPrivateToOthers } from '@/lib/overdue';
+import { isPrivateToOthers, isChoreOverdue } from '@/lib/overdue';
 import { useChoreStore } from '@/store/choreStore';
 import { useNotifStore } from '@/store/notifStore';
 import { useUIStore } from '@/store/uiStore';
@@ -374,12 +374,9 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
 
   const todayStr = localDateStr(new Date());
   const todayEventCount = events.filter(e => e.date === todayStr).length;
-  const overdueCount = chores.filter(c => {
-    if (!c.dueDate) return false;
-    if (isPrivateToOthers(c, activeMemberId)) return false;
-    if (['done','approved','archived','cancelled','completed','auto_approved'].includes(c.status)) return false;
-    return c.dueDate < todayStr && (activeMember?.role === 'parent' || c.assignedToId === activeMemberId);
-  }).length;
+  const overdueCount = chores.filter(c =>
+    isChoreOverdue(c) && !isPrivateToOthers(c, activeMemberId) && (activeMember?.role === 'parent' || c.assignedToId === activeMemberId),
+  ).length;
   const scheduleSubtitle = todayEventCount === 0
     ? 'Nothing scheduled today — a calm day.'
     : `${todayEventCount} event${todayEventCount === 1 ? '' : 's'} today · tap any day to see more`;
@@ -516,17 +513,18 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
           {/* Summary tiles */}
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
             {[
-              { val: doneToday, label: 'done today',     bg: isDark ? 'rgba(61,122,90,0.18)'   : colors.tealLight,    color: colors.teal },
-              { val: stillOpen, label: 'still open',     bg: isDark ? 'rgba(245,168,90,0.18)'   : colors.amberLight,   color: colors.amber },
-              { val: helpers,   label: 'in progress',    bg: isDark ? 'rgba(123,94,167,0.18)'  : colors.pinkLight,    color: colors.pink },
-            ].map(({ val, label, bg, color }) => (
-              <View key={label} style={{
+              { val: overdueCount, label: 'overdue',     bg: isDark ? 'rgba(239,123,123,0.18)' : colors.danger + '1F', color: colors.danger, tab: 'overdue' },
+              { val: stillOpen, label: 'still open',     bg: isDark ? 'rgba(245,168,90,0.18)'   : colors.amberLight,   color: colors.amber, tab: 'todo' },
+              { val: helpers,   label: 'in progress',    bg: isDark ? 'rgba(123,94,167,0.18)'  : colors.pinkLight,    color: colors.pink, tab: 'review' },
+              { val: doneToday, label: 'done today',     bg: isDark ? 'rgba(61,122,90,0.18)'   : colors.tealLight,    color: colors.teal, tab: 'completed' },
+            ].map(({ val, label, bg, color, tab }) => (
+              <Pressable key={label} onPress={() => useUIStore.getState().setTasksTabRequest(tab)} accessibilityRole="button" accessibilityLabel={`${val} ${label}`} style={{
                 flex: 1, borderRadius: 16, backgroundColor: bg,
-                paddingVertical: 12, paddingHorizontal: 12,
+                paddingVertical: 12, paddingHorizontal: 10,
               }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color }}>{val}</Text>
-                <Text style={{ fontSize: 11, color, marginTop: 2, opacity: 0.8, fontWeight: '600' }}>{label}</Text>
-              </View>
+                <Text numberOfLines={1} style={{ fontSize: 11, color, marginTop: 2, opacity: 0.8, fontWeight: '600' }}>{label}</Text>
+              </Pressable>
             ))}
           </View>
         </View>

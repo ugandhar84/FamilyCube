@@ -8,6 +8,9 @@ import { create } from 'zustand';
 interface UIState {
   fullBleedScreenActive: boolean;
   setFullBleedScreenActive: (active: boolean) => void;
+  /** A tile on the Tasks header asks the list below to switch tabs ('overdue', 'review', ...); the list clears it once applied. */
+  tasksTabRequest: string | null;
+  setTasksTabRequest: (t: string | null) => void;
   // Tapped on the single shared FAB in app/(tabs)/_layout.tsx while it's
   // showing its Tasks-tab "+" face — TasksScreen reads it once on focus to
   // open SmartTaskComposer, then clears it immediately so a later plain
@@ -144,6 +147,8 @@ interface UIState {
 export const useUIStore = create<UIState>((set, get) => ({
   fullBleedScreenActive: false,
   setFullBleedScreenActive: (active) => set({ fullBleedScreenActive: active }),
+  tasksTabRequest: null,
+  setTasksTabRequest: (t) => set({ tasksTabRequest: t }),
   openTaskComposerRequested: false,
   setOpenTaskComposerRequested: (v) => set({ openTaskComposerRequested: v }),
   openMemoryComposerRequested: false,

@@ -119,6 +119,11 @@ interface UIState {
   // Set when a detail page (event, chore) is opened FROM the Ask Cube chat: closing that page brings the chat back.
   returnToAskCube: boolean;
   setReturnToAskCube: (v: boolean) => void;
+  // Asks the tab shell to open the Ask Cube chat (used when a page opened from the chat is closed).
+  openAskCubeRequested: boolean;
+  setOpenAskCubeRequested: (v: boolean) => void;
+  /** Call when a detail page closes: if it was opened from the chat, bring the chat back. */
+  finishDetailFromAskCube: () => void;
   // One-shot, same pattern as openHealthRecordsComposerRequested — set by
   // HealthRecordsScreen.tsx's flat "Scan prescription / vaccine record →"
   // bottom button (which has no direct handle to HealthTab's own
@@ -136,7 +141,7 @@ interface UIState {
   setOpenHealthPdfExportRequested: (v: boolean) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   fullBleedScreenActive: false,
   setFullBleedScreenActive: (active) => set({ fullBleedScreenActive: active }),
   openTaskComposerRequested: false,
@@ -151,6 +156,9 @@ export const useUIStore = create<UIState>((set) => ({
   setRequestedEventDetailId: (v) => set({ requestedEventDetailId: v }),
   returnToAskCube: false,
   setReturnToAskCube: (v) => set({ returnToAskCube: v }),
+  openAskCubeRequested: false,
+  setOpenAskCubeRequested: (v) => set({ openAskCubeRequested: v }),
+  finishDetailFromAskCube: () => { if (get().returnToAskCube) set({ returnToAskCube: false, openAskCubeRequested: true }); },
   openSchoolScheduleComposerRequested: false,
   setOpenSchoolScheduleComposerRequested: (v) => set({ openSchoolScheduleComposerRequested: v }),
   openGroceryComposerRequested: false,

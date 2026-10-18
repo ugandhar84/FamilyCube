@@ -381,6 +381,12 @@ export default function TabLayout() {
     }
     prevFullBleed.current = fullBleedScreenActive;
   }, [fullBleedScreenActive]);
+  const openAskCubeRequested = useUIStore(s => s.openAskCubeRequested);
+  useEffect(() => {
+    if (!openAskCubeRequested) return;
+    useUIStore.getState().setOpenAskCubeRequested(false);
+    setAskCubeOpen(true);
+  }, [openAskCubeRequested]);
   // A stale hand-back (the detail page never opened) must not pop the chat open later: drop it when the chat opens normally or after a few seconds.
   const returnToAskCube = useUIStore(s => s.returnToAskCube);
   useEffect(() => { if (askCubeOpen) useUIStore.getState().setReturnToAskCube(false); }, [askCubeOpen]);

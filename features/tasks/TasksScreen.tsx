@@ -704,8 +704,8 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
       {detailEvent && (
         <EventDetailScreen
           ev={detailEvent}
-          onClose={() => setDetailEvent(null)}
-          onDelete={async (id) => { await deleteEvent(id); setDetailEvent(null); }}
+          onClose={() => { setDetailEvent(null); useUIStore.getState().finishDetailFromAskCube(); }}
+          onDelete={async (id) => { await deleteEvent(id); setDetailEvent(null); useUIStore.getState().finishDetailFromAskCube(); }}
         />
       )}
     </>

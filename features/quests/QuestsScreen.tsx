@@ -15,6 +15,7 @@
  *  - Decline reason shown inline on kid's declined card
  *  - Senior sees approve/decline but NOT AI engine or + Quest button
  */
+import { useUIStore } from '@/store/uiStore';
 import { confirmDeleteChore } from '@/lib/confirmDeleteChore';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
@@ -1282,7 +1283,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
       {detailTarget && (
         <QuestDetailModal
           quest={detailTarget}
-          onClose={() => setDetailTarget(null)}
+          onClose={() => { setDetailTarget(null); useUIStore.getState().finishDetailFromAskCube(); }}
           canEdit={isParent}
           isParent={isParent}
           ownTopInset={false}

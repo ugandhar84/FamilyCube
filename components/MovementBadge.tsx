@@ -18,10 +18,11 @@ export const MOVEMENT_EMOJI: Record<MovementKind, string> = { driving: '🚗', w
 const DASH_W = 6, DASH_GAP = 6;
 
 // ── Walking scene: a white sneaker stepping along a brown dirt path, with little dust puffs kicked up behind it ─────────────────
-const SAND = '#E8D3B3';
-const PATH_BROWN = '#B07A4C';
-const PATH_DARK = '#8E5E37';
-const DUST = 'rgba(222,196,160,0.95)';
+// Soft pastel peach so the blue shoe stands out, with a slightly deeper peach path and warm dust.
+const SAND = '#FDE7D0';
+const PATH_BROWN = '#F2CDA6';
+const PATH_DARK = '#E3B07F';
+const DUST = 'rgba(245,222,195,0.98)';
 
 // A blue running shoe, side view facing right: blue upper in two shades, grey collar, white laces and a thick white sole.
 function Sneaker({ size }: { size: number }) {

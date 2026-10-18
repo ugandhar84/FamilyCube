@@ -1269,6 +1269,15 @@ async function executeTool(
         assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
       })),
       __choreRefs: rows.map((r: any) => ({ id: r.id, title: r.title })),
+      // Open chores only, real names, for the app to draw as a card. Never sent to the model.
+      __choreCards: rows
+        .filter((r: any) => ['todo', 'in_progress', 'claimed', 'pending_approval', 'redo_requested'].includes(r.status))
+        .slice(0, 20)
+        .map((r: any) => ({
+          id: r.id, title: r.title, status: r.status, coins: r.coins_reward ?? 0, dueDate: r.due_date ?? null,
+          assignee: r.assigned_to_id ? (members.find(m => m.id === r.assigned_to_id)?.name.split(' ')[0] ?? null) : null,
+          assigneeId: r.assigned_to_id ?? null,
+        })),
     };
   }
 
@@ -3135,6 +3144,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
     const scheduleCardRows: any[] = [];
+    const choreCardRows: any[] = [];
     let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore' | 'redemption' | 'chore_action' | 'cancel_event'; data: any }[] = [];
     // Deduped by id across every get_quests/get_chore_history call this
     // turn — used client-side only, to linkify a chore's title wherever it
@@ -3297,13 +3307,20 @@ conversation text, so never reference "the suggestions below" in your actual rep
               if (!scheduleCardRows.some(x => x.id === c.id)) scheduleCardRows.push(c);
             }
           }
+          if (Array.isArray(result.__choreCards)) {
+            const wantIdsC = resolution.mentionedIds.length ? resolution.mentionedIds : (resolution.pronounId ? [resolution.pronounId] : []);
+            for (const c of result.__choreCards) {
+              if (wantIdsC.length > 0 && c.assigneeId && !wantIdsC.includes(c.assigneeId)) continue;
+              if (!choreCardRows.some(x => x.id === c.id)) choreCardRows.push(c);
+            }
+          }
           if (Array.isArray(result.__choreRefs)) {
             for (const ref of result.__choreRefs) choreRefsMap.set(ref.id, ref);
           }
           // __choreRefs must never reach the model — it carries raw chore
           // ids, the exact thing the alias system exists to keep out of the
           // model's context. Strip it before stringifying for messages/log.
-          const { __choreRefs, __proposalBatch, __scheduleCards, ...modelResult } = result as any;
+          const { __choreRefs, __proposalBatch, __scheduleCards, __choreCards, ...modelResult } = result as any;
           if (Array.isArray(__proposalBatch)) (modelResult as any).events = __proposalBatch.map((p: any) => ({ title: p.title, date: p.date, time: p.time }));
           // The schedule tool returns the whole family. When the message is about specific people, hand the model ONLY their
           // events, so it cannot list someone else's ("Dentist · Ugandhar" under a question about Cherry).
@@ -3593,10 +3610,14 @@ conversation text, so never reference "the suggestions below" in your actual rep
 
     // When the app draws the events as a card, the reply must not ALSO list them. Drop any list lines the model wrote and
     // keep its sentence; if nothing is left, write a plain summary ourselves.
-    if (scheduleCardRows.length > 0 && proposals.length === 0) {
+    const cardsOut: any[] = proposals.length === 0 ? [
+      ...(choreCardRows.length ? [{ kind: 'chores', chores: choreCardRows.slice(0, 20) }] : []),
+      ...(scheduleCardRows.length ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : []),
+    ] : [];
+    if (cardsOut.length > 0) {
       const isBullet = (l: string) => /^\s*([•\-*–]|\d+[.)])\s+/.test(l);
       const plain = (l: string) => l.replace(/\*\*/g, '').replace(/^\s*[•\-*–]\s+/, '').trim().toLowerCase();
-      const titles = scheduleCardRows.map((c: any) => String(c.title ?? '').toLowerCase().trim()).filter(Boolean);
+      const titles = [...scheduleCardRows, ...choreCardRows].map((c: any) => String(c.title ?? '').toLowerCase().trim()).filter(Boolean);
       // Remove only the list lines that the card already shows (they name one of its events); other bullets (chores,
       // notes) are real information the card does not carry, so they stay.
       let lines = finalText.split('\n').filter(l => !(isBullet(l) && titles.some(t => plain(l).includes(t.slice(0, Math.min(t.length, 14))))));
@@ -3610,8 +3631,11 @@ conversation text, so never reference "the suggestions below" in your actual rep
       });
       const kept = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
       const needs = scheduleCardRows.filter((c: any) => c.needsDriver).length;
-      const n = scheduleCardRows.length;
-      finalText = kept || `${n === 1 ? 'There is 1 event' : `There are ${n} events`}.${needs ? ` ${needs} ${needs === 1 ? 'ride still needs' : 'rides still need'} a driver.` : ''}`;
+      const n = scheduleCardRows.length, nc = choreCardRows.length;
+      const parts: string[] = [];
+      if (n) parts.push(`${n} ${n === 1 ? 'event' : 'events'}`);
+      if (nc) parts.push(`${nc} open ${nc === 1 ? 'chore' : 'chores'}`);
+      finalText = kept || `${parts.join(' and ')}.${needs ? ` ${needs} ${needs === 1 ? 'ride still needs' : 'rides still need'} a driver.` : ''}`;
     }
 
     // Only keep refs for chores the reply text actually names — a turn can
@@ -3625,7 +3649,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
       proposal: proposals.length ? proposals : null, proposal_status: proposals.length ? 'pending' : null,
       chore_refs: choreRefs.length ? choreRefs : null,
       follow_ups: followUps.length ? followUps : null,
-      cards: scheduleCardRows.length && proposals.length === 0 ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : null,
+      cards: cardsOut.length ? cardsOut : null,
     });
     await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString(), context: nextContext(prevCtx, resolution) }).eq('id', conversationId);
 
@@ -3639,7 +3663,7 @@ conversation text, so never reference "the suggestions below" in your actual rep
     // this turn — see callModel's own comment) — never part of the app's
     // real AskCubeResponse type (lib/askCubeService.ts), so a normal client
     // simply ignores the extra key; only the QA harness reads it.
-    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: scheduleCardRows.length && proposals.length === 0 ? [{ kind: 'schedule', events: scheduleCardRows.slice(0, 20) }] : [], __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs, followUps, cards: cardsOut, __meta: { modelUsed: modelUsedThisRequest, ...(lastDebugEmptyReason ? { debugEmptyReason: lastDebugEmptyReason } : {}) } });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

@@ -17,7 +17,10 @@ export interface AskCubeResponse {
   chores: AskCubeChoreRef[];
   followUps: string[];
   /** Structured answers the app draws as cards under the reply (currently: schedule). */
-  cards?: { kind: 'schedule'; events: import('@/components/AskCubeScheduleCard').AskCubeScheduleEvent[] }[];
+  cards?: (
+    | { kind: 'schedule'; events: import('@/components/AskCubeScheduleCard').AskCubeScheduleEvent[] }
+    | { kind: 'chores'; chores: import('@/components/AskCubeChoreCard').AskCubeChore[] }
+  )[];
 }
 
 export const askCube = {

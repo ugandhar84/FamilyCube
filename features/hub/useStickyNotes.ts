@@ -1,6 +1,6 @@
 /**
  * useStickyNotes — the family's sticky notes (family_sticky_notes), shared by the phone Hub card and the
- * kiosk Home card. Anyone can write one (100 characters) and choose who sees it; no one chosen means
+ * kiosk Home card. Anyone can write one (30 characters) and choose who sees it; no one chosen means
  * everyone. A member sees notes they wrote, notes shared with them, and notes for everyone.
  * The author or a parent can remove a note. Stays live through realtime.
  */
@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 
-export const NOTE_MAX = 100;
+export const NOTE_MAX = 30;
 export type NoteColor = 'amber' | 'sage' | 'lavender' | 'peach';
 export const NOTE_COLORS: NoteColor[] = ['amber', 'sage', 'lavender', 'peach'];
 

@@ -1,5 +1,6 @@
 import { View, Text } from 'react-native';
-import { HandHeart, Heart, Compass, Gamepad2, ArrowUpRight } from 'lucide-react-native';
+import { HandHeart, Heart, Compass, Gamepad2, Images, ArrowUpRight } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { KidSectionHeader } from '../kid/KidSectionHeader';
@@ -48,6 +49,17 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
           );
         })}
       </View>
+      {/* Memories: the grandparent's tab bar now matches every other role, so photos and stories live here. */}
+      <AnimatedPressable onPress={() => router.push('/(tabs)/memories' as any)} accessibilityRole="button" accessibilityLabel="Memories"
+        style={{ marginTop: 10, minHeight: 72, borderRadius: 22, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14,
+          backgroundColor: colors.pinkLight, borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border, ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
+        <Images size={28} color={colors.pink} strokeWidth={2} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: GP.body, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }}>Memories</Text>
+          <Text style={{ fontSize: GP.tiny, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }}>Family photos and little stories</Text>
+        </View>
+        <ArrowUpRight size={16} color={colors.textTertiary} />
+      </AnimatedPressable>
     </View>
   );
 }

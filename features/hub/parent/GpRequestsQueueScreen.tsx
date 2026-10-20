@@ -192,6 +192,10 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
               <Pressable key={r.ev.id} onPress={() => setDetailEv(r.ev)} style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 4, ...shadow }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: title }} numberOfLines={2}>{r.ev.title}</Text>
                 <Text style={{ fontSize: 13, color: body }}>Ride · {fmtHumanDateShort(r.ev.date)}{r.ev.time ? ` · ${fmtTime(r.ev.time)}` : ''}</Text>
+                {!!(r.ev.location || r.ev.pickupLocation || r.ev.dropLocation) && (
+                  <Text onPress={() => openInMaps((r.ev.location || r.ev.dropLocation || r.ev.pickupLocation)!)} accessibilityRole="link"
+                    style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }} numberOfLines={2}>📍 {r.ev.location || r.ev.dropLocation || r.ev.pickupLocation}</Text>
+                )}
                 <Text style={{ fontSize: 13, fontWeight: '700', color: colors.success }}>{r.assigneeName} confirmed</Text>
                 <RequestTrail kind="event" id={r.ev.id} colors={colors} />
               </Pressable>
@@ -200,6 +204,7 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
               <Pressable key={r.id} onPress={() => onOpenRequest?.(r.id)} style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 4, ...shadow }}>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: title }} numberOfLines={2}>{REQUEST_META[r.type]?.emoji} {REQUEST_META[r.type]?.label ?? 'Request'} · {members.find(m => m.id === r.fromMemberId)?.name.split(' ')[0]}</Text>
                 {!!r.detail && <Text style={{ fontSize: 13, color: body }} numberOfLines={2}>{r.detail}</Text>}
+                {!!r.location && <Text onPress={() => openInMaps(r.location!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }}>📍 {r.location}</Text>}
                 <Text style={{ fontSize: 13, fontWeight: '700', color: colors.success }}>Accepted</Text>
                 <RequestTrail kind="kidRequest" id={r.id} colors={colors} />
               </Pressable>
@@ -224,12 +229,16 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
                 <Pressable key={r.ev.id} onPress={() => setDetailEv(r.ev)} style={{ gap: 1 }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{r.ev.title}</Text>
                   <Text style={{ fontSize: 13, color: body }}>Ride · {fmtHumanDateShort(r.ev.date)}{r.assigneeName ? ` · ${r.assigneeName} ${r.assigneeStatus === 'confirmed' ? 'drove' : 'was asked'}` : ' · no driver'}</Text>
+                  {!!(r.ev.location || r.ev.dropLocation) && <Text onPress={() => openInMaps((r.ev.location || r.ev.dropLocation)!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }} numberOfLines={2}>📍 {r.ev.location || r.ev.dropLocation}</Text>}
+                  <RequestTrail kind="event" id={r.ev.id} colors={colors} />
                 </Pressable>
               ))}
               {gpDone.map(r => (
                 <Pressable key={r.id} onPress={() => onOpenRequest?.(r.id)} style={{ gap: 1 }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{REQUEST_META[r.type]?.label ?? 'Request'} · {r.detail}</Text>
                   <Text style={{ fontSize: 13, color: body }}>Request · {r.status === 'declined' ? 'Declined' : r.status === 'cancelled' ? 'Cancelled' : 'Done'}</Text>
+                  {!!r.location && <Text onPress={() => openInMaps(r.location!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }}>📍 {r.location}</Text>}
+                  <RequestTrail kind="kidRequest" id={r.id} colors={colors} />
                 </Pressable>
               ))}
               {doneChores.map(c => (

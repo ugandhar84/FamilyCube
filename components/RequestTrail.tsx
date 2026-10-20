@@ -2,7 +2,7 @@
  * RequestTrail — an expandable, step-by-step trail for one request: who did what and when. Works for a ride/event (activity_log) and for
  * a kid_request such as an SOS (kid_request_events). Collapsed by default so lists stay short; loads when first opened.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { fetchActivityLog } from '@/lib/activityLog';
@@ -32,16 +32,13 @@ function stamp(iso: string) {
   return `${day} · ${time}`;
 }
 
-export function RequestTrail({ kind, id, colors }: { kind: 'event' | 'kidRequest'; id: string; colors: any }) {
+export function RequestTrail({ kind, id, colors, defaultOpen = false, refreshKey }: { kind: 'event' | 'kidRequest'; id: string; colors: any; defaultOpen?: boolean; refreshKey?: string }) {
   const members = useFamilyStore(s => s.members);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [lines, setLines] = useState<Line[] | null>(null);
   const first = (mid?: string | null) => members.find(m => m.id === mid)?.name?.split(' ')[0];
 
-  const toggle = async () => {
-    const next = !open;
-    setOpen(next);
-    if (!next || lines) return;
+  const load = async () => {
     if (kind === 'event') {
       const rows = (await fetchActivityLog('event', id, 40)).slice().reverse();
       setLines(rows.map(r => {
@@ -51,9 +48,20 @@ export function RequestTrail({ kind, id, colors }: { kind: 'event' | 'kidRequest
       }));
     } else {
       const rows = await useKidRequestStore.getState().getEventsForRequest(id);
-      setLines(rows.map(r => ({ key: r.id, label: REQUEST_LABEL[r.eventType] ?? 'Update', who: first(r.actorId), when: stamp(r.createdAt), note: r.note })));
+      const out: Line[] = rows.map(r => ({ key: r.id, label: REQUEST_LABEL[r.eventType] ?? 'Update', who: first(r.actorId), when: stamp(r.createdAt), note: r.note }));
+      // Requests made before the trail existed have no recorded steps: rebuild the basics from the request itself.
+      const req = useKidRequestStore.getState().requests.find(r => r.id === id);
+      if (req) {
+        if (!rows.some(r => r.eventType === 'created')) out.unshift({ key: 'c', label: 'Request sent', who: first(req.fromMemberId), when: stamp(req.requestedAt) });
+        const decided = req.status === 'approved' ? 'Accepted' : req.status === 'declined' ? 'Declined' : req.status === 'completed' ? 'Completed' : req.status === 'cancelled' ? 'Cancelled' : null;
+        if (decided && req.respondedAt && !rows.some(r => ['approved', 'declined', 'completed', 'cancelled'].includes(r.eventType)))
+          out.push({ key: 'd', label: decided, who: first(req.respondedBy), when: stamp(req.respondedAt), note: req.parentNote });
+      }
+      setLines(out);
     }
   };
+  const toggle = () => { const next = !open; setOpen(next); if (next && !lines) load(); };
+  useEffect(() => { if (open) load(); }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <View>

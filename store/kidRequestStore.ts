@@ -37,6 +37,7 @@ function rowToKidRequest(r: any): KidRequest {
     rewardCoins:    r.reward_coins    ?? undefined,
     scheduledDate:  r.scheduled_date  ?? undefined,
     scheduledTime:  r.scheduled_time  ?? undefined,
+    location:       r.location        ?? undefined,
     openToGP:       r.open_to_gp      ?? false,
   };
 }
@@ -341,6 +342,7 @@ async function upsertToDb(req: KidRequest): Promise<boolean> {
       reward_coins:   req.rewardCoins ?? null,
       scheduled_date: req.scheduledDate ?? null,
       scheduled_time: req.scheduledTime ?? null,
+      location:       req.location ?? null,
       open_to_gp:     req.openToGP ?? false,
     }, { onConflict: 'id' });
     if (error) { console.warn('[kidRequestStore] upsertToDb failed:', error.message); return false; }
@@ -522,6 +524,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
               rewardCoins:    r.reward_coins    ?? undefined,
               scheduledDate:  r.scheduled_date  ?? undefined,
               scheduledTime:  r.scheduled_time  ?? undefined,
+              location:       r.location        ?? undefined,
               openToGP:       r.open_to_gp      ?? false,
             };
             const local = localById.get(r.id);

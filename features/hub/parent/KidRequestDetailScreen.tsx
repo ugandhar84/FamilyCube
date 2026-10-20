@@ -10,6 +10,7 @@
  * the old HelpDispatchQueue.tsx inline cards — not duplicated, not
  * reinvented.
  */
+import { RequestTrail } from '@/components/RequestTrail';
 import { openInMaps } from '@/features/calendar/components/EventCard';
 import { OverlayHeading } from '@/components/OverlayPage';
 import { PageHeading } from '@/components/PageHeading';
@@ -755,26 +756,11 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
             </View>
           )}
 
-          {/* ── History timeline ── */}
-          {events.length > 0 && (
-            <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 14, gap: 10 }}>
-              <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', color: colors.textTertiary }}>
-                HISTORY
-              </Text>
-              {events.map(ev => {
-                const actorFirst = memberName(ev.actorId).split(' ')[0];
-                const label = EVENT_LABEL[ev.eventType] ?? ev.eventType;
-                return (
-                  <View key={ev.id} style={{ gap: 1 }}>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                      {fmt12h(ev.createdAt)} · {actorFirst} {label}
-                      {ev.note ? ` (${ev.note})` : ''}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
+          {/* ── History trail: who did what and when. Opens by default; rebuilds the basics for requests made before the trail existed. ── */}
+          <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 14, gap: 6 }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', color: colors.textTertiary }}>HISTORY</Text>
+            <RequestTrail kind="kidRequest" id={req.id} colors={colors} defaultOpen refreshKey={`${req.status}:${events.length}`} />
+          </View>
 
         </View>
       </ScrollView>

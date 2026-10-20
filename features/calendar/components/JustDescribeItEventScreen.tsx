@@ -230,7 +230,7 @@ export default function JustDescribeItEventScreen({
   const [evRecurrence, setEvRecurrence] = useState<'once'|'daily'|'weekly'|'monthly'>('once');
   const [evRecurDays, setEvRecurDays]   = useState<number[]>([]);
   const [evEndDate, setEvEndDate]       = useState('');
-  const [evMemberIds, setEvMemberIds]   = useState<string[]>(ed?.memberIds ?? (ed?.memberId ? [ed.memberId] : []));
+  const [evMemberIds, setEvMemberIds]   = useState<string[]>(ed?.memberIds ?? (ed?.memberId ? [ed.memberId] : (activeMember?.role === 'senior' && activeMemberId ? [activeMemberId] : [])));
   const [evNotes, setEvNotes]           = useState(ed?.notes ?? '');
   const [evLocation, setEvLocation]     = useState(ed?.location ?? '');
   // Transport — two independent legs

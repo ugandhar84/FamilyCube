@@ -774,7 +774,7 @@ export default function HubScreen() {
         {isSenior && (
           <SeniorView
             active={active} members={members} colors={colors} isDark={isDark}
-            onHelpRequest={() => setHelpModal(true)}
+            onHelpRequest={() => setShowDescribeEvent(true)}
             onEnRoute={() => setEnRouteVisible(true)}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}

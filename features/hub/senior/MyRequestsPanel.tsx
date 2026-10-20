@@ -45,7 +45,7 @@ export function MyRequestsPanel({ familyId, memberId, onAsk, colors, isDark }: {
     const { data } = await supabase.from('calendar_events').select('*')
       .eq('family_id', familyId).is('deleted_at', null).eq('created_by_id', memberId)
       .gte('date', localDateStr(from)).lte('date', localDateStr(to)).order('date', { ascending: false }).limit(200);
-    setRows((data ?? []).map(fromRow).filter(ev => (ev.memberIds?.length ? ev.memberIds : ev.memberId ? [ev.memberId] : []).includes(memberId)));
+    setRows((data ?? []).map(fromRow));
   }, [familyId, memberId]);
 
   useEffect(() => {

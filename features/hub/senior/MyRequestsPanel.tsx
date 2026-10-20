@@ -43,9 +43,13 @@ export function MyRequestsPanel({ familyId, memberId, onAsk, colors, isDark }: {
     const from = new Date(); from.setDate(from.getDate() - 60);
     const to = new Date(); to.setDate(to.getDate() + 90);
     const { data } = await supabase.from('calendar_events').select('*')
-      .eq('family_id', familyId).is('deleted_at', null).eq('created_by_id', memberId)
+      .eq('family_id', familyId).is('deleted_at', null)
+      .or(`created_by_id.eq.${memberId},member_id.eq.${memberId},member_ids.cs.{${memberId}}`)
       .gte('date', localDateStr(from)).lte('date', localDateStr(to)).order('date', { ascending: false }).limit(200);
-    setRows((data ?? []).map(fromRow));
+    // Everything I asked for, plus any ride where I'm the rider (a parent may have booked it for me). Other events of mine are not requests.
+    setRows((data ?? [])
+      .filter((r: any) => r.created_by_id === memberId || r.ride_required || r.category === 'Ride')
+      .map(fromRow));
   }, [familyId, memberId]);
 
   useEffect(() => {

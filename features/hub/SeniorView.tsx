@@ -908,18 +908,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         />
       )}
 
-      {/* Same "Ask for a Ride" card the kids and teens have: shows what is waiting / confirmed, or asks for a new ride. */}
-      <View style={{ marginTop: -14 }}>{/* the card brings its own 14 top margin; the section gap already spaces it */}
-      <RideStatusCard
-        colors={colors} isDark={isDark}
-        pendingCount={myPendingRides.length}
-        confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
-        confirmedRideDate={confirmedRide?.date}
-        confirmedRideTime={confirmedRide?.time}
-        driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
-        onPress={confirmedRide || myPendingRides.length > 0 ? () => setOpenGroup('help') : onHelpRequest}
-      />
-      </View>
 
       {/* Bug (reported live): a GP saw every family trip, including rides
           they had zero involvement in — HubScreen passes the full
@@ -1017,6 +1005,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       <SeniorActionGrid
         open={openGroup} onToggle={toggleGroup} colors={colors} isDark={isDark}
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
+        below={
+<RideStatusCard
+        colors={colors} isDark={isDark}
+        pendingCount={myPendingRides.length}
+        confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
+        confirmedRideDate={confirmedRide?.date}
+        confirmedRideTime={confirmedRide?.time}
+        driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
+        onPress={confirmedRide || myPendingRides.length > 0 ? () => setOpenGroup('help') : onHelpRequest}
+      />
+        }
       />
 
       <ParentTasksPage

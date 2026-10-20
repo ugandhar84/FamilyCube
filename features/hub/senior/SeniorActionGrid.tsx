@@ -2,6 +2,7 @@ import { View, Text } from 'react-native';
 import { HandHeart, Heart, Compass, ArrowUpRight } from 'lucide-react-native';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { HubFullWidthActionCard } from '../kid/HubFullWidthActionCard';
 import { KidSectionHeader } from '../kid/KidSectionHeader';
 import { GP } from './seniorTheme';
 
@@ -11,15 +12,16 @@ export type SeniorGroup = 'help' | 'kids' | 'sponsor';
  * SeniorActionGrid — the grandparent Hub's "Quick actions": four pastel tiles in the same 2x2 shape as the kid and parent Hubs. Each
  * tile opens its own area below the grid (one open at a time), so the Hub stays short instead of showing every card at once.
  */
-export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsorCount, colors, isDark }: {
+export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsorCount, colors, isDark, below }: {
   open: SeniorGroup | null; onToggle: (g: SeniorGroup) => void;
   helpCount: number; kidsCount: number; sponsorCount: number;
   colors: any; isDark: boolean;
+  /** Rendered directly beneath the Sponsor a chore card (the Ask for a Ride card). */
+  below?: React.ReactNode;
 }) {
   const tiles: { key: SeniorGroup; Icon: typeof HandHeart; title: string; subtitle: string; count: number; bg: string; fg: string }[] = [
     { key: 'help',    Icon: HandHeart, title: 'Need a hand',     subtitle: 'Ask your family for help', count: helpCount,    bg: colors.amberLight, fg: colors.amber },
     { key: 'kids',    Icon: Heart,     title: 'My grandkids',    subtitle: 'Cheer them on, send a bonus',          count: kidsCount,    bg: colors.pinkLight,  fg: colors.pink },
-    { key: 'sponsor', Icon: Compass,   title: 'Sponsor a chore', subtitle: 'Set a challenge and a reward',        count: sponsorCount, bg: colors.tealLight,  fg: colors.teal },
   ];
   return (
     <View style={{ paddingHorizontal: 16 }}>
@@ -46,6 +48,17 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
             </AnimatedPressable>
           );
         })}
+      </View>
+      {/* Sponsor a chore + Ask for a Ride: the same full-width card chrome, one under the other. */}
+      <View style={{ marginHorizontal: -16 }}>
+        <HubFullWidthActionCard
+          colors={colors} isDark={isDark}
+          Icon={Compass} iconBg={colors.tealLight} iconColor={colors.teal}
+          title="Sponsor a chore" subtitle="Set a challenge and a reward"
+          badgeLabel={sponsorCount > 0 ? String(sponsorCount) : undefined} badgeBg={colors.tealLight} badgeColor={colors.teal}
+          onPress={() => onToggle('sponsor')}
+        />
+        {below}
       </View>
     </View>
   );

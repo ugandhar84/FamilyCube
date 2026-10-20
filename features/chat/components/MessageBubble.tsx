@@ -320,7 +320,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   // automated "en route" ping visually indistinguishable from something
   // they actually typed — this branch fixes that regardless of who the
   // system attributes the message to.
-  if (alertTint && alertColor) {
+  if (alertTint && alertColor && !msg.systemEvent) {
     return (
       <View style={{ alignItems: 'center', paddingHorizontal: 24,
         marginBottom: isGroupLast ? 14 : 4, marginTop: isGroupFirst ? 8 : 0 }}>

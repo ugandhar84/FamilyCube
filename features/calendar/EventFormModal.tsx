@@ -455,6 +455,17 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     setHelperName(m?.name ?? '');
   };
 
+  // "Who would this go to?" picked someone: tick that person in the Accompanied by / Driver list so the suggestion and the form agree.
+  useEffect(() => {
+    const id = assignmentSuggestion?.selectedMemberId;
+    if (!id || assignmentSuggestion?.decisionType === 'blocked' || id === activeMemberId) return;
+    if (category === 'Work' || category === 'Event') return;
+    const m = members.find(x => x.id === id);
+    if (!m || m.role === 'kid') return;
+    if (category === 'Study') { setDriverId(id); setDriverName(m.name); return; }
+    handleHelperSelect(id);
+  }, [assignmentSuggestion]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-build title when relevant fields change (for Ride)
   const autoTitle = useMemo(() => {
     if (category === 'Ride' && dropLocation && !title)
@@ -1326,7 +1337,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               showReturnTimePick={showReturnTimePick} setShowReturnTimePick={setShowReturnTimePick}
               showDatePick={showDatePick} setShowDatePick={setShowDatePick}
               showTimePick={showTimePick} setShowTimePick={setShowTimePick}
-              isTeen={isTeen} members={members}
+              isTeen={isTeen} isSeniorViewer={isSenior} members={members}
               openToGrandparents={openToGrandparents} setOpenToGrandparents={setOpenToGrandparents}
               openToTeens={openToTeens} setOpenToTeens={setOpenToTeens}
               setGpTeenToggledByUser={setGpTeenToggledByUser}
@@ -1469,7 +1480,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
 
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
-            {!isKid && !isTeen && category !== 'Ride' && (
+            {isParent && category !== 'Ride' && (
               <TouchableOpacity
                 onPress={() => {
                   const v = !openToGrandparents;
@@ -1518,7 +1529,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             {/* ── Teens Welcome toggle — non-Ride (has its own inline toggle),
                 non-Medical (not appropriate for a minor to be responsible
                 for a medical appointment) ── */}
-            {!isKid && !isTeen && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
+            {isParent && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
               <TouchableOpacity
                 onPress={() => {
                   const v = !openToTeens;

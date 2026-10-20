@@ -28,7 +28,7 @@ export default function CategoryFields({
   returnDate, setReturnDate,
   showReturnDatePick, setShowReturnDatePick, showReturnTimePick, setShowReturnTimePick,
   showDatePick, setShowDatePick, showTimePick, setShowTimePick,
-  isTeen, members, openToGrandparents, setOpenToGrandparents, openToTeens, setOpenToTeens,
+  isTeen, isSeniorViewer = false, members, openToGrandparents, setOpenToGrandparents, openToTeens, setOpenToTeens,
   setGpTeenToggledByUser, rideCoinsTeen, setRideCoinsTeen,
   generalLocation, setGeneralLocation,
   linkGroceries, setLinkGroceries, loadingGroceries, groceryItems,
@@ -59,7 +59,7 @@ export default function CategoryFields({
   showReturnTimePick: boolean; setShowReturnTimePick: React.Dispatch<React.SetStateAction<boolean>>;
   showDatePick: boolean; setShowDatePick: React.Dispatch<React.SetStateAction<boolean>>;
   showTimePick: boolean; setShowTimePick: React.Dispatch<React.SetStateAction<boolean>>;
-  isTeen: boolean; members: any[];
+  isTeen: boolean; isSeniorViewer?: boolean; members: any[];
   openToGrandparents: boolean; setOpenToGrandparents: React.Dispatch<React.SetStateAction<boolean>>;
   openToTeens: boolean; setOpenToTeens: React.Dispatch<React.SetStateAction<boolean>>;
   setGpTeenToggledByUser: (v: boolean) => void;
@@ -351,7 +351,7 @@ export default function CategoryFields({
           />
 
           {/* ── GP + Teen toggles always shown for Ride (parent/senior only) ── */}
-          {!isKid && !isTeen && (
+          {!isKid && !isTeen && !isSeniorViewer && (
             <View style={{ gap: 10, marginTop: 4, marginBottom: 14 }}>
               {/* Grandparents Welcome. Border/track/toggle fill use colors.warning
                   (closest token to the amber highlight). The darker on-tint text

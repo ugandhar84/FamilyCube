@@ -167,11 +167,12 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
         );
       })}
 
+      {/* Same dashed "+ Add" look as "Add to my private task list". */}
       <Pressable onPress={() => setShowAddMed(true)} accessibilityRole="button" accessibilityLabel="Add medication"
-        style={{ marginHorizontal: 16, minHeight: 54, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-          backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: colors.primary + '40' }}>
-        <Plus size={18} color={colors.primary} />
-        <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.primary }}>Add medication</Text>
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, paddingVertical: 12,
+          borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, borderColor: colors.border }}>
+        <Plus size={16} color={colors.textSecondary} />
+        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Add medication</Text>
       </Pressable>
 
       <AddMedModal

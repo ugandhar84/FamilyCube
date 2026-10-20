@@ -579,18 +579,19 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         title: criticalKidRequest
           ? (criticalKidRequest.type === 'permission' || criticalKidRequest.type === 'question'
               ? (criticalKidRequest.detail ?? (criticalKidRequest.type === 'permission' ? 'Permission request' : 'Question from a kid'))
-              : criticalKidRequest.status === 'approved' ? 'SOS in progress — not completed yet' : 'SOS — needs attention now')
+              : criticalKidRequest.status === 'approved' ? (criticalKidRequest.respondedBy === active.id ? 'SOS in progress — mark it completed' : `SOS — ${members.find(m => m.id === criticalKidRequest.respondedBy)?.name?.split(' ')[0] ?? 'Someone'} is on the way`) : 'SOS — needs attention now')
           : (r.detail ?? 'Request from a kid'),
         reason: `${members.find(m => m.id === r.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${
           criticalKidRequest?.type === 'permission' ? ' needs a yes/no.'
           : criticalKidRequest?.type === 'question' ? ' is waiting on your answer.'
-          : criticalKidRequest?.status === 'approved' ? ' sent an SOS. Mark it completed once they are safe.'
+          : criticalKidRequest?.status === 'approved' ? (criticalKidRequest.respondedBy === active.id ? ' sent an SOS. Mark it completed once they are safe.' : ' sent an SOS. Still open until it is completed.')
           : criticalKidRequest ? ' needs you right now.'
           : ' is waiting for your response.'
         }`,
         extraCount: Math.max(0, pendingKidRequestsCount - 1),
         urgentCount: urgentKidRequestsCount,
         categoryLabel: 'request',
+        statusLabel: criticalKidRequest?.status === 'approved' ? (criticalKidRequest.respondedBy === active.id ? 'You accepted' : `Accepted by ${members.find(m => m.id === criticalKidRequest.respondedBy)?.name?.split(' ')[0] ?? 'a parent'}`) : undefined,
       },
       onReview: onReviewOpen,
     });

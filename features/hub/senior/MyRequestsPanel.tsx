@@ -12,6 +12,7 @@ import { localDateStr } from '@/lib/dates';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './seniorTheme';
+import { RequestTrail } from '@/components/RequestTrail';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
 import { useEventStore } from '@/store/eventStore';
@@ -139,6 +140,7 @@ export function MyRequestsPanel({ familyId, memberId, onAsk, colors, isDark }: {
               </View>
             )}
             <Text style={{ fontSize: GP.sub, fontWeight: '700', color: tab === 'declined' ? colors.danger : a.status === 'confirmed' ? colors.success : colors.amber }}>{status}</Text>
+            <RequestTrail kind="event" id={ev.id} colors={colors} />
             {tab !== 'declined' && (
               <View style={{ flexDirection: 'row', gap: 4 }}>
                 {STEPS.map((label, i) => (

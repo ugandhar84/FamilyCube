@@ -1,6 +1,7 @@
 /**
  * useGpRideRequests — rides a grandparent has asked for (the grandparent is the rider on a ride event).
  *  - pending: upcoming and not yet confirmed by a driver (nobody assigned, still waiting, or the driver said no),
+ *  - accepted: upcoming and confirmed by a driver,
  *  - history: recent past rides, so a parent can see how earlier requests ended.
  * Read straight from calendar_events (not the day-cache in eventStore), kept live by a realtime subscription.
  */
@@ -46,6 +47,7 @@ export function useGpRideRequests(familyId: string | undefined) {
   };
   const all = rows.map(toRow).filter((r): r is GpRideRow => !!r);
   const pending = all.filter(r => r.ev.date >= today && (!r.assigneeName || r.assigneeStatus !== 'confirmed'));
+  const accepted = all.filter(r => r.ev.date >= today && r.assigneeName && r.assigneeStatus === 'confirmed');
   const history = all.filter(r => r.ev.date < today).sort((a, b) => b.ev.date.localeCompare(a.ev.date)).slice(0, 12);
-  return { pending, history, reload };
+  return { pending, accepted, history, reload };
 }

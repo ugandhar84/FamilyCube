@@ -22,6 +22,7 @@ import EventDetailScreen from '@/features/calendar/components/EventDetailScreen'
 import { fmtHumanDateShort, fmtTime } from '../hubUtils';
 import { GpSafetyReviewCard } from './ChoreReviewSection';
 import { GpOfferReviewCard } from './GpOfferReviewCard';
+import { RequestTrail } from '@/components/RequestTrail';
 import { useGpRideRequests, type GpRideRow } from './useGpRideRequests';
 
 export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () => void; onOpenRequest?: (id: string) => void }) {
@@ -34,9 +35,10 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
   const declineGPOffer = useChoreStore(s => s.declineGPOffer);
   const { members, activeMemberId } = useFamilyStore();
   const active = members.find(m => m.id === activeMemberId);
-  const { pending: rides, history: pastRides, reload } = useGpRideRequests((active as any)?.familyId);
+  const { pending: rides, accepted: acceptedRides, history: pastRides, reload } = useGpRideRequests((active as any)?.familyId);
   const [detailEv, setDetailEv] = useState<FamilyEvent | null>(null);
   const [driving, setDriving] = useState<string | null>(null);
+  const [tab, setTab] = useState<'pending' | 'accepted' | 'completed'>('pending');
 
   const sponsored = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const offers = chores.filter(c => c.status === 'gp_offer_pending');
@@ -46,8 +48,12 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
   const gpIds = new Set(members.filter(m => m.role === 'senior').map(m => m.id));
   const gpRequests = allRequests.filter(r => gpIds.has(r.fromMemberId));
   const gpPending = gpRequests.filter(r => r.status === 'pending');
-  const gpPast = gpRequests.filter(r => r.status !== 'pending').slice(0, 8);
+  const gpAccepted = gpRequests.filter(r => r.status === 'approved');
+  const gpDone = gpRequests.filter(r => r.status !== 'pending' && r.status !== 'approved').slice(0, 12);
+  const acceptedChores = chores.filter(c => c.categoryType === 'grandparent_quest' && ['approved', 'in_progress'].includes(c.status)).slice(0, 12);
+  const doneChores = chores.filter(c => c.categoryType === 'grandparent_quest' && ['declined', 'completed', 'auto_approved'].includes(c.status)).slice(0, 12);
   const total = rides.length + sponsored.length + offers.length + gpPending.length;
+  const counts = { pending: total, accepted: acceptedRides.length + gpAccepted.length + acceptedChores.length, completed: pastRides.length + gpDone.length + doneChores.length };
   const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
   const cardBg = isDark ? colors.card : GEMINI.cardBg;
   const shadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
@@ -71,6 +77,20 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
       <OverlayHeading eyebrow="FAMILY CUBE · REVIEW" title="Grandparent requests" subtitle={total > 0 ? `${total} waiting on you` : 'All caught up'}
         accent="sky" Icon={HeartHandshake} onTitlePress={onClose} topInset={insets.top} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.section, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
+          {([['pending', 'Pending'], ['accepted', 'Accepted'], ['completed', 'Completed']] as const).map(([key, lbl]) => {
+            const on = tab === key;
+            return (
+              <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="button" accessibilityLabel={`${lbl} ${counts[key]}`}
+                style={{ flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.card : 'transparent' }}>
+                <Text style={{ fontSize: 13, fontWeight: on ? '800' : '600', color: on ? colors.textPrimary : colors.textSecondary }}>{lbl}{counts[key] > 0 ? ` · ${counts[key]}` : ''}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {tab === 'pending' && (
+          <>
         {total === 0 && (
           <View style={{ backgroundColor: cardBg, borderRadius: 16, padding: RHYTHM.card, ...shadow }}>
             <Text style={{ fontSize: 15, color: body, lineHeight: 22 }}>No grandparent requests right now.</Text>
@@ -91,6 +111,7 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
                   {!!r.detail && <Text style={{ fontSize: 14, color: body }} numberOfLines={3}>{r.detail}</Text>}
                   {!!r.location && <Text style={{ fontSize: 14, fontWeight: '600', color: body }}>📍 {r.location}</Text>}
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>Open →</Text>
+                  <RequestTrail kind="kidRequest" id={r.id} colors={colors} />
                 </Pressable>
               );
             })}
@@ -124,6 +145,7 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
                       <Text style={{ fontSize: 13, color: body }} numberOfLines={1}>{r.ev.location.split(',')[0]}</Text>
                     </View>
                   )}
+                  <RequestTrail kind="event" id={r.ev.id} colors={colors} />
                   <View style={{ flexDirection: 'row', gap: RHYTHM.item }}>
                     <Pressable onPress={() => setDetailEv(r.ev)} style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border }}>
                       <Text style={{ fontSize: 14, fontWeight: '700', color: title }}>Details</Text>
@@ -157,26 +179,62 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
           </View>
         )}
 
-        {(pastRides.length > 0 || decided.length > 0 || gpPast.length > 0) && (
+          </>
+        )}
+
+        {tab === 'accepted' && (
           <View style={{ gap: RHYTHM.item }}>
-            <Text style={label}>History</Text>
-            <View style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 12, ...shadow }}>
+            {counts.accepted === 0 && (
+              <View style={{ backgroundColor: cardBg, borderRadius: 16, padding: RHYTHM.card, ...shadow }}><Text style={{ fontSize: 15, color: body }}>Nothing accepted yet.</Text></View>
+            )}
+            {acceptedRides.map(r => (
+              <Pressable key={r.ev.id} onPress={() => setDetailEv(r.ev)} style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 4, ...shadow }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: title }} numberOfLines={2}>{r.ev.title}</Text>
+                <Text style={{ fontSize: 13, color: body }}>Ride · {fmtHumanDateShort(r.ev.date)}{r.ev.time ? ` · ${fmtTime(r.ev.time)}` : ''}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.success }}>{r.assigneeName} confirmed</Text>
+                <RequestTrail kind="event" id={r.ev.id} colors={colors} />
+              </Pressable>
+            ))}
+            {gpAccepted.map(r => (
+              <Pressable key={r.id} onPress={() => onOpenRequest?.(r.id)} style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 4, ...shadow }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: title }} numberOfLines={2}>{REQUEST_META[r.type]?.emoji} {REQUEST_META[r.type]?.label ?? 'Request'} · {members.find(m => m.id === r.fromMemberId)?.name.split(' ')[0]}</Text>
+                {!!r.detail && <Text style={{ fontSize: 13, color: body }} numberOfLines={2}>{r.detail}</Text>}
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.success }}>Accepted</Text>
+                <RequestTrail kind="kidRequest" id={r.id} colors={colors} />
+              </Pressable>
+            ))}
+            {acceptedChores.map(c => (
+              <View key={c.id} style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 4, ...shadow }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: title }} numberOfLines={2}>{c.title}</Text>
+                <Text style={{ fontSize: 13, color: body }}>Sponsored chore</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.success }}>{c.status === 'in_progress' ? 'In progress' : 'Approved'}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {tab === 'completed' && (
+          <View style={{ gap: RHYTHM.item }}>
+            {counts.completed === 0 && (
+              <View style={{ backgroundColor: cardBg, borderRadius: 16, padding: RHYTHM.card, ...shadow }}><Text style={{ fontSize: 15, color: body }}>Nothing completed yet.</Text></View>
+            )}
+            <View style={{ backgroundColor: cardBg, borderRadius: 18, padding: counts.completed ? RHYTHM.card : 0, gap: 12, ...shadow }}>
               {pastRides.map(r => (
                 <Pressable key={r.ev.id} onPress={() => setDetailEv(r.ev)} style={{ gap: 1 }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{r.ev.title}</Text>
                   <Text style={{ fontSize: 13, color: body }}>Ride · {fmtHumanDateShort(r.ev.date)}{r.assigneeName ? ` · ${r.assigneeName} ${r.assigneeStatus === 'confirmed' ? 'drove' : 'was asked'}` : ' · no driver'}</Text>
                 </Pressable>
               ))}
-              {gpPast.map(r => (
+              {gpDone.map(r => (
                 <Pressable key={r.id} onPress={() => onOpenRequest?.(r.id)} style={{ gap: 1 }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{REQUEST_META[r.type]?.label ?? 'Request'} · {r.detail}</Text>
-                  <Text style={{ fontSize: 13, color: body }}>Request · {r.status === 'declined' ? 'Declined' : r.status === 'cancelled' ? 'Cancelled' : 'Handled'}</Text>
+                  <Text style={{ fontSize: 13, color: body }}>Request · {r.status === 'declined' ? 'Declined' : r.status === 'cancelled' ? 'Cancelled' : 'Done'}</Text>
                 </Pressable>
               ))}
-              {decided.map(c => (
+              {doneChores.map(c => (
                 <View key={c.id} style={{ gap: 1 }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{c.title}</Text>
-                  <Text style={{ fontSize: 13, color: body }}>Sponsored chore · {c.status === 'declined' ? 'Declined' : c.status === 'completed' || c.status === 'approved' ? 'Done' : 'Approved'}</Text>
+                  <Text style={{ fontSize: 13, color: body }}>Sponsored chore · {c.status === 'declined' ? 'Declined' : 'Done'}</Text>
                 </View>
               ))}
             </View>

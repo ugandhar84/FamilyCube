@@ -48,6 +48,10 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   const { members, activeMemberId, familyName } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  // Only a parent can see the whole family's health records (the database enforces it); everyone else sees only their own, so there is
+  // nothing to filter by person: the person pickers show just them, and the pill is hidden.
+  const ownOnly = kidView || (!!activeMember && activeMember.role !== 'parent');
+  const visibleMembers = ownOnly && activeMember ? members.filter(m => m.id === activeMember.id) : members;
 
   const [meds, setMeds]     = useState<Medication[]>([]);
   const [vaxes, setVaxes]   = useState<Vaccine[]>([]);
@@ -165,10 +169,10 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     setLoading(true);
     setLoadError(null);
     // Kids only see their own assigned medications and vaccines
-    const medsQ = kidView && activeMember?.id
+    const medsQ = ownOnly && activeMember?.id
       ? supabase.from('family_medications').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
       : supabase.from('family_medications').select('*').eq('family_id', familyId);
-    const vaxQ = kidView && activeMember?.id
+    const vaxQ = ownOnly && activeMember?.id
       ? supabase.from('family_vaccines').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
       : supabase.from('family_vaccines').select('*').eq('family_id', familyId);
     const [medsRes, vaxRes] = await Promise.all([
@@ -182,7 +186,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       if (vaxRes.data)  setVaxes(vaxRes.data as Vaccine[]);
     }
     setLoading(false);
-  }, [familyId, kidView, activeMember?.id]);
+  }, [familyId, ownOnly, activeMember?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1021,7 +1025,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         onRequestClose={() => setShowFilterSheet(false)}
         colors={colors}
         isDark={isDark}
-        members={members}
+        members={visibleMembers}
         healthTab={effectiveHealthTab}
         draftMed={draftMed}
         setDraftMed={setDraftMed}

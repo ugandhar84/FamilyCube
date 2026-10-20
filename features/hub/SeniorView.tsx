@@ -47,6 +47,7 @@ import { CreateQuestModal } from './senior/CreateQuestModal';
 import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { SectionCard, PickupRadarStatus } from './hubComponents';
+import { resolveSos } from '@/lib/sos';
 import { RideStatusCard } from './kid/RideStatusCard';
 import { KidRideBanner } from './kid/KidRideBanner';
 import { DirectPendingCard } from './parent/backlog/DirectPendingCard';
@@ -209,7 +210,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       }
     } catch { /* best-effort — an SOS with no location is still far better than none at all */ }
     try {
-      sendKidRequest({
+      const sosReq = await sendKidRequest({
         type: 'emergency', fromMemberId: active.id,
         detail: `${active.name.split(' ')[0]} triggered Emergency SOS`,
         location: locationLabel,
@@ -225,7 +226,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       const lines = [`🚨 EMERGENCY SOS from ${first} (grandparent) at ${atText}`, shared ? `📍 ${locationLabel}` : '📍 Location was not shared. Call them.', mapsUrl ? `🗺️ Open in Maps: ${mapsUrl}` : ''].filter(Boolean);
       // Auto-post an SOS card to the Grandparent squad channel (everyone in the family is a member): details plus a tappable maps link.
       sendMessage('seniors_all', active.id, lines.join('\n'), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        { type: 'sos_alert', payload: { name: first, role: 'Grandparent', address: locationLabel, lat: sosCoords?.lat, lng: sosCoords?.lng, mapsUrl, at: new Date().toISOString() } }, true);
+        { type: 'sos_alert', payload: { name: first, role: 'Grandparent', senderId: active.id, requestId: sosReq?.id, address: locationLabel, lat: sosCoords?.lat, lng: sosCoords?.lng, mapsUrl, at: new Date().toISOString() } }, true);
     } catch (e: any) {
       console.warn('[SeniorView] SOS dispatch failed', e?.message ?? e);
       Alert.alert("Couldn't send SOS", 'Please try again, or call a family member directly.');
@@ -892,17 +893,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark}
         sos={mySos} helperName={sosHelper?.name.split(' ')[0]} acceptedAt={mySos?.respondedAt ? fmt12(mySos.respondedAt) : undefined}
-        onCancelSos={(id) => {
-          useKidRequestStore.getState().cancelRequest(id);
-          // "I'm OK now": tell everyone in the family (push + the Grandparent squad channel).
-          const everyone = members.filter(m => m.id !== active.id).map(m => m.id);
-          const first = active.name.split(' ')[0];
-          supabase.functions.invoke('family-notifier', {
-            body: { type: 'sos_safe', familyId, memberIds: everyone, persist: true, excludeMemberId: active.id, payload: { name: first, requestId: id } },
-          }).catch(e => console.warn('[SeniorView] sos_safe notify failed:', e?.message));
-          sendMessage('seniors_all', active.id, `✅ ${first} is OK now. The SOS is resolved.`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-            { type: 'sos_resolved', payload: { name: first, at: new Date().toISOString() } }, true);
-        }} />
+        onCancelSos={(id) => { resolveSos(id, { id: active.id, name: active.name, familyId: (active as any).familyId }); }} />
 
       {/* Scenarios 9.2/9.3 — visible ONLY while a parent-granted caregiver
           window is active; disappears the instant it expires or is

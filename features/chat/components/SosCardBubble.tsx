@@ -1,8 +1,21 @@
+import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { openInMaps } from '@/features/calendar/components/EventCard';
+import { useFamilyStore } from '@/store/familyStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
+import { acceptSos, resolveSos } from '@/lib/sos';
 
 /** The card the app posts to the Grandparent squad channel when someone presses SOS: who, when, and where (tap the address for maps). */
 export function SosCardBubble({ payload, colors, onLongPress }: { payload: Record<string, any>; colors: any; onLongPress?: () => void }) {
+  const members = useFamilyStore(s => s.members);
+  const viewer = useFamilyStore(s => s.members.find(m => m.id === s.activeMemberId));
+  const req = useKidRequestStore(s => s.requests.find(r => r.id === payload.requestId));
+  const [busy, setBusy] = useState(false);
+  const isSender = !!viewer && viewer.id === payload.senderId;
+  const status = req?.status;
+  const acceptedBy = req?.respondedBy ? members.find(m => m.id === req.respondedBy)?.name?.split(' ')[0] : undefined;
+  const acceptedAt = req?.respondedAt ? new Date(req.respondedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
+  const run = async (fn: () => Promise<void>) => { if (busy) return; setBusy(true); try { await fn(); } finally { setBusy(false); } };
   const when = payload.at ? new Date(payload.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
   const address: string | undefined = payload.address && payload.address !== 'Location not shared' && payload.address !== 'Location unavailable' ? payload.address : undefined;
   const query = address ?? (payload.lat != null && payload.lng != null ? `${payload.lat},${payload.lng}` : undefined);
@@ -17,7 +30,29 @@ export function SosCardBubble({ payload, colors, onLongPress }: { payload: Recor
       ) : (
         <Text style={{ fontSize: 13, color: colors.textSecondary }}>Location was not shared. Call them.</Text>
       )}
-      <Text style={{ fontSize: 12, color: colors.textSecondary }}>{payload.role ?? 'Family member'} · Accept it from Review inbox, Grandparent requests.</Text>
+      {/* Status and the one action that fits who is looking: a parent can accept, the sender can say they are OK now. */}
+      {status === 'approved' && (
+        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.success }}>✓ Accepted by {acceptedBy ?? 'a parent'}{acceptedAt ? ` · ${acceptedAt}` : ''}, on the way</Text>
+      )}
+      {(status === 'cancelled' || status === 'completed') && (
+        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.success }}>✓ Resolved</Text>
+      )}
+      {status === 'pending' && viewer?.role === 'parent' && (
+        <Pressable disabled={busy} onPress={() => run(() => acceptSos(payload.requestId, viewer.id))} accessibilityRole="button" accessibilityLabel="Accept SOS"
+          style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderTopWidth: 1, borderTopColor: colors.danger + '40', marginTop: 4 }}>
+          <Text style={{ fontSize: 18, color: colors.success }}>✓</Text>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: colors.success }}>Accept, I'm on my way</Text>
+        </Pressable>
+      )}
+      {isSender && (status === 'pending' || status === 'approved') && (
+        <Pressable disabled={busy} onPress={() => run(() => resolveSos(payload.requestId, viewer!))} accessibilityRole="button" accessibilityLabel="I'm OK now"
+          style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: colors.danger + '40', marginTop: 4 }}>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: colors.primary }}>I'm OK now</Text>
+        </Pressable>
+      )}
+      {!status && (
+        <Text style={{ fontSize: 12, color: colors.textSecondary }}>{payload.role ?? 'Family member'}</Text>
+      )}
     </Pressable>
   );
 }

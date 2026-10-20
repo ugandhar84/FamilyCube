@@ -308,7 +308,8 @@ export default function ScanReviewSheet({
       <AiConsentSheet {...aiConsent} colors={colors} isDark={isDark} />
       {/* ── REDACT MODE: full-screen layout ── */}
       {pendingImages.length > 0 && !scanning && (() => {
-        const img    = pendingImages[activeRedactIdx];
+        // The selected page index can point past the end (e.g. after a page was removed or a failed scan reset the list); fall back to page 1.
+        const img    = pendingImages[activeRedactIdx] ?? pendingImages[0];
         const accent = scanMode === 'vaccine' ? colors.teal : colors.accent;
         return (
           <View style={{ flex: 1, backgroundColor: '#000' }}>

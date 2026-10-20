@@ -87,8 +87,10 @@ function isLikelyDuplicateTitle(a: string, b: string): boolean {
 }
 
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
-export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType, prefill, initialStep }: {
+export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType, prefill, initialStep, fullPage }: {
   visible: boolean; onClose: () => void; activeMemberId: string; defaultQuestType?: QuestType;
+  /** Open as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
   // "Edit in full form" handoff) — only covers what the AI response
   // actually produces; every other field keeps its normal default so the
@@ -804,6 +806,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
 
   return (
     <TaskFormShell
+      fullPage={fullPage}
       visible={visible}
       onClose={() => { reset(); onClose(); }}
       stepIds={stepIds}

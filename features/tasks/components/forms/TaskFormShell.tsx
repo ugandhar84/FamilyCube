@@ -32,12 +32,28 @@ import StepProgressBar from '@/components/StepProgressBar';
 import StepTransition from '@/components/StepTransition';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
+import { OverlayPage } from '@/components/OverlayPage';
+import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
+import { useUIStore } from '@/store/uiStore';
+
+/** The frame around the form: the usual bottom-sheet Modal, or (fullPage) a full-page overlay that slides in like every other page. */
+function Frame({ fullPage, visible, onClose, canvas, children }: { fullPage: boolean; visible: boolean; onClose: () => void; canvas: string; children: React.ReactNode }) {
+  useEffect(() => {
+    if (!fullPage || !visible) return;
+    hideTabBar();
+    useUIStore.getState().setFullBleedScreenActive(true);
+    return () => { showTabBar(); useUIStore.getState().setFullBleedScreenActive(false); };
+  }, [fullPage, visible]);
+  if (fullPage) return <OverlayPage visible={visible} onDismiss={onClose} zIndex={80} backgroundColor={canvas}>{children}</OverlayPage>;
+  return <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>{children}</Modal>;
+}
 
 export function TaskFormShell({
   visible, onClose, stepIds, stepTitles, step, setStep,
   accentColor, headerTitle, headerSubtitle, reviewStepId = 'review',
   hideProgress = false, stepLabels,
   hasDraft = false,
+  fullPage = false,
   children,
 }: {
   visible: boolean;
@@ -56,6 +72,8 @@ export function TaskFormShell({
   stepLabels?: string[];
   // When true, "· draft kept" appears in the step counter and "Back · preserve draft" replaces the plain back chevron.
   hasDraft?: boolean;
+  /** Open as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   children: React.ReactNode;
 }) {
   const { colors, isDark } = useTheme();
@@ -96,7 +114,7 @@ export function TaskFormShell({
   const isReview = currentStepId === reviewStepId;
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Frame fullPage={fullPage} visible={visible} onClose={onClose} canvas={colors.background}>
       {/* Live-reported: KeyboardAvoidingView previously wrapped the WHOLE
           sheet — 'padding' behavior slid the entire card (including the
           fixed Next button) up 1:1 with the keyboard, so the button kept
@@ -110,14 +128,16 @@ export function TaskFormShell({
           stay fixed in place; the Next/submit button now lives INSIDE the
           ScrollView (see below) so it's never a separate fixed element
           that could end up mispositioned on its own. */}
-        <View style={[s.backdrop, { paddingBottom: keyboardHeight }]}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={withAndroidShadowFix([s.sheet, { backgroundColor: colors.card,
+        <View style={[s.backdrop, fullPage ? { backgroundColor: colors.background, paddingTop: insets.top } : null, { paddingBottom: keyboardHeight }]}>
+          {!fullPage && <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />}
+          <View style={withAndroidShadowFix([s.sheet, fullPage
+            ? { flex: 1, maxHeight: undefined, backgroundColor: colors.background, borderTopLeftRadius: 0, borderTopRightRadius: 0 }
+            : { backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8,
             ...(keyboardAwareMaxHeight !== undefined ? { maxHeight: keyboardAwareMaxHeight } : {}) }])}>
             {/* Drag handle */}
-            <View style={[s.handle, { backgroundColor: colors.border }]} />
+            {!fullPage && <View style={[s.handle, { backgroundColor: colors.border }]} />}
 
             {/* ── Fixed header — the title/subtitle text block is wrapped
                 to dismiss the keyboard on tap (live-requested: tapping
@@ -267,7 +287,7 @@ export function TaskFormShell({
               style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: keyboardHeight, backgroundColor: colors.card }} />
           )}
         </View>
-    </Modal>
+    </Frame>
   );
 }
 

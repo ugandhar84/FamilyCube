@@ -22,6 +22,7 @@ import { Mic, Calendar, ClipboardList, Sparkles, AlertTriangle, PenLine, X } fro
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import AppFullPage from '@/components/AppFullPage';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
@@ -62,8 +63,10 @@ function AutoBadge() {
 }
 
 export default function SmartTaskComposer({
-  visible, members, activeMemberId, familyId, onClose, onCreated, onOpenFullForm,
+  visible, members, activeMemberId, familyId, onClose, onCreated, onOpenFullForm, fullPage = false,
 }: {
+  /** Open as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   visible: boolean;
   members: FamilyMember[];
   activeMemberId: string;
@@ -756,8 +759,9 @@ export default function SmartTaskComposer({
     close();
   });
 
+  const Sheet: any = fullPage ? AppFullPage : AppBottomSheet;
   return (
-    <AppBottomSheet visible={visible} onClose={close} title="What do you need?" subtitle="Describe it — everything else is detected automatically"
+    <Sheet visible={visible} onClose={close} title="What do you need?" subtitle="Describe it — everything else is detected automatically"
       // With nothing typed yet there's nothing to justify a 45% floor —
       // the sheet looked oversized on open (live-reported). Once the user
       // starts typing (or dictation fills in text), grow to 60% so there's
@@ -1562,6 +1566,6 @@ export default function SmartTaskComposer({
           <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center' }}>Keep typing…</Text>
         )}
       </ScrollView>
-    </AppBottomSheet>
+    </Sheet>
   );
 }

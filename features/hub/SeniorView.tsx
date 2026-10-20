@@ -1116,6 +1116,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <SmartTaskComposer
+        fullPage
         visible={composerVisible}
         members={members}
         activeMemberId={active.id}
@@ -1136,6 +1137,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       {showManualQuest && (
         <AddQuestModal
+          fullPage
           visible={showManualQuest}
           onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
           activeMemberId={active.id}
@@ -1146,6 +1148,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       {showManualEvent && (
         <AddEventModal
+          fullPage
           visible={showManualEvent}
           onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
           activeMemberId={active.id}

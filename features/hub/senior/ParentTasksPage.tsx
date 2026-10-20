@@ -1,7 +1,8 @@
 /**
- * ParentTasksPage — opened from the grandparent's "Needs you" card (View history): everything assigned to the parents, with a "I'll take this"
- * button on the items the family opened to grandparents (chores flagged for grandparents, rides open to them). Read-only otherwise.
+ * ParentTasksPage — opened from the grandparent's "Needs you" card (View history): only what the family asked grandparents for or opened to them
+ * (chores flagged "grandparents welcome", rides open to them), in tabs: Waiting for claim, Claimed / To do, Completed, History.
  */
+import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { HandHeart, CalendarDays, Car } from 'lucide-react-native';
 import AppFullPage from '@/components/AppFullPage';
@@ -36,32 +37,47 @@ function statusLabel(s: string) {
   return s.replace(/_/g, ' ');
 }
 
-export function ParentTasksPage({ visible, onClose, chores, members, active, openRides, onClaimChore, onClaimRide, colors, isDark }: {
+type Tab = 'open' | 'mine' | 'done' | 'history';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'open', label: 'To claim' }, { key: 'mine', label: 'Claimed' }, { key: 'done', label: 'Completed' }, { key: 'history', label: 'History' },
+];
+
+export function ParentTasksPage({ visible, onClose, chores, members, active, openRides, myClaimedRides, onClaimChore, onClaimRide, colors, isDark }: {
   visible: boolean; onClose: () => void;
   chores: ChoreTask[]; members: FamilyMember[]; active: FamilyMember;
-  openRides: FamilyEvent[];
+  openRides: FamilyEvent[]; myClaimedRides: FamilyEvent[];
   onClaimChore: (choreId: string) => void; onClaimRide: (eventId: string) => void;
   colors: any; isDark: boolean;
 }) {
+  const [tab, setTab] = useState<Tab>('open');
   const title = isDark ? colors.textPrimary : GEMINI.titleColor;
   const body = isDark ? colors.textSecondary : GEMINI.bodyColor;
   const cardBg = isDark ? colors.card : GEMINI.cardBg;
   const shadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
-  const parentIds = new Set(members.filter(m => m.role === 'parent').map(m => m.id));
-  const visibleChore = (c: ChoreTask) => !(c as any).isPrivateParent && !isPrivateToOthers(c, active.id);
 
-  const claimable = chores.filter(c => c.inviteGrandparents && c.status === 'todo' && !c.sponsorUserId && visibleChore(c));
-  const claimableIds = new Set(claimable.map(c => c.id));
-  const assigned = chores
-    .filter(c => !!c.assignedToId && parentIds.has(c.assignedToId) && !claimableIds.has(c.id) && visibleChore(c))
-    .sort((a, b) => {
-      const ad = DONE.includes(a.status) || OFF.includes(a.status) ? 1 : 0;
-      const bd = DONE.includes(b.status) || OFF.includes(b.status) ? 1 : 0;
-      return ad - bd || String(a.dueDate ?? '9999').localeCompare(String(b.dueDate ?? '9999'));
-    })
-    .slice(0, 60);
+  // Only things asked of / opened to grandparents: flagged for them, or I offered / took them. Never a parent's private or ordinary chore.
+  const relevant = chores.filter(c => !c.sponsorUserId && !(c as any).isPrivateParent && !isPrivateToOthers(c, active.id)
+    && (c.inviteGrandparents || c.gpOfferById === active.id));
+  const mineOf = (c: ChoreTask) => c.assignedToId === active.id || c.gpOfferById === active.id;
+  const classify = (c: ChoreTask): Tab => {
+    if (DONE.includes(c.status)) return mineOf(c) ? 'done' : 'history';
+    if (OFF.includes(c.status)) return 'history';
+    if (c.status === 'gp_offer_pending' && c.gpOfferById === active.id) return 'mine';
+    if (c.status === 'todo' && c.gpOfferById !== active.id && c.assignedToId !== active.id) return 'open';
+    if (mineOf(c)) return 'mine';
+    return 'history'; // somebody else took it
+  };
+  const byTab: Record<Tab, ChoreTask[]> = { open: [], mine: [], done: [], history: [] };
+  relevant.forEach(c => byTab[classify(c)].push(c));
+  const claimedRideIds = new Set(myClaimedRides.map(e => e.id));
+  const rides = tab === 'open' ? openRides : tab === 'mine' ? myClaimedRides : [];
+  const counts: Record<Tab, number> = {
+    open: byTab.open.length + openRides.length, mine: byTab.mine.length + myClaimedRides.length,
+    done: byTab.done.length, history: byTab.history.length,
+  };
+  const list = byTab[tab].slice(0, 60);
+  void claimedRideIds;
 
-  const label = { fontSize: 11, fontWeight: '800' as const, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: isDark ? colors.textTertiary : GEMINI.bodyColorLight };
   const card = { backgroundColor: cardBg, borderRadius: 20, padding: RHYTHM.card, gap: 10, ...shadow };
   const claimBtn = (onPress: () => void, text: string) => (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={text}
@@ -69,53 +85,59 @@ export function ParentTasksPage({ visible, onClose, chores, members, active, ope
       <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textInverse }}>{text}</Text>
     </Pressable>
   );
+  const empty = { open: 'Nothing is open to you right now.', mine: 'You have not claimed anything yet.', done: 'Nothing completed yet.', history: 'No history yet.' }[tab];
 
   return (
-    <AppFullPage gemini visible={visible} onClose={onClose} title="Parent tasks" subtitle="Everything assigned to the parents. Take what's open to you." accent="amber">
-      {(claimable.length > 0 || openRides.length > 0) && (
-        <>
-          <Text style={label}>Open to grandparents</Text>
-          {claimable.map(c => (
-            <View key={c.id} style={card}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <HandHeart size={20} color={colors.amber} />
-                <Text style={{ flex: 1, fontSize: GP.body, fontWeight: '800', color: title }} numberOfLines={2}>{c.title}</Text>
-              </View>
-              {!!c.dueDate && <Text style={{ fontSize: GP.sub, fontWeight: '600', color: body }}>Due {fmtDay(c.dueDate)}</Text>}
-              {claimBtn(() => onClaimChore(c.id), "I'll take this")}
-            </View>
-          ))}
-          {openRides.map(e => (
-            <View key={e.id} style={card}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Car size={20} color={colors.amber} />
-                <Text style={{ flex: 1, fontSize: GP.body, fontWeight: '800', color: title }} numberOfLines={2}>{e.title}</Text>
-              </View>
-              <Text style={{ fontSize: GP.sub, fontWeight: '600', color: body }}>{fmtDay(e.date)}{e.time ? ` · ${fmt12(e.time)}` : ''}</Text>
-              {claimBtn(() => onClaimRide(e.id), "I'll drive")}
-            </View>
-          ))}
-        </>
+    <AppFullPage gemini visible={visible} onClose={onClose} title="Parent tasks" subtitle="What the family asked you for, or left open for you" accent="amber">
+      <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
+        {TABS.map(t => {
+          const on = tab === t.key;
+          return (
+            <Pressable key={t.key} onPress={() => setTab(t.key)} accessibilityRole="button" accessibilityLabel={`${t.label} ${counts[t.key]}`}
+              style={{ flex: 1, minHeight: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.card : 'transparent' }}>
+              <Text style={{ fontSize: 12, fontWeight: on ? '800' : '600', color: on ? colors.textPrimary : colors.textSecondary }} numberOfLines={1}>
+                {t.label}{counts[t.key] > 0 ? ` · ${counts[t.key]}` : ''}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {list.length === 0 && rides.length === 0 && (
+        <View style={card}><Text style={{ fontSize: GP.sub, fontWeight: '600', color: body }}>{empty}</Text></View>
       )}
 
-      <Text style={label}>Assigned to parents</Text>
-      {assigned.length === 0 ? (
-        <View style={card}><Text style={{ fontSize: GP.sub, fontWeight: '600', color: body }}>No tasks are assigned to the parents right now.</Text></View>
-      ) : assigned.map(c => {
-        const who = members.find(m => m.id === c.assignedToId);
-        const done = DONE.includes(c.status) || OFF.includes(c.status);
+      {rides.map(e => (
+        <View key={e.id} style={card}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Car size={20} color={colors.amber} />
+            <Text style={{ flex: 1, fontSize: GP.body, fontWeight: '800', color: title }} numberOfLines={2}>{e.title}</Text>
+          </View>
+          <Text style={{ fontSize: GP.sub, fontWeight: '600', color: body }}>{fmtDay(e.date)}{e.time ? ` · ${fmt12(e.time)}` : ''}</Text>
+          {tab === 'open' ? claimBtn(() => onClaimRide(e.id), "I'll drive")
+            : <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.success }}>You are driving</Text>}
+        </View>
+      ))}
+
+      {list.map(c => {
+        const who = members.find(m => m.id === (c.assignedToId ?? ''));
         return (
-          <View key={c.id} style={[card, done && { opacity: 0.7 }]}>
+          <View key={c.id} style={[card, tab === 'history' && { opacity: 0.75 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {who ? <FamilyAvatar name={who.name} emoji={who.emoji} avatarUrl={who.avatarUrl} siblings={members.map(m => m.name)} size={36} ringColor={colors.teal} ringWidth={1.5} /> : null}
+              <HandHeart size={20} color={colors.amber} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: title }} numberOfLines={2}>{c.title}</Text>
-                <Text style={{ fontSize: GP.sub, fontWeight: '600', color: body, marginTop: 2 }}>{who?.name.split(' ')[0] ?? 'Parent'}{c.dueDate ? ` · Due ${fmtDay(c.dueDate)}` : ''}</Text>
+                <Text style={{ fontSize: GP.sub, fontWeight: '600', color: body, marginTop: 2 }}>
+                  {c.dueDate ? `Due ${fmtDay(c.dueDate)}` : 'No due date'}{who && who.id !== active.id ? ` · ${who.name.split(' ')[0]}` : ''}
+                </Text>
               </View>
-              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: done ? colors.tealLight : colors.amberLight }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: done ? colors.teal : colors.amber }}>{statusLabel(c.status)}</Text>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: DONE.includes(c.status) ? colors.tealLight : colors.amberLight }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: DONE.includes(c.status) ? colors.teal : colors.amber }}>
+                  {c.status === 'gp_offer_pending' ? 'Waiting on parent' : statusLabel(c.status)}
+                </Text>
               </View>
             </View>
+            {tab === 'open' && claimBtn(() => onClaimChore(c.id), "I'll take this")}
           </View>
         );
       })}

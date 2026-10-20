@@ -1016,7 +1016,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       <ParentTasksPage
         visible={showParentTasks} onClose={() => setShowParentTasks(false)}
-        chores={chores} members={members} active={active} openRides={dedupOpenRides}
+        chores={chores} members={members} active={active} openRides={dedupOpenRides} myClaimedRides={dedupMyClaimedRides}
         onClaimChore={(choreId) => { logAction('Take parent task', `claimGPErrand(${choreId})`, { targetId: choreId, at: 'parent-tasks' }); claimGPErrand(choreId, active.id); }}
         onClaimRide={handleClaimRide}
         colors={colors} isDark={isDark}

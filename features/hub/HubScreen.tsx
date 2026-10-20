@@ -32,7 +32,7 @@ import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScre
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { OverlayPage } from '@/components/OverlayPage';
-import { OverlayHost } from '@/components/OverlayHost';
+import { OverlayHost, OverlayHostScope } from '@/components/OverlayHost';
 import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
 import { GpRequestsQueueScreen } from './parent/GpRequestsQueueScreen';
 import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
@@ -644,6 +644,7 @@ export default function HubScreen() {
     : { style: { flex: 1, backgroundColor: hubCanvas }, edges: ['top'] as const };
 
   return (
+    <OverlayHostScope>
     <RootContainer {...rootProps}>
       {/* Scroll-driven status bar — visible at rest/near the top (same
           app-wide config as every other screen), hides once the user
@@ -1045,6 +1046,7 @@ export default function HubScreen() {
         onCancel={() => setPinTarget(null)}
       />
     </RootContainer>
+    </OverlayHostScope>
   );
 }
 

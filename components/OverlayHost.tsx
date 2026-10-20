@@ -28,6 +28,13 @@ const useHostStore = create<HostStore>((set) => ({
   removeHost: () => set(s => ({ hosts: Math.max(0, s.hosts - 1) })),
 }));
 
+// Only portal into a host when rendered INSIDE the screen that owns it (a tab's overlays live in that tab). Without this a
+// page on another tab would put its overlay into the Hub's host and it would open invisibly underneath.
+const HostScope = React.createContext(false);
+export function OverlayHostScope({ children }: { children: React.ReactNode }) {
+  return <HostScope.Provider value>{children}</HostScope.Provider>;
+}
+
 export function OverlayHost() {
   const items = useHostStore(s => s.items);
   useEffect(() => { useHostStore.getState().addHost(); return () => useHostStore.getState().removeHost(); }, []);
@@ -37,7 +44,8 @@ export function OverlayHost() {
 let counter = 0;
 export function OverlayPortal({ visible, children }: { visible: boolean; children: React.ReactNode }) {
   const [id] = React.useState(() => `overlay-${++counter}`);
-  const hosted = useHostStore(s => s.hosts > 0);
+  const inScope = React.useContext(HostScope);
+  const hosted = useHostStore(s => s.hosts > 0) && inScope;
   // Every render: keep the host's copy current (or remove it when closed).
   useEffect(() => {
     if (!hosted) return;

@@ -9,9 +9,18 @@ import { acceptSos, resolveSos } from '@/lib/sos';
 export function SosCardBubble({ payload, colors, onLongPress }: { payload: Record<string, any>; colors: any; onLongPress?: () => void }) {
   const members = useFamilyStore(s => s.members);
   const viewer = useFamilyStore(s => s.members.find(m => m.id === s.activeMemberId));
-  const req = useKidRequestStore(s => s.requests.find(r => r.id === payload.requestId));
+  // Cards posted before the request id was attached are matched to their request by sender name and time (within 3 minutes).
+  const req = useKidRequestStore(s => {
+    if (payload.requestId) return s.requests.find(r => r.id === payload.requestId);
+    const at = payload.at ? new Date(payload.at).getTime() : NaN;
+    if (!Number.isFinite(at)) return undefined;
+    const names = new Map(useFamilyStore.getState().members.map(m => [m.id, m.name.split(' ')[0]]));
+    return s.requests
+      .filter(r => r.type === 'emergency' && names.get(r.fromMemberId) === payload.name && Math.abs(new Date(r.requestedAt).getTime() - at) < 3 * 60_000)
+      .sort((a, b) => Math.abs(new Date(a.requestedAt).getTime() - at) - Math.abs(new Date(b.requestedAt).getTime() - at))[0];
+  });
   const [busy, setBusy] = useState(false);
-  const isSender = !!viewer && viewer.id === payload.senderId;
+  const isSender = !!viewer && (viewer.id === payload.senderId || (!payload.senderId && viewer.id === req?.fromMemberId));
   const status = req?.status;
   const acceptedBy = req?.respondedBy ? members.find(m => m.id === req.respondedBy)?.name?.split(' ')[0] : undefined;
   const acceptedAt = req?.respondedAt ? new Date(req.respondedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
@@ -38,14 +47,14 @@ export function SosCardBubble({ payload, colors, onLongPress }: { payload: Recor
         <Text style={{ fontSize: 14, fontWeight: '800', color: colors.success }}>✓ Resolved</Text>
       )}
       {status === 'pending' && viewer?.role === 'parent' && (
-        <Pressable disabled={busy} onPress={() => run(() => acceptSos(payload.requestId, viewer.id))} accessibilityRole="button" accessibilityLabel="Accept SOS"
+        <Pressable disabled={busy} onPress={() => run(() => acceptSos(req!.id, viewer.id))} accessibilityRole="button" accessibilityLabel="Accept SOS"
           style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderTopWidth: 1, borderTopColor: colors.danger + '40', marginTop: 4 }}>
           <Text style={{ fontSize: 18, color: colors.success }}>✓</Text>
           <Text style={{ fontSize: 15, fontWeight: '800', color: colors.success }}>Accept, I'm on my way</Text>
         </Pressable>
       )}
       {isSender && (status === 'pending' || status === 'approved') && (
-        <Pressable disabled={busy} onPress={() => run(() => resolveSos(payload.requestId, viewer!))} accessibilityRole="button" accessibilityLabel="I'm OK now"
+        <Pressable disabled={busy} onPress={() => run(() => resolveSos(req!.id, viewer!))} accessibilityRole="button" accessibilityLabel="I'm OK now"
           style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: colors.danger + '40', marginTop: 4 }}>
           <Text style={{ fontSize: 15, fontWeight: '800', color: colors.primary }}>I'm OK now</Text>
         </Pressable>

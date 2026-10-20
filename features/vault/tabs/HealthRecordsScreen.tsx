@@ -36,6 +36,7 @@
  * HealthFigmaList.tsx (pre-existing, sound, flat-Figma shell — kept as-is,
  * just now driven by useHealthRecords.ts's state instead of HealthTab's).
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import { PageHeading } from '@/components/PageHeading';
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Pressable } from 'react-native';
@@ -114,6 +115,12 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   const kidView = storeActiveMember?.role === 'kid' || storeActiveMember?.role === 'teen' || storeActiveMember?.role === 'senior';
 
   const hr = useHealthRecords({ kidView });
+  // Grandparents are otherwise view-only like kids, but they can add and manage their OWN medications (and scan a prescription).
+  const isGp = storeActiveMember?.role === 'senior';
+  const canManageMeds = !kidView || isGp;
+  // Person filter: parents pick from everyone; a grandparent only from themself + their same-side partner; kids and teens never get one.
+  const filterPeople = isGp ? gpSideMembers(storeActiveMember?.id, storeMembers) : storeMembers;
+  const showPersonFilter = !kidView || (isGp && filterPeople.length > 1);
   const { members, activeMember, familyName } = hr;
 
   // Seed once on mount only — the member pill/Filters screen can still
@@ -172,10 +179,10 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   useEffect(() => {
     if (openHealthRecordsComposerRequested) {
       useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
-      if (kidView) return;
+      if (!canManageMeds || (kidView && tab === 'vax')) return;
       if (tab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
     }
-  }, [openHealthRecordsComposerRequested, tab, kidView]);
+  }, [openHealthRecordsComposerRequested, tab, kidView, canManageMeds]);
 
   const openHealthScanRequested = useUIStore(s => s.openHealthScanRequested);
   const [showScanSheet, setShowScanSheet] = useState(false);
@@ -184,11 +191,11 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   useEffect(() => {
     if (openHealthScanRequested) {
       useUIStore.getState().setOpenHealthScanRequested(undefined);
-      if (kidView) return;
+      if (!canManageMeds || (kidView && openHealthScanRequested !== 'rx')) return;
       setScanMode(openHealthScanRequested);
       setShowScanSheet(true);
     }
-  }, [openHealthScanRequested, kidView]);
+  }, [openHealthScanRequested, kidView, canManageMeds]);
 
   const openHealthPdfExportRequested = useUIStore(s => s.openHealthPdfExportRequested);
   useEffect(() => {
@@ -217,11 +224,11 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
 
   const primaryLabel = tab === 'vax' ? 'Add vaccine from document' : 'Add medication';
   const openComposer = () => {
-    if (kidView) return;
+    if (!canManageMeds) return;
     if (tab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
   };
   const openScan = () => {
-    if (kidView) return;
+    if (!canManageMeds) return;
     setScanMode(tab === 'vax' ? 'vaccine' : 'rx');
     setShowScanSheet(true);
   };
@@ -290,7 +297,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
         )}
         {(
           <HealthFigmaList
-            colors={colors} isDark={isDark} kidView={kidView}
+            colors={colors} isDark={isDark} kidView={kidView} canManageMeds={canManageMeds} showPersonFilter={showPersonFilter}
             meds={hr.meds} vaxes={hr.vaxes}
             filteredMeds={hr.filteredMeds} filteredVaxes={hr.filteredVaxes}
             healthTab={tab === 'vax' ? 'vax' : 'meds'}
@@ -312,7 +319,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
           />
         )}
 
-        {!kidView && tab !== 'records' && (
+        {canManageMeds && tab !== 'records' && (
           <View style={{ gap: 10, marginTop: 4 }}>
             <TouchableOpacity onPress={openComposer}
               style={{ backgroundColor: BLUE, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
@@ -367,7 +374,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
         members={members}
         colors={colors}
         isDark={isDark}
-        lockedMemberId={initialMemberId}
+        lockedMemberId={isGp ? storeActiveMember?.id : initialMemberId}
         editing={editMed ? {
           medId: editMed.id, memberId: editMed.member_id, refillDate: editMed.refill_date,
           form: {
@@ -427,7 +434,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
       <FullPageOverlay visible={showFilter} onDismiss={() => setShowFilter(false)} zIndex={50}>
         {(requestAnimatedClose) => (
           <HealthFilterScreen
-            colors={colors} isDark={isDark} members={members}
+            colors={colors} isDark={isDark} members={filterPeople} hidePeople={!showPersonFilter}
             healthTab={tab === 'vax' ? 'vax' : 'meds'}
             draftMed={hr.draftMed} setDraftMed={hr.setDraftMed}
             draftVax={hr.draftVax} setDraftVax={hr.setDraftVax}

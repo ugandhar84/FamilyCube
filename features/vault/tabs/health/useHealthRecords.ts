@@ -19,6 +19,7 @@
  * bulk-delete audit trail, etc.), repeated here only where it affects a
  * call site.
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -81,8 +82,11 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
     if (familyId === 'family-1') return; // real family not resolved yet
     setLoading(true);
     setLoadError(null);
+    // Own records only (parent-uploaded ones included, they're filed under this person). A grandparent also sees the
+    // medications of their same-side grandparent partner.
+    const sideIds = activeMember?.role === 'senior' ? gpSideMembers(activeMember.id, members).map(m => m.id) : [];
     const medsQ = kidView && activeMember?.id
-      ? supabase.from('family_medications').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
+      ? supabase.from('family_medications').select('*').eq('family_id', familyId).in('member_id', sideIds.length ? sideIds : [activeMember.id])
       : supabase.from('family_medications').select('*').eq('family_id', familyId);
     const vaxQ = kidView && activeMember?.id
       ? supabase.from('family_vaccines').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
@@ -98,7 +102,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
       if (vaxRes.data)  setVaxes(vaxRes.data as Vaccine[]);
     }
     setLoading(false);
-  }, [familyId, kidView, activeMember?.id]);
+  }, [familyId, kidView, activeMember?.id, members]);
 
   useEffect(() => { load(); }, [load]);
 

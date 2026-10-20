@@ -1,3 +1,4 @@
+import { useUIStore } from '@/store/uiStore';
 import { View, Text } from 'react-native';
 import { HandHeart, Heart, Compass, Images, UserCircle, ArrowUpRight } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -51,7 +52,7 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
       {/* Memories and Profile: the tab bar is the same for every role now, so these two live here. */}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
         {[
-          { key: 'memories', title: 'Memories', subtitle: 'Photos and stories', Icon: Images, bg: colors.pinkLight, fg: colors.pink, go: () => router.push('/(tabs)/memories' as any) },
+          { key: 'memories', title: 'Memories', subtitle: 'Photos and stories', Icon: Images, bg: colors.pinkLight, fg: colors.pink, go: () => useUIStore.getState().setOpenMemoriesScreenRequested(true) },
           { key: 'profile', title: 'My profile', subtitle: 'Settings and PIN', Icon: UserCircle, bg: colors.surface, fg: colors.textSecondary, go: () => router.push('/profile-settings' as any) },
         ].map(t => (
           <AnimatedPressable key={t.key} onPress={t.go} accessibilityRole="button" accessibilityLabel={t.title}

@@ -6,17 +6,19 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
 /**
- * SeniorHeroCard — the grandparent Hub's "My day" card, same shell as the parent Family Pulse and the kid/teen hero: a tinted
+ * SeniorHeroCard — the grandparent Hub's "My pulse" card, same shell as the parent Family Pulse and the kid/teen hero: a tinted
  * rounded card, eyebrow + headline + one line on the left, a ringed dial on the right. Here the dial shows today's medications taken,
  * and the one line is the most time-sensitive fact (a confirmed ride coming up, otherwise the medication count). Larger type than
  * the other Hubs, per the senior scale.
  */
-export function SeniorHeroCard({ active, colors, isDark, medsTotal, medsTaken, confirmedRide, rideCountdown, pendingCount }: {
+export function SeniorHeroCard({ active, colors, isDark, medsTotal, medsTaken, confirmedRide, rideCountdown, pendingCount, ridesToday, grandkidsDone, cheerCount }: {
   active: FamilyMember; colors: any; isDark: boolean;
   medsTotal: number; medsTaken: number;
   confirmedRide: FamilyEvent | undefined; rideCountdown: number | null;
   /** Things waiting on this person (ride asks, assigned tasks, approvals). */
   pendingCount: number;
+  /** Rides today (driving or being driven), grandchildren's chores finished today, and wins waiting for a cheer. */
+  ridesToday: number; grandkidsDone: number; cheerCount: number;
 }) {
   const hour = new Date().getHours();
   const part = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
@@ -32,11 +34,12 @@ export function SeniorHeroCard({ active, colors, isDark, medsTotal, medsTaken, c
 
   return (
     <View style={{
-      marginHorizontal: 16, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 16, padding: 18,
+      marginHorizontal: 16, gap: 14, padding: 18,
       borderWidth: 1, borderColor: colors.border, borderRadius: 24, backgroundColor: colors.tealLight,
     }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <KidSectionHeader label="MY DAY" accent={colors.teal} colors={colors} />
+        <KidSectionHeader label="MY PULSE" accent={colors.teal} colors={colors} />
         <Text style={{ fontSize: GP.title + 4, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>Good {part}, {first}</Text>
         <Text style={{ fontSize: GP.body, color: colors.textSecondary, marginTop: 4, lineHeight: 22 }} numberOfLines={3}>{line}</Text>
       </View>
@@ -51,6 +54,20 @@ export function SeniorHeroCard({ active, colors, isDark, medsTotal, medsTaken, c
           <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary }}>MEDS</Text>
         </View>
       )}
+    </View>
+    {/* The three things a grandparent checks first: medications, rides, and how the grandchildren are doing. */}
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {[
+        { label: 'Meds today', value: medsTotal > 0 ? `${medsTaken}/${medsTotal}` : '-' },
+        { label: 'Rides today', value: String(ridesToday) },
+        { label: cheerCount > 0 ? 'Wins to cheer' : 'Grandkids done', value: String(cheerCount > 0 ? cheerCount : grandkidsDone) },
+      ].map(c => (
+        <View key={c.label} style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 16, backgroundColor: colors.card }}>
+          <Text style={{ fontSize: GP.title, fontWeight: '800', color: colors.textPrimary }}>{c.value}</Text>
+          <Text style={{ fontSize: GP.tiny, fontWeight: '700', color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>{c.label}</Text>
+        </View>
+      ))}
+    </View>
     </View>
   );
 }

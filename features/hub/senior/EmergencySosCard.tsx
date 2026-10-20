@@ -18,7 +18,7 @@ export function EmergencySosCard({ sosActive, setSosActive, onTriggerSos, sosSen
   colors: any; isDark: boolean;
 }) {
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+    <View style={{ paddingHorizontal: 16 }}>
       {sosActive ? (
         <View style={{ borderRadius: 20, backgroundColor: '#450A0A', borderWidth: 2, borderColor: colors.danger, padding: 18, gap: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

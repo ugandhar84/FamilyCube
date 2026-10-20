@@ -1,4 +1,5 @@
-import { View, Text, Pressable, TextInput, Modal } from 'react-native';
+import { View, Text, Pressable, TextInput } from 'react-native';
+import AppFullPage from '@/components/AppFullPage';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { GP } from './seniorTheme';
@@ -28,10 +29,7 @@ export function SavingsMatchModal({
 }) {
   const actorName = active?.name ?? 'senior';
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={onClose} />
-      <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 14 }}>
-        <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Set Up Savings Match</Text>
+    <AppFullPage visible={visible} onClose={onClose} title="Savings match" subtitle="Add to their Save Jar when they earn points">
         <Text style={{ fontSize: GP.body, color: colors.textSecondary }}>
           You'll automatically add a match to their Save Jar when they earn points.
         </Text>
@@ -106,7 +104,6 @@ export function SavingsMatchModal({
             <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>Save Match Rule</Text>
           </Pressable>
         </View>
-      </View>
-    </Modal>
+    </AppFullPage>
   );
 }

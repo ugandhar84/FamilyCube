@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, View, Text, Pressable } from 'react-native';
+import { CheckCircle2 } from 'lucide-react-native';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -22,6 +23,8 @@ import { withinLast24h, localDateStr } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssigneeConflicts';
 
+import { RHYTHM } from '@/constants/theme';
+import { GP } from './senior/seniorTheme';
 import { SeniorHeroCard } from './senior/SeniorHeroCard';
 import { SeniorActionGrid, type SeniorGroup } from './senior/SeniorActionGrid';
 import { KidSectionHeader } from './kid/KidSectionHeader';
@@ -836,12 +839,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const pendingForMe = dedupMyPendingAssignments.length + assignedCount + (hasCaregiverAccess ? 1 : 0);
 
   return (
-    <>
+    <View style={{ gap: RHYTHM.section }}>
       {/* ══ MY DAY — same shell as the other Hubs: hero, safety, today, needs you, quick actions ══ */}
       <SeniorHeroCard
         active={active} colors={colors} isDark={isDark}
         medsTotal={meds.length} medsTaken={Object.values(medsTaken).filter(Boolean).length}
         confirmedRide={confirmedRide} rideCountdown={rideCountdown} pendingCount={pendingForMe}
+        ridesToday={dedupMyDrivingToday.length + (confirmedRide && confirmedRide.date === today ? 1 : 0)}
+        grandkidsDone={chores.filter(c => kids.some(k => k.id === c.assignedToId) && (c.status === 'approved' || c.status === 'auto_approved') && ((c as any).approvedAt ?? '').slice(0, 10) === today).length}
+        cheerCount={kidsCheerable.length}
       />
 
       <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark} />
@@ -892,14 +898,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
       ))}
 
-      <KidTodaySection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
-
-      {(dedupMyPendingAssignments.length > 0 || dedupMyDrivingToday.length > 0 || dedupMyClaimedRides.length > 0 || assignedCount > 0) && (
-        <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
+      {/* NEEDS YOU: always shown, so there is one obvious place to look. Rides to confirm and tasks assigned to this person, or a calm
+          "all caught up" card when nothing is waiting. */}
+      <View style={{ gap: RHYTHM.item }}>
+        <View style={{ paddingHorizontal: 16 }}>
           <KidSectionHeader label="NEEDS YOU" accent={colors.amber} colors={colors} />
         </View>
-      )}
-
       <YourRidesSection
         myPendingAssignments={dedupMyPendingAssignments}
         myDrivingToday={dedupMyDrivingToday}
@@ -911,8 +915,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         updateEvent={updateEvent} onEnRoute={onEnRoute}
         conflictReasons={conflictReasons}
       />
-
-      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
 
       {/* A parent (or this GP themselves) directly assigned a task via
           addParentQuest — same Accept/Respond, Nudge-back, and locked-item
@@ -957,6 +959,26 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           })}
         </SectionCard>
       )}
+
+        {pendingForMe === 0 && dedupMyDrivingToday.length === 0 && dedupMyClaimedRides.length === 0 && (
+          <View style={{ marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14, padding: RHYTHM.card, borderRadius: 20, backgroundColor: colors.card,
+            borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.tealLight }}>
+              <CheckCircle2 size={24} color={colors.teal} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>You're all caught up</Text>
+              <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>Nothing is waiting for you right now.</Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={{ marginTop: -RHYTHM.section, marginHorizontal: -4 }}>
+        <KidTodaySection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+      </View>
+
+      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={deleteMed} colors={colors} isDark={isDark} active={active} allMembers={members} />
 
       {/* ══ QUICK ACTIONS — one area open at a time ══ */}
       <SeniorActionGrid
@@ -1133,6 +1155,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           initialStep={manualEventPrefill ? 'review' : undefined}
         />
       )}
-    </>
+    </View>
   );
 }

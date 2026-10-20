@@ -24,7 +24,7 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
     { key: 'games',   Icon: Gamepad2,  title: 'Family games',    subtitle: 'Play together',                        count: 0,            bg: colors.primaryLight, fg: colors.primary },
   ];
   return (
-    <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
+    <View style={{ paddingHorizontal: 16 }}>
       <KidSectionHeader label="QUICK ACTIONS" accent={colors.pink} colors={colors} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
         {tiles.map(t => {

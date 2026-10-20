@@ -607,7 +607,7 @@ export default function HubScreen() {
       // headers" — Teen was left on the old full header/role-mode pill
       // after the rest of the Teen Hub rebuild]; senior keeps the existing
       // full header unchanged (out of scope here).
-      compact={isParent || active.role === 'kid' || isTeen}
+      compact={isParent || active.role === 'kid' || isTeen || active.role === 'senior'}
       // ParentView owns its own Smart Task Composer internally (its own
       // showTaskComposer state via useParentModals) — not reachable from
       // here across the component boundary, unlike composerVisible (which

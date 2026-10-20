@@ -140,7 +140,17 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
                 const { doseTaken, overdue } = doseState(time);
                 const when = time ? formatDoseTime(time) : 'Today';
                 return (
-                  <Pressable key={time ?? idx} onPress={() => toggleMed(med, multiDose ? time : null)} accessibilityRole="button"
+                  <Pressable key={time ?? idx}
+                    onPress={() => {
+                      const toggle = () => toggleMed(med, multiDose ? time : null);
+                      // Undoing a dose that is already marked taken needs a confirmation (a stray tap shouldn't un-take it).
+                      if (doseTaken) Alert.alert('Undo this dose?', `${med.name} · ${when} will be marked as not taken.`, [
+                        { text: 'Keep as taken', style: 'cancel' },
+                        { text: 'Undo', style: 'destructive', onPress: toggle },
+                      ]);
+                      else toggle();
+                    }}
+                    accessibilityRole="button"
                     accessibilityLabel={`${med.name} ${when} ${doseTaken ? 'taken' : 'mark taken'}`}
                     style={{ minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16,
                       backgroundColor: doseTaken ? colors.card : overdue ? colors.danger : colors.primary,

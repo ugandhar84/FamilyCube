@@ -1,5 +1,3 @@
-import { PastelBoost } from '@/lib/ThemeContext';
-import { boostPastels } from '@/constants/colors';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -716,10 +714,9 @@ export default function HubScreen() {
         {/* The private task list for a grandparent already lives inside their "Your day" section (HubTimelineSection). */}
         <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (
-          <PastelBoost>
           <ParentView
             focusKey={hubFocusKey}
-            active={active} members={members} colors={boostPastels(colors, isDark)} isDark={isDark}
+            active={active} members={members} colors={colors} isDark={isDark}
             onScanFlyer={() => setFlyerVisible(true)}
             onDescribeTask={() => setShowDescribeTask(true)}
             onDescribeEvent={() => setShowDescribeEvent(true)}
@@ -743,13 +740,11 @@ export default function HubScreen() {
             otherActiveTrips={otherTripViews}
             onUpdateEta={(tripId, etaMinutes) => updateTripEta(tripId, etaMinutes)}
           />
-          </PastelBoost>
         )}
         {isKid && (
-          <PastelBoost>
           <KidView
             focusKey={hubFocusKey}
-            active={active} members={members} colors={boostPastels(colors, isDark)} isDark={isDark}
+            active={active} members={members} colors={colors} isDark={isDark}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
             onMyChores={() => setShowMyChores(true)}
@@ -759,13 +754,11 @@ export default function HubScreen() {
             onAskForRide={() => setAskParentDestination('ride')}
             onRideStatusOpen={() => setShowRidesRoom(true)}
           />
-          </PastelBoost>
         )}
         {isTeen && (
-          <PastelBoost>
           <TeenView
             focusKey={hubFocusKey}
-            active={active} members={members} colors={boostPastels(colors, isDark)} isDark={isDark}
+            active={active} members={members} colors={colors} isDark={isDark}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
             onMyChores={() => setShowMyChores(true)}
@@ -778,18 +771,15 @@ export default function HubScreen() {
             onOpenCashOut={() => setTeenCashOutOpen(true)}
             onOpenGasVehicle={() => setTeenGasVehicleOpen(true)}
           />
-          </PastelBoost>
         )}
         {isSenior && (
-          <PastelBoost>
           <SeniorView
-            active={active} members={members} colors={boostPastels(colors, isDark)} isDark={isDark}
+            active={active} members={members} colors={colors} isDark={isDark}
             onHelpRequest={() => setShowDescribeEvent(true)}
             onEnRoute={() => setEnRouteVisible(true)}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
           />
-          </PastelBoost>
         )}
       </ScrollView>
 

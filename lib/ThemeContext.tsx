@@ -75,7 +75,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return mode === 'dark';
   }, [mode, systemScheme]);
 
-  const colors = isDark ? darkColors : lightColors;
+  // Soft tint tokens (the *Light colors) are a touch stronger app-wide; see boostPastels in constants/colors.ts.
+  const colors = useMemo(() => boostPastels(isDark ? darkColors : lightColors, isDark), [isDark]);
 
   // Render immediately with system default — don't block on AsyncStorage.
   // storedMode being null means AsyncStorage hasn't resolved yet; in that window
@@ -90,9 +91,3 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export const useTheme = () => useContext(ThemeContext);
 
-/** Gives everything inside slightly stronger pastel tints (see boostPastels). Used by the parent Hub first. */
-export function PastelBoost({ children }: { children: React.ReactNode }) {
-  const base = useContext(ThemeContext);
-  const value = useMemo(() => ({ ...base, colors: boostPastels(base.colors, base.isDark) }), [base]);
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}

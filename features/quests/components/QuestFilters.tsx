@@ -72,12 +72,12 @@ export function QuestFilters({
           onPress={() => { onSetKidFilter('all'); onSetTabStatus('todo'); }}
         >
           <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'all' ? '#fff' : colors.textSecondary }}>
-            {isKid ? '🎯 My Chores' : 'All Family'}
+            {!isParentOrSenior ? '🎯 My Chores' : 'All Family'}
           </Text>
         </TouchableOpacity>
 
         {/* Per-kid chips */}
-        {!isKid && kids.map(k => (
+        {isParentOrSenior && kids.map(k => (
           <TouchableOpacity
             key={k.id}
             style={[pillBase, { paddingHorizontal: 6, paddingVertical: 4 }, kidFilter === k.id
@@ -118,22 +118,7 @@ export function QuestFilters({
           </Text>
         </TouchableOpacity>
 
-        {/* Sibling Cheer — kid/teen-to-kid/teen only. Parents and GP have their
-            own kudos surfaces (Family Kudos strip, Hub cheer sections); this
-            tab was redundant with those and duplicated the same quests. */}
-        {!isParentOrSenior && (
-          <TouchableOpacity
-            style={[pillBase, kidFilter === 'cheer'
-              ? { backgroundColor: colors.accent, borderColor: colors.accent }
-              : { backgroundColor: colors.accentLight, borderColor: colors.accentLight }]}
-            onPress={() => { onSetKidFilter('cheer'); onSetTabStatus('todo'); }}
-          >
-            <ThumbsUpIcon c={kidFilter === 'cheer' ? '#fff' : colors.accent} />
-            <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'cheer' ? '#fff' : colors.accent, marginLeft: 4 }}>
-              Sibling Cheer
-            </Text>
-          </TouchableOpacity>
-        )}
+        {/* Kids and teens see only their own chores and the Bounty Board: no "All Family", no other people's chips, no Sibling Cheer. */}
       </ScrollView>
 
       {/* ── Status segmented control ── */}

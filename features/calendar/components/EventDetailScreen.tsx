@@ -212,9 +212,11 @@ function ReassignPicker({ ev, role, members, activeMemberId, colors, isDark, onD
 // ── main screen ───────────────────────────────────────────────────────────────
 
 export default function EventDetailScreen({
-  ev, onClose, onEdit, onDelete,
+  ev, onClose, onEdit, onDelete, zIndex = 60,
 }: {
   ev: FamilyEvent;
+  /** Stack order; pass a higher one when opened above another full-page overlay (e.g. a grandparent's Need a hand page). */
+  zIndex?: number;
   onClose: () => void;
   onEdit?: () => void;
   // Takes the id of the event actually being deleted — previously took no
@@ -614,7 +616,7 @@ export default function EventDetailScreen({
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <FullPageOverlay visible onDismiss={onClose} zIndex={60} backgroundColor={canvas}>
+    <FullPageOverlay visible onDismiss={onClose} zIndex={zIndex} backgroundColor={canvas}>
     <View style={{ flex: 1, backgroundColor: canvas }}>
 
         {cat === 'Medical' && amIParent && (

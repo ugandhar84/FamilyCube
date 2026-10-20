@@ -12,6 +12,7 @@ import { localDateStr } from '@/lib/dates';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './seniorTheme';
+import { OverlayPortal } from '@/components/OverlayHost';
 import { RequestTrail } from '@/components/RequestTrail';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import EventDetailScreen from '@/features/calendar/components/EventDetailScreen';
@@ -155,10 +156,13 @@ export function MyRequestsPanel({ familyId, memberId, onAsk, colors, isDark }: {
         );
       })}
 
-      {detailEv && (
-        <EventDetailScreen ev={detailEv} onClose={() => { setDetailEv(null); reload(); }}
-          onDelete={async (id) => { await useEventStore.getState().deleteEvent(id); setDetailEv(null); reload(); }} />
-      )}
+      {/* Opens as a real full-page overlay above this page (not inline inside the scroll). */}
+      <OverlayPortal visible={!!detailEv}>
+        {detailEv ? (
+          <EventDetailScreen ev={detailEv} zIndex={95} onClose={() => { setDetailEv(null); reload(); }}
+            onDelete={async (id) => { await useEventStore.getState().deleteEvent(id); setDetailEv(null); reload(); }} />
+        ) : null}
+      </OverlayPortal>
     </View>
   );
 }

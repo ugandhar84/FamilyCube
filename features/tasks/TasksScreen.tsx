@@ -32,6 +32,7 @@
  * right under that card, driven into whichever screen is active via
  * externalSearchQuery.
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Animated, ActivityIndicator, Pressable } from 'react-native';
@@ -176,11 +177,12 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
       // id-based assignee check — falls back to name only for an
       // external, non-member assignee with no id at all.
       const assignee = eventAssignee(e);
+      const sideIds = gpSideMembers(activeMemberId, members).map(m => m.id);
       const isAssignee = !!assignee.name &&
-        (assignee.id ? assignee.id === activeMemberId : assignee.name === activeMember?.name);
+        (assignee.id ? sideIds.includes(assignee.id) : assignee.name === activeMember?.name);
       const isSubjectOrAssignee =
-        e.memberId === activeMemberId ||
-        e.memberIds?.includes(activeMemberId ?? '') ||
+        (!!e.memberId && sideIds.includes(e.memberId)) ||
+        !!e.memberIds?.some(id => sideIds.includes(id)) ||
         isAssignee;
       const isOpenUnassigned = !e.memberId && !e.memberIds?.length &&
         (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents);
@@ -229,7 +231,7 @@ export default function TasksScreen({ lockedSegment }: { lockedSegment?: 'schedu
     // the unrestricted branch instead of getting its own scoping).
     const isRelevant = (c: (typeof chores)[number]) =>
       isSenior
-        ? c.assignedToId === activeMemberId || c.sponsorUserId === activeMemberId
+        ? (() => { const ids = gpSideMembers(activeMemberId, members).map(m => m.id); return ids.includes(c.assignedToId ?? '') || ids.includes(c.sponsorUserId ?? ''); })()
         : (!isKidOrTeen || c.assignedToId === activeMemberId || (c.isPool && c.status === 'todo' && !c.inviteGrandparents));
     for (const c of chores) {
       if (!isRelevant(c)) continue;

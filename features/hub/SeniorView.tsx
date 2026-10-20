@@ -1,3 +1,4 @@
+import { gpSideMembers } from '@/lib/gpSide';
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, View, Text, Pressable } from 'react-native';
@@ -652,17 +653,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // via eventAssignee — previously only the former, so a GP asked to
   // drive a Sports/Study/Medical event's own ride need had no confirm
   // surface here at all (QA Round 11, Critical Finding C2).
+  // Same-side grandparents (both paternal / both maternal) share rides waiting on either of them.
+  const gpSideIds = gpSideMembers(active.id, members).map(m => m.id);
   const myDrivingToday = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
     // id-based — falls back to name only for an external, non-member
     // assignee with no id at all.
-    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    const isMine = a.id ? gpSideIds.includes(a.id) : a.name === active.name;
     return isMine && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
   });
   // Assigned to me but I haven't replied yet — not Work events
   const myPendingAssignments = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
-    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    const isMine = a.id ? gpSideIds.includes(a.id) : a.name === active.name;
     return isMine && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
   });
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)

@@ -1,3 +1,4 @@
+import { gpSideMembers } from '@/lib/gpSide';
 import { useMemo } from 'react';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
@@ -45,8 +46,10 @@ export function HubTimelineSection({ active, members, events, colors, isDark }: 
   const belongsToMe = (e: FamilyEvent) => {
     const hasAnyAssignee = !!e.memberId || !!e.memberIds?.length;
     if (!hasAnyAssignee) return true; // family-wide event, e.g. "Family Dinner"
-    if (e.memberId === active.id) return true;
-    if (e.memberIds?.includes(active.id)) return true;
+    // A grandparent also sees their same-side partner's events (both paternal / both maternal).
+    const sideIds = gpSideMembers(active.id, members).map(m => m.id);
+    if (e.memberId && sideIds.includes(e.memberId)) return true;
+    if (e.memberIds?.some(id => sideIds.includes(id))) return true;
     // id-based — a name-string compare breaks silently on rename or two
     // members sharing a first name; falls back to name only when the
     // assignee has no member id at all (an external, non-member name).

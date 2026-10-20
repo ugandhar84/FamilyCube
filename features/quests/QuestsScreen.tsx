@@ -15,6 +15,7 @@
  *  - Decline reason shown inline on kid's declined card
  *  - Senior sees approve/decline but NOT AI engine or + Quest button
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import { useUIStore } from '@/store/uiStore';
 import { isChoreOverdue } from '@/lib/overdue';
 import { confirmDeleteChore } from '@/lib/confirmDeleteChore';
@@ -588,9 +589,11 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     // chore — noise that had nothing to do with what a GP actually manages.
     // Teens behave like kids for filtering (handled by isKidOrTeen above)
     if (!isParent && !isKidOrTeen) {
+      // Same-side grandparents (both paternal / both maternal) share each other's chores.
+      const sideIds = gpSideMembers(myId, members).map(m => m.id);
       list = list.filter(q =>
-        (myId ? isAssignedTo(q, myId) : false) ||
-        (q.questType === 'grandparent_quest' && q.sponsorUserId === myId) ||
+        sideIds.some(id => isAssignedTo(q, id)) ||
+        (q.questType === 'grandparent_quest' && !!q.sponsorUserId && sideIds.includes(q.sponsorUserId)) ||
         // Matches SeniorView's Hub `gpInvitations` filter exactly (no
         // isAdultTask requirement there) — a GP-invited pool chore must be
         // reachable from the dedicated Quests tab too, not just the Hub card.

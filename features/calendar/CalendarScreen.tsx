@@ -17,6 +17,7 @@
  *  - AI runs simulated conflict detection; 1-click driver swap stored back into event
  *  - Category dots on day strip: Medical=red, Work=purple, Sports=amber, School=blue
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -406,6 +407,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
   const isTeen           = activeMember?.role === 'teen';
   const isKid            = activeMember?.role === 'kid';
   const isParentOrSenior = isParent || isSenior;
+  // Grandparents on the same side (both paternal / both maternal) share each other's events.
+  const sideMembers = useMemo(() => gpSideMembers(activeMemberId, members), [activeMemberId, members]); // just the viewer unless they're a grandparent with a same-side partner
+  const sideKey = sideMembers.map(m => m.id).join(',');
+  const sideIds = useMemo(() => new Set(sideMembers.map(m => m.id)), [sideKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sideNames = useMemo(() => new Set(sideMembers.map(m => m.name)), [sideKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Full Month/Week/Day/Agenda toolbar + day-nav — was isParentOrSenior
   // only, leaving teens AND kids with no way to browse any date but today
   // (teens had neither this toolbar nor the separate kid-only day-nav bar;
@@ -975,10 +981,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         // FamilyEvent — that condition was always true, silently giving
         // every senior full visibility regardless of the other checks.
         (!isSenior || (
-          e.memberId === activeMemberId ||
-          e.memberIds?.includes(activeMemberId ?? '') ||
-          (e.helper && e.helper === activeMemberName) ||
-          (e.driverName && e.driverName === activeMemberName) ||
+          (!!e.memberId && sideIds.has(e.memberId)) ||
+          !!e.memberIds?.some(id => sideIds.has(id)) ||
+          (!!e.helper && sideNames.has(e.helper)) ||
+          (!!e.driverName && sideNames.has(e.driverName)) ||
           // "No assignee → family-wide, visible to every GP" only holds for
           // an ordinary shared event. A Ride-category/rideRequired event
           // with nobody explicitly tagged (e.g. the "For" picker left
@@ -1005,10 +1011,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         // senior-visibility gate directly above — this mirrors it into
         // the scoping gate it was never propagated to.
         (isParent || scheduleFilter === 'all' ||
-          e.memberId === activeMemberId ||
-          e.memberIds?.includes(activeMemberId ?? '') ||
-          (e.helper && e.helper === activeMemberName) ||
-          (e.driverName && e.driverName === activeMemberName) ||
+          (!!e.memberId && sideIds.has(e.memberId)) ||
+          !!e.memberIds?.some(id => sideIds.has(id)) ||
+          (!!e.helper && sideNames.has(e.helper)) ||
+          (!!e.driverName && sideNames.has(e.driverName)) ||
           (!e.memberId && !e.memberIds?.length)) &&
         matchesMemberFilter(e) &&
         matchesSearch(e))
@@ -1033,7 +1039,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
       });
     console.log(`[UserAction] FILTER screen=Schedule role=${roleLabel} member=${activeMemberName} list=dayEvents(${selectedDate}) totalSource=${events.length} afterFilter=${filtered.length} scheduleFilter=${scheduleFilter} filterMember=${filterMember ?? 'none'} [features/calendar/CalendarScreen.tsx:883]`);
     return filtered;
-  }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isKid, isTeen, isParent, activeMemberId, activeMemberName, searchQuery]);
+  }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isKid, isTeen, isParent, activeMemberId, activeMemberName, searchQuery, sideIds, sideNames]);
 
   // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
   // — feeds Week/Agenda, both parent/senior-only views (same gate as
@@ -1049,10 +1055,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
       // never matched here either, so a shared event silently vanished from
       // their Week/Agenda views too.
       (!isSenior || (
-        e.memberId === activeMemberId ||
-        e.memberIds?.includes(activeMemberId ?? '') ||
-        (e.helper && e.helper === activeMemberName) ||
-        (e.driverName && e.driverName === activeMemberName) ||
+        (!!e.memberId && sideIds.has(e.memberId)) ||
+        !!e.memberIds?.some(id => sideIds.has(id)) ||
+        (!!e.helper && sideNames.has(e.helper)) ||
+        (!!e.driverName && sideNames.has(e.driverName)) ||
         // Same isOpenToGrandparents gate as dayEvents above — see its
         // comment for the reproduced leak this closes.
         (!e.memberId && !e.memberIds?.length &&
@@ -1065,10 +1071,10 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
       // already applies. Also missing helper/driverName (see dayEvents'
       // identical gate above for the teen-claimed-ride bug this closes).
       (isParent || scheduleFilter === 'all' ||
-        e.memberId === activeMemberId ||
-        e.memberIds?.includes(activeMemberId ?? '') ||
-        (e.helper && e.helper === activeMemberName) ||
-        (e.driverName && e.driverName === activeMemberName) ||
+        (!!e.memberId && sideIds.has(e.memberId)) ||
+        !!e.memberIds?.some(id => sideIds.has(id)) ||
+        (!!e.helper && sideNames.has(e.helper)) ||
+        (!!e.driverName && sideNames.has(e.driverName)) ||
         (!e.memberId && !e.memberIds?.length)) &&
       matchesMemberFilter(e) &&
       matchesSearch(e)
@@ -1090,7 +1096,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     });
     console.log(`[UserAction] FILTER screen=Schedule role=${roleLabel} member=${activeMemberName} list=scopedRangeEvents totalSource=${rangeEvents.length} afterFilter=${filtered.length} scheduleFilter=${scheduleFilter} filterMember=${filterMember ?? 'none'} [features/calendar/CalendarScreen.tsx:934]`);
     return filtered;
-  }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery, scheduleFilter]);
+  }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, sideIds, sideNames, filterMember, filterMemberName, searchQuery, scheduleFilter]);
 
   // Agenda only — collapse a recurring series (up to 84 individual rows for
   // a daily rule) down to one representative card, the next upcoming

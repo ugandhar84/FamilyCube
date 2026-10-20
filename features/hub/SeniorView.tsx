@@ -27,6 +27,7 @@ import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssign
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './senior/seniorTheme';
 import AppFullPage from '@/components/AppFullPage';
+import { ParentTasksPage } from './senior/ParentTasksPage';
 import { MemoriesPreviewCard } from './senior/MemoriesPreviewCard';
 import { MyRequestsPanel } from './senior/MyRequestsPanel';
 import { SeniorHeroCard } from './senior/SeniorHeroCard';
@@ -123,6 +124,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     respondToParentQuest, cancelLockedAssignment, recallParentQuest, addParentQuest,
   } = useChoreStore();
   const { updateQuest } = useQuestStore();
+  const [showParentTasks, setShowParentTasks] = useState(false);
   const [kidsTab, setKidsTab] = useState<'cheer' | 'bonus'>('cheer');
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
   const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
@@ -988,16 +990,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       )}
 
         {pendingForMe === 0 && dedupMyDrivingToday.length === 0 && dedupMyClaimedRides.length === 0 && (
-          <View style={{ marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14, padding: RHYTHM.card, borderRadius: 20, backgroundColor: colors.card,
-            borderWidth: 1, borderColor: colors.border }}>
-            <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.tealLight }}>
-              <CheckCircle2 size={24} color={colors.teal} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>You're all caught up</Text>
-              <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>Nothing is waiting for you right now.</Text>
-            </View>
-          </View>
+          // Same "ALL QUIET" card the parents see, with a history link (here: everything assigned to the parents, and what is open to claim).
+          <Pressable onPress={() => setShowParentTasks(true)} accessibilityRole="button" accessibilityLabel="View history"
+            style={({ pressed }) => ({ marginHorizontal: 16, padding: 16, borderRadius: 22, backgroundColor: colors.pinkLight, opacity: pressed ? 0.8 : 1 })}>
+            <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>ALL QUIET</Text>
+            <Text style={{ color: colors.textPrimary, fontSize: GP.sub, fontWeight: '600', marginTop: 4, lineHeight: 20 }}>
+              Nothing needs you right now. A good time to check in with the family, or take something that is open to you.
+            </Text>
+            <Text style={{ color: colors.accent, fontSize: GP.sub, fontWeight: '700', marginTop: 8 }}>View history →</Text>
+          </Pressable>
         )}
       </View>
 
@@ -1011,6 +1012,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       <SeniorActionGrid
         open={openGroup} onToggle={toggleGroup} colors={colors} isDark={isDark}
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
+      />
+
+      <ParentTasksPage
+        visible={showParentTasks} onClose={() => setShowParentTasks(false)}
+        chores={chores} members={members} active={active} openRides={dedupOpenRides}
+        onClaimChore={(choreId) => { logAction('Take parent task', `claimGPErrand(${choreId})`, { targetId: choreId, at: 'parent-tasks' }); claimGPErrand(choreId, active.id); }}
+        onClaimRide={handleClaimRide}
+        colors={colors} isDark={isDark}
       />
 
       {/* End of the Hub: the Memories preview, same slot and shape as the dinner card on the other Hubs. */}

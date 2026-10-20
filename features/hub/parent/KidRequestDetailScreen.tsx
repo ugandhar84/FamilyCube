@@ -275,7 +275,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
           {/* Type-specific fields shown only when present */}
           <View style={{ gap: 8 }}>
             {req.location ? (
-              <Text onPress={() => openInMaps(req.location!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }}>📍 {req.location}</Text>
+              <Text onPress={() => openInMaps(req.location!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, fontWeight: '800' }}>📍 {req.location}</Text>
             ) : null}
             {(req.scheduledDate || req.scheduledTime) ? (
               <Text style={{ fontSize: 13, color: colors.textSecondary }}>

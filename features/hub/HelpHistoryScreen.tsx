@@ -151,9 +151,9 @@ function HistoryRow({ req, colors, isDark }: { req: HelpRequest; colors: any; is
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
               {req.date ? `📅 ${req.date}` : ''}{req.time ? ` · ${req.time}` : ''}
               {req.fromLoc ? '\n📍 ' : ''}
-              {req.fromLoc ? <Text onPress={() => openInMaps(req.fromLoc!)} style={{ color: colors.primary, textDecorationLine: 'underline' }}>{req.fromLoc}</Text> : null}
+              {req.fromLoc ? <Text onPress={() => openInMaps(req.fromLoc!)} style={{ color: colors.primary, fontWeight: '800' }}>{req.fromLoc}</Text> : null}
               {req.toLoc ? ' → ' : ''}
-              {req.toLoc ? <Text onPress={() => openInMaps(req.toLoc!)} style={{ color: colors.primary, textDecorationLine: 'underline' }}>{req.toLoc}</Text> : null}
+              {req.toLoc ? <Text onPress={() => openInMaps(req.toLoc!)} style={{ color: colors.primary, fontWeight: '800' }}>{req.toLoc}</Text> : null}
             </Text>
           )}
 

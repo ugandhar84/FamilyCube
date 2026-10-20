@@ -216,8 +216,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       });
       setSosActive(true);
       // Auto-post an SOS card to the Grandparent squad channel (everyone in the family is a member) so it also shows up in chat.
-      sendMessage('seniors_all', active.id, `🚨 SOS from ${active.name.split(' ')[0]}`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        { type: 'sos_alert', payload: { name: active.name.split(' ')[0], address: locationLabel, lat: sosCoords?.lat, lng: sosCoords?.lng, at: new Date().toISOString() } }, true);
+      const first = active.name.split(' ')[0];
+      const shared = locationLabel !== 'Location not shared' && locationLabel !== 'Location unavailable';
+      const mapsUrl = sosCoords
+        ? `https://maps.apple.com/?ll=${sosCoords.lat},${sosCoords.lng}&q=${encodeURIComponent(`${first} - SOS`)}`
+        : shared ? `https://maps.apple.com/?q=${encodeURIComponent(locationLabel)}` : undefined;
+      const atText = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const lines = [`🚨 EMERGENCY SOS from ${first} (grandparent) at ${atText}`, shared ? `📍 ${locationLabel}` : '📍 Location was not shared. Call them.', mapsUrl ? `🗺️ Open in Maps: ${mapsUrl}` : ''].filter(Boolean);
+      // Auto-post an SOS card to the Grandparent squad channel (everyone in the family is a member): details plus a tappable maps link.
+      sendMessage('seniors_all', active.id, lines.join('\n'), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        { type: 'sos_alert', payload: { name: first, role: 'Grandparent', address: locationLabel, lat: sosCoords?.lat, lng: sosCoords?.lng, mapsUrl, at: new Date().toISOString() } }, true);
     } catch (e: any) {
       console.warn('[SeniorView] SOS dispatch failed', e?.message ?? e);
       Alert.alert("Couldn't send SOS", 'Please try again, or call a family member directly.');

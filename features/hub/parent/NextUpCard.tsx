@@ -198,7 +198,7 @@ export function NextUpTimeline({
                 <Pressable onPress={() => openInMaps(rawAddress!)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                   <MapPin size={11} color={colors.primary} />
-                  <Text style={{ color: colors.primary, fontSize: 11, flex: 1, textDecorationLine: 'underline' }} numberOfLines={1}>
+                  <Text style={{ color: colors.primary, fontSize: 11, flex: 1, fontWeight: '800' }} numberOfLines={1}>
                     {displayLocation}
                   </Text>
                 </Pressable>

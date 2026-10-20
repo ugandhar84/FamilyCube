@@ -11,13 +11,19 @@ export function SosCardBubble({ payload, colors, onLongPress }: { payload: Recor
       <Text style={{ fontSize: 12, fontWeight: '900', letterSpacing: 0.8, color: colors.danger }}>🚨 EMERGENCY SOS</Text>
       <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }}>{payload.name ?? 'Someone'} needs help{when ? ` · ${when}` : ''}</Text>
       {query ? (
-        <Text onPress={() => openInMaps(query)} accessibilityRole="link" style={{ fontSize: 14, fontWeight: '700', color: colors.primary, textDecorationLine: 'underline' }}>
+        <Text onPress={() => openInMaps(query)} accessibilityRole="link" style={{ fontSize: 14, fontWeight: '800', color: colors.primary }}>
           📍 {address ?? 'Open location in maps'}
         </Text>
       ) : (
         <Text style={{ fontSize: 13, color: colors.textSecondary }}>Location was not shared. Call them.</Text>
       )}
-      <Text style={{ fontSize: 12, color: colors.textSecondary }}>Accept it from Review inbox · Grandparent requests.</Text>
+      {payload.mapsUrl || query ? (
+        <Pressable onPress={() => openInMaps(query!)} accessibilityRole="button" accessibilityLabel="Open in maps"
+          style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textInverse }}>Open in Maps</Text>
+        </Pressable>
+      ) : null}
+      <Text style={{ fontSize: 12, color: colors.textSecondary }}>{payload.role ?? 'Family member'} · Accept it from Review inbox, Grandparent requests.</Text>
     </Pressable>
   );
 }

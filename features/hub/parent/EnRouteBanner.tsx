@@ -224,7 +224,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
                 {nextRide.location && (
                   <>
                     <MapPin size={11} color={colors.textTertiary} />
-                    <Text onPress={() => openInMaps(nextRide.location!)} accessibilityRole="link" style={{ fontSize: TYPO.label, color: colors.primary, textDecorationLine: 'underline' }} numberOfLines={1}>{nextRide.location}</Text>
+                    <Text onPress={() => openInMaps(nextRide.location!)} accessibilityRole="link" style={{ fontSize: TYPO.label, color: colors.primary, fontWeight: '800' }} numberOfLines={1}>{nextRide.location}</Text>
                   </>
                 )}
               </View>

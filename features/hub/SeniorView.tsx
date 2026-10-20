@@ -27,6 +27,7 @@ import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssign
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './senior/seniorTheme';
 import AppFullPage from '@/components/AppFullPage';
+import { MemoriesPreviewCard } from './senior/MemoriesPreviewCard';
 import { MyRequestsPanel } from './senior/MyRequestsPanel';
 import { SeniorHeroCard } from './senior/SeniorHeroCard';
 import { SeniorActionGrid, type SeniorGroup } from './senior/SeniorActionGrid';
@@ -990,6 +991,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         open={openGroup} onToggle={toggleGroup} colors={colors} isDark={isDark}
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
       />
+
+      {/* End of the Hub: the Memories preview, same slot and shape as the dinner card on the other Hubs. */}
+      <View style={{ paddingHorizontal: 16 }}>
+        <MemoriesPreviewCard colors={colors} isDark={isDark} />
+      </View>
 
       <AppFullPage gemini visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Need a hand" subtitle="Ask your family for help and follow your requests" accent="amber">
         <MyRequestsPanel familyId={familyId} memberId={active.id} onAsk={onHelpRequest} colors={colors} isDark={isDark} />

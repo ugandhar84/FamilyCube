@@ -75,8 +75,10 @@ import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
 // ═══════════════════════════════════════════════════════════════════════════════
-export function AddEventModal({ visible, onClose, activeMemberId, prefill, initialStep }: {
+export function AddEventModal({ visible, onClose, activeMemberId, prefill, initialStep, fullPage }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
+  /** Open as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
   // "Edit in full form" handoff) or from SmartTaskComposer's local
   // detection ("Review & create in full form" handoff) — every field the
@@ -999,6 +1001,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
 
   return (
     <TaskFormShell
+      fullPage={fullPage}
       visible={visible}
       onClose={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx]`); reset(); onClose(); }}
       stepIds={stepIds}

@@ -150,7 +150,9 @@ function CustomTabBar({ state, navigation }: any) {
   }, [overdueCount]);
   const isSenior = activeRole === 'senior';
   // Store moved to Hub pills — badge was on the store tab, now unused here
-  const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
+  // Every role gets the same five tabs (Hub, Schedule, Tasks, Chat, Family). A grandparent used to see Memories in the last slot;
+  // Memories is now reached from the grandparent Hub's Quick actions instead.
+  const TABS = TABS_DEFAULT;
 
   // Nav bar is a solid dark pill in both themes, so inactive-icon color
   // must read against dark regardless of light/dark mode — was

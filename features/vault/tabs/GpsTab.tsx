@@ -724,7 +724,6 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
       // not this refresh's actual reading. Read it fresh, same as the
       // background task does.
       const { level: batteryLevel, isCharging } = await readBatteryStatus();
-      console.log('[GpsTab] refreshMyLocation upserting', { memberId, familyId, lat, lng, batteryLevel, isCharging });
       const { error: upsertErr } = await supabase.from('member_locations').upsert({
         member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
         neighborhood: encNeighborhood,

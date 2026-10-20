@@ -10,8 +10,11 @@ import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { GEMINI } from '@/constants/geminiRhythm';
+import AppFullPage from '@/components/AppFullPage';
 
-export function PushbackSheet({ target, onClose, respondToParentQuest }: {
+export function PushbackSheet({ target, onClose, respondToParentQuest, fullPage = false }: {
+  /** Show as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   target: { assignmentId: string; choreTitle: string; assignedBy?: string; assignedTo?: string } | null;
   onClose: () => void;
   respondToParentQuest: (assignmentId: string, response: { action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS' | 'DECLINE'; details?: string }) => void;
@@ -42,6 +45,51 @@ export function PushbackSheet({ target, onClose, respondToParentQuest }: {
     { action: 'DISCUSS', label: 'Discuss later',  Icon: MessageCircle, tint: colors.teal    },
     { action: 'DECLINE', label: "Can't do it",    Icon: XCircle,       tint: colors.textTertiary },
   ] as const;
+
+  if (fullPage) {
+    return (
+      <AppFullPage visible={!!target} onClose={dismiss} title={target?.choreTitle ?? 'Respond to task'} subtitle="2 bounces locks this for an offline chat" eyebrow="RESPOND TO TASK" accent="amber">
+              {/* Details input */}
+              <View style={{ gap: 6 }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.9, color: colors.textTertiary }}>DETAILS (OPTIONAL)</Text>
+                <TextInput
+                  style={{
+                    borderRadius: 14, borderWidth: 1, borderColor,
+                    backgroundColor: colors.surface,
+                    padding: 14, fontSize: TYPO.caption, color: (isDark ? colors.textPrimary : GEMINI.titleColor),
+                    minHeight: 60,
+                  }}
+                  placeholder="Add context…"
+                  placeholderTextColor={colors.textTertiary}
+                  value={detail}
+                  onChangeText={setDetail}
+                  multiline
+                />
+              </View>
+
+              {/* Action tiles */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {ACTIONS.map(({ action, label, Icon, tint }) => (
+                  <Pressable
+                    key={action}
+                    onPress={() => handle(action)}
+                    style={({ pressed }) => ({
+                      flex: 1, minWidth: '45%',
+                      borderRadius: 18, paddingVertical: 16,
+                      alignItems: 'center', gap: 6,
+                      borderWidth: 1, borderColor: `${tint}40`,
+                      backgroundColor: `${tint}14`,
+                      opacity: pressed ? 0.75 : 1,
+                    })}
+                  >
+                    <Icon size={18} color={tint} />
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: tint }}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+      </AppFullPage>
+    );
+  }
 
   return (
     <Modal supportedOrientations={['portrait', 'landscape']} visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>

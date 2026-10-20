@@ -407,12 +407,15 @@ export default function HealthFigmaList({
         </View>
 
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
-          <TouchableOpacity onPress={() => setShowMemberPicker(true)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, borderColor: border,
-              backgroundColor: cardBg, paddingHorizontal: 12, paddingVertical: 9 }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>{memberPillLabel}</Text>
-            <ChevronDown size={13} color={bodyC} />
-          </TouchableOpacity>
+          {/* Only a parent sees the whole family's records. Everyone else sees only their own, so there is no person to pick. */}
+          {!kidView && (
+            <TouchableOpacity onPress={() => setShowMemberPicker(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, borderColor: border,
+                backgroundColor: cardBg, paddingHorizontal: 12, paddingVertical: 9 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>{memberPillLabel}</Text>
+              <ChevronDown size={13} color={bodyC} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={openFilterSheet}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, borderColor: border,
               backgroundColor: cardBg, paddingHorizontal: 12, paddingVertical: 9 }}>

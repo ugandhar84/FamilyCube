@@ -1,6 +1,6 @@
 /**
  * useStickyNotes — the family's sticky notes (family_sticky_notes), shared by the phone Hub card and the
- * kiosk Home card. Anyone can write one (100 characters) and choose who sees it; no one chosen means
+ * kiosk Home card. Anyone can write one (30 characters) and choose who sees it; no one chosen means
  * everyone. A member sees notes they wrote, notes shared with them, and notes for everyone.
  * The author or a parent can remove a note. Stays live through realtime.
  */
@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 
-export const NOTE_MAX = 100;
+export const NOTE_MAX = 30;
 export type NoteColor = 'amber' | 'sage' | 'lavender' | 'peach';
 export const NOTE_COLORS: NoteColor[] = ['amber', 'sage', 'lavender', 'peach'];
 
@@ -21,7 +21,11 @@ export function useStickyNotes(active: FamilyMember, members: FamilyMember[]) {
   const [notes, setNotes] = useState<StickyNote[]>([]);
   const load = useCallback(async () => {
     if (!familyId) return;
-    const { data } = await supabase.from('family_sticky_notes').select('*').eq('family_id', familyId).order('created_at', { ascending: false }).limit(8);
+    // Filter to what THIS profile may see on the server, so the 8-note cap counts only notes they can see. (The cap used to be applied
+    // first and the filter after, so notes meant for someone else on the same phone could crowd yours out.)
+    const { data } = await supabase.from('family_sticky_notes').select('*').eq('family_id', familyId)
+      .or(`author_id.eq.${active.id},recipient_ids.is.null,recipient_ids.eq.{},recipient_ids.cs.{${active.id}}`)
+      .order('created_at', { ascending: false }).limit(8);
     if (data) setNotes((data as StickyNote[]).filter(n => n.author_id === active.id || !n.recipient_ids?.length || n.recipient_ids.includes(active.id)));
   }, [familyId, active.id]);
   useEffect(() => {

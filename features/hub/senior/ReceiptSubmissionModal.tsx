@@ -1,9 +1,9 @@
-import { View, Text, Pressable, TextInput, Modal, Image, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
-import { Receipt, X, Camera, Image as ImageIcon, Send } from 'lucide-react-native';
+import { View, Text, Pressable, TextInput, Image, ActivityIndicator, Keyboard } from 'react-native';
+import { Camera, Image as ImageIcon, Send } from 'lucide-react-native';
+import AppFullPage from '@/components/AppFullPage';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { GP } from './seniorTheme';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 
 export function ReceiptSubmissionModal({
   visible, onClose,
@@ -25,29 +25,9 @@ export function ReceiptSubmissionModal({
 }) {
   const actorName = active?.name ?? 'senior';
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <Pressable style={{ flex: 1, backgroundColor: '#00000060', justifyContent: 'flex-end' }} onPress={dismiss}>
-        <Pressable onPress={e => e.stopPropagation()}
-          style={{ backgroundColor: isDark ? '#1E293B' : '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden',
-            padding: 24, gap: 16, maxHeight: keyboardAwareMaxHeight ?? '75%' }}>
-
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Receipt size={22} color={BRAND.teal} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>Submit Receipt</Text>
-              <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>
-                Snap or upload your receipt — parents will reimburse you
-              </Text>
-            </View>
-            <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={20} color={colors.textTertiary} />
-            </Pressable>
-          </View>
+    <AppFullPage visible={visible} onClose={dismiss} title="Submit receipt" subtitle="Snap or upload your receipt — parents will reimburse you" accent="amber">
 
           {/* Receipt photo area */}
           {receiptPhotoUri ? (
@@ -139,9 +119,6 @@ export function ReceiptSubmissionModal({
             </Text>
           )}
 
-        </Pressable>
-      </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppFullPage>
   );
 }

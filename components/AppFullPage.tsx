@@ -66,18 +66,19 @@ export default function AppFullPage({
   return (
     <OverlayPortal visible={visible}>
     <OverlayPage visible={visible} onDismiss={onClose} zIndex={zIndex} backgroundColor={canvas}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: canvas, paddingTop: insets.top }}>
-          <OverlayHeading eyebrow={eyebrow} title={title} subtitle={subtitle} accent={accent} topInset={0} right={<CloseButton onClose={onClose} />} />
-          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: bodyPaddingBottom + (footer ? 0 : insets.bottom) }}>
+      <View style={{ flex: 1, backgroundColor: canvas, paddingTop: insets.top }}>
+        <OverlayHeading eyebrow={eyebrow} title={title} subtitle={subtitle} accent={accent} topInset={0} right={<CloseButton onClose={onClose} />} />
+        {/* The footer buttons live INSIDE the scroll (they scroll with the form), and the scroll view insets itself by the keyboard
+            height (iOS) / the container is lifted (Android), so a focused text box is never left under the keyboard. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? undefined : 'height'} style={{ flex: 1 }}>
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: bodyPaddingBottom + insets.bottom }}>
             {children}
+            {footer ? <View style={{ paddingTop: RHYTHM.item }}>{footer}</View> : null}
           </ScrollView>
-          {footer ? (
-            <View style={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: Math.max(insets.bottom, RHYTHM.page) }}>{footer}</View>
-          ) : null}
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </OverlayPage>
     </OverlayPortal>
   );

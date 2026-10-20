@@ -54,7 +54,7 @@ export function CreateQuestModal({
       visible={visible} onClose={dismiss}
       title={editing ? 'Edit sponsored chore' : 'Sponsor a chore'}
       subtitle={editing ? 'Still awaiting parent review, free to change' : 'Parent reviews, then a grandchild claims it'}
-      accent="teal"
+      accent="teal" zIndex={90}
       footer={
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Pressable onPress={onClose}

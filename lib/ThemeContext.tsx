@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useColorScheme, Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { lightColors, darkColors, ThemeColors } from '@/constants/colors';
+import { lightColors, darkColors, ThemeColors, boostPastels } from '@/constants/colors';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -89,3 +89,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useTheme = () => useContext(ThemeContext);
+
+/** Gives everything inside slightly stronger pastel tints (see boostPastels). Used by the parent Hub first. */
+export function PastelBoost({ children }: { children: React.ReactNode }) {
+  const base = useContext(ThemeContext);
+  const value = useMemo(() => ({ ...base, colors: boostPastels(base.colors, base.isDark) }), [base]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}

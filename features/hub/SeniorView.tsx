@@ -1059,14 +1059,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       </AppFullPage>
 
-      <AppFullPage gemini visible={openGroup === 'sponsor'} onClose={() => setOpenGroup(null)} title="Sponsor a quest" subtitle="Set a challenge and a reward" accent="teal">
-      <MySponsoredQuestsSection
-        quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
-        colors={colors} isDark={isDark}
-        onEdit={openEditSponsoredQuest}
-        active={active}
-      />
-
+      <AppFullPage gemini visible={openGroup === 'sponsor'} onClose={() => setOpenGroup(null)} title="Sponsor a chore" subtitle="Set a challenge and a reward, then follow it here" accent="teal">
       <SponsorQuestsSection
         active={active} kids={kids} members={members} allNames={allNames} colors={colors} isDark={isDark}
         chores={chores} grandparentMatches={grandparentMatches} pendingGpApproval={pendingGpApproval}
@@ -1075,6 +1068,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         handleRequestGpRedo={handleRequestGpRedo}
         onOpenMatchModal={() => setShowMatchModal(true)}
         onOpenCreateQuestModal={() => setShowCreateQuestModal(true)}
+        onEditQuest={openEditSponsoredQuest}
       />
 
       </AppFullPage>

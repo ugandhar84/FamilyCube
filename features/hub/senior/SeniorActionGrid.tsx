@@ -21,7 +21,7 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
   const tiles: { key: SeniorGroup; Icon: typeof HandHeart; title: string; subtitle: string; count: number; bg: string; fg: string }[] = [
     { key: 'help',    Icon: HandHeart, title: 'Need a hand',     subtitle: 'Ask your family for help', count: helpCount,    bg: colors.amberLight, fg: colors.amber },
     { key: 'kids',    Icon: Heart,     title: 'My grandkids',    subtitle: 'Cheer them on, send a bonus',          count: kidsCount,    bg: colors.pinkLight,  fg: colors.pink },
-    { key: 'sponsor', Icon: Compass,   title: 'Sponsor a quest', subtitle: 'Set a challenge and a reward',        count: sponsorCount, bg: colors.tealLight,  fg: colors.teal },
+    { key: 'sponsor', Icon: Compass,   title: 'Sponsor a chore', subtitle: 'Set a challenge and a reward',        count: sponsorCount, bg: colors.tealLight,  fg: colors.teal },
   ];
   return (
     <View style={{ paddingHorizontal: 16 }}>

@@ -25,6 +25,7 @@ import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssign
 
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './senior/seniorTheme';
+import AppFullPage from '@/components/AppFullPage';
 import { SeniorHeroCard } from './senior/SeniorHeroCard';
 import { SeniorActionGrid, type SeniorGroup } from './senior/SeniorActionGrid';
 import { KidSectionHeader } from './kid/KidSectionHeader';
@@ -986,8 +987,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
       />
 
-      {openGroup === 'help' && (
-        <>
+      <AppFullPage visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Lend a hand" subtitle="Rides and errands you can help with" accent="amber">
       <LendAHandCard
         cheerleaderMode={cheerleaderMode} setCheerleaderMode={setCheerleaderMode}
         driveWindowDays={driveWindowDays} setDriveWindowDays={setDriveWindowDays}
@@ -1013,11 +1013,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onClaimRide={handleClaimRide} onPassRide={handlePassRide} onHelpRequest={onHelpRequest}
       />
 
-        </>
-      )}
+      </AppFullPage>
 
-      {openGroup === 'kids' && (
-        <>
+      <AppFullPage visible={openGroup === 'kids'} onClose={() => setOpenGroup(null)} title="My grandkids" subtitle="Cheer them on and send a bonus" accent="pink">
       <CheerSquadSection
         kidsCheerable={kidsCheerable} kids={kids} allNames={allNames} colors={colors} isDark={isDark}
         cheerChore={cheerChore} active={active}
@@ -1033,11 +1031,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         active={active}
       />
 
-        </>
-      )}
+      </AppFullPage>
 
-      {openGroup === 'sponsor' && (
-        <>
+      <AppFullPage visible={openGroup === 'sponsor'} onClose={() => setOpenGroup(null)} title="Sponsor a quest" subtitle="Set a challenge and a reward" accent="teal">
       <MySponsoredQuestsSection
         quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
         colors={colors} isDark={isDark}
@@ -1055,10 +1051,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onOpenCreateQuestModal={() => setShowCreateQuestModal(true)}
       />
 
-        </>
-      )}
+      </AppFullPage>
 
-      {openGroup === 'games' && <FamilyGamesSection colors={colors} isDark={isDark} />}
+      <AppFullPage visible={openGroup === 'games'} onClose={() => setOpenGroup(null)} title="Family games" subtitle="Play together" accent="sky">
+        <FamilyGamesSection colors={colors} isDark={isDark} />
+      </AppFullPage>
 
       <SavingsMatchModal
         visible={showMatchModal} onClose={() => setShowMatchModal(false)}

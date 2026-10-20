@@ -666,9 +666,8 @@ export default function HubScreen() {
           lives under the member's own profile per a toggle instead of a
           Hub quick action, so it isn't part of this row's purpose either;
           senior keeps it unchanged. */}
-      {!isParent && active.role !== 'kid' && !isTeen && headerEl}
+      {!isParent && active.role !== 'kid' && !isTeen && active.role !== 'senior' && headerEl}
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-      {!isParent && active.role !== 'kid' && !isTeen && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -709,7 +708,7 @@ export default function HubScreen() {
         } : undefined}
         scrollEventThrottle={isParent ? 100 : undefined}
       >
-        {(isParent || active.role === 'kid' || isTeen) && headerEl}
+        {(isParent || active.role === 'kid' || isTeen || active.role === 'senior') && headerEl}
         {!isParent && !isKid && !isTeen && <HubMyList active={active} colors={colors} isDark={isDark} />}
         <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (

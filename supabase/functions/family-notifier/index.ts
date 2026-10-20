@@ -805,7 +805,10 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         delegation: '📋', checkin: '📞', medication: '💊',
       };
       return {
-        title: `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}Kid Request`,
+        // A grandparent's SOS / request is not a "Kid Request" — name it for who sent it.
+        title: p.requestType === 'emergency' && p.fromRole === 'senior'
+          ? '🚨 EMERGENCY SOS'
+          : `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}${p.fromRole === 'senior' ? 'Grandparent Request' : p.fromRole === 'teen' ? 'Teen Request' : 'Kid Request'}`,
         body: decodeRequestDetail(p.detail as string),
         sound: 'default',
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },

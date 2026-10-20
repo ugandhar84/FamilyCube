@@ -130,6 +130,14 @@ const getFamilyId = (): string | null => {
 // equivalent, so assignRequest/completeRequest notifications can put a real
 // name in "X assigned you" / "X marked your request done" copy instead of a
 // raw id.
+const memberRole = (memberId: string | undefined | null): string | undefined => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useFamilyStore } = require('@/store/familyStore');
+    return useFamilyStore.getState().members.find((mm: any) => mm.id === memberId)?.role;
+  } catch { return undefined; }
+};
+
 const memberName = (memberId: string | undefined | null): string => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -555,7 +563,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     // Notify parents/seniors of new request
     notifyKidRequest(request.fromMemberId, 'kid_request', {
       requestId: request.id, requestType: request.type, detail: request.detail,
-      urgency: request.urgency, fromMemberId: request.fromMemberId,
+      urgency: request.urgency, fromMemberId: request.fromMemberId, fromRole: memberRole(request.fromMemberId),
       location: request.location, scheduledDate: request.scheduledDate,
       scheduledTime: request.scheduledTime,
     });

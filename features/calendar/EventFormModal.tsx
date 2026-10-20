@@ -57,6 +57,7 @@ import {
   lookupCategoryDefaultsByLooseLabel, resolveDomainFromLooseLabel, fetchSubcategoriesForDomain,
   applyAssignment, eventCategoryFromDomain, type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
+import { GEMINI } from '@/constants/geminiRhythm';
 import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestionCard';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
@@ -96,7 +97,11 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   // again); omitted/undefined keeps the normal step-0 start.
   initialStep?: 'review';
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors: themeColors, isDark } = useTheme();
+  // Full-page (grandparent) form uses the Gemini rhythm tokens in light mode: deep forest-slate text, warm borders.
+  const colors = useMemo(() => (fullPage && !isDark
+    ? { ...themeColors, textPrimary: GEMINI.titleColor, textSecondary: GEMINI.bodyColor, textTertiary: GEMINI.bodyColorLight, border: GEMINI.border, surface: GEMINI.surface }
+    : themeColors), [fullPage, isDark, themeColors]);
   const insets = useSafeAreaInsets();
   const { addEvent, updateEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
@@ -1005,7 +1010,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
 
   // Figma field tokens — white bg + light border (inactive), catColor 2px border (active)
   const fieldBg      = isDark ? colors.surface : '#FFFFFF';
-  const fieldBorder  = isDark ? colors.border  : '#DFE5EF';
+  const fieldBorder  = isDark ? colors.border  : (fullPage ? GEMINI.border : '#DFE5EF');
   const fieldBorderActive = catColor;
   // Figma "Content group" tip card: lavender tint
   const tipCardBg    = isDark ? colors.surface : colors.pinkLight;

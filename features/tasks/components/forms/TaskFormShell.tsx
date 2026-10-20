@@ -152,7 +152,7 @@ export function TaskFormShell({
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={[s.title, { color: colors.textPrimary }]}>{headerTitle}</Text>
+                  <Text style={[s.title, { color: fullPage && !isDark ? GEMINI.titleColor : colors.textPrimary }]}>{headerTitle}</Text>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: accentColor }}>
                     {headerSubtitle}
                   </Text>
@@ -161,7 +161,7 @@ export function TaskFormShell({
               <TouchableOpacity
                 onPress={onClose}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : (fullPage ? GEMINI.cardBg : '#F1F5F9'), ...(fullPage && !isDark ? GEMINI.cardShadow : null) }}
               >
                 <Ionicons name="close" size={18} color={colors.textSecondary} />
               </TouchableOpacity>

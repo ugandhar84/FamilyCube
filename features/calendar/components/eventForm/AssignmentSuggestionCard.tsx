@@ -38,8 +38,8 @@ export default function AssignmentSuggestionCard({
         disabled={loadingSuggestion}
         style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-          borderRadius: 14, paddingVertical: 11, borderWidth: 1.5, borderStyle: 'dashed',
-          borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : '#F8F5FF',
+          borderRadius: 14, paddingVertical: 11, borderWidth: 1, borderStyle: 'solid',
+          borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : colors.pinkLight,
           opacity: loadingSuggestion ? 0.6 : 1,
         }}
       >

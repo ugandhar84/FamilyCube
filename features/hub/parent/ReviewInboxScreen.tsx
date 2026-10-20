@@ -21,7 +21,7 @@ import {
   View, Text, ScrollView, Pressable, StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ClipboardCheck, Gift, HelpCircle, ChevronRight, Scale, Inbox } from 'lucide-react-native';
+import { ClipboardCheck, Gift, HelpCircle, ChevronRight, Scale, Inbox, HeartHandshake } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
@@ -30,7 +30,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { OverlayHeading } from '@/components/OverlayPage';
 
-export type ReviewCategory = 'chores' | 'redemptions' | 'requests' | 'disputes';
+export type ReviewCategory = 'chores' | 'gp' | 'redemptions' | 'requests' | 'disputes';
 
 function firstName(memberId: string | undefined, members: FamilyMember[]): string {
   if (!memberId) return 'Someone';
@@ -85,7 +85,11 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
   const pendingDisputesCount = useMemo(() =>
     chores.filter(c => c.status === 'kid_disputed_redo' || c.disputeStatus === 'reversal_requested').length,
   [chores]);
-  const totalPending = pendingChoresCount + pendingRedemptionsCount + pendingRequestsCount + pendingDisputesCount;
+  // Grandparent requests: a chore a grandparent wants to sponsor (waiting for a parent's OK) and a grandparent's offer to handle an errand.
+  const pendingGpCount = useMemo(() =>
+    chores.filter(c => (c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval') || c.status === 'gp_offer_pending').length,
+  [chores]);
+  const totalPending = pendingChoresCount + pendingGpCount + pendingRedemptionsCount + pendingRequestsCount + pendingDisputesCount;
 
   const decidedChores = useMemo(() =>
     chores.filter(c =>
@@ -108,6 +112,11 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
       key: 'chores', title: 'Chores & Quests', icon: ClipboardCheck,
       color: colors.teal, bg: colors.tealLight, count: pendingChoresCount,
       subtitle: pendingChoresCount > 0 ? `${pendingChoresCount} waiting on you` : 'All caught up',
+    },
+    {
+      key: 'gp', title: 'Grandparent requests', icon: HeartHandshake,
+      color: colors.sky, bg: colors.skyLight, count: pendingGpCount,
+      subtitle: pendingGpCount > 0 ? `${pendingGpCount} waiting on you` : 'All caught up',
     },
     {
       key: 'redemptions', title: 'Rewards', icon: Gift,

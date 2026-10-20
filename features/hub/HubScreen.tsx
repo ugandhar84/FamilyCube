@@ -33,6 +33,7 @@ import JustDescribeItEventScreen from '@/features/calendar/components/JustDescri
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { OverlayPage } from '@/components/OverlayPage';
 import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
+import { GpRequestsQueueScreen } from './parent/GpRequestsQueueScreen';
 import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
 import { RewardsReviewQueueScreen } from './parent/RewardsReviewQueueScreen';
 import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
@@ -167,6 +168,7 @@ export default function HubScreen() {
   // directly, per live direction: "review inbox should contain the high
   // level cards ... land then open those chore box, schedule box."
   const [showChoresQueue, setShowChoresQueue] = useState(false);
+  const [showGpQueue, setShowGpQueue] = useState(false);
   const [showRedemptionsQueue, setShowRedemptionsQueue] = useState(false);
   const [showHelpQueue, setShowHelpQueue] = useState(false);
   const [activeKidRequestId, setActiveKidRequestId] = useState<string | null>(null);
@@ -871,6 +873,7 @@ export default function HubScreen() {
           onClose={() => setShowReviewInbox(false)}
           onSelectCategory={(category: ReviewCategory) => {
             if (category === 'chores') setShowChoresQueue(true);
+            else if (category === 'gp') setShowGpQueue(true);
             else if (category === 'redemptions') setShowRedemptionsQueue(true);
             else if (category === 'disputes') setShowDisputesInbox(true);
             else setShowHelpQueue(true);
@@ -890,6 +893,9 @@ export default function HubScreen() {
           onClose={() => setShowChoresQueue(false)}
           onSelectRow={(id) => setReviewQuestDetailId(id)}
         />
+      </OverlayPage>
+      <OverlayPage visible={showGpQueue} onDismiss={() => setShowGpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+        <GpRequestsQueueScreen onClose={() => setShowGpQueue(false)} />
       </OverlayPage>
       <OverlayPage visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <RewardsReviewQueueScreen

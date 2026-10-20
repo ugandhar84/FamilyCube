@@ -23,7 +23,7 @@ import { GEMINI } from '@/constants/geminiRhythm';
 // brand teal in this app) — kept as one local constant.
 const MONEY_GREEN = '#10B981';
 
-function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, active }: {
+export function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, active }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;

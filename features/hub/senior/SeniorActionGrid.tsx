@@ -1,7 +1,5 @@
-import { useUIStore } from '@/store/uiStore';
 import { View, Text } from 'react-native';
-import { HandHeart, Heart, Compass, Images, UserCircle, ArrowUpRight } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { HandHeart, Heart, Compass, ArrowUpRight } from 'lucide-react-native';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { KidSectionHeader } from '../kid/KidSectionHeader';
@@ -48,23 +46,6 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
             </AnimatedPressable>
           );
         })}
-      </View>
-      {/* Memories and Profile: the tab bar is the same for every role now, so these two live here. */}
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-        {[
-          { key: 'memories', title: 'Memories', subtitle: 'Photos and stories', Icon: Images, bg: colors.pinkLight, fg: colors.pink, go: () => useUIStore.getState().setOpenMemoriesScreenRequested(true) },
-          { key: 'profile', title: 'My profile', subtitle: 'Settings and PIN', Icon: UserCircle, bg: colors.surface, fg: colors.textSecondary, go: () => router.push('/profile-settings' as any) },
-        ].map(t => (
-          <AnimatedPressable key={t.key} onPress={t.go} accessibilityRole="button" accessibilityLabel={t.title}
-            style={{ flexBasis: '47%', flexGrow: 1, minHeight: 84, borderRadius: 22, padding: 16, backgroundColor: t.bg, flexDirection: 'row', alignItems: 'center', gap: 12,
-              borderWidth: 1, borderColor: isDark ? colors.border : GEMINI.border, ...(isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow) }}>
-            <t.Icon size={26} color={t.fg} strokeWidth={2} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: GP.body, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>{t.title}</Text>
-              <Text style={{ fontSize: GP.tiny, color: isDark ? colors.textSecondary : GEMINI.bodyColor, marginTop: 2 }} numberOfLines={1}>{t.subtitle}</Text>
-            </View>
-          </AnimatedPressable>
-        ))}
       </View>
     </View>
   );

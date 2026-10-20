@@ -1097,6 +1097,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <PushbackSheet
+        fullPage
         target={pushbackSheet}
         onClose={() => setPushbackSheet(null)}
         respondToParentQuest={respondToParentQuest}
@@ -1107,6 +1108,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           quest-pool _isQuestRow), so DelegateSheet's addParentQuest
           branch is the only one this ever exercises from SeniorView. */}
       <DelegateSheet
+        fullPage
         target={delegateSheet} questPool={[]} members={members} active={active}
         onClose={() => setDelegateSheet(null)}
         updateQuest={updateQuest}

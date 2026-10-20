@@ -1,6 +1,6 @@
 import { View, Text, Pressable, TextInput } from 'react-native';
 import { PartyPopper } from 'lucide-react-native';
-import AppBottomSheet from '@/components/AppBottomSheet';
+import AppFullPage from '@/components/AppFullPage';
 import { showToast } from '@/components/AppToast';
 import { GP } from './seniorTheme';
 
@@ -70,9 +70,8 @@ export function AvailabilitySettingsSheet({
   active: { name: string }; colors: any; isDark: boolean;
 }) {
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Availability Settings"
-      subtitle="When you're free to help with rides" accentColor={colors.accent}
-      minHeight="45%" maxHeight="80%">
+    <AppFullPage visible={visible} onClose={onClose} title="Availability settings"
+      subtitle="When you're free to help with rides" accent="amber">
       <View style={{ gap: 14 }}>
         {/* Cheerleader Mode toggle */}
         <Pressable onPress={() => { setCheerleaderMode(m => !m); }}
@@ -193,6 +192,6 @@ export function AvailabilitySettingsSheet({
           <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>Done</Text>
         </Pressable>
       </View>
-    </AppBottomSheet>
+    </AppFullPage>
   );
 }

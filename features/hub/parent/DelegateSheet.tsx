@@ -4,6 +4,7 @@ import { Check, HeartHandshake } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useTheme } from '@/lib/ThemeContext';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import AppFullPage from '@/components/AppFullPage';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
@@ -16,7 +17,9 @@ import { GEMINI } from '@/constants/geminiRhythm';
 // so the grandparent-facing toggle reads as its own state color.
 const GP_VIOLET = '#8B5CF6';
 
-export function DelegateSheet({ target, questPool, members, active, onClose, updateQuest, addParentQuest }: {
+export function DelegateSheet({ target, questPool, members, active, onClose, updateQuest, addParentQuest, fullPage = false }: {
+  /** Show as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   target: { choreId: string; choreTitle: string } | null;
   questPool: (ChoreTask & { _isQuestRow?: boolean })[];
   members: FamilyMember[]; active: FamilyMember;
@@ -94,8 +97,9 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
     commitDelegate(m);
   }
 
+  const Sheet: any = fullPage ? AppFullPage : AppBottomSheet;
   return (
-    <AppBottomSheet
+    <Sheet
       visible={!!target}
       onClose={() => { setNote(''); onClose(); }}
       title={`Delegate: ${target?.choreTitle ?? ''}`}
@@ -216,7 +220,7 @@ export function DelegateSheet({ target, questPool, members, active, onClose, upd
           </Pressable>
         )}
       </View>
-    </AppBottomSheet>
+    </Sheet>
   );
 }
 

@@ -9,7 +9,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { GP } from './seniorTheme';
 import { GP_QUEST_CATEGORIES, GP_QUEST_SUGGESTIONS, type GpQuestCategory } from './gpQuestSuggestions';
 import type { FamilyMember } from '@/store/familyStore';
-import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
+import AppFullPage from '@/components/AppFullPage';
 
 // Create Grandparent Quest modal — full spec lifecycle: mode, title,
 // description, points, Grandparent Bonus jar preview, kid targeting, photo
@@ -48,41 +48,30 @@ export function CreateQuestModal({
   };
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
-  const keyboardAwareMaxHeight = useKeyboardAwareMaxHeight(75, 90);
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, overflow: 'hidden',
-            maxHeight: keyboardAwareMaxHeight ?? '75%', backgroundColor: colors.card }}>
-
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>
-                  {editing ? '✏️ Edit Sponsored Chore' : '👴 Sponsor a Chore'}
+    <AppFullPage
+      visible={visible} onClose={dismiss}
+      title={editing ? 'Edit sponsored chore' : 'Sponsor a chore'}
+      subtitle={editing ? 'Still awaiting parent review, free to change' : 'Parent reviews, then a grandchild claims it'}
+      accent="teal"
+      footer={
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={onClose}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
+                  borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={onCreate}
+                style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
+                  backgroundColor: newQuestTitle.trim() ? BRAND.teal : (isDark ? '#374151' : '#D1D5DB') }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
+                  {editing ? 'Save Changes' : 'Send to Parent for Review'}
                 </Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: BRAND.teal }}>
-                  {editing ? 'Still awaiting parent review — free to change' : '→ Parent reviews → Kid claims'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={dismiss}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
+              </Pressable>
             </View>
-
-            <ScrollView
-              keyboardShouldPersistTaps="always"
-              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-              showsVerticalScrollIndicator={false}>
+      }
+    >
       <View style={{ gap: 14 }}>
         {/* Mode: Local vs Virtual */}
         <View style={{ flexDirection: 'row', gap: 0, borderRadius: 14, overflow: 'hidden',
@@ -257,28 +246,6 @@ export function CreateQuestModal({
           </Text>
         </Pressable>
       </View>
-            </ScrollView>
-
-            {/* Sticky footer — was inside the ScrollView, could end up
-                below the keyboard while typing the quest title/description. */}
-            <View style={{ flexDirection: 'row', gap: 10, padding: 20, paddingTop: 14,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-              <Pressable onPress={onClose}
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
-                  borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
-                <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={onCreate}
-                style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
-                  backgroundColor: newQuestTitle.trim() ? BRAND.teal : (isDark ? '#374151' : '#D1D5DB') }}>
-                <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
-                  {editing ? 'Save Changes' : 'Send to Parent for Review'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppFullPage>
   );
 }

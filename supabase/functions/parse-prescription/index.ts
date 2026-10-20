@@ -359,7 +359,7 @@ serve(async (req) => {
         const why = failReason(e2);
         const msg = why === 'timeout' || r1 === 'timeout' ? 'The scan took too long. Try again with fewer or smaller photos.'
           : why === 'gemini_429' || r1 === 'gemini_429' ? 'The AI reader is busy right now. Wait a minute and try again.'
-          : 'AI parsing failed. Please enter details manually.';
+          : `AI parsing failed (${r1}/${why}). Please enter details manually.`;
         return json({ error: msg, reason: `${r1}/${why}` }, 422);
       }
     }

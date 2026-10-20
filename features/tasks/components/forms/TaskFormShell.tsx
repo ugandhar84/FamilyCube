@@ -19,6 +19,7 @@
  * review step, inside the scroll, so a disabled-reason stays attached to the
  * summary it refers to.
  */
+import { GEMINI } from '@/constants/geminiRhythm';
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, Keyboard, Platform,
@@ -112,10 +113,12 @@ export function TaskFormShell({
   }, []);
 
   const currentStepId = stepIds[Math.min(step, stepIds.length - 1)];
-  const isReview = currentStepId === reviewStepId;
+  const flat = fullPage; // one flat scrolling form, no stepper
+  const isReview = flat || currentStepId === reviewStepId;
+  const canvas = isDark ? colors.background : GEMINI.canvas;
 
   return (
-    <Frame fullPage={fullPage} visible={visible} onClose={onClose} canvas={colors.background}>
+    <Frame fullPage={fullPage} visible={visible} onClose={onClose} canvas={canvas}>
       {/* Live-reported: KeyboardAvoidingView previously wrapped the WHOLE
           sheet — 'padding' behavior slid the entire card (including the
           fixed Next button) up 1:1 with the keyboard, so the button kept
@@ -129,10 +132,10 @@ export function TaskFormShell({
           stay fixed in place; the Next/submit button now lives INSIDE the
           ScrollView (see below) so it's never a separate fixed element
           that could end up mispositioned on its own. */}
-        <View style={[s.backdrop, fullPage ? { backgroundColor: colors.background, paddingTop: insets.top } : null, { paddingBottom: keyboardHeight }]}>
+        <View style={[s.backdrop, fullPage ? { backgroundColor: canvas, paddingTop: insets.top } : null, { paddingBottom: keyboardHeight }]}>
           {!fullPage && <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />}
           <View style={withAndroidShadowFix([s.sheet, fullPage
-            ? { flex: 1, maxHeight: undefined, backgroundColor: colors.background, borderTopLeftRadius: 0, borderTopRightRadius: 0 }
+            ? { flex: 1, maxHeight: undefined, backgroundColor: canvas, borderTopLeftRadius: 0, borderTopRightRadius: 0 }
             : { backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8,
@@ -166,7 +169,7 @@ export function TaskFormShell({
 
             {/* ── Step progress — hidden when hideProgress=true (e.g. single-
                 step handoff from JustDescribeItScreen). ── */}
-            {!hideProgress && (
+            {!hideProgress && !flat && (
               <>
                 <View style={{ flexDirection: 'row', alignItems: stepLabels ? 'flex-start' : 'center', gap: 10, marginBottom: stepLabels ? 4 : 14 }}>
                   {step > 0 && !stepLabels && (

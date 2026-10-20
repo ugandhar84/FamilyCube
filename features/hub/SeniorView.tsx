@@ -26,6 +26,7 @@ import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssign
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './senior/seniorTheme';
 import AppFullPage from '@/components/AppFullPage';
+import { MyRequestsPanel } from './senior/MyRequestsPanel';
 import { SeniorHeroCard } from './senior/SeniorHeroCard';
 import { SeniorActionGrid, type SeniorGroup } from './senior/SeniorActionGrid';
 import { KidSectionHeader } from './kid/KidSectionHeader';
@@ -119,6 +120,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     respondToParentQuest, cancelLockedAssignment, recallParentQuest, addParentQuest,
   } = useChoreStore();
   const { updateQuest } = useQuestStore();
+  const [kidsTab, setKidsTab] = useState<'cheer' | 'bonus'>('cheer');
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
   const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
   const myDirectPending   = getMyDirectPending(active.id);
@@ -986,40 +988,25 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
       />
 
-      <AppFullPage visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Lend a hand" subtitle="Rides and errands you can help with" accent="amber">
-      <LendAHandCard
-        cheerleaderMode={cheerleaderMode} setCheerleaderMode={setCheerleaderMode}
-        driveWindowDays={driveWindowDays} setDriveWindowDays={setDriveWindowDays}
-        driveWindowStart={driveWindowStart} setDriveWindowStart={setDriveWindowStart}
-        driveWindowEnd={driveWindowEnd} setDriveWindowEnd={setDriveWindowEnd}
-        weeklyRideCap={weeklyRideCap} setWeeklyRideCap={setWeeklyRideCap}
-        ridesThisWeek={ridesThisWeek} atWeeklyCap={atWeeklyCap}
-        helperDispatchExpanded={helperDispatchExpanded} setHelperDispatchExpanded={setHelperDispatchExpanded}
-        availSettingsOpen={availSettingsOpen} setAvailSettingsOpen={setAvailSettingsOpen}
-        hasDispatchItems={hasDispatchItems} dispatchBadgeCount={dispatchBadgeCount}
-        openRides={dedupOpenRides} gpInvitations={gpInvitations}
-        myActiveErrands={myActiveErrands} onOpenReceiptModal={openReceiptModal}
-        onMarkDoneNoReceipt={(choreId) => { logAction('Mark Done (no receipt)', `submitGPErrandReceipt(${choreId}, {})`, { targetId: choreId, at: '860' }); submitGPErrandReceipt(choreId, {}); }}
-        onBackoutErrand={(choreId) => { logAction('Backout', `backoutGpWelcomeChore(${choreId})`, { targetId: choreId, at: '869' }); useChoreStore.getState().backoutGpWelcomeChore(choreId, active.id); }}
-        myErrandsAwaitingReview={myErrandsAwaitingReview}
-        myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => { logAction('Withdraw Offer', `withdrawGPOffer(${choreId})`, { targetId: choreId, at: '862' }); withdrawGPOffer(choreId, active.id); }}
-        openRequests={dedupOpenRequests} gpWelcomeRequests={gpWelcomeRequests}
-        gpWelcomeChores={gpWelcomeChores} volunteerPool={dedupVolunteerPool}
-        active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} updateChore={updateChore}
-        assignRequest={(id, helperId) => { logAction('Assign Request (accept)', `assignRequest(${id}, ${helperId})`, { targetId: id, at: '866' }); assignRequest(id, helperId); }}
-        claimGPErrand={(choreId, gpMemberId) => { logAction('Claim GP Errand', `claimGPErrand(${choreId}, ${gpMemberId})`, { targetId: choreId, at: '867' }); claimGPErrand(choreId, gpMemberId); }}
-        onClaimRide={handleClaimRide} onPassRide={handlePassRide} onHelpRequest={onHelpRequest}
-      />
-
+      <AppFullPage visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Lend a hand" subtitle="Ask the family, or help with a ride or errand" accent="amber">
+        <MyRequestsPanel familyId={familyId} memberId={active.id} onAsk={onHelpRequest} colors={colors} isDark={isDark} />
       </AppFullPage>
 
-      <AppFullPage visible={openGroup === 'kids'} onClose={() => setOpenGroup(null)} title="My grandkids" subtitle="Cheer them on and send a bonus" accent="pink">
+      <AppFullPage visible={openGroup === 'kids'} onClose={() => setOpenGroup(null)} title="My grandkids" subtitle="Cheer them on or send a bonus" accent="pink">
+      <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
+        {([['cheer', 'Cheer kids'], ['bonus', 'Send a bonus']] as const).map(([key, label]) => (
+          <Pressable key={key} onPress={() => setKidsTab(key)} accessibilityRole="button" accessibilityLabel={label}
+            style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: kidsTab === key ? colors.card : 'transparent' }}>
+            <Text style={{ fontSize: 14, fontWeight: kidsTab === key ? '800' : '600', color: kidsTab === key ? colors.textPrimary : colors.textSecondary }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {kidsTab === 'cheer' ? (
       <CheerSquadSection
         kidsCheerable={kidsCheerable} kids={kids} allNames={allNames} colors={colors} isDark={isDark}
         cheerChore={cheerChore} active={active}
       />
-
+      ) : (
       <SendBonusCard
         kids={kids} allNames={allNames} colors={colors} isDark={isDark}
         gpKid={gpKid} setGpKid={setGpKid}
@@ -1029,6 +1016,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onSend={handleSendBonus}
         active={active}
       />
+      )}
 
       </AppFullPage>
 

@@ -810,7 +810,7 @@ export default function HubScreen() {
           one missing connection, not new logic. Kid Hub already made this
           exact switch previously (KidView's own onHelpRequest prop is now
           dead/unused for the same reason). */}
-      <AddEventModal visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
+      <AddEventModal fullPage={active.role === 'senior'} visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />
       <ReviewConflictModal
         visible={!!conflictReview}
@@ -1028,6 +1028,7 @@ export default function HubScreen() {
       {/* Senior Hub's own En Route flow still uses the picker modal — it has
           no linked-ride concept like Parent Hub's Pick-up Radar does. */}
       <EnRouteModal
+        fullPage={active.role === 'senior'}
         visible={enRouteVisible}
         onClose={() => setEnRouteVisible(false)}
         pickups={members.filter(m => m.id !== active.id)}

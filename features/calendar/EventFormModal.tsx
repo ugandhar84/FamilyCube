@@ -1020,7 +1020,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       stepLabels={['What', 'When', 'Who', 'Review']}
       hasDraft={title.trim().length > 0 || notes.trim().length > 0}
     >
-            {currentStepId === 'what' && <>
+            {(fullPage || currentStepId === 'what') && <>
             {/* ── Category selector ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -1146,7 +1146,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
             </>}
 
-            {currentStepId === 'when' && <>
+            {(fullPage || currentStepId === 'when') && <>
             {/* ── Ride needed? + pickup (kid only) — right above Date &
                 Time, which doubles as the drop-off time whenever ride
                 needed is on (relabeled below, no separate drop-off field
@@ -1306,7 +1306,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
             </>}
 
-            {currentStepId === 'assign' && <>
+            {(fullPage || currentStepId === 'assign') && <>
             <CategoryFields
               category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults} isKid={isKid}
               apptType={apptType} setApptType={setApptType} doctorName={doctorName} setDoctorName={setDoctorName}
@@ -1610,7 +1610,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
             </>}
 
-            {currentStepId === 'review' && (() => {
+            {(fullPage || currentStepId === 'review') && (() => {
               const forNames = memberIds.map(id => members.find(m => m.id === id)).filter(Boolean).map(m => m!.id === activeMemberId ? 'Me' : m!.name.split(' ')[0]);
               const whoLabel = isKid ? 'You (pending approval)' : forNames.length ? forNames.join(', ') : 'Nobody yet';
               const recurLabel = repeatFreq === 'none' ? 'One-time'

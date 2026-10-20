@@ -1,5 +1,5 @@
 /**
- * MyRequestsPanel — the top of the grandparent's "Lend a hand" page: a banner to raise a new request, then the requests THIS person has
+ * MyRequestsPanel — the top of the grandparent's "Need a hand" page: a banner to raise a new request, then the requests THIS person has
  * raised, in tabs (Pending, Confirmed, Declined, History) with a small progress line on each (Asked, Driver asked, Confirmed, Done).
  * Tapping a request opens its event page (details, reassign, change history).
  */
@@ -87,7 +87,7 @@ export function MyRequestsPanel({ familyId, memberId, onAsk, colors, isDark }: {
           <HandHeart size={28} color={colors.amber} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: GP.title, fontWeight: '800', color: title }}>Need a hand?</Text>
+          <Text style={{ fontSize: GP.title, fontWeight: '800', color: title }}>What do you need?</Text>
           <Text style={{ fontSize: GP.sub, color: body, marginTop: 2 }}>Ask the family for a ride or help with something.</Text>
         </View>
         <View style={{ paddingHorizontal: 16, minHeight: 44, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>

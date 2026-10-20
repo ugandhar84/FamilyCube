@@ -834,7 +834,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
   };
 
-  // Which "Quick actions" area is open below the grid (one at a time). Starts on Lend a hand when something is waiting there.
+  // Which "Quick actions" area is open below the grid (one at a time). Starts on Need a hand when something is waiting there.
   const [openGroup, setOpenGroup] = useState<SeniorGroup | null>(null);
   const toggleGroup = (g: SeniorGroup) => setOpenGroup(prev => (prev === g ? null : g));
   const assignedCount = myDirectPending.length + myOutgoingPending.length + myLockedItems.length;
@@ -988,7 +988,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
       />
 
-      <AppFullPage visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Lend a hand" subtitle="Ask the family, or help with a ride or errand" accent="amber">
+      <AppFullPage visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Need a hand" subtitle="Ask your family for help and follow your requests" accent="amber">
         <MyRequestsPanel familyId={familyId} memberId={active.id} onAsk={onHelpRequest} colors={colors} isDark={isDark} />
       </AppFullPage>
 

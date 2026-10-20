@@ -9,6 +9,7 @@
  * Not a native Modal (so touches count as activity for the idle lock); the PIN
  * and notification sheets it opens ARE Modals and hold the lock off themselves.
  */
+import { grantChildSessionForParent } from '@/lib/childGrant';
 import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
@@ -70,7 +71,7 @@ export function KioskSystemMenu({
     const m = members.find(x => x.id === id);
     const me = members.find(x => x.id === activeId);
     if (m && m.pinEnabled && m.pin && needsPinToSwitch(me, m)) setPinTarget(m);
-    else { if (m?.pinEnabled && m.pin) markEnteredByParent(m.id); onSwitch(id); onClose(); }
+    else { void (async () => { if (m?.pinEnabled && m.pin) markEnteredByParent(m.id); if (me?.role === 'parent' && m?.authUserId && m.id !== activeId) await grantChildSessionForParent(m.id); onSwitch(id); onClose(); })(); }
   };
 
   const tile = (label: string, Icon: typeof Lock, bg: string, fg: string, onPress: () => void, badge?: number) => (

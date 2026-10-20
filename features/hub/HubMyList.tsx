@@ -100,7 +100,8 @@ const s = StyleSheet.create({
   ring: { width: 26, height: 26, borderRadius: 13, borderWidth: 2.5 },
   title: { fontSize: 15, fontWeight: '700' },
   sub: { fontSize: 12, fontWeight: '700', marginTop: 1 },
-  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginTop: 12, marginBottom: 4, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 12, justifyContent: 'center' },
+  // Tighter than before: the section gap that follows already spaces it from Quick actions, so no extra bottom margin (pulled up a little).
+  empty: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginTop: 8, marginBottom: -10, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, paddingVertical: 9, justifyContent: 'center' },
   emptyT: { fontSize: 14, fontWeight: '700' },
   add: { borderRadius: 16, padding: 12, gap: 10 },
   input: { fontSize: 16, fontWeight: '700', paddingVertical: 6 },

@@ -155,7 +155,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const myPendingOffers = chores.filter(c =>
     c.status === 'gp_offer_pending' && c.gpOfferById === active.id
   );
-  const kids    = members.filter(m => m.role === 'kid');
+  const kids    = members.filter(m => m.role === 'kid' || m.role === 'teen'); // grandchildren: kids and teens
   const allNames = members.map(m => m.name);
   const today   = localToday();
 
@@ -589,17 +589,18 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const handleSaveMatch = () => {
     if (!matchKidId) return;
-    logAction('Save Savings Match', `addGrandparentMatch(childId=${matchKidId})`, { at: '498' });
-    addGrandparentMatch({
+    const targets = matchKidId === 'all' ? kids.map(k => k.id) : [matchKidId];
+    logAction('Save Savings Match', `addGrandparentMatch(children=${targets.join(',')})`, { at: '498' });
+    targets.forEach(childId => addGrandparentMatch({
       familyId:        (active as any).familyId ?? 'family-1',
       grandparentId:   active.id,
-      childId:         matchKidId,
+      childId,
       matchType,
       matchValue:      parseFloat(matchValue) || 10,
       matchJar:        'SAVE',
       maxMonthlyContribution: parseFloat(maxMonthly) || 500,
       isActive:        true,
-    });
+    }));
     setShowMatchModal(false);
   };
 
@@ -842,8 +843,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const handleSendBonus = () => {
     if (!gpKid) return;
-    logAction('Send Bonus', `awardCoins(${gpKid.id}, ${gpAmount}, gpCoins)`, { targetId: gpKid.id, targetTitle: gpKid.name, at: '719' });
-    awardCoins(gpKid.id, gpAmount, 'gpCoins');
+    // 'all' is a stand-in member meaning every grandchild gets the bonus.
+    const targets = gpKid.id === 'all' ? kids : [gpKid];
+    targets.forEach(k => {
+      logAction('Send Bonus', `awardCoins(${k.id}, ${gpAmount}, gpCoins)`, { targetId: k.id, targetTitle: k.name, at: '719' });
+      awardCoins(k.id, gpAmount, 'gpCoins');
+    });
     setGpSent(true);
     setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
   };

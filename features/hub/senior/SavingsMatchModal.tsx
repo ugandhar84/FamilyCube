@@ -37,6 +37,14 @@ export function SavingsMatchModal({
         <View>
           <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>For grandchild</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {kids.length > 1 && (
+              <Pressable onPress={() => { setMatchKidId('all'); }}
+                style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
+                  borderColor: matchKidId === 'all' ? BRAND.purple : colors.border,
+                  backgroundColor: matchKidId === 'all' ? BRAND.purple + '15' : 'transparent' }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '600', color: matchKidId === 'all' ? BRAND.purple : colors.textPrimary }}>All grandchildren</Text>
+              </Pressable>
+            )}
             {kids.map(k => (
               <Pressable key={k.id} onPress={() => { setMatchKidId(k.id); }}
                 style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,

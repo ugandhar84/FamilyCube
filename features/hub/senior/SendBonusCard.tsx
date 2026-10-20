@@ -44,7 +44,7 @@ export function SendBonusCard({
       <View style={card}>
         <Text style={label}>Who gets it</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {kids.map(kid => {
+          {[...(kids.length > 1 ? [{ id: 'all', name: 'All grandchildren', emoji: '🌟' } as any] : []), ...kids].map(kid => {
             const sel = gpKid?.id === kid.id;
             return (
               <Pressable key={kid.id} onPress={() => setGpKid(sel ? null : kid)} accessibilityRole="button" accessibilityLabel={kid.name}
@@ -88,7 +88,7 @@ export function SendBonusCard({
           backgroundColor: gpKid ? colors.primary : colors.surface, opacity: gpKid ? 1 : 0.6 }}>
         <Star size={18} color={gpKid ? colors.textInverse : colors.textTertiary} />
         <Text style={{ fontSize: GP.sub, fontWeight: '800', color: gpKid ? colors.textInverse : colors.textTertiary }}>
-          Send {gpAmount} coins{gpKid ? ` to ${gpKid.name.split(' ')[0]}` : ''}
+          Send {gpAmount} coins{gpKid ? (gpKid.id === 'all' ? ' to each' : ` to ${gpKid.name.split(' ')[0]}`) : ''}
         </Text>
       </Pressable>
     </View>

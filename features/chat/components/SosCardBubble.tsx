@@ -17,10 +17,11 @@ export function SosCardBubble({ payload, colors, onLongPress }: { payload: Recor
       ) : (
         <Text style={{ fontSize: 13, color: colors.textSecondary }}>Location was not shared. Call them.</Text>
       )}
-      {payload.mapsUrl || query ? (
-        <Pressable onPress={() => openInMaps(query!)} accessibilityRole="button" accessibilityLabel="Open in maps"
-          style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textInverse }}>Open in Maps</Text>
+      {query ? (
+        // Flat action: no filled button, just a divider and a bold blue label.
+        <Pressable onPress={() => openInMaps(query)} accessibilityRole="button" accessibilityLabel="Open in maps"
+          style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4, borderTopWidth: 1, borderTopColor: colors.danger + '40' }}>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: colors.primary }}>Open in Maps</Text>
         </Pressable>
       ) : null}
       <Text style={{ fontSize: 12, color: colors.textSecondary }}>{payload.role ?? 'Family member'} · Accept it from Review inbox, Grandparent requests.</Text>

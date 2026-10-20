@@ -899,7 +899,7 @@ export default function HubScreen() {
         />
       </OverlayPage>
       <OverlayPage visible={showGpQueue} onDismiss={() => setShowGpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
-        <GpRequestsQueueScreen onClose={() => setShowGpQueue(false)} />
+        <GpRequestsQueueScreen onClose={() => setShowGpQueue(false)} onOpenRequest={(id) => setActiveKidRequestId(id)} />
       </OverlayPage>
       <OverlayPage visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <RewardsReviewQueueScreen

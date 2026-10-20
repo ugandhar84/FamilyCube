@@ -75,7 +75,10 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
 
   const pendingChoresCount = useMemo(() => getParentReviewDeck().length, [chores]);
   const pendingRedemptionsCount = useMemo(() => redemptions.filter(r => r.status === 'pending').length, [redemptions]);
-  const pendingRequestsCount = useMemo(() => kidRequests.filter(r => r.status === 'pending').length, [kidRequests]);
+  // Requests from a grandparent (SOS included) count under Grandparent requests, not Kid requests.
+  const gpIds = useMemo(() => new Set(members.filter(m => m.role === 'senior').map(m => m.id)), [members]);
+  const pendingRequestsCount = useMemo(() => kidRequests.filter(r => r.status === 'pending' && !gpIds.has(r.fromMemberId)).length, [kidRequests, gpIds]);
+  const pendingGpRequestsCount = useMemo(() => kidRequests.filter(r => r.status === 'pending' && gpIds.has(r.fromMemberId)).length, [kidRequests, gpIds]);
   // Two dispute mechanisms, both previously unreachable from anywhere on
   // the Hub — 'kid_disputed_redo' status (a kid disputing a redo request)
   // and disputeStatus: 'reversal_requested' (one parent asking to reverse
@@ -89,8 +92,8 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
   // Grandparent requests: a chore a grandparent wants to sponsor (waiting for a parent's OK) and a grandparent's offer to handle an errand.
   const gpRides = useGpRideRequests((activeMember as any)?.familyId);
   const pendingGpCount = useMemo(() =>
-    chores.filter(c => (c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval') || c.status === 'gp_offer_pending').length + gpRides.pending.length,
-  [chores, gpRides.pending.length]);
+    chores.filter(c => (c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval') || c.status === 'gp_offer_pending').length + gpRides.pending.length + pendingGpRequestsCount,
+  [chores, gpRides.pending.length, pendingGpRequestsCount]);
   const totalPending = pendingChoresCount + pendingGpCount + pendingRedemptionsCount + pendingRequestsCount + pendingDisputesCount;
 
   const decidedChores = useMemo(() =>

@@ -809,7 +809,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         title: p.requestType === 'emergency' && p.fromRole === 'senior'
           ? '🚨 EMERGENCY SOS'
           : `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}${p.fromRole === 'senior' ? 'Grandparent Request' : p.fromRole === 'teen' ? 'Teen Request' : 'Kid Request'}`,
-        body: decodeRequestDetail(p.detail as string),
+        body: `${decodeRequestDetail(p.detail as string)}${p.location ? `\n📍 ${p.location}` : ''}`,
         sound: 'default',
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };

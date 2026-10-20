@@ -128,7 +128,9 @@ export default function HelpDispatchQueue({ onRequestHelpOpen, onClose, onOpenDe
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const members = useFamilyStore(s => s.members);
-  const requests = useKidRequestStore(s => s.requests);
+  const allRequests = useKidRequestStore(s => s.requests);
+  // Grandparent requests (SOS included) live under Review inbox > Grandparent requests, not here.
+  const requests = useMemo(() => allRequests.filter(r => members.find(m => m.id === r.fromMemberId)?.role !== 'senior'), [allRequests, members]);
 
   const [tab, setTab] = useState<'awaiting' | 'rejected' | 'history'>('awaiting');
 

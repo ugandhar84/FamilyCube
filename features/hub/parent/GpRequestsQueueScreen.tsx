@@ -14,6 +14,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { RHYTHM } from '@/constants/theme';
 import { OverlayHeading } from '@/components/OverlayPage';
@@ -23,7 +24,7 @@ import { GpSafetyReviewCard } from './ChoreReviewSection';
 import { GpOfferReviewCard } from './GpOfferReviewCard';
 import { useGpRideRequests, type GpRideRow } from './useGpRideRequests';
 
-export function GpRequestsQueueScreen({ onClose }: { onClose: () => void }) {
+export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () => void; onOpenRequest?: (id: string) => void }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const chores = useChoreStore(s => s.chores);
@@ -40,7 +41,13 @@ export function GpRequestsQueueScreen({ onClose }: { onClose: () => void }) {
   const sponsored = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const offers = chores.filter(c => c.status === 'gp_offer_pending');
   const decided = chores.filter(c => c.categoryType === 'grandparent_quest' && ['approved', 'declined', 'in_progress', 'completed', 'auto_approved'].includes(c.status)).slice(0, 8);
-  const total = rides.length + sponsored.length + offers.length;
+  // SOS and other requests sent by a grandparent (they travel through the same request table as the kids' requests).
+  const allRequests = useKidRequestStore(s => s.requests);
+  const gpIds = new Set(members.filter(m => m.role === 'senior').map(m => m.id));
+  const gpRequests = allRequests.filter(r => gpIds.has(r.fromMemberId));
+  const gpPending = gpRequests.filter(r => r.status === 'pending');
+  const gpPast = gpRequests.filter(r => r.status !== 'pending').slice(0, 8);
+  const total = rides.length + sponsored.length + offers.length + gpPending.length;
   const canvas = isDark ? '#0E0C13' : GEMINI.canvas;
   const cardBg = isDark ? colors.card : GEMINI.cardBg;
   const shadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
@@ -67,6 +74,26 @@ export function GpRequestsQueueScreen({ onClose }: { onClose: () => void }) {
         {total === 0 && (
           <View style={{ backgroundColor: cardBg, borderRadius: 16, padding: RHYTHM.card, ...shadow }}>
             <Text style={{ fontSize: 15, color: body, lineHeight: 22 }}>No grandparent requests right now.</Text>
+          </View>
+        )}
+
+        {gpPending.length > 0 && (
+          <View style={{ gap: RHYTHM.item }}>
+            <Text style={label}>SOS and requests</Text>
+            {gpPending.map(r => {
+              const meta = REQUEST_META[r.type];
+              const who = members.find(m => m.id === r.fromMemberId)?.name ?? 'Grandparent';
+              const urgent = r.urgency === 'emergency';
+              return (
+                <Pressable key={r.id} onPress={() => onOpenRequest?.(r.id)} accessibilityRole="button" accessibilityLabel={`${meta?.label ?? 'Request'} from ${who}`}
+                  style={{ backgroundColor: urgent ? colors.dangerLight : cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 6, ...shadow }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: title }}>{meta?.emoji ?? '📣'} {urgent ? 'Emergency SOS' : (meta?.label ?? 'Request')} · {who.split(' ')[0]}</Text>
+                  {!!r.detail && <Text style={{ fontSize: 14, color: body }} numberOfLines={3}>{r.detail}</Text>}
+                  {!!r.location && <Text style={{ fontSize: 14, fontWeight: '600', color: body }}>📍 {r.location}</Text>}
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>Open →</Text>
+                </Pressable>
+              );
+            })}
           </View>
         )}
 
@@ -130,7 +157,7 @@ export function GpRequestsQueueScreen({ onClose }: { onClose: () => void }) {
           </View>
         )}
 
-        {(pastRides.length > 0 || decided.length > 0) && (
+        {(pastRides.length > 0 || decided.length > 0 || gpPast.length > 0) && (
           <View style={{ gap: RHYTHM.item }}>
             <Text style={label}>History</Text>
             <View style={{ backgroundColor: cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 12, ...shadow }}>
@@ -138,6 +165,12 @@ export function GpRequestsQueueScreen({ onClose }: { onClose: () => void }) {
                 <Pressable key={r.ev.id} onPress={() => setDetailEv(r.ev)} style={{ gap: 1 }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{r.ev.title}</Text>
                   <Text style={{ fontSize: 13, color: body }}>Ride · {fmtHumanDateShort(r.ev.date)}{r.assigneeName ? ` · ${r.assigneeName} ${r.assigneeStatus === 'confirmed' ? 'drove' : 'was asked'}` : ' · no driver'}</Text>
+                </Pressable>
+              ))}
+              {gpPast.map(r => (
+                <Pressable key={r.id} onPress={() => onOpenRequest?.(r.id)} style={{ gap: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: title }} numberOfLines={1}>{REQUEST_META[r.type]?.label ?? 'Request'} · {r.detail}</Text>
+                  <Text style={{ fontSize: 13, color: body }}>Request · {r.status === 'declined' ? 'Declined' : r.status === 'cancelled' ? 'Cancelled' : 'Handled'}</Text>
                 </Pressable>
               ))}
               {decided.map(c => (

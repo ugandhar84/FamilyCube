@@ -25,7 +25,6 @@ import { RidesStatusCard } from './parent/RidesStatusCard';
 import { HubMyList } from './HubMyList';
 import { NextUpTimeline } from './parent/NextUpCard';
 import { FamilyPulseCard } from './parent/FamilyPulseCard';
-import { ProfileSwitcherCard } from './parent/ProfileSwitcherCard';
 import { NeedsYouCard, type NeedsYouItem } from './parent/NeedsYouCard';
 import { TonightMealCard } from './parent/TonightMealCard';
 import { PushbackSheet } from './parent/PushbackSheet';
@@ -806,14 +805,6 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
       <Animated.View style={{ opacity: cardAnims[0].opacity, transform: [{ translateY: cardAnims[0].translateY }] }}>
         <FamilyPulseCard colors={colors} isDark={isDark} members={members} hasUrgentItem={!!needsYouItem} familyName={familyName || undefined} />
-      </Animated.View>
-
-      {/* "Viewing as" card — matches the Figma prototype's own
-          .profile-switcher position exactly (between Family Pulse and
-          Needs You). Opens the real PersonaSwitcherDropdown, same
-          mechanism AppHeader's compact mode already uses. */}
-      <Animated.View style={{ opacity: cardAnims[1].opacity, transform: [{ translateY: cardAnims[1].translateY }] }}>
-        <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
       </Animated.View>
 
       <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>

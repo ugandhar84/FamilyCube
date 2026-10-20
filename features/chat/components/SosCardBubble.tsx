@@ -27,3 +27,15 @@ export function SosCardBubble({ payload, colors, onLongPress }: { payload: Recor
     </Pressable>
   );
 }
+
+/** The "I'm OK now" card posted when the person resolves their SOS: green, calm, with the time. */
+export function SosSafeCardBubble({ payload, colors, onLongPress }: { payload: Record<string, any>; colors: any; onLongPress?: () => void }) {
+  const when = payload.at ? new Date(payload.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
+  return (
+    <Pressable onLongPress={onLongPress} style={{ borderRadius: 18, padding: 14, gap: 6, minWidth: 240, backgroundColor: colors.successLight, borderWidth: 2, borderColor: colors.success }}>
+      <Text style={{ fontSize: 12, fontWeight: '900', letterSpacing: 0.8, color: colors.success }}>✅ SOS RESOLVED</Text>
+      <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }}>{payload.name ?? 'Someone'} is OK now{when ? ` · ${when}` : ''}</Text>
+      <Text style={{ fontSize: 13, color: colors.textSecondary }}>No further help is needed. Thank you to everyone who was on the way.</Text>
+    </Pressable>
+  );
+}

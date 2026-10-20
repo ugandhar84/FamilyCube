@@ -6,7 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Play, CheckCheck, AlertTriangle, MapPin, FileText, RefreshCw } from 'lucide-react-native';
 import { ChatMessage } from '@/store/chatStore';
-import { SosCardBubble } from './SosCardBubble';
+import { SosCardBubble, SosSafeCardBubble } from './SosCardBubble';
 import { VoiceNoteBubble } from './VoiceComponents';
 import { SwipeableBubble } from './SwipeableBubble';
 import { CollapsibleText, stripMentionBrackets } from './MentionText';
@@ -366,7 +366,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
     );
   }
 
-  if (msg.systemEvent?.type === 'sos_alert') {
+  if (msg.systemEvent?.type === 'sos_alert' || msg.systemEvent?.type === 'sos_resolved') {
     return (
       <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
         alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
@@ -381,7 +381,9 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
             : <View style={{ width: 34 }} />
         )}
         <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
-          <SosCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress} />
+          {msg.systemEvent.type === 'sos_resolved'
+            ? <SosSafeCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress} />
+            : <SosCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress} />}
           {metaRow}
         </View>
       </View>

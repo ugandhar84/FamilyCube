@@ -900,7 +900,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           supabase.functions.invoke('family-notifier', {
             body: { type: 'sos_safe', familyId, memberIds: everyone, persist: true, excludeMemberId: active.id, payload: { name: first, requestId: id } },
           }).catch(e => console.warn('[SeniorView] sos_safe notify failed:', e?.message));
-          sendMessage('seniors_all', active.id, `✅ ${first} is OK now. The SOS is resolved.`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+          sendMessage('seniors_all', active.id, `✅ ${first} is OK now. The SOS is resolved.`, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+            { type: 'sos_resolved', payload: { name: first, at: new Date().toISOString() } }, true);
         }} />
 
       {/* Scenarios 9.2/9.3 — visible ONLY while a parent-granted caregiver

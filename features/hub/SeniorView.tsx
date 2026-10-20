@@ -988,11 +988,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
       />
 
-      <AppFullPage visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Need a hand" subtitle="Ask your family for help and follow your requests" accent="amber">
+      <AppFullPage gemini visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Need a hand" subtitle="Ask your family for help and follow your requests" accent="amber">
         <MyRequestsPanel familyId={familyId} memberId={active.id} onAsk={onHelpRequest} colors={colors} isDark={isDark} />
       </AppFullPage>
 
-      <AppFullPage visible={openGroup === 'kids'} onClose={() => setOpenGroup(null)} title="My grandkids" subtitle="Cheer them on or send a bonus" accent="pink">
+      <AppFullPage gemini visible={openGroup === 'kids'} onClose={() => setOpenGroup(null)} title="My grandkids" subtitle="Cheer them on or send a bonus" accent="pink">
       <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
         {([['cheer', 'Cheer kids'], ['bonus', 'Send a bonus']] as const).map(([key, label]) => (
           <Pressable key={key} onPress={() => setKidsTab(key)} accessibilityRole="button" accessibilityLabel={label}
@@ -1020,7 +1020,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       </AppFullPage>
 
-      <AppFullPage visible={openGroup === 'sponsor'} onClose={() => setOpenGroup(null)} title="Sponsor a quest" subtitle="Set a challenge and a reward" accent="teal">
+      <AppFullPage gemini visible={openGroup === 'sponsor'} onClose={() => setOpenGroup(null)} title="Sponsor a quest" subtitle="Set a challenge and a reward" accent="teal">
       <MySponsoredQuestsSection
         quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
         colors={colors} isDark={isDark}

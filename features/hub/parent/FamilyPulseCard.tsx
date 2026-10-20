@@ -27,7 +27,7 @@ import { useFamilyStore } from '@/store/familyStore';
  * so there is no real coordinate to test "home" against. Showing "4/5 home"
  * against data that doesn't mean that would be worse than this honest label.
  */
-type LocRow = { member_id: string; share_location_enabled: boolean; lat: number | null; lng: number | null; last_updated: string | null };
+type LocRow = { member_id: string; share_location_enabled: boolean; lat: number | null; lng: number | null; last_updated: string | null; status?: string | null };
 type Where = { key: 'home' | 'school' | 'work' | 'other' | 'out' | 'off'; label: string };
 
 function metersBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
@@ -43,6 +43,9 @@ function whereIs(row: LocRow | undefined, places: FamilyPlace[]): Where {
   if (row.lat == null || row.lng == null) return { key: 'off', label: 'No location yet' };
   const ageMin = row.last_updated ? (Date.now() - new Date(row.last_updated).getTime()) / 60000 : Infinity;
   if (ageMin > 180) return { key: 'off', label: 'Offline' };
+  // The phone itself already decided "at home" (with its own GPS accuracy and the home radius). Trust that over a raw distance check here,
+  // which marked people who were at home as "Out" when GPS drifted a hundred meters.
+  if (row.status === 'at_home') return { key: 'home', label: 'Home' };
   let best: { place: FamilyPlace; d: number } | null = null;
   for (const pl of places) {
     const d = metersBetween(row.lat, row.lng, pl.latitude, pl.longitude);
@@ -71,7 +74,7 @@ export function FamilyPulseCard({
   useEffect(() => {
     let cancelled = false;
     const fetchRows = async () => {
-      const { data, error } = await supabase.from('member_locations').select('member_id, share_location_enabled, lat, lng, last_updated');
+      const { data, error } = await supabase.from('member_locations').select('member_id, share_location_enabled, lat, lng, last_updated, status');
       if (cancelled) return;
       if (error) { console.warn('[FamilyPulseCard] fetch failed', error.message); setRows({}); return; }
       setRows(Object.fromEntries((data ?? []).map((r: any) => [r.member_id, r as LocRow])));

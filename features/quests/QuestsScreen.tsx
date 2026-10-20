@@ -1141,7 +1141,9 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
                     ...kidSections.other,
                   ]
                 : filteredQuests
-              ).map(q => (
+              // A quest can sit in two kid sections at once (e.g. an unassigned grandparent-sponsored chore is both Bounty Board and
+              // Grandparent), which rendered it twice with the same key. Show each quest once.
+              ).filter((q, i, all) => all.findIndex(x => x.id === q.id) === i).map(q => (
                 <QuestCard
                   key={q.id}
                   q={q}

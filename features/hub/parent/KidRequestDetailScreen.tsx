@@ -10,6 +10,7 @@
  * the old HelpDispatchQueue.tsx inline cards — not duplicated, not
  * reinvented.
  */
+import { openInMaps } from '@/features/calendar/components/EventCard';
 import { OverlayHeading } from '@/components/OverlayPage';
 import { PageHeading } from '@/components/PageHeading';
 import React, { useEffect, useState } from 'react';
@@ -273,7 +274,7 @@ export function KidRequestDetailScreen({ requestId, onClose }: {
           {/* Type-specific fields shown only when present */}
           <View style={{ gap: 8 }}>
             {req.location ? (
-              <Text style={{ fontSize: 13, color: colors.textSecondary }}>📍 {req.location}</Text>
+              <Text onPress={() => openInMaps(req.location!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }}>📍 {req.location}</Text>
             ) : null}
             {(req.scheduledDate || req.scheduledTime) ? (
               <Text style={{ fontSize: 13, color: colors.textSecondary }}>

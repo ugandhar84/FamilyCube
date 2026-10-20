@@ -6,6 +6,7 @@
  *  - Chores a grandparent wants to sponsor (safety review) and offers to handle an errand, with the usual approve / decline cards.
  *  - History: recent rides and recently decided sponsored chores.
  */
+import { openInMaps } from '@/features/calendar/components/EventCard';
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -109,7 +110,7 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
                   style={{ backgroundColor: urgent ? colors.dangerLight : cardBg, borderRadius: 18, padding: RHYTHM.card, gap: 6, ...shadow }}>
                   <Text style={{ fontSize: 16, fontWeight: '800', color: title }}>{meta?.emoji ?? '📣'} {urgent ? 'Emergency SOS' : (meta?.label ?? 'Request')} · {who.split(' ')[0]}</Text>
                   {!!r.detail && <Text style={{ fontSize: 14, color: body }} numberOfLines={3}>{r.detail}</Text>}
-                  {!!r.location && <Text style={{ fontSize: 14, fontWeight: '600', color: body }}>📍 {r.location}</Text>}
+                  {!!r.location && <Text onPress={() => openInMaps(r.location!)} accessibilityRole="link" style={{ fontSize: 14, fontWeight: '600', color: colors.primary, textDecorationLine: 'underline' }}>📍 {r.location}</Text>}
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>Open →</Text>
                   <RequestTrail kind="kidRequest" id={r.id} colors={colors} />
                 </Pressable>
@@ -142,7 +143,7 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
                   {!!r.ev.location && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <MapPin size={14} color={colors.textTertiary} />
-                      <Text style={{ fontSize: 13, color: body }} numberOfLines={1}>{r.ev.location.split(',')[0]}</Text>
+                      <Text onPress={() => openInMaps(r.ev.location!)} accessibilityRole="link" style={{ fontSize: 13, color: colors.primary, textDecorationLine: 'underline' }} numberOfLines={1}>{r.ev.location.split(',')[0]}</Text>
                     </View>
                   )}
                   <RequestTrail kind="event" id={r.ev.id} colors={colors} />

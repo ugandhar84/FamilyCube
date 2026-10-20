@@ -285,6 +285,17 @@ function dedupeExactMatches<T extends Record<string, unknown>>(items: unknown, n
   return out;
 }
 
+// Short, safe reason code for a failed scan (no document text): lets the app say what actually went wrong, and shows up in the logs.
+function failReason(e: unknown): string {
+  const m = String((e as any)?.message ?? e ?? '');
+  if (/timed? ?out|Timeout/i.test(m) || (e as any)?.name === 'TimeoutError') return 'timeout';
+  const h = /Gemini HTTP (\d{3})/.exec(m);
+  if (h) return `gemini_${h[1]}`;
+  if (/empty content/i.test(m)) return 'empty_reply';
+  if (/parse JSON/i.test(m)) return 'unreadable_reply';
+  return 'other';
+}
+
 // ── Main handler ───────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -324,6 +335,7 @@ serve(async (req) => {
     } catch (e1) {
       console.warn('[parse-prescription] gemini-2.5-flash failed, retrying:', e1);
       usedModel = 'gemini-2.5-flash-retry';
+      const r1 = failReason(e1);
       try {
         // Was callGeminiFallback — a differently-shaped request (no
         // systemInstruction, no extraPages, half the token budget) that
@@ -338,11 +350,17 @@ serve(async (req) => {
         // instruction) gives a transient failure a real chance to resolve,
         // instead of falling back to a request shape that's more likely to
         // produce a different kind of bad response.
-        rawText = await callGeminiVision(geminiKey, primary, extras);
+        // After a timeout, retrying the same many-page request would just time out again: retry with the first page only so the person
+        // still gets a result instead of losing the whole scan.
+        rawText = await callGeminiVision(geminiKey, primary, r1 === 'timeout' ? [] : extras);
         parsed = extractJson(rawText);
       } catch (e2) {
-        console.error('[parse-prescription] all models failed:', e2);
-        return json({ error: 'AI parsing failed. Please enter details manually.' }, 422);
+        console.error('[parse-prescription] all models failed:', r1, failReason(e2), e2);
+        const why = failReason(e2);
+        const msg = why === 'timeout' || r1 === 'timeout' ? 'The scan took too long. Try again with fewer or smaller photos.'
+          : why === 'gemini_429' || r1 === 'gemini_429' ? 'The AI reader is busy right now. Wait a minute and try again.'
+          : 'AI parsing failed. Please enter details manually.';
+        return json({ error: msg, reason: `${r1}/${why}` }, 422);
       }
     }
 

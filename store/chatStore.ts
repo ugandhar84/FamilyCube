@@ -567,7 +567,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // exact channel the user is actively looking at. Live-reported as the
     // bottom-nav Chat badge staying lit with no actual new messages.
     const filtered = Object.fromEntries(counts.filter(([id]) => id !== _openChannelId));
-    set(s => ({ unreadCounts: { ...s.unreadCounts, ...filtered } }));
+    // Replace, don't merge: a count left on a channel that is no longer in the list (and so can never be opened and cleared) would
+    // keep the bottom-nav badge lit forever.
+    set(s => ({ unreadCounts: { ...(_openChannelId ? { [_openChannelId]: 0 } : {}), ...filtered } }));
   },
 
   // Bumps the read cursor to now and zeroes the badge locally — called when

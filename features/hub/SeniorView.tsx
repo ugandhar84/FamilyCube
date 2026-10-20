@@ -46,6 +46,7 @@ import { CreateQuestModal } from './senior/CreateQuestModal';
 import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { SectionCard, PickupRadarStatus } from './hubComponents';
+import { RideStatusCard } from './kid/RideStatusCard';
 import { KidRideBanner } from './kid/KidRideBanner';
 import { DirectPendingCard } from './parent/backlog/DirectPendingCard';
 import { OutgoingPendingCard } from './parent/backlog/OutgoingPendingCard';
@@ -719,6 +720,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     return a.name && a.status === 'confirmed';
   });
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+  // Rides THIS grandparent asked for (they are the rider) that nobody has confirmed yet — feeds the "Ask for a Ride" status card.
+  const myPendingRides = upcomingEvents.filter(e => {
+    if (e.date < today || !(e.rideRequired || e.category === 'Ride')) return false;
+    if (!(e.memberId === active.id || e.memberIds?.includes(active.id))) return false;
+    const a = eventAssignee(e);
+    return !(a.name && a.status === 'confirmed');
+  });
 
   // Either side (rider or driver) can confirm a pickup actually happened —
   // mirrors KidView's confirmPickup exactly, scoped to this GP as rider.
@@ -892,6 +900,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           conflictReason={conflictReasons.get(confirmedRide.id)}
         />
       )}
+
+      {/* Same "Ask for a Ride" card the kids and teens have: shows what is waiting / confirmed, or asks for a new ride. */}
+      <View style={{ marginTop: -14 }}>{/* the card brings its own 14 top margin; the section gap already spaces it */}
+      <RideStatusCard
+        colors={colors} isDark={isDark}
+        pendingCount={myPendingRides.length}
+        confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
+        confirmedRideDate={confirmedRide?.date}
+        confirmedRideTime={confirmedRide?.time}
+        driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
+        onPress={confirmedRide || myPendingRides.length > 0 ? () => setOpenGroup('help') : onHelpRequest}
+      />
+      </View>
 
       {/* Bug (reported live): a GP saw every family trip, including rides
           they had zero involvement in — HubScreen passes the full

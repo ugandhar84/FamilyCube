@@ -711,7 +711,7 @@ export default function HubScreen() {
         scrollEventThrottle={isParent ? 100 : undefined}
       >
         {(isParent || active.role === 'kid' || isTeen || active.role === 'senior') && headerEl}
-        {!isParent && !isKid && !isTeen && <HubMyList active={active} colors={colors} isDark={isDark} />}
+        {/* The private task list for a grandparent already lives inside their "Your day" section (HubTimelineSection). */}
         <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (
           <ParentView

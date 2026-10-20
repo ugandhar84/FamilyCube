@@ -86,7 +86,8 @@ export function FamilyPulseCard({
 
   if (rows === null) return <View style={{ marginHorizontal: 20, marginTop: 12, height: 120, borderRadius: 24, backgroundColor: colors.tealLight, opacity: 0.5 }} />;
 
-  const people = members.filter(m => !(m as any).deletedAt && m.inviteStatus !== 'pending');
+  // Grandparents are not on the Family Pulse: it is the household (parents, teens, kids) at a glance.
+  const people = members.filter(m => !(m as any).deletedAt && m.inviteStatus !== 'pending' && m.role !== 'senior');
   const where = Object.fromEntries(people.map(m => [m.id, whereIs(rows[m.id], places)])) as Record<string, Where>;
   const count = (k: Where['key']) => people.filter(m => where[m.id].key === k).length;
   const atHome = count('home'), atSchool = count('school'), atWork = count('work');

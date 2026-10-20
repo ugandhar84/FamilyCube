@@ -495,7 +495,9 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // something urgent/unsafe (emergency) rather than a routine item.
   const criticalKidRequest = (() => {
     const r = (kidRequests as any[]).find(req =>
-      req.status === 'pending' && (req.type === 'permission' || req.type === 'question' || req.urgency === 'emergency')
+      (req.status === 'pending' && (req.type === 'permission' || req.type === 'question' || req.urgency === 'emergency'))
+      // An SOS stays here until somebody marks it completed, even after one person has accepted it.
+      || (req.urgency === 'emergency' && req.status === 'approved')
     );
     return r ?? null;
   })();
@@ -577,11 +579,12 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         title: criticalKidRequest
           ? (criticalKidRequest.type === 'permission' || criticalKidRequest.type === 'question'
               ? (criticalKidRequest.detail ?? (criticalKidRequest.type === 'permission' ? 'Permission request' : 'Question from a kid'))
-              : 'SOS — needs attention now')
+              : criticalKidRequest.status === 'approved' ? 'SOS in progress — not completed yet' : 'SOS — needs attention now')
           : (r.detail ?? 'Request from a kid'),
         reason: `${members.find(m => m.id === r.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${
           criticalKidRequest?.type === 'permission' ? ' needs a yes/no.'
           : criticalKidRequest?.type === 'question' ? ' is waiting on your answer.'
+          : criticalKidRequest?.status === 'approved' ? ' sent an SOS. Mark it completed once they are safe.'
           : criticalKidRequest ? ' needs you right now.'
           : ' is waiting for your response.'
         }`,

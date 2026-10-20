@@ -48,8 +48,10 @@ export function GpRequestsQueueScreen({ onClose, onOpenRequest }: { onClose: () 
   const allRequests = useKidRequestStore(s => s.requests);
   const gpIds = new Set(members.filter(m => m.role === 'senior').map(m => m.id));
   const gpRequests = allRequests.filter(r => gpIds.has(r.fromMemberId));
-  const gpPending = gpRequests.filter(r => r.status === 'pending');
-  const gpAccepted = gpRequests.filter(r => r.status === 'approved');
+  // An SOS that is accepted but not completed yet stays under Pending.
+  const openSos = (r: any) => r.urgency === 'emergency' && r.status === 'approved';
+  const gpPending = gpRequests.filter(r => r.status === 'pending' || openSos(r));
+  const gpAccepted = gpRequests.filter(r => r.status === 'approved' && !openSos(r));
   const gpDone = gpRequests.filter(r => r.status !== 'pending' && r.status !== 'approved').slice(0, 12);
   const acceptedChores = chores.filter(c => c.categoryType === 'grandparent_quest' && ['approved', 'in_progress'].includes(c.status)).slice(0, 12);
   const doneChores = chores.filter(c => c.categoryType === 'grandparent_quest' && ['declined', 'completed', 'auto_approved'].includes(c.status)).slice(0, 12);

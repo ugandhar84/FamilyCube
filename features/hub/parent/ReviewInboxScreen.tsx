@@ -78,7 +78,7 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
   // Requests from a grandparent (SOS included) count under Grandparent requests, not Kid requests.
   const gpIds = useMemo(() => new Set(members.filter(m => m.role === 'senior').map(m => m.id)), [members]);
   const pendingRequestsCount = useMemo(() => kidRequests.filter(r => r.status === 'pending' && !gpIds.has(r.fromMemberId)).length, [kidRequests, gpIds]);
-  const pendingGpRequestsCount = useMemo(() => kidRequests.filter(r => r.status === 'pending' && gpIds.has(r.fromMemberId)).length, [kidRequests, gpIds]);
+  const pendingGpRequestsCount = useMemo(() => kidRequests.filter(r => gpIds.has(r.fromMemberId) && (r.status === 'pending' || (r.urgency === 'emergency' && r.status === 'approved'))).length, [kidRequests, gpIds]);
   // Two dispute mechanisms, both previously unreachable from anywhere on
   // the Hub — 'kid_disputed_redo' status (a kid disputing a redo request)
   // and disputeStatus: 'reversal_requested' (one parent asking to reverse

@@ -177,6 +177,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     return withinLast24h(when);
   });
   const [sosActive, setSosActive]   = useState(false);
+  // This person's open SOS (waiting or accepted) from the request table, so the card can show who is coming to help.
+  const mySos = kidRequests
+    .filter(r => r.type === 'emergency' && r.fromMemberId === active.id && (r.status === 'pending' || r.status === 'approved'))
+    .sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt)))[0] ?? null;
+  const sosHelper = mySos?.status === 'approved' ? members.find(m => m.id === (mySos.assignedHelper || mySos.respondedBy)) : undefined;
+  const fmt12 = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const [sosSending, setSosSending] = useState(false);
   // EmergencySosCard's own copy claims "Parents have been notified with
   // your location — help is on the way," but until now sosActive only ever
@@ -871,7 +877,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         cheerCount={kidsCheerable.length}
       />
 
-      <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark} />
+      <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark}
+        sos={mySos} helperName={sosHelper?.name.split(' ')[0]} acceptedAt={mySos?.respondedAt ? fmt12(mySos.respondedAt) : undefined}
+        onCancelSos={(id) => useKidRequestStore.getState().cancelRequest(id)} />
 
       {/* Scenarios 9.2/9.3 — visible ONLY while a parent-granted caregiver
           window is active; disappears the instant it expires or is

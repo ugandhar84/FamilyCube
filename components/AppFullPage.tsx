@@ -10,6 +10,7 @@ import { View, ScrollView, Pressable, KeyboardAvoidingView, Platform } from 'rea
 import { X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OverlayPage, OverlayHeading, useOverlayClose } from '@/components/OverlayPage';
+import { OverlayPortal } from '@/components/OverlayHost';
 import { useTheme } from '@/lib/ThemeContext';
 import { RHYTHM } from '@/constants/theme';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
@@ -59,6 +60,7 @@ export default function AppFullPage({
   }, [visible]);
 
   return (
+    <OverlayPortal visible={visible}>
     <OverlayPage visible={visible} onDismiss={onClose} zIndex={zIndex} backgroundColor={colors.background}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -73,5 +75,6 @@ export default function AppFullPage({
         </View>
       </KeyboardAvoidingView>
     </OverlayPage>
+    </OverlayPortal>
   );
 }

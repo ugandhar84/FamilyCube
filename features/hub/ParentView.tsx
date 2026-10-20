@@ -663,7 +663,20 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
     });
   }
 
-  if (myPendingHelperEvent) {
+  // A ride for a grandparent is a "grandparent request": it belongs to the Review inbox's Grandparent requests page, not a one-off card.
+  const helperRiderIsGp = !!myPendingHelperEvent && (myPendingHelperEvent.memberIds?.length ? myPendingHelperEvent.memberIds : myPendingHelperEvent.memberId ? [myPendingHelperEvent.memberId] : [])
+    .some((id: string) => members.find(m => m.id === id)?.role === 'senior');
+  if (myPendingHelperEvent && helperRiderIsGp) {
+    needsYouCards.push({
+      item: {
+        kind: 'approval', title: myPendingHelperEvent.title,
+        reason: `${members.find(m => m.id === (myPendingHelperEvent.memberId ?? myPendingHelperEvent.memberIds?.[0]))?.name?.split(' ')[0] ?? 'A grandparent'} asked for a ride. Waiting for you.`,
+        dueDate: myPendingHelperEvent.date, dueTime: myPendingHelperEvent.time,
+        categoryLabel: 'grandparent request',
+      },
+      onReview: onReviewOpen,
+    });
+  } else if (myPendingHelperEvent) {
     needsYouCards.push({
       item: {
         kind: 'approval', title: myPendingHelperEvent.title,

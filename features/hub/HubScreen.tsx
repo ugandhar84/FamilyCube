@@ -32,6 +32,7 @@ import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScre
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { OverlayPage } from '@/components/OverlayPage';
+import { OverlayHost } from '@/components/OverlayHost';
 import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
 import { GpRequestsQueueScreen } from './parent/GpRequestsQueueScreen';
 import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
@@ -780,6 +781,9 @@ export default function HubScreen() {
           />
         )}
       </ScrollView>
+
+      {/* Full-page forms declared inside a scrolling child view (the grandparent Hub) render here, over the whole screen. */}
+      <OverlayHost />
 
       {/* One instance per active trip — chat broadcast (30s in) and the
           overdue check both need to run independently per trip so two

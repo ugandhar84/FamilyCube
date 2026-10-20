@@ -33,7 +33,6 @@ import { KidTodaySection } from './kid/KidTodaySection';
 import { EmergencySosCard } from './senior/EmergencySosCard';
 import { YourRidesSection } from './senior/YourRidesSection';
 import { MedicationsCard } from './senior/MedicationsCard';
-import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { LendAHandCard } from './senior/LendAHandCard';
 import { CheerSquadSection } from './senior/CheerSquadSection';
@@ -1053,9 +1052,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       </AppFullPage>
 
-      <AppFullPage visible={openGroup === 'games'} onClose={() => setOpenGroup(null)} title="Family games" subtitle="Play together" accent="sky">
-        <FamilyGamesSection colors={colors} isDark={isDark} />
-      </AppFullPage>
 
       <SavingsMatchModal
         visible={showMatchModal} onClose={() => setShowMatchModal(false)}

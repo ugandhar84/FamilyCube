@@ -29,6 +29,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { OverlayHeading } from '@/components/OverlayPage';
+import { useGpRideRequests } from './useGpRideRequests';
 
 export type ReviewCategory = 'chores' | 'gp' | 'redemptions' | 'requests' | 'disputes';
 
@@ -86,9 +87,10 @@ export function ReviewInboxScreen({ onSelectCategory, onClose }: {
     chores.filter(c => c.status === 'kid_disputed_redo' || c.disputeStatus === 'reversal_requested').length,
   [chores]);
   // Grandparent requests: a chore a grandparent wants to sponsor (waiting for a parent's OK) and a grandparent's offer to handle an errand.
+  const gpRides = useGpRideRequests((activeMember as any)?.familyId);
   const pendingGpCount = useMemo(() =>
-    chores.filter(c => (c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval') || c.status === 'gp_offer_pending').length,
-  [chores]);
+    chores.filter(c => (c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval') || c.status === 'gp_offer_pending').length + gpRides.pending.length,
+  [chores, gpRides.pending.length]);
   const totalPending = pendingChoresCount + pendingGpCount + pendingRedemptionsCount + pendingRequestsCount + pendingDisputesCount;
 
   const decidedChores = useMemo(() =>

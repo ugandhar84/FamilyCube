@@ -33,6 +33,7 @@ import StepTransition from '@/components/StepTransition';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { OverlayPage } from '@/components/OverlayPage';
+import { OverlayPortal } from '@/components/OverlayHost';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 
@@ -44,7 +45,7 @@ function Frame({ fullPage, visible, onClose, canvas, children }: { fullPage: boo
     useUIStore.getState().setFullBleedScreenActive(true);
     return () => { showTabBar(); useUIStore.getState().setFullBleedScreenActive(false); };
   }, [fullPage, visible]);
-  if (fullPage) return <OverlayPage visible={visible} onDismiss={onClose} zIndex={80} backgroundColor={canvas}>{children}</OverlayPage>;
+  if (fullPage) return <OverlayPortal visible={visible}><OverlayPage visible={visible} onDismiss={onClose} zIndex={80} backgroundColor={canvas}>{children}</OverlayPage></OverlayPortal>;
   return <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>{children}</Modal>;
 }
 

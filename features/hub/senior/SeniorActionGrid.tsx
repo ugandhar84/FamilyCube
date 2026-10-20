@@ -1,12 +1,12 @@
 import { View, Text } from 'react-native';
-import { HandHeart, Heart, Compass, Gamepad2, Images, UserCircle, ArrowUpRight } from 'lucide-react-native';
+import { HandHeart, Heart, Compass, Images, UserCircle, ArrowUpRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { GEMINI } from '@/constants/geminiRhythm';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { KidSectionHeader } from '../kid/KidSectionHeader';
 import { GP } from './seniorTheme';
 
-export type SeniorGroup = 'help' | 'kids' | 'sponsor' | 'games';
+export type SeniorGroup = 'help' | 'kids' | 'sponsor';
 
 /**
  * SeniorActionGrid — the grandparent Hub's "Quick actions": four pastel tiles in the same 2x2 shape as the kid and parent Hubs. Each
@@ -21,7 +21,6 @@ export function SeniorActionGrid({ open, onToggle, helpCount, kidsCount, sponsor
     { key: 'help',    Icon: HandHeart, title: 'Lend a hand',     subtitle: 'Rides and errands you can help with', count: helpCount,    bg: colors.amberLight, fg: colors.amber },
     { key: 'kids',    Icon: Heart,     title: 'My grandkids',    subtitle: 'Cheer them on, send a bonus',          count: kidsCount,    bg: colors.pinkLight,  fg: colors.pink },
     { key: 'sponsor', Icon: Compass,   title: 'Sponsor a quest', subtitle: 'Set a challenge and a reward',        count: sponsorCount, bg: colors.tealLight,  fg: colors.teal },
-    { key: 'games',   Icon: Gamepad2,  title: 'Family games',    subtitle: 'Play together',                        count: 0,            bg: colors.primaryLight, fg: colors.primary },
   ];
   return (
     <View style={{ paddingHorizontal: 16 }}>

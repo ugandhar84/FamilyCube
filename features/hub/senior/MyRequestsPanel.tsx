@@ -1,6 +1,6 @@
 /**
  * MyRequestsPanel — the top of the grandparent's "Need a hand" page: a banner to raise a new request, then the requests THIS person has
- * raised, in tabs (Pending, Confirmed, Declined, History) with a small progress line on each (Asked, Driver asked, Confirmed, Done).
+ * raised, in tabs (Pending, Confirmed, Declined, History) with a small progress line on each (Sent, Awaiting reply, Confirmed, Done).
  * Tapping a request opens its event page (details, reassign, change history).
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -20,7 +20,7 @@ type Tab = 'pending' | 'confirmed' | 'declined' | 'history';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'pending', label: 'Pending' }, { key: 'confirmed', label: 'Confirmed' }, { key: 'declined', label: 'Declined' }, { key: 'history', label: 'History' },
 ];
-const STEPS = ['Asked', 'Driver asked', 'Confirmed', 'Done'];
+const STEPS = ['Sent', 'Awaiting reply', 'Confirmed', 'Done'];
 
 function fmtDay(iso: string) {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });

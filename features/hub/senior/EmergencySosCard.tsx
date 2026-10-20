@@ -1,6 +1,5 @@
 import { View, Text, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { AlertOctagon } from 'lucide-react-native';
-import { router } from 'expo-router';
 import { GP } from './seniorTheme';
 
 // Emergency SOS — onTriggerSos actually dispatches a real notification
@@ -42,9 +41,6 @@ export function EmergencySosCard({ sosActive, setSosActive, onTriggerSos, sosSen
               : 'Your family has been alerted. Waiting for someone to accept. If it is urgent, call them now.'}
           </Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => router.push('/(tabs)/chat')} style={{ flex: 1, borderRadius: 12, backgroundColor: colors.danger, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-              <Text style={{ fontSize: GP.sub, fontWeight: '800', color: '#fff' }}>Call Family</Text>
-            </Pressable>
             <Pressable onPress={cancel} style={{ flex: 1, borderRadius: 12, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', paddingVertical: 14, alignItems: 'center' }}>
               <Text style={{ fontSize: GP.sub, fontWeight: '800', color: '#F87171' }}>I'm OK Now</Text>
             </Pressable>

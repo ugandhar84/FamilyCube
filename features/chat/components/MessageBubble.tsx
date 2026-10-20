@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Play, CheckCheck, AlertTriangle, MapPin, FileText, RefreshCw } from 'lucide-react-native';
 import { ChatMessage } from '@/store/chatStore';
+import { SosCardBubble } from './SosCardBubble';
 import { VoiceNoteBubble } from './VoiceComponents';
 import { SwipeableBubble } from './SwipeableBubble';
 import { CollapsibleText, stripMentionBrackets } from './MentionText';
@@ -359,6 +360,28 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
         <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
           <SharedCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress}
             onPress={() => onOpenSharedCard?.(msg.systemEvent!.payload)} />
+          {metaRow}
+        </View>
+      </View>
+    );
+  }
+
+  if (msg.systemEvent?.type === 'sos_alert') {
+    return (
+      <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
+        alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
+        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
+        {!isMe && (
+          isGroupLast
+            ? <View style={[mb.avatar, { backgroundColor: senderColor }]}>
+                <Text style={{ fontSize: senderEmoji && senderEmoji !== '👤' ? 16 : 13, color: '#fff', fontWeight: '700' }}>
+                  {senderEmoji && senderEmoji !== '👤' ? senderEmoji : senderName[0]?.toUpperCase()}
+                </Text>
+              </View>
+            : <View style={{ width: 34 }} />
+        )}
+        <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
+          <SosCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress} />
           {metaRow}
         </View>
       </View>

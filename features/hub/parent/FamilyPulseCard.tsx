@@ -42,10 +42,14 @@ function whereIs(row: LocRow | undefined, places: FamilyPlace[]): Where {
   if (!row || !row.share_location_enabled) return { key: 'off', label: 'Not sharing' };
   if (row.lat == null || row.lng == null) return { key: 'off', label: 'No location yet' };
   const ageMin = row.last_updated ? (Date.now() - new Date(row.last_updated).getTime()) / 60000 : Infinity;
-  if (ageMin > 180) return { key: 'off', label: 'Offline' };
+  if (ageMin > 180) return { key: 'off', label: 'No recent location' };
   // The phone itself already decided "at home" (with its own GPS accuracy and the home radius). Trust that over a raw distance check here,
   // which marked people who were at home as "Out" when GPS drifted a hundred meters.
-  if (row.status === 'at_home') return { key: 'home', label: 'Home' };
+  if (row.status === 'at_home') {
+    const home = places.filter(pl => pl.kind === 'home');
+    // Only while the coordinates are still near home (a refreshed position must not keep an old "at home" label after leaving).
+    if (home.length === 0 || home.some(pl => metersBetween(row.lat!, row.lng!, pl.latitude, pl.longitude) <= Math.max(pl.radiusM, 75) * 3)) return { key: 'home', label: 'Home' };
+  }
   let best: { place: FamilyPlace; d: number } | null = null;
   for (const pl of places) {
     const d = metersBetween(row.lat, row.lng, pl.latitude, pl.longitude);

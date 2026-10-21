@@ -377,7 +377,7 @@ export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDar
     if (!hasLoadedOnceRef.current) setLoading(true);
     const { data } = await supabase.from('member_locations').select('*');
     if (data) {
-      const merged: MemberLocation[] = await Promise.all(data.map(async (loc: any) => {
+      const merged: MemberLocation[] = await Promise.all(data.filter((loc: any) => members.some(mb => mb.id === loc.member_id)).map(async (loc: any) => {
         const m = members.find(mb => mb.id === loc.member_id);
         return {
           ...loc,

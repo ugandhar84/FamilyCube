@@ -43,6 +43,7 @@ export async function decryptFileBytes(familyId: string, bytes: Uint8Array): Pro
  */
 export async function familyKeysForAnalysis(familyId: string): Promise<string[]> {
   const keys = [await getActiveFamilyKey(familyId), ...(await getPreviousFamilyKeys(familyId))].filter((k): k is CryptoKey => !!k);
+  if (keys.length === 0) throw new Error('This device has no family security code. Enter it in Profile → Data Recovery → Set up this device, then try again.');
   const out: string[] = [];
   for (const k of keys) {
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', k));

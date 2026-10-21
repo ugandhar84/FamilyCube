@@ -459,6 +459,37 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
     if (data) { setVaxes(prev => [data as Vaccine, ...prev]); showToast('Vaccine added'); }
   };
 
+  // Bulk saves: ONE insert for the whole reviewed list.
+  const saveScannedMedBulk = async (items: ParsedMedication[], reviewMemberId: string) => {
+    if (items.length === 0) return;
+    const { data, error } = await supabase.from('family_medications').insert(items.map(m => ({
+      family_id: familyId, member_id: reviewMemberId, assigned_by: activeMember?.id ?? null,
+      name: m.name.trim() || 'Unknown medication', dosage: m.dosage.trim(), dosage_unit: 'mg',
+      frequency: m.frequency || 'As directed', frequency_times: ['08:00'], category: 'other',
+      prescribing_doctor: m.prescriber || null, pharmacy: m.pharmacy || null, instructions: m.instructions || null,
+      is_ongoing: !m.duration || m.duration.toLowerCase().includes('ongoing'), is_active: true,
+      escalation_enabled: false, escalation_after_min: 60,
+    }))).select();
+    if (error) throw new Error(error.message);
+    setMeds(prev => [...((data ?? []) as Medication[]), ...prev]);
+    showToast(`${items.length} medication${items.length === 1 ? '' : 's'} added`);
+  };
+
+  const saveScannedVaxBulk = async (items: ParsedVaccine[], reviewMemberId: string) => {
+    if (items.length === 0) return;
+    const { data, error } = await supabase.from('family_vaccines').insert(items.map(v => ({
+      family_id: familyId, member_id: reviewMemberId,
+      title: v.vaccine_name.trim() || 'Unknown vaccine', vaccine_type: v.manufacturer || null,
+      date: v.administered_date ?? today(), next_due_date: v.next_due_date ?? null,
+      series_current: v.dose_number ?? 1, series_total: v.total_doses ?? 1,
+      administered_by: v.administered_by || null, location: v.site || null,
+      notes: v.lot_number ? `Lot: ${v.lot_number}` : null, done: true,
+    }))).select();
+    if (error) throw new Error(error.message);
+    setVaxes(prev => [...((data ?? []) as Vaccine[]), ...prev]);
+    showToast(`${items.length} vaccine${items.length === 1 ? '' : 's'} added`);
+  };
+
   const isOverdue = (med: Medication) => {
     if (med.taken_date === today()) return false;
     if (!med.frequency_times?.length) return false;
@@ -600,7 +631,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
     filteredMeds, filteredVaxes,
     markTaken, toggleVax, deleteMed, deleteVax, deleteMedsBulk, deleteVaxesBulk,
     toggleMedActive, addMed, updateMed, addVax, updateVax,
-    saveScannedMed, saveScannedVax, isOverdue,
+    saveScannedMed, saveScannedVax, saveScannedMedBulk, saveScannedVaxBulk, isOverdue,
     memberName, memberColor,
   };
 }

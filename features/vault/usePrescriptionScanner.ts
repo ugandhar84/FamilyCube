@@ -56,6 +56,8 @@ export interface ScanResult {
   additionalItemsNote?: string;
 }
 
+export interface ScanMeta { scanMode: 'rx' | 'vaccine'; ownerMemberId: string }
+
 export interface PendingImage {
   base64: string;
   mimeType: string;
@@ -63,7 +65,7 @@ export interface PendingImage {
 
 const DEFAULT_MAX_PHOTOS = 10;
 
-async function callEdgeFunction(images: PendingImage[]): Promise<Record<string, any>> {
+async function callEdgeFunction(images: PendingImage[], scanId?: string): Promise<Record<string, any>> {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token ?? '';
   const supabaseUrl = (supabase as any).supabaseUrl as string;
@@ -76,6 +78,7 @@ async function callEdgeFunction(images: PendingImage[]): Promise<Record<string, 
     },
     // send first image as primary; additional images as extraPages
     body: JSON.stringify({
+      ...(scanId ? { scanId } : {}),
       imageBase64: images[0].base64,
       mimeType: images[0].mimeType,
       extraPages: images.slice(1).map(img => ({ imageBase64: img.base64, mimeType: img.mimeType })),
@@ -112,6 +115,7 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string, max
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const { checked: consentChecked, consented, showSheet: showConsent, setShowSheet: setShowConsent, markConsented } = useAiConsent(memberId);
   const pendingScanAction = useRef<(() => void) | null>(null);
+  const currentJobId = useRef<string | null>(null);
   const withAiConsent = (action: () => void) => {
     if (!memberId || !consentChecked || consented) { action(); return; }
     pendingScanAction.current = action;
@@ -170,12 +174,22 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string, max
   };
 
   /** Send all accumulated (possibly redacted) images to the AI edge function. */
-  const scanNow = async (redactedImages: PendingImage[]) => {
+  const scanNow = async (redactedImages: PendingImage[], meta?: ScanMeta) => {
     if (redactedImages.length === 0) return;
     setScanError(null);
     setScanning(true);
+    // The scan is recorded on the server first, and the server stores the AI's answer on it, so closing the app mid-scan
+    // (or before reviewing) loses nothing: the person is asked to review it next time they open Health.
+    let jobId: string | undefined;
+    if (meta && memberId && familyId) {
+      const { data } = await supabase.from('scan_jobs').insert({
+        family_id: familyId, created_by: memberId, owner_member_id: meta.ownerMemberId, scan_mode: meta.scanMode,
+      }).select('id').single();
+      jobId = data?.id;
+    }
+    currentJobId.current = jobId ?? null;
     try {
-      const json = await callEdgeFunction(redactedImages);
+      const json = await callEdgeFunction(redactedImages, jobId);
       if (json.doc_type === 'none') {
         const what = json.reason ?? "This doesn't look like a prescription or vaccine record.";
         setScanError(`Not a medical document — ${what}\n\nPlease upload a prescription, pharmacy label, or immunization record.`);
@@ -208,6 +222,7 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string, max
       setPendingImages([]); // leave redact mode so review page shows
       setShowReview(true);
     } catch (err: any) {
+      if (jobId) supabase.from('scan_jobs').update({ status: 'failed', error: String(err?.message ?? '').slice(0, 300), updated_at: new Date().toISOString() }).eq('id', jobId).eq('status', 'processing').then(() => {});
       console.error('[usePrescriptionScanner]', err);
       setScanError(err.message ?? 'Could not parse. Please try again or enter details manually.');
     } finally {
@@ -215,8 +230,8 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string, max
     }
   };
 
-  const scan = (redactedImages: PendingImage[]) =>
-    new Promise<void>(resolve => withAiConsent(() => { scanNow(redactedImages).then(resolve); }));
+  const scan = (redactedImages: PendingImage[], meta?: ScanMeta) =>
+    new Promise<void>(resolve => withAiConsent(() => { scanNow(redactedImages, meta).then(resolve); }));
 
   /** PDF path: pick → read → scan directly (no redact step for PDFs). */
   const pickAndScan = async (source: 'document') => {
@@ -259,7 +274,7 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string, max
     scanning, scanResult, showReview, scanError,
     pendingImages, maxPhotos: MAX_PHOTOS,
     pickImage, scan, pickAndScan,
-    removeImage, clearPending, clearScan, setScanResult,
+    removeImage, clearPending, clearScan, setScanResult, currentJobId,
     // Consent sheet — caller renders <AiConsentSheet {...aiConsent} />.
     aiConsent: {
       visible: showConsent,

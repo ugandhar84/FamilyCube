@@ -38,7 +38,8 @@
  */
 import { gpSideMembers } from '@/lib/gpSide';
 import { PageHeading } from '@/components/PageHeading';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 import { View, Text, ScrollView, TouchableOpacity, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -184,6 +185,33 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
     }
   }, [openHealthRecordsComposerRequested, tab, kidView, canManageMeds]);
 
+  // Scans the AI already read (kept on the server): waiting for this person to review, even if the app was closed meanwhile.
+  type StoredScan = { id: string; scan_mode: 'rx' | 'vaccine'; owner_member_id: string; status: string; result: any; created_at: string };
+  const [storedScans, setStoredScans] = useState<StoredScan[]>([]);
+  const [resumeJob, setResumeJob] = useState<{ id: string; ownerMemberId: string; result: any } | null>(null);
+  const loadStoredScans = useCallback(async () => {
+    const me = storeActiveMember?.id;
+    if (!me) return;
+    const { data } = await supabase.from('scan_jobs').select('id, scan_mode, owner_member_id, status, result, created_at')
+      .eq('created_by', me).in('status', ['ready', 'processing']).order('created_at', { ascending: false }).limit(10);
+    const fresh = (data ?? []).filter((j: any) => j.status === 'ready' || Date.now() - new Date(j.created_at).getTime() < 4 * 60_000);
+    setStoredScans(fresh as StoredScan[]);
+  }, [storeActiveMember?.id]);
+  useEffect(() => {
+    loadStoredScans();
+    const t = setInterval(loadStoredScans, 20_000);
+    return () => clearInterval(t);
+  }, [loadStoredScans]);
+  const dismissStoredScan = async (id: string) => {
+    setStoredScans(prev => prev.filter(j => j.id !== id));
+    await supabase.from('scan_jobs').update({ status: 'dismissed', updated_at: new Date().toISOString() }).eq('id', id);
+  };
+  const openStoredScan = (j: StoredScan) => {
+    setScanMode(j.scan_mode);
+    setResumeJob({ id: j.id, ownerMemberId: j.owner_member_id, result: j.result });
+    setShowScanSheet(true);
+  };
+
   const openHealthScanRequested = useUIStore(s => s.openHealthScanRequested);
   const [showScanSheet, setShowScanSheet] = useState(false);
   const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
@@ -295,6 +323,27 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
             })}
           </View>
         )}
+        {storedScans.map(j => {
+          const ready = j.status === 'ready';
+          const n = ready ? ((j.result?.vaccines?.length ?? 0) + (j.result?.medications?.length ?? 0) || (j.result?.vaccine || j.result?.medication ? 1 : 0)) : 0;
+          const who = members.find(m => m.id === j.owner_member_id)?.name?.split(' ')[0] ?? 'someone';
+          return (
+            <TouchableOpacity key={j.id} disabled={!ready} onPress={() => openStoredScan(j)} activeOpacity={0.8}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.pinkLight, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.pink + '40' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>
+                  {ready ? `Scan ready to review · ${n} item${n === 1 ? '' : 's'}` : 'Reading your scan…'}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, marginTop: 2 }}>
+                  {ready ? `${j.scan_mode === 'vaccine' ? 'Vaccine record' : 'Prescription'} for ${who}. Tap to check it and add it to the records.` : 'It keeps going if you close the app. Come back to review it.'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => dismissStoredScan(j.id)} hitSlop={10} accessibilityLabel="Dismiss">
+                <Text style={{ fontSize: 20, color: bodyC }}>✕</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })}
         {(
           <HealthFigmaList
             colors={colors} isDark={isDark} kidView={kidView} canManageMeds={canManageMeds} showPersonFilter={showPersonFilter}
@@ -492,9 +541,13 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
         members={initialMemberId ? members.filter(m => m.id === initialMemberId) : members}
         colors={colors}
         isDark={isDark}
-        onClose={() => setShowScanSheet(false)}
+        onClose={() => { setShowScanSheet(false); setResumeJob(null); loadStoredScans(); }}
         onSaveMed={hr.saveScannedMed}
         onSaveVax={hr.saveScannedVax}
+        onSaveMedBulk={hr.saveScannedMedBulk}
+        onSaveVaxBulk={hr.saveScannedVaxBulk}
+        resumeJob={resumeJob}
+        onJobHandled={() => { setResumeJob(null); loadStoredScans(); }}
         onScanningChange={setScanning}
       />
     </View>

@@ -1,3 +1,4 @@
+import { supabase } from '@/lib/supabase';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
@@ -42,7 +43,7 @@ const CARD_SHADOW = GEMINI.cardShadow;
 
 export default function ScanReviewSheet({
   visible, scanMode, activeMemberId, consentMemberId, members, colors, isDark,
-  onClose, onSaveMed, onSaveVax, onScanningChange,
+  onClose, onSaveMed, onSaveVax, onSaveMedBulk, onSaveVaxBulk, resumeJob, onJobHandled, onScanningChange,
 }: {
   visible: boolean;
   scanMode: 'rx' | 'vaccine';
@@ -55,6 +56,13 @@ export default function ScanReviewSheet({
   onClose: () => void;
   onSaveMed: (med: ParsedMedication, memberId: string) => Promise<void>;
   onSaveVax: (vax: ParsedVaccine, memberId: string) => Promise<void>;
+  /** One insert for the whole list (preferred over saving item by item). */
+  onSaveMedBulk?: (meds: ParsedMedication[], memberId: string) => Promise<void>;
+  onSaveVaxBulk?: (vaxes: ParsedVaccine[], memberId: string) => Promise<void>;
+  /** A scan the AI already finished earlier (kept on the server): open it straight on the review page. */
+  resumeJob?: { id: string; ownerMemberId: string; result: any } | null;
+  /** Called when a stored scan has been saved or thrown away, so the banner can refresh. */
+  onJobHandled?: () => void;
   onScanningChange?: (scanning: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -63,7 +71,7 @@ export default function ScanReviewSheet({
 
   // Prescription scanner
   const {
-    scanning, scanResult, scanError,
+    scanning, scanResult, scanError, currentJobId,
     pendingImages, maxPhotos,
     pickImage, scan, pickAndScan,
     removeImage, clearPending, clearScan, setScanResult,
@@ -81,6 +89,7 @@ export default function ScanReviewSheet({
   const [reviewVaxes, setReviewVaxes] = useState<(ParsedVaccine & { skip?: boolean })[]>([]);
   const [reviewDocType, setReviewDocType] = useState<'medication' | 'vaccine'>('medication');
   const [reviewMemberId, setReviewMemberId] = useState('');
+  const scanMeta = { scanMode, ownerMemberId: (reviewMemberId || activeMemberId) as string };
   const [rxSaving, setRxSaving] = useState(false);
   // Per-item save outcome, keyed by array index — surfaces which specific
   // item failed instead of one generic alert covering the whole batch, so
@@ -214,9 +223,24 @@ export default function ScanReviewSheet({
     setReviewMeds(scanResult.medications.map(m => ({ ...m })));
     setReviewVaxes(scanResult.vaccines.map(v => ({ ...v })));
     setSaveErrors({});
-    setReviewMemberId(activeMemberId ?? '');
+    setReviewMemberId(resumeJob?.ownerMemberId ?? activeMemberId ?? '');
     setScanPage(2);
   }, [scanResult]);
+
+  // A stored scan (kept on the server) opens straight on the review page.
+  useEffect(() => {
+    if (!visible || !resumeJob?.result) return;
+    const r = resumeJob.result;
+    const toArr = (a: unknown, one: unknown) => Array.isArray(a) ? a : (one && typeof one === 'object' ? [one] : []);
+    currentJobId.current = resumeJob.id;
+    setScanResult({
+      doc_type: r.doc_type ?? 'medication',
+      medications: toArr(r.medications, r.medication) as any,
+      vaccines: toArr(r.vaccines, r.vaccine) as any,
+      confidence: r.confidence, confidenceNote: r.confidence_note,
+      additionalItemsFound: r.additional_items_found, additionalItemsNote: r.additional_items_note,
+    });
+  }, [visible, resumeJob?.id]);
 
   // Reset scan page whenever the sheet is (re)opened
   useEffect(() => {
@@ -258,30 +282,26 @@ export default function ScanReviewSheet({
     if (!reviewMemberId) return;
     setRxSaving(true);
     setSaveErrors({});
-    const items = reviewDocType === 'medication' ? reviewMeds : reviewVaxes;
-    const errors: Record<number, string> = {};
-    let savedCount = 0;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.skip) continue;
-      try {
-        if (reviewDocType === 'medication') await onSaveMed(item as ParsedMedication, reviewMemberId);
-        else await onSaveVax(item as ParsedVaccine, reviewMemberId);
-        savedCount++;
-      } catch (e: any) {
-        errors[i] = e.message ?? 'Could not save.';
+    const items = (reviewDocType === 'medication' ? reviewMeds : reviewVaxes).filter(i => !i.skip);
+    try {
+      // One bulk insert for the whole list (not one request per item).
+      if (reviewDocType === 'medication') {
+        if (onSaveMedBulk) await onSaveMedBulk(items as ParsedMedication[], reviewMemberId);
+        else for (const it of items) await onSaveMed(it as ParsedMedication, reviewMemberId);
+      } else {
+        if (onSaveVaxBulk) await onSaveVaxBulk(items as ParsedVaccine[], reviewMemberId);
+        else for (const it of items) await onSaveVax(it as ParsedVaccine, reviewMemberId);
       }
+    } catch (e: any) {
+      setRxSaving(false);
+      Alert.alert('Could not save', e?.message ?? 'Nothing was saved. Please try again; your scan is kept.');
+      return false;
     }
     setRxSaving(false);
-    if (Object.keys(errors).length > 0) {
-      setSaveErrors(errors);
-      // Some items may have saved fine even though others failed — closing
-      // the sheet now would lose the failed ones' data with no way back,
-      // so stay open showing which entries need attention instead.
-      if (savedCount > 0) {
-        Alert.alert('Partially saved', `${savedCount} of ${items.length} saved. Please retry or discard the ones marked below.`);
-      }
-      return false;
+    // The stored scan is done: stop asking to review it.
+    if (currentJobId.current) {
+      supabase.from('scan_jobs').update({ status: 'saved', updated_at: new Date().toISOString() }).eq('id', currentJobId.current).then(() => onJobHandled?.());
+      currentJobId.current = null;
     }
     return true;
   };
@@ -456,7 +476,7 @@ export default function ScanReviewSheet({
                     // the original picked image goes straight through
                     // unmodified, same as any other page in a multi-page
                     // scan that was never the active redact target.
-                    if (activeBoxes.length === 0) { await scan(pendingImages); return; }
+                    if (activeBoxes.length === 0) { await scan(pendingImages, scanMeta); return; }
                     const toBase64 = async (uri: string) => {
                       const r = await fetch(uri); const b = await r.arrayBuffer(); const u = new Uint8Array(b);
                       let s = ''; for (let i = 0; i < u.byteLength; i++) s += String.fromCharCode(u[i]); return btoa(s);
@@ -467,9 +487,9 @@ export default function ScanReviewSheet({
                       const finalImages = pendingImages.map((im, idx) =>
                         (idx === activeRedactIdx && capturedB64) ? { base64: capturedB64, mimeType: 'image/jpeg' } : im
                       );
-                      await scan(finalImages);
+                      await scan(finalImages, scanMeta);
                     } catch {
-                      await scan(pendingImages);
+                      await scan(pendingImages, scanMeta);
                     }
                   }}
                 >

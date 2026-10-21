@@ -3,15 +3,15 @@ import { View, Text, ScrollView } from 'react-native';
 import { useSchoolStore } from '@/store/schoolStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
-import { subjectTone, timeToMins, fmtTime12 } from '@/features/vault/tabs/school/ClassRow';
+import { subjectTone, timeToMins } from '@/features/vault/tabs/school/ClassRow';
 import { prettySubject } from '@/features/vault/tabs/school/schoolUtils';
 import { termsOf, guessCurrentTerm, periodsInTerm } from '@/features/vault/tabs/school/schoolUtils';
 import { KidSectionHeader } from './KidSectionHeader';
 import { RHYTHM } from '@/constants/theme';
 import { GEMINI } from '@/constants/geminiRhythm';
 
-// Three classes are visible at a time; the list scrolls (snapping a class at a time) and opens on the class in session, or the next one.
-const ROW_H = 52, GAP = 6, VISIBLE = 3;
+// Six classes are visible at a time; the list scrolls (snapping a class at a time) and opens on the class in session, or the next one.
+const ROW_H = 52, GAP = 6, VISIBLE = 6;
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 type HolidayDay = { date: string; reason: string };
@@ -129,10 +129,9 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
             const isNow = isToday && nowMin >= timeToMins(p.startTime) && nowMin < timeToMins(p.endTime);
             const past = isToday && nowMin >= timeToMins(p.endTime);
             return (
-              // One compact line per class: time, subject, room.
+              // One compact line per class: class name and room.
               <View key={p.id} style={{ height: ROW_H, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 12, opacity: past ? 0.7 : 1,
                 backgroundColor: tone(p.subject).fg + (isDark ? '33' : '33'), borderWidth: isNow ? 2 : 0, borderColor: tone(p.subject).fg }}>
-                <Text style={{ width: 66, fontSize: 12, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.startTime)}</Text>
                 <Text style={{ flex: 1, fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>{prettySubject(p.subject)}</Text>
                 {p.room ? <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: isDark ? tone(p.subject).fg + '55' : '#FFFFFF' }}>
                   <Text style={{ fontSize: 11, fontWeight: '800', color: tone(p.subject).fg }}>{String(p.room).replace(/^room\s*/i, '')}</Text>

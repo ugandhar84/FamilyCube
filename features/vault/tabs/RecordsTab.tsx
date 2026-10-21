@@ -125,6 +125,12 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
         }),
       );
       setRecords(rows as MedRecord[]);
+      // Findings the AI already produced but nobody approved yet (kept server-side): back into the review queue.
+      const drafts: Record<string, AiAnalysis | AppointmentAnalysis> = {};
+      await Promise.all((data ?? []).filter((r: any) => !r.ai_analyzed && r.ai_pending_json && isEncryptedBlob(r.ai_pending_json)).map(async (r: any) => {
+        try { const d = await decryptAnalysis<AiAnalysis>(familyId, r.ai_pending_json); if (d) drafts[r.id] = d; } catch { /* unreadable draft: ignore */ }
+      }));
+      if (Object.keys(drafts).length) setPending(prev => ({ ...drafts, ...prev }));
     }
     setLoading(false);
   }, [familyId]);
@@ -432,6 +438,11 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
       const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;
       if (!analysis?.summary) throw new Error('Invalid AI response');
       setPending(prev => ({ ...prev, [rec.id]: analysis }));
+      // Keep the findings on the server (encrypted) so they survive leaving the screen or closing the app.
+      try {
+        const draft = await encryptAnalysis(familyId, analysis);
+        await supabase.from('medical_records').update({ ai_pending_json: draft }).eq('id', rec.id);
+      } catch { /* the in-memory copy still works this session */ }
       // Auto-open the review sheet
       setReviewRec(rec);
       // Push notification to the record's assigned member
@@ -484,6 +495,7 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
         ai_tags:          analysis.tags ?? [],
         ai_analysis_json: encryptedBlob,   // stored as AES-GCM ciphertext
         ai_analyzed:      true,
+        ai_pending_json:  null,
         ...(audioGone ? { file_path: null, file_name: null, file_size: null } : {}),
       }).eq('id', reviewRec.id);
 
@@ -505,12 +517,8 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
     }
   };
 
-  const dismissReview = () => {
-    if (reviewRec) {
-      setPending(prev => { const c = { ...prev }; delete c[reviewRec.id]; return c; });
-    }
-    setReviewRec(null);
-  };
+  // Closing the review keeps the findings (they stay in "ready to review"); nothing is saved until the person approves.
+  const dismissReview = () => { setReviewRec(null); };
 
   // ── Selection / download ──────────────────────────────────────────────────
   const toggleSelect = (id: string) =>

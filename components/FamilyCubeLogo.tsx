@@ -58,8 +58,8 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
     <Svg width={size} height={h} viewBox="0 0 200 236">
       <Defs>
         <LinearGradient id={`top_${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%"   stopColor={BRAND.pink2} />
-          <Stop offset="100%" stopColor={BRAND.pink} />
+          <Stop offset="0%"   stopColor={BRAND.amber2} />
+          <Stop offset="100%" stopColor={BRAND.amber} />
         </LinearGradient>
         <LinearGradient id={`left_${uid}`} x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%"   stopColor={BRAND.teal2} />
@@ -71,7 +71,7 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
         </LinearGradient>
       </Defs>
 
-      {/* ══ TOP FACE — Lavender — House ══ */}
+      {/* ══ TOP FACE — Amber — House ══ */}
       <Path d={TOP_FACE} fill={`url(#top_${uid})`} />
       {/* Chimney (sticks above roofline) */}
       <Rect x={117} y={26} width={12} height={20} fill={BRAND.white} rx={2.5} opacity={0.95} />
@@ -80,10 +80,10 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
       {/* Wall body */}
       <Rect x={60} y={61} width={80} height={36} fill={BRAND.white} rx={2.5} opacity={0.95} />
       {/* 4-pane window — lavender squares cut into white wall */}
-      <Rect x={67} y={66} width={18} height={13} fill={BRAND.pink} rx={2} opacity={0.92} />
-      <Rect x={89} y={66} width={18} height={13} fill={BRAND.pink} rx={2} opacity={0.92} />
-      <Rect x={67} y={82} width={18} height={11} fill={BRAND.pink} rx={2} opacity={0.92} />
-      <Rect x={89} y={82} width={18} height={11} fill={BRAND.pink} rx={2} opacity={0.92} />
+      <Rect x={67} y={66} width={18} height={13} fill={BRAND.amber} rx={2} opacity={0.92} />
+      <Rect x={89} y={66} width={18} height={13} fill={BRAND.amber} rx={2} opacity={0.92} />
+      <Rect x={67} y={82} width={18} height={11} fill={BRAND.amber} rx={2} opacity={0.92} />
+      <Rect x={89} y={82} width={18} height={11} fill={BRAND.amber} rx={2} opacity={0.92} />
 
       {/* ══ LEFT FACE — Sage — Family ══ */}
       <Path d={LEFT_FACE} fill={`url(#left_${uid})`} />
@@ -122,7 +122,7 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
       {/* Child body */}
       <Path d="M44,183 C44,174 64,174 64,183 L66,204 L42,204 Z" fill={BRAND.white} opacity={0.82} />
 
-      {/* ══ RIGHT FACE — Terracotta — Care (hands + heart) ══ */}
+      {/* ══ RIGHT FACE — Lavender — Care (hands + heart) ══ */}
       <Path d={RIGHT_FACE} fill={`url(#right_${uid})`} />
 
       {/* Large heart */}

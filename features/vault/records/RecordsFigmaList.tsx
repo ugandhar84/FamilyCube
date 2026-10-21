@@ -74,6 +74,7 @@ export default function RecordsFigmaList({
   // "edit it." If a record IS still pending AI review, tapping instead
   // opens that real review screen, since that's the more useful action.
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState<Record<string, boolean>>({});
 
   function RecordRow({ rec, isLast }: { rec: MedRecord; isLast: boolean }) {
     const tag = TAG_MAP[rec.tag] ?? TAG_MAP.other;
@@ -180,6 +181,47 @@ export default function RecordsFigmaList({
                 <Text style={{ fontSize: 12, color: titleC, marginTop: 3, lineHeight: 17 }}>{rec.ai_summary}</Text>
               </View>
             )}
+            {rec.ai_analyzed && rec.ai_analysis_json && (() => {
+              const an: any = rec.ai_analysis_json;
+              const open = !!reportOpen[rec.id];
+              const lists: { label: string; items: string[] }[] = [
+                { label: 'KEY FINDINGS', items: an.key_findings ?? [] },
+                { label: 'FOLLOW-UP', items: an.follow_up_items ?? [] },
+                { label: 'DISCUSSION', items: (an.discussion_topics ?? []).map((d: any) => `${d.title}${d.description ? ` — ${d.description}` : ''}`) },
+                { label: 'NEXT STEPS', items: (an.next_steps ?? []).map((n: any) => n.text) },
+              ].filter(l => l.items.length > 0);
+              if (lists.length === 0 && !an.urgency_reason && !(an.tags?.length)) return null;
+              return (
+                <View style={{ borderRadius: 10, borderWidth: 1, borderColor: border, padding: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setReportOpen(p => ({ ...p, [rec.id]: !open }))}
+                    accessibilityRole="button" accessibilityLabel={open ? 'Hide full report' : 'Show full report'}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: titleC }}>Full report</Text>
+                    {open ? <ChevronUp size={16} color={bodyC} /> : <ChevronRight size={16} color={bodyC} />}
+                  </TouchableOpacity>
+                  {open && (
+                    <View style={{ marginTop: 8, gap: 10 }}>
+                      {!!an.urgency_reason && (
+                        <Text style={{ fontSize: 12, color: titleC, lineHeight: 17 }}>
+                          <Text style={{ fontWeight: '800' }}>{(URGENCY_META[an.urgency as keyof typeof URGENCY_META]?.label ?? 'Urgency')}: </Text>{an.urgency_reason}
+                        </Text>
+                      )}
+                      {lists.map(l => (
+                        <View key={l.label} style={{ gap: 3 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.teal, letterSpacing: 0.4 }}>{l.label}</Text>
+                          {l.items.map((it, i) => (
+                            <Text key={i} style={{ fontSize: 12, color: titleC, lineHeight: 17 }}>• {it}</Text>
+                          ))}
+                        </View>
+                      ))}
+                      {!!an.tags?.length && <Text style={{ fontSize: 11, color: bodyC }}>{an.tags.join(' · ')}</Text>}
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
 
             {!rec.file_name && !rec.file_path && (
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderRadius: 10, borderWidth: 1,

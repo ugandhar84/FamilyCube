@@ -300,7 +300,7 @@ function failReason(e: unknown): string {
 
 // ── Main handler ───────────────────────────────────────────────────────────────
 
-serve(async (req) => {
+async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
   }
@@ -383,4 +383,31 @@ serve(async (req) => {
     console.error('[parse-prescription] unhandled error:', err);
     return json({ error: err.message ?? 'Internal error' }, 500);
   }
+}
+
+// Wraps the handler so the result is also stored on the scan_jobs row (when the app sends a scanId): if the person closed the app while
+// the AI was reading, the finished result is still waiting for them to review next time.
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return handle(req);
+  let scanId: string | undefined;
+  try { scanId = (await req.clone().json())?.scanId; } catch { /* no body */ }
+  const res = await handle(req);
+  if (scanId && /^[0-9a-f-]{36}$/i.test(scanId)) {
+    try {
+      const body = await res.clone().json();
+      const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (url && key) {
+        const patch = res.ok && !body.error
+          ? { status: 'ready', result: body, updated_at: new Date().toISOString() }
+          : { status: 'failed', error: String(body.error ?? 'failed').slice(0, 300), updated_at: new Date().toISOString() };
+        await fetch(`${url}/rest/v1/scan_jobs?id=eq.${scanId}&status=eq.processing`, {
+          method: 'PATCH',
+          headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(patch),
+        });
+      }
+    } catch (e) { console.warn('[parse-prescription] could not store scan job:', (e as Error).message); }
+  }
+  return res;
 });
+

@@ -31,7 +31,7 @@ const CONSENT_VERSION = 'v1';
 export const AI_CONSENT_TEXT =
   "Some features in Family Cube — scanning a prescription, flyer, receipt, or medical record, " +
   "and recording a doctor's visit — use AI to read what you upload. To do that, the photo, audio, " +
-  "or document you provide is sent to Google (its Gemini AI service), a third-party company, and to a backup AI provider if needed. " +
+  "or document you provide is sent to a third-party AI service provider (and to a backup AI provider if needed) so it can be read. " +
   "We don't send anything else from your account — only the specific item you choose to scan or record.";
 
 async function hasDbConsent(memberId: string): Promise<boolean> {

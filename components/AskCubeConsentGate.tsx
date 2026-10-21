@@ -38,7 +38,7 @@ const CONSENT_VERSION = 'v1';
 export const ASK_CUBE_CONSENT_TEXT =
   "Ask Cube is an AI assistant. To answer you, what you type — along with relevant " +
   "family context needed to help (like upcoming events or your chore list) — is sent " +
-  "to Google (its Gemini AI service), and to a backup AI provider if needed, to generate a response. These are third-party companies, and they do not use it for advertising. " +
+  "to a third-party AI service provider, and to a backup AI provider if needed, to generate a response. These are third-party companies, and they do not use it for advertising. " +
   "We don't send your full chat history, health records, or location to the AI provider — " +
   "only what's needed to answer your specific question.";
 

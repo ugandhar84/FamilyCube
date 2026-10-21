@@ -34,20 +34,8 @@ function groupBreaks(days: HolidayDay[]): Break[] {
   return out.map(({ key: _k, ...b }) => b);
 }
 
-/**
- * SchoolDayCard — a kid's or teen's school timetable for today, on the Hub under "Your day": one pastel row per class (time, subject,
- * room, teacher), the current class marked NOW and finished ones dimmed. Shows a calm "No school today" on a holiday, and nothing at
- * all when there is no schedule or no classes today.
- */
-export function SchoolDayCard({ memberId, colors, isDark, collapseAfter, hideHeader, bare }: {
-  memberId: string; colors: any; isDark: boolean;
-  /** Show only this many classes (from the current one) with a "+N more" link. Default: every class. */
-  collapseAfter?: number;
-  /** Hide the section heading (the parent Hub shows its own above the kid tabs). */
-  hideHeader?: boolean;
-  /** No outer margins (when placed inside another card). */
-  bare?: boolean;
-}) {
+/** One child's school day: which day to show (today while school is on, else the next school day), its classes, and any holiday today. */
+export function useSchoolDay(memberId: string) {
   const { schedules, loaded, loadFromStorage } = useSchoolStore();
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   const [now, setNow] = useState(() => new Date());
@@ -92,6 +80,24 @@ export function SchoolDayCard({ memberId, colors, isDark, collapseAfter, hideHea
   const periods = target?.periods ?? [];
   const isToday = target?.offset === 0;
 
+  return { schedule, now, nowMin, target, todayBreak, periods, isToday };
+}
+
+/**
+ * SchoolDayCard — a kid's or teen's school timetable for today, on the Hub under "Your day": one pastel row per class (time, subject,
+ * room, teacher), the current class marked NOW and finished ones dimmed. Shows a calm "No school today" on a holiday, and nothing at
+ * all when there is no schedule or no classes today.
+ */
+export function SchoolDayCard({ memberId, colors, isDark, collapseAfter, hideHeader, bare }: {
+  memberId: string; colors: any; isDark: boolean;
+  /** Show only this many classes (from the current one) with a "+N more" link. Default: every class. */
+  collapseAfter?: number;
+  /** Hide the section heading (the parent Hub shows its own above the kid tabs). */
+  hideHeader?: boolean;
+  /** No outer margins (when placed inside another card). */
+  bare?: boolean;
+}) {
+  const { schedule, now, nowMin, target, todayBreak, periods, isToday } = useSchoolDay(memberId);
   const tone = (subject: string) => subjectTone(subject, colors);
   // The class in session, else the next upcoming one, else the last.
   const focusIdx = !isToday ? 0 : (() => {

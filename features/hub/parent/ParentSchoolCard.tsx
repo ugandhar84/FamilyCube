@@ -23,13 +23,13 @@ function KidTab({ kid, on, onPress, colors, isDark, wide }: { kid: FamilyMember;
   const note = todayBreak ? `🎉 ${todayBreak.reason.length > 14 ? todayBreak.reason.slice(0, 13) + '…' : todayBreak.reason}` : `${periods.length}`;
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${kid.name}, ${todayBreak ? `holiday ${todayBreak.reason}` : `${periods.length} classes`}`}
-      style={{ minWidth: wide ? 150 : 116, flex: wide ? 1 : undefined, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 1, backgroundColor: on ? colors.card : 'transparent' }}>
+      style={{ minWidth: wide ? 150 : 140, flex: wide ? 1 : undefined, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 1, backgroundColor: on ? colors.card : 'transparent' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
         <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={20} />
         <Text style={{ fontSize: 13, fontWeight: on ? '800' : '600', color: on ? titleC : colors.textSecondary }} numberOfLines={1}>{kid.name.split(' ')[0]}</Text>
       </View>
       <Text style={{ fontSize: 11, fontWeight: '700', color: todayBreak ? colors.amber : colors.textTertiary }} numberOfLines={1}>
-        {todayBreak ? note : (wide && liveText) ? liveText : `${note} class${periods.length === 1 ? '' : 'es'}`}
+        {todayBreak ? note : (isToday && nowMin >= timeToMins(periods[0]?.startTime ?? '24:00') && liveText) ? liveText : `${note} class${periods.length === 1 ? '' : 'es'}`}
       </Text>
     </Pressable>
   );

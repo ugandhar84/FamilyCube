@@ -90,8 +90,12 @@ const CALLKEEP_OPTIONS = {
 
 let didSetup = false;
 
+/** iOS call-style ringing needs the VoIP background mode, which App Review rejected (2.5.4). Off unless EXPO_PUBLIC_FC_VOIP=1 (and the build has FC_ENABLE_VOIP=1). Android is unaffected. */
+const IOS_VOIP_ENABLED = process.env.EXPO_PUBLIC_FC_VOIP === '1';
+
 export async function setupCallAlerts(): Promise<void> {
   if (!RNCallKeep || didSetup) return;
+  if (Platform.OS === 'ios' && !IOS_VOIP_ENABLED) return;
   if (Platform.OS === 'ios' && isChinaRegion()) {
     console.log('[callAlert] Skipping CallKeep setup — device region is China');
     return;
@@ -141,6 +145,7 @@ export async function saveVoipTokenToMember(memberId: string, familyId: string, 
 // the live listener still matters for token refreshes that happen later
 // while the app is running.
 export function listenForVoipToken(onToken: (token: string) => void): () => void {
+  if (Platform.OS === 'ios' && !IOS_VOIP_ENABLED) return () => {};
   if (Platform.OS !== 'ios' || !NativeModules.RNCallKeep) {
     console.log('[callAlert] listenForVoipToken: skipped', { platform: Platform.OS, hasCallKeep: !!NativeModules.RNCallKeep });
     return () => {};

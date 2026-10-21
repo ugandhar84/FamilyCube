@@ -1,4 +1,8 @@
 const IS_EAS = !!process.env.EAS_BUILD;
+// Call-style reminders ring through CallKit from a VoIP (PushKit) push. App Review (guideline 2.5.4) rejected the app because it declares the
+// "voip" background mode without a real VoIP feature, so the iOS build ships WITHOUT it. The code stays in the repo: set FC_ENABLE_VOIP=1 for
+// a build (and EXPO_PUBLIC_FC_VOIP=1 for the JS side) to bring the ringing back.
+const VOIP_ENABLED = process.env.FC_ENABLE_VOIP === '1';
 
 /** @type {import('expo/config').ExpoConfig} */
 const config = {
@@ -109,7 +113,7 @@ const config = {
       // prebuild output: it's present here whether or not it's listed in
       // this array. The actual regression cause is still unidentified —
       // do not assume this mode is it.
-      UIBackgroundModes: ["fetch", "location", "voip"],
+      UIBackgroundModes: VOIP_ENABLED ? ["fetch", "location", "voip"] : ["fetch", "location"],
     },
   },
   android: {
@@ -315,7 +319,8 @@ const config = {
     "@react-native-firebase/app",
     "@react-native-firebase/messaging",
     "react-native-quick-crypto",
-    "./plugins/withCallKeep.js",
+    // iOS PushKit / CallKit AppDelegate wiring: only when VoIP is enabled (see VOIP_ENABLED).
+    ...(VOIP_ENABLED ? ["./plugins/withCallKeep.js"] : []),
     "./plugins/withCallKeepAndroid.js",
     "./plugins/withFirebasePodfileFixes.js",
     "./plugins/withFmtConstevalFix.js",

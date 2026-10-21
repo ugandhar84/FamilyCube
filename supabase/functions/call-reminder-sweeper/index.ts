@@ -588,7 +588,25 @@ serve(async (req) => {
         // query needed. Only meaningful for events (chores never set this).
         subjectName: t.subjectMemberId ? (nameOf[t.subjectMemberId] ?? undefined) : undefined,
       });
+      // Members with no VoIP token (the iOS build ships without VoIP, App Review 2.5.4) still get the reminder: a loud, time-sensitive push.
+      let pushFallback = 0;
+      const noRing = t.memberIds.filter(id => !(tokensByMember[id]?.length));
+      if (noRing.length > 0) {
+        const { data: devs } = await supabase.from('member_device_tokens').select('expo_push_token').in('member_id', noRing);
+        const toks = (devs ?? []).map((r: any) => r.expo_push_token).filter((x: string) => x?.startsWith('ExponentPushToken'));
+        if (toks.length > 0) {
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(toks.map((token: string) => ({
+              to: token, sound: 'default', title: `⏰ ${t.title}`, body: t.location ? `Starting now · ${t.location}` : 'Starting now',
+              priority: 'high', channelId: 'family', interruptionLevel: 'time-sensitive',
+              data: { type: 'call_reminder', itemType: t.itemType, itemId: t.itemId },
+            }))),
+          }).then(() => { pushFallback = toks.length; }).catch(() => {});
+        }
+      }
       results.push({ itemType: t.itemType, itemId: t.itemId, title: t.title, delivery });
+      (delivery as any).pushFallback = pushFallback;
       // The claim row (item_type,item_id,due_at) was already written
       // atomically BEFORE this send, above — see the claim upsert. Even a
       // zero-token delivery keeps its claim (no separate write needed

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text } from 'react-native';
 import { useSchoolStore } from '@/store/schoolStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
@@ -92,10 +92,7 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
     const next = periods.findIndex(p => timeToMins(p.startTime) > nowMin);
     return next >= 0 ? next : Math.max(0, periods.length - 1);
   })();
-  const [expanded, setExpanded] = useState(false);
-  const COLLAPSED = 3;
-  const shown = expanded ? periods : periods.slice(focusIdx, focusIdx + COLLAPSED);
-  const hidden = periods.length - shown.length;
+  const shown = periods; // the whole day, no collapsing
 
   if (!schedule || (!target && !todayBreak)) return null;
 
@@ -137,12 +134,6 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
               </View>
             );
           })}
-          {(hidden > 0 || expanded) && periods.length > COLLAPSED && (
-            <TouchableOpacity onPress={() => setExpanded(v => !v)} accessibilityRole="button" accessibilityLabel={expanded ? 'Show fewer classes' : 'Show more classes'}
-              style={{ alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 4 }}>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>{expanded ? 'Show less' : `+${hidden} more`}</Text>
-            </TouchableOpacity>
-          )}
         </View>
         </>
       ) : null}

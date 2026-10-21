@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { useSchoolStore } from '@/store/schoolStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
-import { subjectTone, timeToMins } from '@/features/vault/tabs/school/ClassRow';
+import { subjectTone, timeToMins, fmtTime12 } from '@/features/vault/tabs/school/ClassRow';
 import { prettySubject } from '@/features/vault/tabs/school/schoolUtils';
 import { termsOf, guessCurrentTerm, periodsInTerm } from '@/features/vault/tabs/school/schoolUtils';
 import { KidSectionHeader } from './KidSectionHeader';
@@ -126,6 +126,10 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
               // One compact line per class: class name and room.
               <View key={p.id} style={{ height: 52, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 12, opacity: past ? 0.7 : 1,
                 backgroundColor: tone(p.subject).fg + (isDark ? '33' : '33'), borderWidth: isNow ? 2 : 0, borderColor: tone(p.subject).fg }}>
+                <View style={{ width: 62 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: isDark ? colors.textPrimary : GEMINI.titleColor, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.startTime)}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textSecondary : GEMINI.bodyColor }}>{timeToMins(p.endTime) - timeToMins(p.startTime)} min</Text>
+                </View>
                 <Text style={{ flex: 1, fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>{prettySubject(p.subject)}</Text>
                 {p.room ? <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: isDark ? tone(p.subject).fg + '55' : '#FFFFFF' }}>
                   <Text style={{ fontSize: 11, fontWeight: '800', color: tone(p.subject).fg }}>{String(p.room).replace(/^room\s*/i, '')}</Text>

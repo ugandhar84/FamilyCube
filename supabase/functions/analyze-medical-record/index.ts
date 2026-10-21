@@ -48,7 +48,7 @@ async function callGemini(
   textPrompt: string,
   imageParts: GeminiImagePart[],
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
   const parts: (GeminiImagePart | GeminiTextPart)[] = [...imageParts, { text: textPrompt }];
   const res = await fetch(url, {
     method: 'POST',
@@ -73,7 +73,7 @@ async function callGemini(
 
 // ── Gemini text fallback (DeepSeek-style, no vision needed) ───────────────────
 async function callGeminiText(prompt: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

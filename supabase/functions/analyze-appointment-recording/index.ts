@@ -55,7 +55,7 @@ async function callGemini(
   textPrompt: string,
   mediaParts: GeminiMediaPart[],
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
   const parts: (GeminiMediaPart | GeminiTextPart)[] = [...mediaParts, { text: textPrompt }];
   const res = await fetch(url, {
     method: 'POST',

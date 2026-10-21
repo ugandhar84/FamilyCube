@@ -24,7 +24,7 @@ const json = (body: unknown, status = 200) =>
   });
 
 const GEMINI_KEY       = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_URL       = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 // gemini-2.0-flash-exp supports image output via responseModalities — works with AI Studio key
 const GEMINI_IMAGE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
 const DEEPSEEK_KEY     = Deno.env.get('DEEPSEEK_API_KEY') ?? '';

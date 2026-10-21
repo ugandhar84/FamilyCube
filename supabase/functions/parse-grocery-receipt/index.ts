@@ -58,7 +58,7 @@ serve(async (req) => {
 
     // Call Gemini Vision API
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -157,7 +157,7 @@ Rules for extraction:
     const geminiData = await geminiRes.json();
     const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
-    // Strip all markdown code fences (gemini-2.5-flash sometimes wraps mid-string)
+    // Strip all markdown code fences (gemini-flash-latest sometimes wraps mid-string)
     const cleaned = rawText
       .replace(/```json\s*/gi, "")
       .replace(/```\s*/gi, "")

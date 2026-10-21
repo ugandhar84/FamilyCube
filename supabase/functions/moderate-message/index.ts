@@ -22,7 +22,7 @@ const json = (body: unknown, status = 200) =>
 
 const GEMINI_KEY   = Deno.env.get('GEMINI_API_KEY') ?? '';
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
-const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_URL   = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 
 const PROMPT = (text: string) => `You moderate messages in a family app used by parents and children together.

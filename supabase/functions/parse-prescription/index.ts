@@ -100,7 +100,7 @@ the original document before trusting a health record, so use it honestly rather
 interface ImageInput { imageBase64: string; mimeType: string; }
 
 async function callGeminiVision(key: string, primary: ImageInput, extras: ImageInput[]): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
   // Build image parts: primary + up to 2 extra pages
   const imageParts = [
     { inlineData: { mimeType: primary.mimeType, data: primary.imageBase64 } },
@@ -290,7 +290,8 @@ function failReason(e: unknown): string {
   const m = String((e as any)?.message ?? e ?? '');
   if (/timed? ?out|Timeout/i.test(m) || (e as any)?.name === 'TimeoutError') return 'timeout';
   const h = /Gemini HTTP (\d{3})/.exec(m);
-  if (h) return `gemini_${h[1]}`;
+  // Include Google's own error status word (e.g. NOT_FOUND, PERMISSION_DENIED); it names the problem and contains no document text.
+  if (h) { const w = /"status":\s*"([A-Z_]+)"/.exec(m); return `gemini_${h[1]}${w ? '_' + w[1] : ''}`; }
   if (/empty content/i.test(m)) return 'empty_reply';
   if (/parse JSON/i.test(m)) return 'unreadable_reply';
   return 'other';
@@ -319,7 +320,7 @@ serve(async (req) => {
     if (!geminiKey) return json({ error: 'GEMINI_API_KEY not configured' }, 500);
 
     let rawText = '';
-    let usedModel = 'gemini-2.5-flash';
+    let usedModel = 'gemini-flash-latest';
     let parsed: Record<string, unknown> | undefined;
 
     try {
@@ -333,7 +334,7 @@ serve(async (req) => {
       // instead of a retry (live-reported: "couldn't parse JSON" error).
       parsed = extractJson(rawText);
     } catch (e1) {
-      console.warn('[parse-prescription] gemini-2.5-flash failed, retrying:', e1);
+      console.warn('[parse-prescription] gemini-flash-latest failed, retrying:', e1);
       usedModel = 'gemini-2.5-flash-retry';
       const r1 = failReason(e1);
       try {

@@ -18,7 +18,7 @@ const CLIENT_SECRET  = Deno.env.get('KROGER_CLIENT_SECRET')!;
 const KROGER_BASE    = 'https://api-ce.kroger.com/v1';
 const DEEPSEEK_KEY   = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
 const GEMINI_KEY     = Deno.env.get('GEMINI_API_KEY') ?? '';
-const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',

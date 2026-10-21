@@ -38,47 +38,47 @@ export type AIChainConfig = Record<UseCaseKey, ModelSlot[]>;
 // gemini-1.5-flash (previously every fallback slot's second Gemini attempt)
 // is retired on the current v1beta API surface — HTTP 404 "models/
 // gemini-1.5-flash is not found for API version v1beta" (live-reported via
-// edge logs: a real image scan failed its primary gemini-2.5-flash attempt,
+// edge logs: a real image scan failed its primary gemini-flash-latest attempt,
 // then the "fallback" slot could never have succeeded either, since that
-// model no longer exists at all). Retrying the SAME gemini-2.5-flash model
+// model no longer exists at all). Retrying the SAME gemini-flash-latest model
 // is a real retry against a transient failure (network blip, momentary
 // image-processing error) — falling through to a dead model name never was.
 const DEFAULTS: AIChainConfig = {
-  mood_scan:      [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 12 }],
+  mood_scan:      [{ provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 8  },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 12 }],
   symptom_scan:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 8  },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 10 }],
   vet_chat:       [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
-  health_records: [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 15 },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 8  },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 10 }],
+  health_records: [{ provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 10 },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 15 },
                    { provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 20 }],
   pet_timeline:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 12 },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 15 }],
-  general_vision: [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 5  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  }],
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 12 },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 15 }],
+  general_vision: [{ provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 5  },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 8  }],
   general_text:   [{ provider: 'deepseek', model: 'deepseek-chat',    timeoutSecs: 5  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 8  },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 10 }],
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 8  },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 10 }],
   // Documents ask-cube/index.ts's own callModel() cascade — Claude Haiku
   // primary, Gemini fallback, DeepSeek final fallback. Not yet wired to
   // actually control ask-cube's runtime behavior (see UseCaseKey's own
   // comment above).
   ask_cube_chat:  [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', timeoutSecs: 20 },
-                   { provider: 'gemini',    model: 'gemini-2.5-flash',          timeoutSecs: 20 },
+                   { provider: 'gemini',    model: 'gemini-flash-latest',          timeoutSecs: 20 },
                    { provider: 'deepseek',  model: 'deepseek-chat',             timeoutSecs: 20 }],
   // Documents parse-flyer/index.ts's own MODELS retry array — 3x
-  // gemini-2.5-flash at 35s each. Not yet wired to control runtime.
-  flyer_parse:    [{ provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 35 },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 35 },
-                   { provider: 'gemini',   model: 'gemini-2.5-flash', timeoutSecs: 35 }],
+  // gemini-flash-latest at 35s each. Not yet wired to control runtime.
+  flyer_parse:    [{ provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 35 },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 35 },
+                   { provider: 'gemini',   model: 'gemini-flash-latest', timeoutSecs: 35 }],
   // Documents parse-grocery-receipt/index.ts's single hardcoded Gemini
   // call (no retry/timeout wrapper exists there today — 30s picked as a
   // sane default to register here). Not yet wired to control runtime.
-  grocery_receipt_parse: [{ provider: 'gemini', model: 'gemini-2.5-flash', timeoutSecs: 30 }],
+  grocery_receipt_parse: [{ provider: 'gemini', model: 'gemini-flash-latest', timeoutSecs: 30 }],
 };
 
 let cached: AIChainConfig | null = null;

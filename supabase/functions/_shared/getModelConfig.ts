@@ -8,8 +8,8 @@ export interface ModelConfig {
 }
 
 const DEFAULTS: ModelConfig = {
-  vision:   ['gemini-2.5-flash', 'gemini-2.0-flash'],
-  text:     ['gemini-2.5-flash', 'gemini-2.0-flash'],
+  vision:   ['gemini-flash-latest', 'gemini-2.0-flash'],
+  text:     ['gemini-flash-latest', 'gemini-2.0-flash'],
   deepseek: ['deepseek-chat'],
 };
 

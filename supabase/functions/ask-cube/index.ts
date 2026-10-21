@@ -28,7 +28,7 @@ const json = (body: unknown, status = 200) =>
 const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
 const DEEPSEEK_KEY  = Deno.env.get('DEEPSEEK_API_KEY') ?? '';
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
-const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 const DEEPSEEK_URL  = 'https://api.deepseek.com/chat/completions';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -886,7 +886,7 @@ async function callGemini(messages: any[], tools: unknown[]) {
 // as before. Claude remains available as a fallback rather than removed
 // outright, in case Gemini's own call throws (quota exhaustion, etc.).
 const MODEL_NAME_BY_PROVIDER: Record<'gemini' | 'deepseek' | 'claude', string> = {
-  claude: 'claude-haiku-4-5-20251001', gemini: 'gemini-2.5-flash', deepseek: 'deepseek-chat',
+  claude: 'claude-haiku-4-5-20251001', gemini: 'gemini-flash-latest', deepseek: 'deepseek-chat',
 };
 
 async function callModel(messages: unknown[], tools: unknown[]): Promise<{

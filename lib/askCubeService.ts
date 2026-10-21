@@ -114,7 +114,10 @@ export const askCube = {
   // to the member's own conversations — no edge function needed. messages
   // cascade via the table's own ON DELETE CASCADE foreign key.
   async deleteConversation(id: string) {
-    const { error } = await supabase.from('ask_cube_conversations').delete().eq('id', id);
+    // .select() returns the rows actually removed: a delete the database filtered out (not this person's thread) removes nothing and used to
+    // look like success, so the thread came back the next time the list loaded.
+    const { data, error } = await supabase.from('ask_cube_conversations').delete().eq('id', id).select('id');
     if (error) throw error;
+    if (!data || data.length === 0) throw new Error('Nothing was deleted');
   },
 };

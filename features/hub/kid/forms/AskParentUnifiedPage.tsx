@@ -17,6 +17,7 @@
  * typed text is preserved across pill switches for the 7 generic types.
  * Submit logic per type is ported verbatim from each original file.
  */
+import { SHOW_CALL_REMINDER } from '@/lib/callReminderUi';
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1236,6 +1237,7 @@ export function AskParentUnifiedPage({ active, members, familyId, initialType = 
                     )}
                   </FieldCard>
 
+                  {SHOW_CALL_REMINDER && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     backgroundColor: isDark ? colors.surface : '#F9FAFB', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -1247,6 +1249,7 @@ export function AskParentUnifiedPage({ active, members, familyId, initialType = 
                       thumbColor={rideAlertCall ? rideAccentColor : colors.textTertiary}
                     />
                   </View>
+                  )}
                 </FieldCardSection>
               </>
             )}

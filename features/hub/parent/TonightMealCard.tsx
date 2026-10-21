@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Animated, Easing, Image, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, Animated, Easing, Image, ScrollView, TouchableOpacity, AppState } from 'react-native';
 import { useUnsplashMealImage } from '@/lib/hooks/useUnsplashMealImage';
 import { useUIStore } from '@/store/uiStore';
 import { supabase } from '@/lib/supabase';
@@ -42,18 +42,13 @@ export function TonightMealCard({
     ).start();
   }, []);
 
+  // Loads today's meals, and reloads when meals are planned or changed (live), when the app comes back to the foreground, and every few
+  // minutes, so a dinner planned after the Hub opened shows up without leaving the screen.
   useEffect(() => {
     if (!familyId) return; // wait — don't set [] yet, familyId may still be loading
     let cancelled = false;
-    const today = DAYS[(new Date().getDay() + 6) % 7];
-    const hour  = new Date().getHours();
-    // Show the most relevant meal slot for the time of day, fall back to all today's meals
-    const preferOrder = hour < 10
-      ? ['breakfast', 'snack', 'lunch', 'dinner']
-      : hour < 15
-      ? ['lunch', 'breakfast', 'snack', 'dinner']
-      : ['dinner', 'lunch', 'snack', 'breakfast'];
-    (async () => {
+    const load = async () => {
+      const today = DAYS[(new Date().getDay() + 6) % 7];
       const { data, error } = await supabase
         .from('family_meals')
         .select('id, title, emoji, type, chef_id, start_time, prep_minutes')
@@ -62,23 +57,24 @@ export function TonightMealCard({
         .eq('day', today)
         .order('type');
       if (cancelled) return;
-      if (error) { setMeals([]); return; }
+      if (error) { setMeals(prev => prev ?? []); return; }
       const rows = (data as TodayMeal[]) ?? [];
-      // Sort by preferred time-of-day order so primary meal is most relevant
-      const sorted = [...rows].sort((a, b) => {
-        const ai = preferOrder.indexOf(a.type?.toLowerCase());
-        const bi = preferOrder.indexOf(b.type?.toLowerCase());
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      });
       // Carousel order is the order of the day, not relevance to the current hour.
       const ORDER = ['breakfast', 'lunch', 'snack', 'dinner'];
       setMeals([...rows].sort((a, b) => {
         const ai = ORDER.indexOf(a.type?.toLowerCase()); const bi = ORDER.indexOf(b.type?.toLowerCase());
         return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
       }));
-      void sorted;
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const ch = supabase.channel(`tonight_meals_${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'family_meals', filter: `family_id=eq.${familyId}` },
+        () => { if (t) clearTimeout(t); t = setTimeout(load, 500); })
+      .subscribe();
+    const sub = AppState.addEventListener('change', st => { if (st === 'active') load(); });
+    const poll = setInterval(load, 5 * 60_000);
+    return () => { cancelled = true; if (t) clearTimeout(t); supabase.removeChannel(ch); sub.remove(); clearInterval(poll); };
   }, [familyId]);
 
   const hasMeals = !!meals && meals.length > 0;

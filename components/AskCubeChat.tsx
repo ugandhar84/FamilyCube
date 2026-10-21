@@ -324,26 +324,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
   // "New chat" state, same as startNewChat — otherwise the deleted
   // thread's messages would keep showing until the user manually started
   // a new chat, looking like the delete silently failed.
-  const deleteConversationFromHistory = (id: string, title: string | null) => {
-    Alert.alert(
-      'Delete conversation?',
-      `"${title?.trim() || 'New chat'}" will be permanently deleted. This can't be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive',
-          onPress: async () => {
-            try {
-              await askCube.deleteConversation(id);
-              setConversations(prev => prev.filter(c => c.id !== id));
-              if (id === conversationId) startNewChat();
-            } catch {
-              Alert.alert('Couldn\'t delete', 'Something went wrong — try again.');
-            }
-          },
-        },
-      ],
-    );
+  // Delete confirms inline in the history row ("Delete? Cancel / Delete"), not with an alert: an alert can open behind this full-screen
+  // chat and the tap looked dead.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const deleteConversationFromHistory = async (id: string) => {
+    setConfirmDeleteId(null);
+    try {
+      await askCube.deleteConversation(id);
+      setConversations(prev => prev.filter(c => c.id !== id));
+      if (id === conversationId) startNewChat();
+    } catch {
+      Alert.alert('Couldn\'t delete', 'This conversation could not be deleted. It may belong to another profile.');
+    }
   };
 
   // Empty-state starter prompts — personalized to real upcoming data instead
@@ -1465,12 +1457,25 @@ export default function AskCubeChat({ visible, onClose, activeMember, members, v
                       {formatConversationTimestamp(c.updatedAt)}
                     </Text>
                   </View>
-                  <Pressable
-                    onPress={() => deleteConversationFromHistory(c.id, c.title)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
-                    <Trash2 size={16} color={colors.textTertiary} />
-                  </Pressable>
+                  {confirmDeleteId === c.id ? (
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <Pressable onPress={() => setConfirmDeleteId(null)} hitSlop={8}
+                        style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.card }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Cancel</Text>
+                      </Pressable>
+                      <Pressable onPress={() => deleteConversationFromHistory(c.id)} hitSlop={8}
+                        style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.danger }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textInverse }}>Delete</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => setConfirmDeleteId(c.id)} accessibilityRole="button" accessibilityLabel="Delete conversation"
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}>
+                      <Trash2 size={16} color={colors.textTertiary} />
+                    </Pressable>
+                  )}
                 </Pressable>
               );
             })}

@@ -45,6 +45,7 @@
  * orphaned a second event with the wrong category. `rideRequired: true`
  * here is what actually fixes that, not just a copy/layout change.
  */
+import { SHOW_CALL_REMINDER } from '@/lib/callReminderUi';
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, Switch, Alert } from 'react-native';
 import { Mic, ChevronLeft, X, Check, Phone, Trash2 } from 'lucide-react-native';
@@ -554,6 +555,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                       </View>
                     )}
 
+                    {SHOW_CALL_REMINDER && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       backgroundColor: isDark ? colors.surface : '#F9FAFB', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -565,6 +567,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         thumbColor={alertCall ? accentColor : colors.textTertiary}
                       />
                     </View>
+                    )}
 
                     <TouchableOpacity
                       disabled={!canSubmitStep2}

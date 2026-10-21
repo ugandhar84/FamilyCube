@@ -507,17 +507,23 @@ export default function HealthFigmaList({
         );
       })()}
 
-      {/* ── Select-mode bar ── */}
+      {/* ── Select-mode bar: same look as Health documents (count, Clear, red Delete) ── */}
       {selectMode && (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          borderRadius: 12, borderWidth: 1, borderColor: border, backgroundColor: cardBg, paddingHorizontal: 14, paddingVertical: 10 }}>
-          <TouchableOpacity onPress={exitSelectMode}><Text style={{ fontSize: 12, fontWeight: '700', color: bodyC }}>Cancel</Text></TouchableOpacity>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: titleC }}>{selectedIds.size} selected</Text>
-          <TouchableOpacity onPress={confirmBulkDelete} disabled={selectedIds.size === 0}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: selectedIds.size === 0 ? 0.4 : 1 }}>
-            <Trash2 size={14} color={colors.danger} />
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>Delete</Text>
-          </TouchableOpacity>
+          borderRadius: 14, borderWidth: 1, borderColor: colors.teal + '40', backgroundColor: colors.teal + '12',
+          paddingHorizontal: 14, paddingVertical: 10 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.teal }}>{selectedIds.size} selected</Text>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TouchableOpacity onPress={exitSelectMode} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={confirmBulkDelete} disabled={selectedIds.size === 0} accessibilityRole="button" accessibilityLabel="Delete selected"
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.danger, borderRadius: 10,
+                paddingHorizontal: 12, paddingVertical: 7, opacity: selectedIds.size === 0 ? 0.4 : 1 }}>
+              <Trash2 size={13} color="#fff" />
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Delete</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
       {!selectMode && !kidView && ((healthTab === 'meds' && filteredMeds.length > 0) || (healthTab === 'vax' && filteredVaxes.length > 0)) && (

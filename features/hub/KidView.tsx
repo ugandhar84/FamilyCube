@@ -82,8 +82,9 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
   onRideStatusOpen: () => void;
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
-  const { startGrandparentQuest } = useChoreStore();
-  const { events, updateEvent }                           = useEventStore();
+  const startGrandparentQuest = useChoreStore(s => s.startGrandparentQuest);
+  const events = useEventStore(s => s.events);
+  const updateEvent = useEventStore(s => s.updateEvent);
   const { rewards, redeemReward, getEligibleRewards, redemptions } = useRewardStore();
   const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests, expireStale: expireStaleRequests } = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
@@ -473,7 +474,8 @@ export function KidView({ focusKey, active, members, colors, isDark, activeTrips
 
   const hasAnimatedIn = useRef(false);
   useEffect(() => {
-    if (focusKey === 0 && hasAnimatedIn.current) return;
+    // Play the entrance once per mount. Replaying on every refocus reset the cards 8px down and slid them back, which read as a glitch.
+    if (hasAnimatedIn.current) return;
     hasAnimatedIn.current = true;
     opacities.forEach(v => v.setValue(1));
     translateYs.forEach(v => v.setValue(8));

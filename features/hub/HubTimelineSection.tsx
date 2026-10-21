@@ -1,3 +1,4 @@
+import { View } from 'react-native';
 import { gpSideMembers } from '@/lib/gpSide';
 import { useMemo } from 'react';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
@@ -81,7 +82,8 @@ export function HubTimelineSection({ active, members, events, colors, isDark }: 
   const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);
 
   if (todayEvents.length === 0 && dayLoading) {
-    return null; // same instant-empty-flash guard TodayView/ParentView apply — just don't render until the real data is in.
+    // Keep the space while the day's events load (a quiet placeholder), so the sections below don't jump down when they arrive.
+    return <View style={{ marginHorizontal: 20, marginTop: 14, height: 76, borderRadius: 22, backgroundColor: colors.surface, opacity: 0.5 }} />;
   }
 
   return (

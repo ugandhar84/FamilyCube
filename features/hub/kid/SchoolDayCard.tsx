@@ -134,6 +134,11 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
               </View>
             );
           })}
+          {periods.length > 0 && (
+            <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? colors.textSecondary : GEMINI.bodyColor, paddingHorizontal: 4, paddingTop: 2 }}>
+              🏠 Dismissal around {fmtTime12(periods[periods.length - 1].endTime)}
+            </Text>
+          )}
         </View>
         </>
       ) : null}

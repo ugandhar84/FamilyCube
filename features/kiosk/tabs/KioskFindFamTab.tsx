@@ -156,9 +156,11 @@ const KioskFamilyMapMarker = memo(function KioskFamilyMapMarker({
   );
 });
 
-export function KioskFindFamTab({ active, members }: {
+export function KioskFindFamTab({ active, members: allMembers }: {
   active: FamilyMember; members: FamilyMember[];
 }) {
+  // Grandparents are hidden from Find Fam for now.
+  const members = allMembers.filter(m => m.role !== 'senior');
   const { k, isDark } = useKioskColors();
   const { registerActivity } = useKioskActivity();
   const [locations, setLocations] = useState<MemberLocation[]>([]);

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { useSchoolStore } from '@/store/schoolStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
@@ -10,8 +10,7 @@ import { KidSectionHeader } from './KidSectionHeader';
 import { RHYTHM } from '@/constants/theme';
 import { GEMINI } from '@/constants/geminiRhythm';
 
-// Six classes are visible at a time; the list scrolls (snapping a class at a time) and opens on the class in session, or the next one.
-const ROW_H = 52, GAP = 6, VISIBLE = 6;
+const GAP = 6;
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 type HolidayDay = { date: string; reason: string };
@@ -86,7 +85,6 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
   const isToday = target?.offset === 0;
 
   const tone = (subject: string) => subjectTone(subject, colors);
-  const scrollRef = useRef<ScrollView>(null);
   // The class in session, else the next upcoming one, else the last.
   const focusIdx = !isToday ? 0 : (() => {
     const cur = periods.findIndex(p => nowMin >= timeToMins(p.startTime) && nowMin < timeToMins(p.endTime));
@@ -94,12 +92,10 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
     const next = periods.findIndex(p => timeToMins(p.startTime) > nowMin);
     return next >= 0 ? next : Math.max(0, periods.length - 1);
   })();
-  const focusKey = periods[focusIdx]?.id;
-  useEffect(() => {
-    if (!focusKey) return;
-    const t = setTimeout(() => scrollRef.current?.scrollTo({ y: focusIdx * (ROW_H + GAP), animated: true }), 250);
-    return () => clearTimeout(t);
-  }, [focusKey]);
+  const [expanded, setExpanded] = useState(false);
+  const COLLAPSED = 3;
+  const shown = expanded ? periods : periods.slice(focusIdx, focusIdx + COLLAPSED);
+  const hidden = periods.length - shown.length;
 
   if (!schedule || (!target && !todayBreak)) return null;
 
@@ -122,15 +118,13 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
       {target ? (
         <>
           <KidSectionHeader label={todayBreak ? `BACK TO SCHOOL · ${new Date(target.periods.length ? ymd(new Date(Date.now() + target.offset * 86_400_000)) + 'T12:00:00' : '').toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()}` : target.label} accent={colors.teal} colors={colors} />
-        <ScrollView ref={scrollRef} nestedScrollEnabled showsVerticalScrollIndicator={false}
-          snapToInterval={ROW_H + GAP} decelerationRate="fast"
-          style={{ maxHeight: VISIBLE * ROW_H + (VISIBLE - 1) * GAP }} contentContainerStyle={{ gap: GAP }}>
-          {periods.map(p => {
+        <View style={{ gap: GAP }}>
+          {shown.map(p => {
             const isNow = isToday && nowMin >= timeToMins(p.startTime) && nowMin < timeToMins(p.endTime);
             const past = isToday && nowMin >= timeToMins(p.endTime);
             return (
               // One compact line per class: class name and room.
-              <View key={p.id} style={{ height: ROW_H, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 12, opacity: past ? 0.7 : 1,
+              <View key={p.id} style={{ height: 52, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 12, opacity: past ? 0.7 : 1,
                 backgroundColor: tone(p.subject).fg + (isDark ? '33' : '33'), borderWidth: isNow ? 2 : 0, borderColor: tone(p.subject).fg }}>
                 <Text style={{ flex: 1, fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : GEMINI.titleColor }} numberOfLines={1}>{prettySubject(p.subject)}</Text>
                 {p.room ? <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: isDark ? tone(p.subject).fg + '55' : '#FFFFFF' }}>
@@ -139,7 +133,13 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
               </View>
             );
           })}
-        </ScrollView>
+          {(hidden > 0 || expanded) && periods.length > COLLAPSED && (
+            <TouchableOpacity onPress={() => setExpanded(v => !v)} accessibilityRole="button" accessibilityLabel={expanded ? 'Show fewer classes' : 'Show more classes'}
+              style={{ alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>{expanded ? 'Show less' : `+${hidden} more`}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         </>
       ) : null}
     </View>

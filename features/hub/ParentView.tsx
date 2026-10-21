@@ -102,10 +102,13 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // Unread CHAT messages only (same source as the Chat tab badge). This tile used to show the bell's total of every
   // unread notification, so it read "21 unread" with no unread chats.
   const chatUnread = useChatStore(st => Object.values(st.unreadCounts).reduce((sum, n) => sum + n, 0));
-  const { familyName } = useFamilyStore();
+  const familyName = useFamilyStore(s => s.familyName);
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
-  const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
-  const { getParentReviewDeck } = useChoreStore();
+  const events = useEventStore(s => s.events);
+  const updateEvent = useEventStore(s => s.updateEvent);
+  const addEvent = useEventStore(s => s.addEvent);
+  const updateEventScoped = useEventStore(s => s.updateEventScoped);
+  const getParentReviewDeck = useChoreStore(s => s.getParentReviewDeck);
   // Days 8-14 of the gating timeline (docs/paywall_setup_and_implementation.md):
   // trial ended, not subscribed yet — a dismissible nag, not a lock.
   // trialDaysLeft === -1 means "family data hasn't loaded yet" (computeTrial's
@@ -763,7 +766,8 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
   const hasAnimatedIn = useRef(false);
   useEffect(() => {
-    if (focusKey === 0 && hasAnimatedIn.current) return;
+    // Play the entrance once per mount. Replaying on every refocus reset the cards 8px down and slid them back, which read as a glitch.
+    if (hasAnimatedIn.current) return;
     hasAnimatedIn.current = true;
     opacities.forEach(v => v.setValue(1));
     translateYs.forEach(v => v.setValue(8));

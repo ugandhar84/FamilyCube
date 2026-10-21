@@ -92,8 +92,9 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
   onOpenGasVehicle: () => void;
 }) {
   const { quests, submitQuest, claimQuest } = useQuestStore();
-  const { startGrandparentQuest } = useChoreStore();
-  const { events, updateEvent } = useEventStore();
+  const startGrandparentQuest = useChoreStore(s => s.startGrandparentQuest);
+  const events = useEventStore(s => s.events);
+  const updateEvent = useEventStore(s => s.updateEvent);
   const { rewards, redemptions } = useRewardStore();
   // Same assignee-double-booked signal HubTimelineSection already computes
   // internally below — this view's own separate KidRideBanner call needs
@@ -305,7 +306,8 @@ export function TeenView({ focusKey, active, members, colors, isDark, activeTrip
 
   const hasAnimatedIn = useRef(false);
   useEffect(() => {
-    if (focusKey === 0 && hasAnimatedIn.current) return;
+    // Play the entrance once per mount. Replaying on every refocus reset the cards 8px down and slid them back, which read as a glitch.
+    if (hasAnimatedIn.current) return;
     hasAnimatedIn.current = true;
     opacities.forEach(v => v.setValue(1));
     translateYs.forEach(v => v.setValue(8));

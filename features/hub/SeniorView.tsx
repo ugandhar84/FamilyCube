@@ -79,7 +79,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   composerVisible: boolean;
   onCloseComposer: () => void;
 }) {
-  const { events, updateEvent } = useEventStore();
+  const events = useEventStore(s => s.events);
+  const updateEvent = useEventStore(s => s.updateEvent);
   // Same assignee-double-booked signal ParentView/KidView/TeenView already
   // show — was entirely missing here (master-flow audit finding). Computed
   // over ALL events, not just this GP's own, since the conflict is about

@@ -633,7 +633,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     }
 
     if (kidFilter !== 'cheer' && tabStatus !== 'all') {
-      if (tabStatus === 'todo')      list = list.filter(q => q.status === 'todo' || q.status === 'claimed' || q.status === 'in_progress' || q.status === 'redo_requested');
+      if (tabStatus === 'todo')      list = list.filter(q => q.status === 'todo' || q.status === 'claimed' || q.status === 'in_progress');
       else if (tabStatus === 'overdue')   list = list.filter(q => isChoreOverdue(q));
       else if (tabStatus === 'review')    list = list.filter(q => q.status === 'pending_approval');
       else if (tabStatus === 'completed') list = list.filter(q => q.status === 'approved' || q.status === 'done');

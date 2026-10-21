@@ -23,9 +23,10 @@ export function ParentSchoolCard({ members, colors, isDark }: { members: FamilyM
   const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
 
   return (
-    <View style={{ marginHorizontal: 20, marginTop: 14, gap: RHYTHM.item }}>
+    <View style={{ marginHorizontal: 20, marginTop: RHYTHM.section, gap: RHYTHM.item }}>
       <KidSectionHeader label="SCHOOL" accent={colors.teal} colors={colors} />
-      {kids.length > 1 && (
+      {/* Always shown, even for one child, so it is clear whose day this is. */}
+      {(
         <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
           {kids.map(k => {
             const on = k.id === current.id;

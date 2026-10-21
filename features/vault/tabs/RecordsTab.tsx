@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, ActivityIndicator, Alert, TouchableOpacity,
+  View, Text, ActivityIndicator, Alert, TouchableOpacity, ScrollView,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -614,7 +614,8 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
         onDecline={() => { setShowAiConsent(false); pendingAnalyzeAction.current = null; }}
       />
 
-      <View style={{ padding: 16, gap: 14 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 16, paddingBottom: 60, gap: 14 }}>
         <TouchableOpacityBringIn onPress={() => { setDraftOwnerId(lockedOwnerId ?? activeMemberId ?? members[0]?.id ?? ''); setShowBringIn(true); }} colors={colors} isDark={isDark} />
 
         <RecordsFigmaList
@@ -629,7 +630,7 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
           selectedIds={selectedIds} selectable={selectable} onToggleSelect={toggleSelect} clearSelection={clearSelection}
           downloading={downloading} onDownload={handleDownload}
         />
-      </View>
+      </ScrollView>
 
       {/* Manual-entry path — AddRecordModal's own save form, reached either
           directly from the list's "+" or from BringInDocumentScreen's

@@ -144,7 +144,7 @@ export default function PaywallSheet({
     // display price divided by 12, stripping any non-numeric chars
     // (currency symbol) so this works regardless of what symbol the
     // admin typed.
-    const fallback = pricingConfig?.yearlyPriceDisplay ?? '$47.88';
+    const fallback = pricingConfig?.yearlyPriceDisplay ?? '$49.99';
     const numeric = parseFloat(fallback.replace(/[^0-9.]/g, ''));
     return Number.isFinite(numeric) ? `$${(numeric / 12).toFixed(2)}/mo` : null;
   };
@@ -230,8 +230,8 @@ export default function PaywallSheet({
   // `offering` has loaded; these only show for the brief pre-load moment
   // or if RevenueCat fails to load entirely.
   const price = billing === 'annual'
-    ? localizedPrice(pricingConfig?.yearlyPriceDisplay ?? '$47.88')
-    : localizedPrice(pricingConfig?.monthlyPriceDisplay ?? '$3.99');
+    ? localizedPrice(pricingConfig?.yearlyPriceDisplay ?? '$49.99')
+    : localizedPrice(pricingConfig?.monthlyPriceDisplay ?? '$7.99');
   const equiv = monthlyEquiv();
   const trialText = hasTrial() ? '7-day free trial, then ' : '';
   // "Was" price + discount badge — admin-editable, purely display copy
@@ -351,7 +351,7 @@ export default function PaywallSheet({
                 when set [live-requested: "with discounted strike value
                 to show"]. */}
             {wasPrice && (
-              <Text style={[s.priceWas, { color: dark ? colors.primary : colors.primaryText ?? colors.primary }]}>
+              <Text style={[s.priceWas, { color: colors.danger }]}>
                 {wasPrice}
               </Text>
             )}

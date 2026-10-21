@@ -5,24 +5,31 @@ import { useSchoolStore } from '@/store/schoolStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { KidSectionHeader } from '../kid/KidSectionHeader';
 import { SchoolDayCard, useSchoolDay } from '../kid/SchoolDayCard';
+import { timeToMins } from '@/features/vault/tabs/school/ClassRow';
+import { prettySubject } from '@/features/vault/tabs/school/schoolUtils';
 import { RHYTHM } from '@/constants/theme';
 import { GEMINI } from '@/constants/geminiRhythm';
 import type { FamilyMember } from '@/store/familyStore';
 
 /** One segmented tab: the child's name, and next to it how many classes their school day has, or the holiday if it is a day off. */
-function KidTab({ kid, on, onPress, colors, isDark }: { kid: FamilyMember; on: boolean; onPress: () => void; colors: any; isDark: boolean }) {
-  const { todayBreak, periods } = useSchoolDay(kid.id);
+function KidTab({ kid, on, onPress, colors, isDark, wide }: { kid: FamilyMember; on: boolean; onPress: () => void; colors: any; isDark: boolean; wide: boolean }) {
+  const { todayBreak, periods, isToday, nowMin } = useSchoolDay(kid.id);
+  // With one or two children there is room to say what is on right now: the class in session, else the next one.
+  const cur = isToday ? periods.find(p => nowMin >= timeToMins(p.startTime) && nowMin < timeToMins(p.endTime)) : undefined;
+  const next = isToday && !cur ? periods.find(p => timeToMins(p.startTime) > nowMin) : undefined;
+  const live = cur ?? next;
+  const liveText = live ? `${cur ? 'Now' : 'Next'} · ${prettySubject(live.subject)}${live.room ? ` · ${String(live.room).replace(/^room\s*/i, '')}` : ''}` : null;
   const titleC = isDark ? colors.textPrimary : GEMINI.titleColor;
   const note = todayBreak ? `🎉 ${todayBreak.reason.length > 14 ? todayBreak.reason.slice(0, 13) + '…' : todayBreak.reason}` : `${periods.length}`;
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${kid.name}, ${todayBreak ? `holiday ${todayBreak.reason}` : `${periods.length} classes`}`}
-      style={{ minWidth: 116, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 1, backgroundColor: on ? colors.card : 'transparent' }}>
+      style={{ minWidth: wide ? 150 : 116, flex: wide ? 1 : undefined, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 1, backgroundColor: on ? colors.card : 'transparent' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
         <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={20} />
         <Text style={{ fontSize: 13, fontWeight: on ? '800' : '600', color: on ? titleC : colors.textSecondary }} numberOfLines={1}>{kid.name.split(' ')[0]}</Text>
       </View>
       <Text style={{ fontSize: 11, fontWeight: '700', color: todayBreak ? colors.amber : colors.textTertiary }} numberOfLines={1}>
-        {todayBreak ? note : `${note} class${periods.length === 1 ? '' : 'es'}`}
+        {todayBreak ? note : (wide && liveText) ? liveText : `${note} class${periods.length === 1 ? '' : 'es'}`}
       </Text>
     </Pressable>
   );
@@ -52,7 +59,7 @@ export function ParentSchoolCard({ members, colors, isDark }: { members: FamilyM
       <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled
         style={{ backgroundColor: colors.surface, borderRadius: 16 }} contentContainerStyle={{ flexDirection: 'row', gap: 6, padding: 4 }}>
         {kids.map(k => (
-          <KidTab key={k.id} kid={k} on={open && k.id === current.id} colors={colors} isDark={isDark}
+          <KidTab key={k.id} kid={k} wide={kids.length <= 2} on={open && k.id === current.id} colors={colors} isDark={isDark}
             onPress={() => { if (open && k.id === current.id) setOpen(false); else { setSel(k.id); setOpen(true); } }} />
         ))}
       </ScrollView>

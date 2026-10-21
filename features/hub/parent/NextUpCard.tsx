@@ -1,11 +1,12 @@
-import { View, Text, Pressable, Linking, Platform } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { View, Text, Pressable, Linking, Platform, Animated } from 'react-native';
 import { router } from 'expo-router';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
-import { fmtTime } from '../hubUtils';
+import { fmtTime, hoursUntilEvent } from '../hubUtils';
 import { MapPin, AlertTriangle, Car } from 'lucide-react-native';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { GEMINI } from '@/constants/geminiRhythm';
@@ -20,6 +21,28 @@ function openInMaps(address: string) {
     // scheme (e.g. iOS Simulator with no Maps app signed in).
     Linking.openURL(`https://maps.google.com/?q=${q}`);
   });
+}
+
+/** Flashing "NOW" tag shown under the time of an event that is in progress. */
+function NowTag({ color }: { color: string }) {
+  const o = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(o, { toValue: 0.25, duration: 650, useNativeDriver: true }),
+      Animated.timing(o, { toValue: 1, duration: 650, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [o]);
+  return <Animated.Text style={{ opacity: o, color, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginTop: 3 }}>● NOW</Animated.Text>;
+}
+
+/** Started already and not past its end (or 1h after start when no end time). */
+function isHappeningNow(ev: FamilyEvent): boolean {
+  const since = -hoursUntilEvent(ev.date, ev.time);
+  if (ev.time == null || since < 0) return false;
+  if (ev.endTime) return hoursUntilEvent(ev.date, ev.endTime) > 0;
+  return since < 1;
 }
 
 /**
@@ -172,7 +195,10 @@ export function NextUpTimeline({
                 (CLAUDE.md §9) — every other time display in the app uses
                 fmtTime; this card was the one outlier still showing "14:00"
                 style strings. */}
-            <Text style={{ width: 42, color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11, marginTop: 2 }}>{fmtTime(ev.time)}</Text>
+            <View style={{ width: 42 }}>
+              <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 11, marginTop: 2 }}>{fmtTime(ev.time)}</Text>
+              {isHappeningNow(ev) && <NowTag color={colors.danger} />}
+            </View>
             <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: dotColors[i % 3], marginTop: 6 }} />
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={{ fontSize: 14, color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontWeight: '400' }} numberOfLines={1}>

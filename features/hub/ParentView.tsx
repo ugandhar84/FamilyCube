@@ -461,11 +461,11 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
   // "Next up" — today's not-yet-passed events (NextUpTimeline shows up to
   // 3). Same source/filter as TodayView's own `upcoming` list (today's
-  // non-work events, sorted, hoursUntilEvent > -0.5 so something
+  // non-work events, sorted, hoursUntilEvent > -1 (hidden 1h after start) so something
   // just-started still counts as "up next" rather than vanishing early).
   const nextUpDateStr = localToday();
   const upcomingTodayEvents = events
-    .filter(e => e.date === nextUpDateStr && hoursUntilEvent(e.date, e.time) > -0.5)
+    .filter(e => e.date === nextUpDateStr && hoursUntilEvent(e.date, e.time) > -1)
     .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
   // Single most-urgent item for NeedsYouCard — priority: scheduling

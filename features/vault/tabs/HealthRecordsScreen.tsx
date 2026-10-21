@@ -475,10 +475,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
               <PageHeading eyebrow="FAMILY CUBE · HEALTH" title="Health documents" subtitle="Labs, discharge papers, imaging and insurance cards."
                 accent="pink" Icon={FolderOpen} onTitlePress={requestAnimatedClose} topInset={insets.top} />
             </View>
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled">
-              <RecordsTabComp colors={colors} isDark={isDark} lockedOwnerId={initialMemberId} />
-            </ScrollView>
+            <RecordsTabComp colors={colors} isDark={isDark} lockedOwnerId={initialMemberId} />
           </View>
         )}
       </FullPageOverlay>

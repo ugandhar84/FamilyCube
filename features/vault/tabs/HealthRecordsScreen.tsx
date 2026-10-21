@@ -486,8 +486,9 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
       <ScanReviewSheet
         visible={showScanSheet}
         scanMode={scanMode}
-        activeMemberId={activeMember?.id ?? ''}
-        members={members}
+        // Opened from one person's page: scan for that person, no "Who is this for?" step.
+        activeMemberId={initialMemberId ?? activeMember?.id ?? ''}
+        members={initialMemberId ? members.filter(m => m.id === initialMemberId) : members}
         colors={colors}
         isDark={isDark}
         onClose={() => setShowScanSheet(false)}

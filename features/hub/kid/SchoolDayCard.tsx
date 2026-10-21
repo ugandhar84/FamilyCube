@@ -73,7 +73,7 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
       const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       if (breaks.some(b => ds >= b.start && ds <= b.end)) continue;
       const ps = periodsInTerm(schedule.periods, term)
-        .filter(p => !p.isLunch && !p.isBreak && (p.days ?? ['mon', 'tue', 'wed', 'thu', 'fri']).includes(DAY_KEYS[d.getDay()]))
+        .filter(p => !p.isLunch && (p.days ?? ['mon', 'tue', 'wed', 'thu', 'fri']).includes(DAY_KEYS[d.getDay()]))
         .sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime));
       if (ps.length === 0) continue;
       if (i === 0 && nowMin >= timeToMins(ps[ps.length - 1].endTime)) continue; // today's school is over

@@ -280,7 +280,9 @@ const FamilyMapMarker = memo(function FamilyMapMarker({
 export default function GpsTab({ colors, isDark, onClose }: { colors: any; isDark: boolean; onClose?: () => void }) {
   const insets = useSafeAreaInsets();
 
-  const { members, activeMemberId } = useFamilyStore();
+  const { members: allMembers, activeMemberId } = useFamilyStore();
+  // Grandparents are hidden from Find Fam for now.
+  const members = useMemo(() => allMembers.filter(m => m.role !== 'senior'), [allMembers]);
   const [locations, setLocations]   = useState<MemberLocation[]>([]);
   const [loading, setLoading]       = useState(true);
   // Ref, not state — must NOT itself trigger a re-render when flipped, it

@@ -32,7 +32,7 @@ import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── RecordsTab ───────────────────────────────────────────────────────────────
 
-export default function RecordsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: any; isDark: boolean; /** Opened from one person's page: records go to that person, no owner picker. */ lockedOwnerId?: string }) {
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = (activeMember as any)?.familyId ?? (members[0] as any)?.familyId ?? '';
@@ -56,7 +56,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   // parallel system.
   const [showBringIn,   setShowBringIn]   = useState(false);
   const [draftTag,       setDraftTag]      = useState<RecordTag>('lab');
-  const [draftOwnerId,   setDraftOwnerId]  = useState(activeMemberId ?? members[0]?.id ?? '');
+  const [draftOwnerId,   setDraftOwnerId]  = useState(lockedOwnerId ?? activeMemberId ?? members[0]?.id ?? '');
   // Screen B — redaction. Reuses the real PhotoRedactModal drag-to-draw
   // tool (verified: genuine Gesture.Pan box-drawing + ViewShot flatten,
   // not a mock) rather than re-implementing its gesture/capture logic.
@@ -586,7 +586,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       />
 
       <View style={{ padding: 16, gap: 14 }}>
-        <TouchableOpacityBringIn onPress={() => { setDraftOwnerId(activeMemberId ?? members[0]?.id ?? ''); setShowBringIn(true); }} colors={colors} isDark={isDark} />
+        <TouchableOpacityBringIn onPress={() => { setDraftOwnerId(lockedOwnerId ?? activeMemberId ?? members[0]?.id ?? ''); setShowBringIn(true); }} colors={colors} isDark={isDark} />
 
         <RecordsFigmaList
           colors={colors} isDark={isDark}
@@ -630,6 +630,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           onManualEntry={() => { setShowBringIn(false); setShowAdd(true); }}
           recordType={draftTag} setRecordType={setDraftTag}
           recordOwnerId={draftOwnerId} setRecordOwnerId={setDraftOwnerId}
+          hideOwnerPicker={!!lockedOwnerId}
         />
       </FullPageOverlay>
 

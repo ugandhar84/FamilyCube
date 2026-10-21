@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useSchoolStore } from '@/store/schoolStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -16,7 +16,7 @@ function KidTab({ kid, on, onPress, colors, isDark }: { kid: FamilyMember; on: b
   const note = todayBreak ? `🎉 ${todayBreak.reason.length > 14 ? todayBreak.reason.slice(0, 13) + '…' : todayBreak.reason}` : `${periods.length}`;
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${kid.name}, ${todayBreak ? `holiday ${todayBreak.reason}` : `${periods.length} classes`}`}
-      style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, gap: 1, backgroundColor: on ? colors.card : 'transparent' }}>
+      style={{ minWidth: 116, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 1, backgroundColor: on ? colors.card : 'transparent' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
         <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={(kid as any).avatarUrl} size={20} />
         <Text style={{ fontSize: 13, fontWeight: on ? '800' : '600', color: on ? titleC : colors.textSecondary }} numberOfLines={1}>{kid.name.split(' ')[0]}</Text>
@@ -48,12 +48,14 @@ export function ParentSchoolCard({ members, colors, isDark }: { members: FamilyM
         <KidSectionHeader label="SCHOOL" accent={colors.teal} colors={colors} />
         {open ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
       </Pressable>
-      <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
+      {/* Scrolls sideways when there are more children than fit. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled
+        style={{ backgroundColor: colors.surface, borderRadius: 16 }} contentContainerStyle={{ flexDirection: 'row', gap: 6, padding: 4 }}>
         {kids.map(k => (
           <KidTab key={k.id} kid={k} on={open && k.id === current.id} colors={colors} isDark={isDark}
             onPress={() => { if (open && k.id === current.id) setOpen(false); else { setSel(k.id); setOpen(true); } }} />
         ))}
-      </View>
+      </ScrollView>
       {open && <SchoolDayCard key={current.id} memberId={current.id} colors={colors} isDark={isDark} hideHeader bare />}
     </View>
   );

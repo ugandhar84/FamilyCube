@@ -10,6 +10,7 @@
  *      - no last name                    → first 2 letters (e.g. "Al")
  */
 import React, { useState } from 'react';
+import { useFamilyStore } from '@/store/familyStore';
 import { View, Text, Image, StyleSheet } from 'react-native';
 
 interface AvatarProps {
@@ -57,7 +58,7 @@ function getInitials(name: string, siblings: string[]): string {
 export default function FamilyAvatar({
   name,
   emoji,
-  avatarUrl,
+  avatarUrl: avatarUrlProp,
   siblings = [],
   size = 44,
   ringColor = '#5872C4',
@@ -68,6 +69,10 @@ export default function FamilyAvatar({
   bgColor,
   shape = 'square',
 }: AvatarProps) {
+  // Many call sites pass only the name (and sometimes just the emoji). If this person has a picture, use it everywhere the avatar shows,
+  // found by their name in the family.
+  const lookedUp = useFamilyStore(st => (avatarUrlProp ? undefined : st.members.find(m => m.name === name)?.avatarUrl));
+  const avatarUrl = avatarUrlProp ?? lookedUp;
   const [imgError, setImgError] = useState(false);
   const bg = bgColor ?? ringColor + '25';
   const radius = shape === 'square' ? size * 0.34 : size / 2;
@@ -86,7 +91,7 @@ export default function FamilyAvatar({
   };
 
   // Tier 1: emoji
-  if (emoji) {
+  if (emoji && !avatarUrl) {
     return (
       <View style={containerStyle}>
         <Text style={{ fontSize: size * fontScale, lineHeight: size * 0.7, marginTop: 2 }}>

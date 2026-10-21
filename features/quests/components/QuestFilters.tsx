@@ -101,7 +101,7 @@ export function QuestFilters({
             onPress={() => { onSetKidFilter('adults'); onSetTabStatus('todo'); }}
           >
             <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'adults' ? '#fff' : colors.textSecondary }}>
-              👨‍👩 Adults
+              👪 Adults
             </Text>
           </TouchableOpacity>
         )}

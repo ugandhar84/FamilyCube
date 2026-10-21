@@ -193,7 +193,7 @@ export function KioskLockScreen({ familyName, members, onUnlock, colors, nextUp 
   );
 
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent={false} animationType="fade">
+    <Modal supportedOrientations={['landscape']} visible transparent={false} animationType="fade">
       <View style={[s.root, { backgroundColor: canvas }]} onTouchStart={armFrame}>
         <SafeAreaView style={s.safe}>
           <ScrollView contentContainerStyle={[s.content, wide && s.contentWide]} showsVerticalScrollIndicator={false}>

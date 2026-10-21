@@ -35,7 +35,7 @@ export function KioskSlideModal({ visible, onRequestClose, children }: {
       visible={mounted}
       transparent
       animationType="none"
-      supportedOrientations={['portrait', 'landscape']}
+      supportedOrientations={['landscape']}
       onRequestClose={onRequestClose}
     >
       <Animated.View style={{ flex: 1, transform: [{ translateX: x }] }}>{children}</Animated.View>

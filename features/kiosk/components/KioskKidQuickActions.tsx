@@ -627,7 +627,7 @@ function KioskSheet({
   return isDrawer ? (
     <KioskSlideModal visible onRequestClose={onClose}>{content}</KioskSlideModal>
   ) : (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible transparent animationType="fade" onRequestClose={onClose}>{content}</Modal>
+    <Modal supportedOrientations={['landscape']} visible transparent animationType="fade" onRequestClose={onClose}>{content}</Modal>
   );
 }
 

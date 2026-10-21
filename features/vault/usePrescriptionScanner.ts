@@ -191,6 +191,11 @@ export function usePrescriptionScanner(memberId?: string, familyId?: string, max
         if (single && typeof single === 'object') return [single as T];
         return [];
       };
+      // The AI answered but found nothing to add: say so instead of opening an empty review page.
+      if (toArray(json.medications, json.medication).length + toArray(json.vaccines, json.vaccine).length === 0) {
+        setScanError('The scan could not find any vaccines or medications in this photo. Try a clearer, well-lit photo of one page, or add them manually.');
+        return;
+      }
       setScanResult({
         doc_type: json.doc_type ?? 'medication',
         medications: toArray<ParsedMedication>(json.medications, json.medication),

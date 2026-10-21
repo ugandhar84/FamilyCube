@@ -37,6 +37,7 @@ import { NewScheduleScreen } from './school/NewScheduleScreen';
 import { HolidaysScreen } from './school/HolidaysScreen';
 import { ClassEditScreen } from './school/ClassEditScreen';
 import { termsOf, guessCurrentTerm, periodsInTerm, prettySubject } from './school/schoolUtils';
+import { ClassRow, subjectTone } from './school/ClassRow';
 import { HolidayEditScreen } from './school/HolidayEditScreen';
 import { ImportantDateEditScreen } from './school/ImportantDateEditScreen';
 
@@ -128,46 +129,6 @@ function HolidayMonthGrid({ holidays, colors, isDark, onPickHoliday }: {
         <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC }}>No school</Text>
       </View>
     </View>
-  );
-}
-
-/** A steady colour per subject, so the same class always looks the same. */
-function subjectTone(subject: string, colors: any): { fg: string; bg: string } {
-  const tones = [
-    { fg: colors.primary, bg: colors.primaryLight },
-    { fg: colors.teal, bg: colors.tealLight },
-    { fg: colors.amber, bg: colors.amberLight },
-    { fg: colors.pink, bg: colors.pinkLight },
-  ];
-  const key = subject.toUpperCase().replace(/\b(A|B)$/, '').replace(/\s+\d*[AB]?$/, '').trim();
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return tones[h % tones.length];
-}
-
-/** One class as a card: time on the left, coloured subject block on the right. */
-function ClassRow({ p, colors, isDark, now, onPress }: { p: ClassPeriod; colors: any; isDark: boolean; now?: boolean; onPress?: () => void }) {
-  const tone = subjectTone(p.subject, colors);
-  const mins = timeToMins(p.endTime) - timeToMins(p.startTime);
-  const sub = [p.room, p.teacher].filter(Boolean).join(' · ');
-  return (
-    <TouchableOpacity activeOpacity={onPress ? 0.7 : 1} onPress={onPress} disabled={!onPress} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12 }}>
-      <View style={{ width: 62, alignItems: 'flex-end', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.startTime)}</Text>
-        <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? colors.textTertiary : BODY_CLR_LIGHT, fontVariant: ['tabular-nums'] }}>{fmtTime12(p.endTime)}</Text>
-      </View>
-      <View style={{ flex: 1, flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? tone.fg + '22' : tone.bg,
-        borderWidth: now ? 2 : 0, borderColor: tone.fg }}>
-        <View style={{ width: 5, backgroundColor: tone.fg }} />
-        <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, gap: 2 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR }} numberOfLines={2}>{prettySubject(p.subject)}</Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? colors.textSecondary : BODY_CLR }} numberOfLines={1}>
-            {sub ? `${sub} · ` : ''}{mins > 0 ? `${mins} min` : ''}
-          </Text>
-        </View>
-        {onPress ? <Text style={{ alignSelf: 'center', paddingRight: 12, fontSize: 12, fontWeight: '800', color: tone.fg }}>Edit</Text> : null}
-      </View>
-    </TouchableOpacity>
   );
 }
 
@@ -277,16 +238,17 @@ function KidDayCard({ kid, isOwnScheduleOnly, colors, isDark, onOpenDay, onCreat
           No classes today.
         </Text>
       ) : (
-        <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
-          {todayPeriods.map((p, i) => (
-            <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-              paddingVertical: 7, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: border }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, fontVariant: ['tabular-nums'] }}>
-                {fmtTime12(p.startTime)}–{fmtTime12(p.endTime)}
-              </Text>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: titleC }}>{p.subject}</Text>
-            </View>
-          ))}
+        <View style={{ paddingHorizontal: 16, paddingBottom: 10, gap: 8 }}>
+          {todayPeriods.map(p => {
+            const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+            const isNow = nowM >= timeToMins(p.startTime) && nowM < timeToMins(p.endTime);
+            const past = nowM >= timeToMins(p.endTime);
+            return (
+              <View key={p.id} style={{ opacity: past ? 0.8 : 1 }}>
+                <ClassRow p={p} colors={colors} isDark={isDark} now={isNow} />
+              </View>
+            );
+          })}
           {lastPeriod && (
             <Text style={{ fontSize: 12, fontWeight: '600', color: bodyC, marginTop: 8 }}>
               Dismissal around {fmtTime12(lastPeriod.endTime)}

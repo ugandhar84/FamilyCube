@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { useSchoolStore } from '@/store/schoolStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { supabase } from '@/lib/supabase';
@@ -34,12 +34,8 @@ function groupBreaks(days: HolidayDay[]): Break[] {
   return out.map(({ key: _k, ...b }) => b);
 }
 
-/**
- * SchoolDayCard — a kid's or teen's school timetable for today, on the Hub under "Your day": one pastel row per class (time, subject,
- * room, teacher), the current class marked NOW and finished ones dimmed. Shows a calm "No school today" on a holiday, and nothing at
- * all when there is no schedule or no classes today.
- */
-export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; colors: any; isDark: boolean }) {
+/** One child's school day: which day to show (today while school is on, else the next school day), its classes, and any holiday today. */
+export function useSchoolDay(memberId: string) {
   const { schedules, loaded, loadFromStorage } = useSchoolStore();
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   const [now, setNow] = useState(() => new Date());
@@ -84,6 +80,24 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
   const periods = target?.periods ?? [];
   const isToday = target?.offset === 0;
 
+  return { schedule, now, nowMin, target, todayBreak, periods, isToday };
+}
+
+/**
+ * SchoolDayCard — a kid's or teen's school timetable for today, on the Hub under "Your day": one pastel row per class (time, subject,
+ * room, teacher), the current class marked NOW and finished ones dimmed. Shows a calm "No school today" on a holiday, and nothing at
+ * all when there is no schedule or no classes today.
+ */
+export function SchoolDayCard({ memberId, colors, isDark, collapseAfter, hideHeader, bare }: {
+  memberId: string; colors: any; isDark: boolean;
+  /** Show only this many classes (from the current one) with a "+N more" link. Default: every class. */
+  collapseAfter?: number;
+  /** Hide the section heading (the parent Hub shows its own above the kid tabs). */
+  hideHeader?: boolean;
+  /** No outer margins (when placed inside another card). */
+  bare?: boolean;
+}) {
+  const { schedule, now, nowMin, target, todayBreak, periods, isToday } = useSchoolDay(memberId);
   const tone = (subject: string) => subjectTone(subject, colors);
   // The class in session, else the next upcoming one, else the last.
   const focusIdx = !isToday ? 0 : (() => {
@@ -92,7 +106,9 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
     const next = periods.findIndex(p => timeToMins(p.startTime) > nowMin);
     return next >= 0 ? next : Math.max(0, periods.length - 1);
   })();
-  const shown = periods; // the whole day, no collapsing
+  const [expanded, setExpanded] = useState(false);
+  const shown = collapseAfter && !expanded ? periods.slice(focusIdx, focusIdx + collapseAfter) : periods;
+  const hidden = periods.length - shown.length;
 
   if (!schedule || (!target && !todayBreak)) return null;
 
@@ -110,11 +126,11 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
   ) : null;
 
   return (
-    <View style={{ marginHorizontal: 16, marginTop: 14, gap: RHYTHM.item }}>
+    <View style={{ marginHorizontal: bare ? 0 : 16, marginTop: bare ? 0 : 14, gap: RHYTHM.item }}>
       {celebrate}
       {target ? (
         <>
-          <KidSectionHeader label={todayBreak ? `BACK TO SCHOOL · ${new Date(target.periods.length ? ymd(new Date(Date.now() + target.offset * 86_400_000)) + 'T12:00:00' : '').toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()}` : target.label} accent={colors.teal} colors={colors} />
+          {!hideHeader && <KidSectionHeader label={todayBreak ? `BACK TO SCHOOL · ${new Date(target.periods.length ? ymd(new Date(Date.now() + target.offset * 86_400_000)) + 'T12:00:00' : '').toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()}` : target.label} accent={colors.teal} colors={colors} />}
         <View style={{ gap: GAP }}>
           {shown.map(p => {
             const isNow = isToday && nowMin >= timeToMins(p.startTime) && nowMin < timeToMins(p.endTime);
@@ -134,6 +150,12 @@ export function SchoolDayCard({ memberId, colors, isDark }: { memberId: string; 
               </View>
             );
           })}
+          {collapseAfter && periods.length > collapseAfter && (
+            <TouchableOpacity onPress={() => setExpanded(v => !v)} accessibilityRole="button" accessibilityLabel={expanded ? 'Show fewer classes' : 'Show more classes'}
+              style={{ alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>{expanded ? 'Show less' : `+${hidden} more`}</Text>
+            </TouchableOpacity>
+          )}
           {periods.length > 0 && (
             <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? colors.textSecondary : GEMINI.bodyColor, paddingHorizontal: 4, paddingTop: 2 }}>
               🏠 Dismissal around {fmtTime12(periods[periods.length - 1].endTime)}

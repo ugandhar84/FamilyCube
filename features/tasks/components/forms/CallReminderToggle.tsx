@@ -17,6 +17,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TYPO } from '@/constants/theme';
+import { SHOW_CALL_REMINDER } from '@/lib/callReminderUi';
 
 const LEAD_OPTIONS = [0, 10, 15, 30];
 
@@ -40,6 +41,7 @@ export function CallReminderToggle({
   pillStyle?: any;
   containerPaddingHorizontal?: number;
 }) {
+  if (!SHOW_CALL_REMINDER) return null;
   const pillBg  = isDark ? colors.surface : '#F1F5F9';
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
 

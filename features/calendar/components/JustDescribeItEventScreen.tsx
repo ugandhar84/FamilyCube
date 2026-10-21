@@ -230,7 +230,7 @@ export default function JustDescribeItEventScreen({
   const [evRecurrence, setEvRecurrence] = useState<'once'|'daily'|'weekly'|'monthly'>('once');
   const [evRecurDays, setEvRecurDays]   = useState<number[]>([]);
   const [evEndDate, setEvEndDate]       = useState('');
-  const [evMemberIds, setEvMemberIds]   = useState<string[]>(ed?.memberIds ?? (ed?.memberId ? [ed.memberId] : []));
+  const [evMemberIds, setEvMemberIds]   = useState<string[]>(ed?.memberIds ?? (ed?.memberId ? [ed.memberId] : (activeMember?.role === 'senior' && activeMemberId ? [activeMemberId] : [])));
   const [evNotes, setEvNotes]           = useState(ed?.notes ?? '');
   const [evLocation, setEvLocation]     = useState(ed?.location ?? '');
   // Transport — two independent legs
@@ -851,6 +851,7 @@ export default function JustDescribeItEventScreen({
   const bodyC       = isDark ? colors.textSecondary : GEMINI.bodyColor;
   const tertiaryC   = isDark ? colors.textTertiary : GEMINI.bodyColorLight;
 
+  const isGp = activeMember?.role === 'senior';
   const catEntry = EVENT_CATEGORIES.find(c => c.value === evCategory);
 
   // Driver-eligible: parents + seniors + teens with hasCar, excluding event participants
@@ -875,7 +876,7 @@ export default function JustDescribeItEventScreen({
         >
           <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
 
-            <PageHeading eyebrow="FAMILY CUBE · SCHEDULE" title={isEdit ? 'Edit event' : 'Just describe your schedule'} subtitle={isEdit ? 'Change the core details. Confirmations and reassignments live on the event page.' : 'Type a thought. Speak a thought. Make it a plan.'} accent="teal" Icon={CalendarDays} onTitlePress={handleClose} topInset={0} paddingHorizontal={0} />
+            <PageHeading eyebrow={isGp ? 'FAMILY CUBE · ASK FOR HELP' : 'FAMILY CUBE · SCHEDULE'} title={isEdit ? 'Edit event' : isGp ? 'Tell us what help you need' : 'Just describe your schedule'} subtitle={isEdit ? 'Change the core details. Confirmations and reassignments live on the event page.' : isGp ? 'Type it or say it. Your family will see it and step in.' : 'Type a thought. Speak a thought. Make it a plan.'} accent="teal" Icon={CalendarDays} onTitlePress={handleClose} topInset={0} paddingHorizontal={0} />
 
             <View style={{ gap: 14 }}>
 
@@ -897,7 +898,7 @@ export default function JustDescribeItEventScreen({
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
                   editable={!isListening}
-                  placeholder="Something on the calendar?"
+                  placeholder={isGp ? 'What do you need help with?' : 'Something on the calendar?'}
                   placeholderTextColor={colors.textTertiary}
                   multiline
                   style={{ fontSize: 22, fontWeight: '500', lineHeight: 30, color: titleC, minHeight: 30 }}
@@ -1022,10 +1023,10 @@ export default function JustDescribeItEventScreen({
                   <View style={{ backgroundColor: colors.amberLight, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 }}>
                     <Text style={{ fontSize: 18, fontWeight: '700', color: titleC, lineHeight: 24 }}>One sentence is enough</Text>
                     <Text style={{ fontSize: 14, fontWeight: '600', color: colors.amber, lineHeight: 20 }}>
-                      "Soccer practice Saturday 4pm" or "Dentist for Mia next Thursday"
+                      {isGp ? '"A ride to my doctor Thursday at 10" or "Help setting up my new phone"' : '"Soccer practice Saturday 4pm" or "Dentist for Mia next Thursday"'}
                     </Text>
                     <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19, marginTop: 2 }}>
-                      We'll detect the category, date, time and who's involved. You confirm before anything is saved.
+                      {isGp ? 'We fill in the type, day and time. You check it, then send it to your family.' : "We'll detect the category, date, time and who's involved. You confirm before anything is saved."}
                     </Text>
                   </View>
 
@@ -1034,7 +1035,7 @@ export default function JustDescribeItEventScreen({
                     style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
                       backgroundColor: ctaBlue }}
                   >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Speak your event</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>{isGp ? 'Speak your request' : 'Speak your event'}</Text>
                   </TouchableOpacity>
 
                   <Text style={{ fontSize: 13, color: bodyC, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 }}>
@@ -1055,7 +1056,7 @@ export default function JustDescribeItEventScreen({
                   onPress={openInlineForm}
                   style={{ height: 52, borderRadius: 16, backgroundColor: ctaBlue, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Set up event →</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>{isGp ? 'Review my request →' : 'Set up event →'}</Text>
                 </TouchableOpacity>
               )}
 
@@ -1094,11 +1095,11 @@ export default function JustDescribeItEventScreen({
 
                     {/* ── Title ── */}
                     <View style={{ gap: 10 }}>
-                      <FieldLabel text="Event" />
+                      <FieldLabel text={isGp ? 'What do you need?' : 'Event'} />
                       <TextInput
                         value={evTitle}
                         onChangeText={setEvTitle}
-                        placeholder="What's happening?"
+                        placeholder={isGp ? 'e.g. A ride to my eye appointment' : "What's happening?"}
                         placeholderTextColor={colors.textTertiary}
                         style={{ fontSize: 20, fontWeight: '600', color: titleC, paddingVertical: 2 }}
                       />
@@ -1109,7 +1110,7 @@ export default function JustDescribeItEventScreen({
                     <View style={{ gap: 12 }}>
                       <FieldLabel text="Type" />
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        {EVENT_CATEGORIES.map(c => {
+                        {EVENT_CATEGORIES.filter(c => !isGp || ['Event', 'Medical', 'Ride', 'Other'].includes(c.value)).map(c => {
                           const sel = evCategory === c.value;
                           return (
                             <TouchableOpacity
@@ -1252,6 +1253,7 @@ export default function JustDescribeItEventScreen({
                     </View>
 
                     {/* ── Who's coming ── */}
+                    {!isGp && (
                     <View style={{ gap: 12 }}>
                       <FieldLabel text="Who's coming" />
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
@@ -1324,6 +1326,7 @@ export default function JustDescribeItEventScreen({
                         </View>
                       )}
                     </View>
+                    )}
 
                     {/* ── Transport ──
                         Was hidden entirely when evCategory === 'Ride' — exactly
@@ -1338,7 +1341,7 @@ export default function JustDescribeItEventScreen({
                           {/* One clear choice for the ride. Pre-set from what was said; changing it re-times the legs sensibly. */}
                           <View style={{ gap: 8 }}>
                             <View style={{ flexDirection: 'row', backgroundColor: isDark ? colors.surface : '#F0EDE6', borderRadius: 14, padding: 3 }}>
-                              {([['none', 'No ride'], ['dropoff', 'Drop-off'], ['pickup', 'Pick-up'], ['both', 'Both ways']] as const).map(([key, label]) => (
+                              {((isGp ? [['none', 'No ride'], ['dropoff', 'Ride there'], ['pickup', 'Ride home'], ['both', 'Both ways']] : [['none', 'No ride'], ['dropoff', 'Drop-off'], ['pickup', 'Pick-up'], ['both', 'Both ways']]) as readonly (readonly ['none'|'dropoff'|'pickup'|'both', string])[]).map(([key, label]) => (
                                 <TouchableOpacity key={key} onPress={() => setRideMode(key)} accessibilityRole="button" accessibilityState={{ selected: rideMode === key }}
                                   style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 11, backgroundColor: rideMode === key ? (isDark ? colors.card : '#FFFFFF') : 'transparent' }}>
                                   <Text style={{ fontSize: 13, fontWeight: rideMode === key ? '800' : '600', color: rideMode === key ? titleC : tertiaryC }} numberOfLines={1}>{label}</Text>
@@ -1384,9 +1387,9 @@ export default function JustDescribeItEventScreen({
                                   placeholder="From" accent={colors.amber} colors={colors} />
                                 <LocationAutocompleteInput value={evDropTo} onChangeText={setEvDropTo}
                                   placeholder="To" accent={colors.amber} colors={colors} />
-                                <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>
+                                {!isGp && <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>}
                                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-                                  {driverCandidates.map(m => {
+                                  {(isGp ? [] : driverCandidates).map(m => {
                                     const sel = evDropDriverId === m.id;
                                     const hasConflict = sel && memberConflicts[m.id] != null;
                                     return (
@@ -1441,9 +1444,9 @@ export default function JustDescribeItEventScreen({
                                       placeholder="From" accent={colors.amber} colors={colors} />
                                     <LocationAutocompleteInput value={evPickupTo} onChangeText={setEvPickupTo}
                                       placeholder="To" accent={colors.amber} colors={colors} />
-                                    <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>
+                                    {!isGp && <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, color: tertiaryC, textTransform: 'uppercase', marginTop: 4 }}>Who's driving?</Text>}
                                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-                                      {driverCandidates.map(m => {
+                                      {(isGp ? [] : driverCandidates).map(m => {
                                         const sel = evPickupDriverId === m.id;
                                         const hasConflict = sel && memberConflicts[m.id] != null;
                                         return (
@@ -1519,7 +1522,7 @@ export default function JustDescribeItEventScreen({
                       {saving
                         ? <ActivityIndicator color="#FFFFFF" />
                         : <Text style={{ fontSize: 16, fontWeight: '700', color: evTitle.trim() ? '#FFFFFF' : tertiaryC }}>
-                            {isEdit ? 'Save changes' : 'Add to schedule'}
+                            {isEdit ? 'Save changes' : isGp ? 'Send to my family' : 'Add to schedule'}
                           </Text>}
                     </TouchableOpacity>
 

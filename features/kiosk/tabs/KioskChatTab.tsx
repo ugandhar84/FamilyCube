@@ -1147,7 +1147,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       </KeyboardAvoidingView>
 
       {/* ── Quick emoji (double-tap) ── */}
-      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
+      <Modal supportedOrientations={['landscape']} visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
         {/* KioskModalHost, not just the useKioskLockSuspended above: a
             native Modal renders in its own window, so touches inside it
             never reach KioskScreen's root onTouchStart. The suspension
@@ -1221,7 +1221,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
       />
 
       {/* ── Image lightbox ── */}
-      <Modal supportedOrientations={['portrait', 'landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+      <Modal supportedOrientations={['landscape']} visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={s.lightbox} onPress={() => setLightboxUri(null)}>
           {lightboxUri && (
             <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
@@ -1249,7 +1249,7 @@ export function KioskChatTab({ active, members, colors, isDark }: {
 function VideoLightbox({ uri, onClose }: { uri: string | null; onClose: () => void }) {
   const player = useVideoPlayer(uri, pl => { pl.loop = false; pl.play(); });
   return (
-    <Modal supportedOrientations={['portrait', 'landscape']} visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal supportedOrientations={['landscape']} visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.videoLightbox}>
         <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls />
         <Pressable onPress={onClose} style={s.lightboxClose}>

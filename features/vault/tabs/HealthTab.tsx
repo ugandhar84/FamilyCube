@@ -93,7 +93,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   // ── Vaccine filters (default: all, all members) ───────────────────────────────
   const [vaxSearch, setVaxSearch]         = useState('');
   const [vaxMemberFilter, setVaxMemberFilter] = useState<string[]>([]);       // [] = all
-  const [vaxStatusFilter, setVaxStatusFilter] = useState<'all' | 'done' | 'pending' | 'due_soon'>('pending');
+  const [vaxStatusFilter, setVaxStatusFilter] = useState<'all' | 'done' | 'pending' | 'due_soon'>('all');
   const [vaxDueSoonDays, setVaxDueSoonDays] = useState(30);
 
   // Draft filters shown inside bottom sheet before Apply
@@ -635,7 +635,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       setDraftMed({ search: '', members: [], categories: [], status: 'active',
         ongoing: true, frequencies: [], refillSoon: false, escalationOnly: false });
     } else {
-      setDraftVax({ search: '', members: [], status: 'pending', dueSoonDays: 30 });
+      setDraftVax({ search: '', members: [], status: 'all', dueSoonDays: 30 });
     }
   };
 
@@ -646,7 +646,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
   };
 
   const clearVaxFilters = () => {
-    setVaxSearch(''); setVaxMemberFilter([]); setVaxStatusFilter('pending'); setVaxDueSoonDays(30);
+    setVaxSearch(''); setVaxMemberFilter([]); setVaxStatusFilter('all'); setVaxDueSoonDays(30);
   };
 
   const memberName  = (id: string) => members.find(m => m.id === id)?.name ?? id;
@@ -679,7 +679,7 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
     // (live-reported: "what is that pending clear all, should only
     // appear when actual filters apply"). Mirrors medActiveFilterCount's
     // own pattern just above (medStatusFilter !== 'active', its default).
-    if (vaxStatusFilter !== 'pending') n++;
+    if (vaxStatusFilter !== 'all') n++;
     if (vaxMemberFilter.length) n++;
     if (vaxSearch) n++;
     return n;

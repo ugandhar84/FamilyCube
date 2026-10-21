@@ -31,6 +31,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { useFamilyStore, FamilyMember } from '@/store/familyStore';
+import { grantChildSessionForParent } from '@/lib/childGrant';
 import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import { showAlert } from './AppAlert';
 import FamilyAvatar from './FamilyAvatar';
@@ -328,7 +329,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   // instead, leaving room for the header row + a comfortable bottom margin.
   const listMaxHeight = Math.max(220, windowHeight - HEADER_OFFSET - 220);
 
-  const handleSelect = (m: FamilyMember) => {
+  const handleSelect = async (m: FamilyMember) => {
     // See PersonaSwitcherSheet.tsx's identical guard: a pending invite has
     // no auth_user_id and often no PIN yet, so it fell through the PIN
     // branch below with no gate at all — letting anyone on this device
@@ -342,6 +343,8 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
       setPinTarget(m);
     } else {
       if (m.pinEnabled && m.id !== activeMemberId) markEnteredByParent(m.id);
+      // A child with their own login needs a device grant; a parent gets it from the server (no PIN).
+      if (me?.role === 'parent' && m.authUserId && m.id !== activeMemberId) await grantChildSessionForParent(m.id);
       setActiveMember(m.id);
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for

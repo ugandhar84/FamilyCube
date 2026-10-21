@@ -57,6 +57,7 @@ import {
   lookupCategoryDefaultsByLooseLabel, resolveDomainFromLooseLabel, fetchSubcategoriesForDomain,
   applyAssignment, eventCategoryFromDomain, type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
+import { GEMINI } from '@/constants/geminiRhythm';
 import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestionCard';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
@@ -96,7 +97,11 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
   // again); omitted/undefined keeps the normal step-0 start.
   initialStep?: 'review';
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors: themeColors, isDark } = useTheme();
+  // Full-page (grandparent) form uses the Gemini rhythm tokens in light mode: deep forest-slate text, warm borders.
+  const colors = useMemo(() => (fullPage && !isDark
+    ? { ...themeColors, textPrimary: GEMINI.titleColor, textSecondary: GEMINI.bodyColor, textTertiary: GEMINI.bodyColorLight, border: GEMINI.border, surface: GEMINI.surface }
+    : themeColors), [fullPage, isDark, themeColors]);
   const insets = useSafeAreaInsets();
   const { addEvent, updateEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
@@ -454,6 +459,17 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
     setHelperId(id);
     setHelperName(m?.name ?? '');
   };
+
+  // "Who would this go to?" picked someone: tick that person in the Accompanied by / Driver list so the suggestion and the form agree.
+  useEffect(() => {
+    const id = assignmentSuggestion?.selectedMemberId;
+    if (!id || assignmentSuggestion?.decisionType === 'blocked' || id === activeMemberId) return;
+    if (category === 'Work' || category === 'Event') return;
+    const m = members.find(x => x.id === id);
+    if (!m || m.role === 'kid') return;
+    if (category === 'Study') { setDriverId(id); setDriverName(m.name); return; }
+    handleHelperSelect(id);
+  }, [assignmentSuggestion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-build title when relevant fields change (for Ride)
   const autoTitle = useMemo(() => {
@@ -994,7 +1010,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
 
   // Figma field tokens — white bg + light border (inactive), catColor 2px border (active)
   const fieldBg      = isDark ? colors.surface : '#FFFFFF';
-  const fieldBorder  = isDark ? colors.border  : '#DFE5EF';
+  const fieldBorder  = isDark ? colors.border  : (fullPage ? GEMINI.border : '#DFE5EF');
   const fieldBorderActive = catColor;
   // Figma "Content group" tip card: lavender tint
   const tipCardBg    = isDark ? colors.surface : colors.pinkLight;
@@ -1020,7 +1036,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
       stepLabels={['What', 'When', 'Who', 'Review']}
       hasDraft={title.trim().length > 0 || notes.trim().length > 0}
     >
-            {currentStepId === 'what' && <>
+            {(fullPage || currentStepId === 'what') && <>
             {/* ── Category selector ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -1146,7 +1162,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
             </>}
 
-            {currentStepId === 'when' && <>
+            {(fullPage || currentStepId === 'when') && <>
             {/* ── Ride needed? + pickup (kid only) — right above Date &
                 Time, which doubles as the drop-off time whenever ride
                 needed is on (relabeled below, no separate drop-off field
@@ -1306,7 +1322,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
             </>}
 
-            {currentStepId === 'assign' && <>
+            {(fullPage || currentStepId === 'assign') && <>
             <CategoryFields
               category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults} isKid={isKid}
               apptType={apptType} setApptType={setApptType} doctorName={doctorName} setDoctorName={setDoctorName}
@@ -1326,7 +1342,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
               showReturnTimePick={showReturnTimePick} setShowReturnTimePick={setShowReturnTimePick}
               showDatePick={showDatePick} setShowDatePick={setShowDatePick}
               showTimePick={showTimePick} setShowTimePick={setShowTimePick}
-              isTeen={isTeen} members={members}
+              isTeen={isTeen} isSeniorViewer={isSenior} members={members}
               openToGrandparents={openToGrandparents} setOpenToGrandparents={setOpenToGrandparents}
               openToTeens={openToTeens} setOpenToTeens={setOpenToTeens}
               setGpTeenToggledByUser={setGpTeenToggledByUser}
@@ -1469,7 +1485,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
 
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
-            {!isKid && !isTeen && category !== 'Ride' && (
+            {isParent && category !== 'Ride' && (
               <TouchableOpacity
                 onPress={() => {
                   const v = !openToGrandparents;
@@ -1518,7 +1534,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             {/* ── Teens Welcome toggle — non-Ride (has its own inline toggle),
                 non-Medical (not appropriate for a minor to be responsible
                 for a medical appointment) ── */}
-            {!isKid && !isTeen && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
+            {isParent && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
               <TouchableOpacity
                 onPress={() => {
                   const v = !openToTeens;
@@ -1610,7 +1626,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill, initi
             )}
             </>}
 
-            {currentStepId === 'review' && (() => {
+            {(fullPage || currentStepId === 'review') && (() => {
               const forNames = memberIds.map(id => members.find(m => m.id === id)).filter(Boolean).map(m => m!.id === activeMemberId ? 'Me' : m!.name.split(' ')[0]);
               const whoLabel = isKid ? 'You (pending approval)' : forNames.length ? forNames.join(', ') : 'Nobody yet';
               const recurLabel = repeatFreq === 'none' ? 'One-time'

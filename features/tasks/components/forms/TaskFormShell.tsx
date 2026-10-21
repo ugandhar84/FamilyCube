@@ -19,6 +19,7 @@
  * review step, inside the scroll, so a disabled-reason stays attached to the
  * summary it refers to.
  */
+import { GEMINI } from '@/constants/geminiRhythm';
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, Keyboard, Platform,
@@ -33,6 +34,7 @@ import StepTransition from '@/components/StepTransition';
 import { useKeyboardAwareMaxHeight } from '@/lib/useKeyboardAwareMaxHeight';
 import { withAndroidShadowFix } from '@/lib/androidShadowFix';
 import { OverlayPage } from '@/components/OverlayPage';
+import { OverlayPortal } from '@/components/OverlayHost';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
 import { useUIStore } from '@/store/uiStore';
 
@@ -44,7 +46,7 @@ function Frame({ fullPage, visible, onClose, canvas, children }: { fullPage: boo
     useUIStore.getState().setFullBleedScreenActive(true);
     return () => { showTabBar(); useUIStore.getState().setFullBleedScreenActive(false); };
   }, [fullPage, visible]);
-  if (fullPage) return <OverlayPage visible={visible} onDismiss={onClose} zIndex={80} backgroundColor={canvas}>{children}</OverlayPage>;
+  if (fullPage) return <OverlayPortal visible={visible}><OverlayPage visible={visible} onDismiss={onClose} zIndex={80} backgroundColor={canvas}>{children}</OverlayPage></OverlayPortal>;
   return <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="slide" onRequestClose={onClose}>{children}</Modal>;
 }
 
@@ -111,10 +113,12 @@ export function TaskFormShell({
   }, []);
 
   const currentStepId = stepIds[Math.min(step, stepIds.length - 1)];
-  const isReview = currentStepId === reviewStepId;
+  const flat = fullPage; // one flat scrolling form, no stepper
+  const isReview = flat || currentStepId === reviewStepId;
+  const canvas = isDark ? colors.background : GEMINI.canvas;
 
   return (
-    <Frame fullPage={fullPage} visible={visible} onClose={onClose} canvas={colors.background}>
+    <Frame fullPage={fullPage} visible={visible} onClose={onClose} canvas={canvas}>
       {/* Live-reported: KeyboardAvoidingView previously wrapped the WHOLE
           sheet — 'padding' behavior slid the entire card (including the
           fixed Next button) up 1:1 with the keyboard, so the button kept
@@ -128,10 +132,10 @@ export function TaskFormShell({
           stay fixed in place; the Next/submit button now lives INSIDE the
           ScrollView (see below) so it's never a separate fixed element
           that could end up mispositioned on its own. */}
-        <View style={[s.backdrop, fullPage ? { backgroundColor: colors.background, paddingTop: insets.top } : null, { paddingBottom: keyboardHeight }]}>
+        <View style={[s.backdrop, fullPage ? { backgroundColor: canvas, paddingTop: insets.top } : null, { paddingBottom: keyboardHeight }]}>
           {!fullPage && <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />}
           <View style={withAndroidShadowFix([s.sheet, fullPage
-            ? { flex: 1, maxHeight: undefined, backgroundColor: colors.background, borderTopLeftRadius: 0, borderTopRightRadius: 0 }
+            ? { flex: 1, maxHeight: undefined, backgroundColor: canvas, borderTopLeftRadius: 0, borderTopRightRadius: 0 }
             : { backgroundColor: colors.card,
             borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
             shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8,
@@ -148,7 +152,7 @@ export function TaskFormShell({
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={[s.title, { color: colors.textPrimary }]}>{headerTitle}</Text>
+                  <Text style={[s.title, { color: fullPage && !isDark ? GEMINI.titleColor : colors.textPrimary }]}>{headerTitle}</Text>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: accentColor }}>
                     {headerSubtitle}
                   </Text>
@@ -157,7 +161,7 @@ export function TaskFormShell({
               <TouchableOpacity
                 onPress={onClose}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : (fullPage ? GEMINI.cardBg : '#F1F5F9'), ...(fullPage && !isDark ? GEMINI.cardShadow : null) }}
               >
                 <Ionicons name="close" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -165,7 +169,7 @@ export function TaskFormShell({
 
             {/* ── Step progress — hidden when hideProgress=true (e.g. single-
                 step handoff from JustDescribeItScreen). ── */}
-            {!hideProgress && (
+            {!hideProgress && !flat && (
               <>
                 <View style={{ flexDirection: 'row', alignItems: stepLabels ? 'flex-start' : 'center', gap: 10, marginBottom: stepLabels ? 4 : 14 }}>
                   {step > 0 && !stepLabels && (

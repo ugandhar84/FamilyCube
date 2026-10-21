@@ -25,7 +25,6 @@ import { RidesStatusCard } from './parent/RidesStatusCard';
 import { HubMyList } from './HubMyList';
 import { NextUpTimeline } from './parent/NextUpCard';
 import { FamilyPulseCard } from './parent/FamilyPulseCard';
-import { ProfileSwitcherCard } from './parent/ProfileSwitcherCard';
 import { NeedsYouCard, type NeedsYouItem } from './parent/NeedsYouCard';
 import { TonightMealCard } from './parent/TonightMealCard';
 import { PushbackSheet } from './parent/PushbackSheet';
@@ -496,7 +495,9 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
   // something urgent/unsafe (emergency) rather than a routine item.
   const criticalKidRequest = (() => {
     const r = (kidRequests as any[]).find(req =>
-      req.status === 'pending' && (req.type === 'permission' || req.type === 'question' || req.urgency === 'emergency')
+      (req.status === 'pending' && (req.type === 'permission' || req.type === 'question' || req.urgency === 'emergency'))
+      // An SOS stays here until somebody marks it completed, even after one person has accepted it.
+      || (req.urgency === 'emergency' && req.status === 'approved')
     );
     return r ?? null;
   })();
@@ -578,17 +579,19 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
         title: criticalKidRequest
           ? (criticalKidRequest.type === 'permission' || criticalKidRequest.type === 'question'
               ? (criticalKidRequest.detail ?? (criticalKidRequest.type === 'permission' ? 'Permission request' : 'Question from a kid'))
-              : 'SOS — needs attention now')
+              : criticalKidRequest.status === 'approved' ? (criticalKidRequest.respondedBy === active.id ? 'SOS in progress — mark it completed' : `SOS — ${members.find(m => m.id === criticalKidRequest.respondedBy)?.name?.split(' ')[0] ?? 'Someone'} is on the way`) : 'SOS — needs attention now')
           : (r.detail ?? 'Request from a kid'),
         reason: `${members.find(m => m.id === r.fromMemberId)?.name?.split(' ')[0] ?? 'A family member'}${
           criticalKidRequest?.type === 'permission' ? ' needs a yes/no.'
           : criticalKidRequest?.type === 'question' ? ' is waiting on your answer.'
+          : criticalKidRequest?.status === 'approved' ? (criticalKidRequest.respondedBy === active.id ? ' sent an SOS. Mark it completed once they are safe.' : ' sent an SOS. Still open until it is completed.')
           : criticalKidRequest ? ' needs you right now.'
           : ' is waiting for your response.'
         }`,
         extraCount: Math.max(0, pendingKidRequestsCount - 1),
         urgentCount: urgentKidRequestsCount,
         categoryLabel: 'request',
+        statusLabel: criticalKidRequest?.status === 'approved' ? (criticalKidRequest.respondedBy === active.id ? 'You accepted' : `Accepted by ${members.find(m => m.id === criticalKidRequest.respondedBy)?.name?.split(' ')[0] ?? 'a parent'}`) : undefined,
       },
       onReview: onReviewOpen,
     });
@@ -663,7 +666,20 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
     });
   }
 
-  if (myPendingHelperEvent) {
+  // A ride for a grandparent is a "grandparent request": it belongs to the Review inbox's Grandparent requests page, not a one-off card.
+  const helperRiderIsGp = !!myPendingHelperEvent && (myPendingHelperEvent.memberIds?.length ? myPendingHelperEvent.memberIds : myPendingHelperEvent.memberId ? [myPendingHelperEvent.memberId] : [])
+    .some((id: string) => members.find(m => m.id === id)?.role === 'senior');
+  if (myPendingHelperEvent && helperRiderIsGp) {
+    needsYouCards.push({
+      item: {
+        kind: 'approval', title: myPendingHelperEvent.title,
+        reason: `${members.find(m => m.id === (myPendingHelperEvent.memberId ?? myPendingHelperEvent.memberIds?.[0]))?.name?.split(' ')[0] ?? 'A grandparent'} asked for a ride. Waiting for you.`,
+        dueDate: myPendingHelperEvent.date, dueTime: myPendingHelperEvent.time,
+        categoryLabel: 'grandparent request',
+      },
+      onReview: onReviewOpen,
+    });
+  } else if (myPendingHelperEvent) {
     needsYouCards.push({
       item: {
         kind: 'approval', title: myPendingHelperEvent.title,
@@ -793,14 +809,6 @@ export function ParentView({ focusKey = 1, active, members, colors, isDark, onSc
 
       <Animated.View style={{ opacity: cardAnims[0].opacity, transform: [{ translateY: cardAnims[0].translateY }] }}>
         <FamilyPulseCard colors={colors} isDark={isDark} members={members} hasUrgentItem={!!needsYouItem} familyName={familyName || undefined} />
-      </Animated.View>
-
-      {/* "Viewing as" card — matches the Figma prototype's own
-          .profile-switcher position exactly (between Family Pulse and
-          Needs You). Opens the real PersonaSwitcherDropdown, same
-          mechanism AppHeader's compact mode already uses. */}
-      <Animated.View style={{ opacity: cardAnims[1].opacity, transform: [{ translateY: cardAnims[1].translateY }] }}>
-        <ProfileSwitcherCard colors={colors} isDark={isDark} active={active} />
       </Animated.View>
 
       <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>

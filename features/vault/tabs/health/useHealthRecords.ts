@@ -19,6 +19,7 @@
  * bulk-delete audit trail, etc.), repeated here only where it affects a
  * call site.
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Alert } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -65,7 +66,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
   // ── Vaccine filters (default: all, all members) ───────────────────────
   const [vaxSearch, setVaxSearch]             = useState('');
   const [vaxMemberFilter, setVaxMemberFilter] = useState<string[]>([]);  // [] = all
-  const [vaxStatusFilter, setVaxStatusFilter] = useState<'all' | 'done' | 'pending' | 'due_soon'>('pending');
+  const [vaxStatusFilter, setVaxStatusFilter] = useState<'all' | 'done' | 'pending' | 'due_soon'>('all');
   const [vaxDueSoonDays, setVaxDueSoonDays]   = useState(30);
 
   // Draft filters shown inside the Filter screen before Apply
@@ -81,8 +82,11 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
     if (familyId === 'family-1') return; // real family not resolved yet
     setLoading(true);
     setLoadError(null);
+    // Own records only (parent-uploaded ones included, they're filed under this person). A grandparent also sees the
+    // medications of their same-side grandparent partner.
+    const sideIds = activeMember?.role === 'senior' ? gpSideMembers(activeMember.id, members).map(m => m.id) : [];
     const medsQ = kidView && activeMember?.id
-      ? supabase.from('family_medications').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
+      ? supabase.from('family_medications').select('*').eq('family_id', familyId).in('member_id', sideIds.length ? sideIds : [activeMember.id])
       : supabase.from('family_medications').select('*').eq('family_id', familyId);
     const vaxQ = kidView && activeMember?.id
       ? supabase.from('family_vaccines').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
@@ -98,7 +102,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
       if (vaxRes.data)  setVaxes(vaxRes.data as Vaccine[]);
     }
     setLoading(false);
-  }, [familyId, kidView, activeMember?.id]);
+  }, [familyId, kidView, activeMember?.id, members]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -455,6 +459,37 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
     if (data) { setVaxes(prev => [data as Vaccine, ...prev]); showToast('Vaccine added'); }
   };
 
+  // Bulk saves: ONE insert for the whole reviewed list.
+  const saveScannedMedBulk = async (items: ParsedMedication[], reviewMemberId: string) => {
+    if (items.length === 0) return;
+    const { data, error } = await supabase.from('family_medications').insert(items.map(m => ({
+      family_id: familyId, member_id: reviewMemberId, assigned_by: activeMember?.id ?? null,
+      name: m.name.trim() || 'Unknown medication', dosage: m.dosage.trim(), dosage_unit: 'mg',
+      frequency: m.frequency || 'As directed', frequency_times: ['08:00'], category: 'other',
+      prescribing_doctor: m.prescriber || null, pharmacy: m.pharmacy || null, instructions: m.instructions || null,
+      is_ongoing: !m.duration || m.duration.toLowerCase().includes('ongoing'), is_active: true,
+      escalation_enabled: false, escalation_after_min: 60,
+    }))).select();
+    if (error) throw new Error(error.message);
+    setMeds(prev => [...((data ?? []) as Medication[]), ...prev]);
+    showToast(`${items.length} medication${items.length === 1 ? '' : 's'} added`);
+  };
+
+  const saveScannedVaxBulk = async (items: ParsedVaccine[], reviewMemberId: string) => {
+    if (items.length === 0) return;
+    const { data, error } = await supabase.from('family_vaccines').insert(items.map(v => ({
+      family_id: familyId, member_id: reviewMemberId,
+      title: v.vaccine_name.trim() || 'Unknown vaccine', vaccine_type: v.manufacturer || null,
+      date: v.administered_date ?? today(), next_due_date: v.next_due_date ?? null,
+      series_current: v.dose_number ?? 1, series_total: v.total_doses ?? 1,
+      administered_by: v.administered_by || null, location: v.site || null,
+      notes: v.lot_number ? `Lot: ${v.lot_number}` : null, done: true,
+    }))).select();
+    if (error) throw new Error(error.message);
+    setVaxes(prev => [...((data ?? []) as Vaccine[]), ...prev]);
+    showToast(`${items.length} vaccine${items.length === 1 ? '' : 's'} added`);
+  };
+
   const isOverdue = (med: Medication) => {
     if (med.taken_date === today()) return false;
     if (!med.frequency_times?.length) return false;
@@ -496,7 +531,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
       setDraftMed({ search: '', members: [], categories: [], status: 'active',
         ongoing: true, frequencies: [], refillSoon: false, escalationOnly: false });
     } else {
-      setDraftVax({ search: '', members: [], status: 'pending', dueSoonDays: 30 });
+      setDraftVax({ search: '', members: [], status: 'all', dueSoonDays: 30 });
     }
   };
 
@@ -507,7 +542,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
   };
 
   const clearVaxFilters = () => {
-    setVaxSearch(''); setVaxMemberFilter([]); setVaxStatusFilter('pending'); setVaxDueSoonDays(30);
+    setVaxSearch(''); setVaxMemberFilter([]); setVaxStatusFilter('all'); setVaxDueSoonDays(30);
   };
 
   const memberName  = (id: string) => members.find(m => m.id === id)?.name ?? id;
@@ -532,7 +567,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
 
   const vaxActiveFilterCount = useMemo(() => {
     let n = 0;
-    if (vaxStatusFilter !== 'pending') n++;
+    if (vaxStatusFilter !== 'all') n++;
     if (vaxMemberFilter.length) n++;
     if (vaxSearch) n++;
     return n;
@@ -596,7 +631,7 @@ export function useHealthRecords({ kidView = false }: { kidView?: boolean } = {}
     filteredMeds, filteredVaxes,
     markTaken, toggleVax, deleteMed, deleteVax, deleteMedsBulk, deleteVaxesBulk,
     toggleMedActive, addMed, updateMed, addVax, updateVax,
-    saveScannedMed, saveScannedVax, isOverdue,
+    saveScannedMed, saveScannedVax, saveScannedMedBulk, saveScannedVaxBulk, isOverdue,
     memberName, memberColor,
   };
 }

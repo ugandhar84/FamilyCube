@@ -140,12 +140,12 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
   // current v1beta API surface (live-reported elsewhere in this app via
   // edge logs: "HTTP 404: models/gemini-1.5-flash is not found for API
   // version v1beta") — neither fallback slot could ever have succeeded.
-  // Retrying gemini-2.5-flash itself is a real retry against a transient
+  // Retrying gemini-flash-latest itself is a real retry against a transient
   // failure instead of falling through to dead model names.
   const MODELS = [
-    { name: 'gemini-2.5-flash', thinking: true  },
-    { name: 'gemini-2.5-flash', thinking: false },
-    { name: 'gemini-2.5-flash', thinking: false },
+    { name: 'gemini-flash-latest', thinking: true  },
+    { name: 'gemini-flash-latest', thinking: false },
+    { name: 'gemini-flash-latest', thinking: false },
   ];
   let lastErr = '';
   for (const m of MODELS) {

@@ -40,7 +40,7 @@ export default function MemoriesScreen({ onClose }: { onClose?: () => void } = {
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const readOnly = activeMember?.role === 'senior';
+  const readOnly = false; // same Memories page for every role
 
   useEffect(() => {
     hideTabBar();

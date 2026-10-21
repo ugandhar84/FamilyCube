@@ -8,6 +8,7 @@ import { Plus, X } from 'lucide-react-native';
 import { useFonts } from 'expo-font';
 import { Caveat_600SemiBold, Caveat_700Bold } from '@expo-google-fonts/caveat';
 import type { FamilyMember } from '@/store/familyStore';
+import AppFullPage from '@/components/AppFullPage';
 import { showToast } from '@/components/AppToast';
 import { useStickyNotes, noteStamp, NOTE_MAX, NOTE_COLORS, type NoteColor } from './useStickyNotes';
 
@@ -59,33 +60,29 @@ export function HubStickyNotes({ active, members, colors, isDark }: { active: Fa
         </Pressable>
       </ScrollView>
 
-      <Modal visible={adding} transparent animationType="slide" onRequestClose={() => setAdding(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.modalWrap}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAdding(false)} />
-          <View style={[s.sheet, { backgroundColor: isDark ? colors.card : '#FFFFFF' }]}>
-            <Text style={[s.sheetT, { color: colors.textPrimary }]}>New sticky note</Text>
-            <TextInput value={text} onChangeText={setText} maxLength={NOTE_MAX} multiline autoFocus placeholder="e.g. Soccer cleats are in the garage" placeholderTextColor={colors.textTertiary}
-              style={[s.input, { color: colors.textPrimary, backgroundColor: tone[color].bg }, hand && { fontFamily: hand.bold, fontSize: 24, fontWeight: undefined }]} accessibilityLabel="Note" />
-            <Text style={[s.count, { color: colors.textTertiary }]}>{text.length}/{NOTE_MAX}</Text>
-            <Text style={[s.eyebrow, { color: colors.textTertiary }]}>SHARE WITH</Text>
-            <View style={s.chips}>
-              <Pressable onPress={() => setTo([])} style={[s.chip, { backgroundColor: to.length === 0 ? colors.primary : colors.surface }]}><Text style={[s.chipT, { color: to.length === 0 ? '#fff' : colors.textSecondary }]}>Everyone</Text></Pressable>
-              {others.map(m => {
-                const on = to.includes(m.id);
-                return <Pressable key={m.id} onPress={() => setTo(p => (p.includes(m.id) ? p.filter(x => x !== m.id) : [...p, m.id]))} style={[s.chip, { backgroundColor: on ? colors.primary : colors.surface }]}><Text style={[s.chipT, { color: on ? '#fff' : colors.textSecondary }]}>{first(m.id)}</Text></Pressable>;
-              })}
-            </View>
-            <Text style={[s.eyebrow, { color: colors.textTertiary }]}>COLOR</Text>
-            <View style={s.chips}>
-              {NOTE_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[s.chip, { backgroundColor: color === c ? colors.primary : tone[c].bg }]}><Text style={[s.chipT, { color: color === c ? '#fff' : tone[c].fg }]}>{c}</Text></Pressable>)}
-            </View>
-            <View style={s.row}>
-              <Pressable onPress={() => setAdding(false)} style={[s.btn, { backgroundColor: colors.surface }]}><Text style={[s.btnT, { color: colors.textPrimary }]}>Cancel</Text></Pressable>
-              <Pressable onPress={save} disabled={!text.trim()} style={[s.btn, { backgroundColor: colors.primary, opacity: text.trim() ? 1 : 0.4 }]}><Text style={[s.btnT, { color: '#fff' }]}>Post note</Text></Pressable>
-            </View>
+      <AppFullPage visible={adding} onClose={() => setAdding(false)} title="New sticky note" subtitle="A short note for the family" accent="amber"
+        footer={
+          <View style={s.row}>
+            <Pressable onPress={() => setAdding(false)} style={[s.btn, { backgroundColor: colors.surface }]}><Text style={[s.btnT, { color: colors.textPrimary }]}>Cancel</Text></Pressable>
+            <Pressable onPress={save} disabled={!text.trim()} style={[s.btn, { backgroundColor: colors.primary, opacity: text.trim() ? 1 : 0.4 }]}><Text style={[s.btnT, { color: colors.textInverse }]}>Post note</Text></Pressable>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        }>
+        <TextInput value={text} onChangeText={setText} maxLength={NOTE_MAX} multiline placeholder="e.g. Soccer cleats are in the garage" placeholderTextColor={colors.textTertiary}
+          style={[s.input, { color: colors.textPrimary, backgroundColor: tone[color].bg }, hand && { fontFamily: hand.bold, fontSize: 24, fontWeight: undefined }]} accessibilityLabel="Note" />
+        <Text style={[s.count, { color: colors.textTertiary }]}>{text.length}/{NOTE_MAX}</Text>
+        <Text style={[s.eyebrow, { color: colors.textTertiary }]}>SHARE WITH</Text>
+        <View style={s.chips}>
+          <Pressable onPress={() => setTo([])} style={[s.chip, { backgroundColor: to.length === 0 ? colors.primary : colors.surface }]}><Text style={[s.chipT, { color: to.length === 0 ? colors.textInverse : colors.textSecondary }]}>Everyone</Text></Pressable>
+          {others.map(m => {
+            const on = to.includes(m.id);
+            return <Pressable key={m.id} onPress={() => setTo(p => (p.includes(m.id) ? p.filter(x => x !== m.id) : [...p, m.id]))} style={[s.chip, { backgroundColor: on ? colors.primary : colors.surface }]}><Text style={[s.chipT, { color: on ? colors.textInverse : colors.textSecondary }]}>{first(m.id)}</Text></Pressable>;
+          })}
+        </View>
+        <Text style={[s.eyebrow, { color: colors.textTertiary }]}>COLOR</Text>
+        <View style={s.chips}>
+          {NOTE_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[s.chip, { backgroundColor: color === c ? colors.primary : tone[c].bg }]}><Text style={[s.chipT, { color: color === c ? colors.textInverse : tone[c].fg }]}>{c}</Text></Pressable>)}
+        </View>
+      </AppFullPage>
     </View>
   );
 }

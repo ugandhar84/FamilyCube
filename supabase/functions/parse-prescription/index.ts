@@ -100,7 +100,7 @@ the original document before trusting a health record, so use it honestly rather
 interface ImageInput { imageBase64: string; mimeType: string; }
 
 async function callGeminiVision(key: string, primary: ImageInput, extras: ImageInput[]): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
   // Build image parts: primary + up to 2 extra pages
   const imageParts = [
     { inlineData: { mimeType: primary.mimeType, data: primary.imageBase64 } },
@@ -124,7 +124,8 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
     // can legitimately need to list a dozen+ items), so this needs real
     // headroom, not just a bump — matches parse-flyer's own 16384 budget
     // for the same class of "list everything visible" extraction.
-    generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+    // Reading a document needs no long reasoning: turning it off makes the newer models answer in seconds instead of timing out.
+    generationConfig: { temperature: 0.1, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } },
   };
 
   // Was 15s — too tight now that this call also carries a full retry (both
@@ -140,7 +141,7 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }, 35_000);
+  }, 55_000);
 
   if (!res.ok) {
     const err = await res.text().catch(() => '');
@@ -285,9 +286,21 @@ function dedupeExactMatches<T extends Record<string, unknown>>(items: unknown, n
   return out;
 }
 
+// Short, safe reason code for a failed scan (no document text): lets the app say what actually went wrong, and shows up in the logs.
+function failReason(e: unknown): string {
+  const m = String((e as any)?.message ?? e ?? '');
+  if (/timed? ?out|Timeout/i.test(m) || (e as any)?.name === 'TimeoutError') return 'timeout';
+  const h = /Gemini HTTP (\d{3})/.exec(m);
+  // Include Google's own error status word (e.g. NOT_FOUND, PERMISSION_DENIED); it names the problem and contains no document text.
+  if (h) { const w = /"status":\s*"([A-Z_]+)"/.exec(m); return `gemini_${h[1]}${w ? '_' + w[1] : ''}`; }
+  if (/empty content/i.test(m)) return 'empty_reply';
+  if (/parse JSON/i.test(m)) return 'unreadable_reply';
+  return 'other';
+}
+
 // ── Main handler ───────────────────────────────────────────────────────────────
 
-serve(async (req) => {
+async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
   }
@@ -308,7 +321,7 @@ serve(async (req) => {
     if (!geminiKey) return json({ error: 'GEMINI_API_KEY not configured' }, 500);
 
     let rawText = '';
-    let usedModel = 'gemini-2.5-flash';
+    let usedModel = 'gemini-flash-latest';
     let parsed: Record<string, unknown> | undefined;
 
     try {
@@ -322,8 +335,9 @@ serve(async (req) => {
       // instead of a retry (live-reported: "couldn't parse JSON" error).
       parsed = extractJson(rawText);
     } catch (e1) {
-      console.warn('[parse-prescription] gemini-2.5-flash failed, retrying:', e1);
+      console.warn('[parse-prescription] gemini-flash-latest failed, retrying:', e1);
       usedModel = 'gemini-2.5-flash-retry';
+      const r1 = failReason(e1);
       try {
         // Was callGeminiFallback — a differently-shaped request (no
         // systemInstruction, no extraPages, half the token budget) that
@@ -338,11 +352,18 @@ serve(async (req) => {
         // instruction) gives a transient failure a real chance to resolve,
         // instead of falling back to a request shape that's more likely to
         // produce a different kind of bad response.
-        rawText = await callGeminiVision(geminiKey, primary, extras);
+        // After a timeout, retrying the same many-page request would just time out again: retry with the first page only so the person
+        // still gets a result instead of losing the whole scan.
+        rawText = await callGeminiVision(geminiKey, primary, r1 === 'timeout' ? [] : extras);
         parsed = extractJson(rawText);
       } catch (e2) {
-        console.error('[parse-prescription] all models failed:', e2);
-        return json({ error: 'AI parsing failed. Please enter details manually.' }, 422);
+        console.error('[parse-prescription] all models failed:', r1, failReason(e2), e2);
+        const why = failReason(e2);
+        const msg = why === 'timeout' || r1 === 'timeout' ? 'The scan took too long. Try again with fewer or smaller photos.'
+          : why === 'gemini_429' || r1 === 'gemini_429' ? 'The AI reader is busy right now. Wait a minute and try again.'
+          : (why === 'gemini_402' || r1 === 'gemini_402' || why === 'gemini_403' || r1 === 'gemini_403') ? 'The AI scan service is unavailable right now. Please enter the details manually.'
+          : `AI parsing failed (${r1}/${why}). Please enter details manually.`;
+        return json({ error: msg, reason: `${r1}/${why}` }, 422);
       }
     }
 
@@ -362,4 +383,31 @@ serve(async (req) => {
     console.error('[parse-prescription] unhandled error:', err);
     return json({ error: err.message ?? 'Internal error' }, 500);
   }
+}
+
+// Wraps the handler so the result is also stored on the scan_jobs row (when the app sends a scanId): if the person closed the app while
+// the AI was reading, the finished result is still waiting for them to review next time.
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return handle(req);
+  let scanId: string | undefined;
+  try { scanId = (await req.clone().json())?.scanId; } catch { /* no body */ }
+  const res = await handle(req);
+  if (scanId && /^[0-9a-f-]{36}$/i.test(scanId)) {
+    try {
+      const body = await res.clone().json();
+      const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (url && key) {
+        const patch = res.ok && !body.error
+          ? { status: 'ready', result: body, updated_at: new Date().toISOString() }
+          : { status: 'failed', error: String(body.error ?? 'failed').slice(0, 300), updated_at: new Date().toISOString() };
+        await fetch(`${url}/rest/v1/scan_jobs?id=eq.${scanId}&status=eq.processing`, {
+          method: 'PATCH',
+          headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(patch),
+        });
+      }
+    } catch (e) { console.warn('[parse-prescription] could not store scan job:', (e as Error).message); }
+  }
+  return res;
 });
+

@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check, Calendar, Minus, Plus } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import FullPageOverlay from '@/components/FullPageOverlay';
+import { OverlayPortal } from '@/components/OverlayHost';
 import {
   MedForm, BLANK_MED, MED_SUGGESTIONS, getCatColors, FREQ_LABELS,
   fmtDate, fmtDateDisplay, formatDoseTime, aStyles, doseCountForFrequency,
@@ -268,6 +269,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   // existing features, kept and folded into the closest matching section
   // rather than dropped.
   return (
+    <OverlayPortal visible={visible}>
     <FullPageOverlay visible={visible} onDismiss={handleClose} zIndex={60}>
       {(requestAnimatedClose) => (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: pageBg }}>
@@ -792,5 +794,6 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
       </KeyboardAvoidingView>
       )}
     </FullPageOverlay>
+    </OverlayPortal>
   );
 }

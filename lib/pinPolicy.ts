@@ -1,9 +1,8 @@
 /**
  * pinPolicy — who needs a PIN to enter a profile.
  *   - Anyone entering their own profile, or any non-parent entering someone else's: the target's PIN.
- *   - A PARENT entering a kid/teen's profile: no PIN. Parents look after the kids' accounts and should never be locked out of
- *     them. (A kid with their own separate login still needs the PIN: the server issues a per-device grant from that PIN
- *     check, and without it that kid's own actions would be refused.)
+ *   - A PARENT entering a kid/teen's profile: no PIN, ever. (For a kid with their own login the app asks the server for the
+ *     child's per-device grant on the parent's behalf: lib/childGrant.ts.)
  * Profiles entered this way are remembered for the session so the resume lock does not then ask the parent for the kid's PIN.
  */
 type P = { id: string; role: string; pinEnabled?: boolean; authUserId?: string | null; pin?: string | null };
@@ -38,7 +37,8 @@ const isChild = (m: P) => m.role === 'kid' || m.role === 'teen' || m.role === 'c
 export function needsPinToSwitch(active: P | undefined | null, target: P): boolean {
   if (!target.pinEnabled) return false;
   if (active && active.id === target.id) return false;
-  if (active && active.role === 'parent' && isChild(target) && !target.authUserId) return false;
+  // A parent never needs a child's PIN (a child with their own login gets its device grant from parent_grant_child_session instead).
+  if (active && active.role === 'parent' && isChild(target)) return false;
   return true;
 }
 

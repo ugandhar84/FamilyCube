@@ -1065,7 +1065,7 @@ function ChildrenPrivacySection({ parent, children, colors, isDark }: { parent: 
         <View key={c.id}>
           <Row icon="location-outline" label={`${c.name.split(' ')[0]} can share their location`} subtitle="Shows on the family map, even when the app is closed" colors={colors} isDark={isDark}
             right={<Switch value={!!on[`${c.id}:location`]} onValueChange={v => flip(c, 'location', v)} trackColor={track} thumbColor="#fff" />} />
-          <Row icon="sparkles-outline" label={`${c.name.split(' ')[0]} can use AI helpers`} subtitle="Sends what they type or scan to Google’s Gemini AI service" colors={colors} isDark={isDark}
+          <Row icon="sparkles-outline" label={`${c.name.split(' ')[0]} can use AI helpers`} subtitle="Sends what they type or scan to a third-party AI service" colors={colors} isDark={isDark}
             right={<Switch value={!!on[`${c.id}:ai`]} onValueChange={v => flip(c, 'ai', v)} trackColor={track} thumbColor="#fff" />} />
         </View>
       ))}

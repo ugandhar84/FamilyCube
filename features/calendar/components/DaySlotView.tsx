@@ -8,6 +8,7 @@
  *   - Right: bold title + subtitle row (location · who · status)
  *   - Now marker: terracotta pill chip + line
  */
+import { openInMaps } from '@/features/calendar/components/EventCard';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Pressable, Animated, Easing, Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
@@ -24,13 +25,6 @@ import { detectAssigneeConflicts } from '@/features/hub/lib/detectAssigneeConfli
 // shortAddress() avoids on the detail screen.
 function streetOnly(addr: string): string {
   return addr.split(',')[0].trim();
-}
-function openInMaps(addr: string) {
-  const encoded = encodeURIComponent(addr);
-  const url = Platform.OS === 'ios'
-    ? `https://maps.apple.com/?q=${encoded}`
-    : `https://maps.google.com/?q=${encoded}`;
-  Linking.openURL(url).catch(() => Linking.openURL(`https://maps.google.com/?q=${encoded}`));
 }
 
 // Same category palette as WeekView's WEEK_EVENT_BG — Day view now colors

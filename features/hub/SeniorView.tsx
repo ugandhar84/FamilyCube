@@ -1,3 +1,4 @@
+import { gpSideMembers } from '@/lib/gpSide';
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, View, Text, Pressable } from 'react-native';
@@ -25,6 +26,10 @@ import { detectAssigneeConflicts, detectWorkConflicts } from './lib/detectAssign
 
 import { RHYTHM } from '@/constants/theme';
 import { GP } from './senior/seniorTheme';
+import AppFullPage from '@/components/AppFullPage';
+import { ParentTasksPage } from './senior/ParentTasksPage';
+import { MemoriesPreviewCard } from './senior/MemoriesPreviewCard';
+import { MyRequestsPanel } from './senior/MyRequestsPanel';
 import { SeniorHeroCard } from './senior/SeniorHeroCard';
 import { SeniorActionGrid, type SeniorGroup } from './senior/SeniorActionGrid';
 import { KidSectionHeader } from './kid/KidSectionHeader';
@@ -32,7 +37,6 @@ import { KidTodaySection } from './kid/KidTodaySection';
 import { EmergencySosCard } from './senior/EmergencySosCard';
 import { YourRidesSection } from './senior/YourRidesSection';
 import { MedicationsCard } from './senior/MedicationsCard';
-import { FamilyGamesSection } from '@/features/games/FamilyGamesSection';
 import { useMedications } from '@/features/vault/tabs/health/useMedications';
 import { LendAHandCard } from './senior/LendAHandCard';
 import { CheerSquadSection } from './senior/CheerSquadSection';
@@ -43,6 +47,8 @@ import { CreateQuestModal } from './senior/CreateQuestModal';
 import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { SectionCard, PickupRadarStatus } from './hubComponents';
+import { resolveSos } from '@/lib/sos';
+import { RideStatusCard } from './kid/RideStatusCard';
 import { KidRideBanner } from './kid/KidRideBanner';
 import { DirectPendingCard } from './parent/backlog/DirectPendingCard';
 import { OutgoingPendingCard } from './parent/backlog/OutgoingPendingCard';
@@ -119,6 +125,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     respondToParentQuest, cancelLockedAssignment, recallParentQuest, addParentQuest,
   } = useChoreStore();
   const { updateQuest } = useQuestStore();
+  const [showParentTasks, setShowParentTasks] = useState(false);
+  const [kidsTab, setKidsTab] = useState<'cheer' | 'bonus'>('cheer');
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
   const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
   const myDirectPending   = getMyDirectPending(active.id);
@@ -148,7 +156,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const myPendingOffers = chores.filter(c =>
     c.status === 'gp_offer_pending' && c.gpOfferById === active.id
   );
-  const kids    = members.filter(m => m.role === 'kid');
+  const kids    = members.filter(m => m.role === 'kid' || m.role === 'teen'); // grandchildren: kids and teens
   const allNames = members.map(m => m.name);
   const today   = localToday();
 
@@ -170,6 +178,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     return withinLast24h(when);
   });
   const [sosActive, setSosActive]   = useState(false);
+  // This person's open SOS (waiting or accepted) from the request table, so the card can show who is coming to help.
+  const mySos = kidRequests
+    .filter(r => r.type === 'emergency' && r.fromMemberId === active.id && (r.status === 'pending' || r.status === 'approved'))
+    .sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt)))[0] ?? null;
+  const sosHelper = mySos?.status === 'approved' ? members.find(m => m.id === (mySos.assignedHelper || mySos.respondedBy)) : undefined;
+  const fmt12 = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const [sosSending, setSosSending] = useState(false);
   // EmergencySosCard's own copy claims "Parents have been notified with
   // your location — help is on the way," but until now sosActive only ever
@@ -183,10 +197,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const triggerSos = useCallback(async () => {
     setSosSending(true);
     let locationLabel = 'Location unavailable';
+    let sosCoords: { lat: number; lng: number } | null = null;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        sosCoords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
         const [geo] = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         locationLabel = geo
           ? [geo.name, geo.street, geo.city, geo.region].filter(Boolean).join(', ')
@@ -194,19 +210,30 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       }
     } catch { /* best-effort — an SOS with no location is still far better than none at all */ }
     try {
-      sendKidRequest({
+      const sosReq = await sendKidRequest({
         type: 'emergency', fromMemberId: active.id,
         detail: `${active.name.split(' ')[0]} triggered Emergency SOS`,
         location: locationLabel,
       });
       setSosActive(true);
+      // Auto-post an SOS card to the Grandparent squad channel (everyone in the family is a member) so it also shows up in chat.
+      const first = active.name.split(' ')[0];
+      const shared = locationLabel !== 'Location not shared' && locationLabel !== 'Location unavailable';
+      const mapsUrl = sosCoords
+        ? `https://maps.apple.com/?ll=${sosCoords.lat},${sosCoords.lng}&q=${encodeURIComponent(`${first} - SOS`)}`
+        : shared ? `https://maps.apple.com/?q=${encodeURIComponent(locationLabel)}` : undefined;
+      const atText = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const lines = [`🚨 EMERGENCY SOS from ${first} (grandparent) at ${atText}`, shared ? `📍 ${locationLabel}` : '📍 Location was not shared. Call them.', mapsUrl ? `🗺️ Open in Maps: ${mapsUrl}` : ''].filter(Boolean);
+      // Auto-post an SOS card to the Grandparent squad channel (everyone in the family is a member): details plus a tappable maps link.
+      sendMessage('seniors_all', active.id, lines.join('\n'), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        { type: 'sos_alert', payload: { name: first, role: 'Grandparent', senderId: active.id, requestId: sosReq?.id, address: locationLabel, lat: sosCoords?.lat, lng: sosCoords?.lng, mapsUrl, at: new Date().toISOString() } }, true);
     } catch (e: any) {
       console.warn('[SeniorView] SOS dispatch failed', e?.message ?? e);
       Alert.alert("Couldn't send SOS", 'Please try again, or call a family member directly.');
     } finally {
       setSosSending(false);
     }
-  }, [active.id, active.name, sendKidRequest]);
+  }, [active.id, active.name, sendKidRequest, sendMessage]);
   const [declineId,  setDeclineId]  = useState<string | null>(null);
   const [declineText, setDeclineText] = useState('');
   const [gpKid, setGpKid]           = useState<FamilyMember | null>(null);
@@ -582,17 +609,18 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const handleSaveMatch = () => {
     if (!matchKidId) return;
-    logAction('Save Savings Match', `addGrandparentMatch(childId=${matchKidId})`, { at: '498' });
-    addGrandparentMatch({
+    const targets = matchKidId === 'all' ? kids.map(k => k.id) : [matchKidId];
+    logAction('Save Savings Match', `addGrandparentMatch(children=${targets.join(',')})`, { at: '498' });
+    targets.forEach(childId => addGrandparentMatch({
       familyId:        (active as any).familyId ?? 'family-1',
       grandparentId:   active.id,
-      childId:         matchKidId,
+      childId,
       matchType,
       matchValue:      parseFloat(matchValue) || 10,
       matchJar:        'SAVE',
       maxMonthlyContribution: parseFloat(maxMonthly) || 500,
       isActive:        true,
-    });
+    }));
     setShowMatchModal(false);
   };
 
@@ -650,17 +678,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // via eventAssignee — previously only the former, so a GP asked to
   // drive a Sports/Study/Medical event's own ride need had no confirm
   // surface here at all (QA Round 11, Critical Finding C2).
+  // Same-side grandparents (both paternal / both maternal) share rides waiting on either of them.
+  const gpSideIds = gpSideMembers(active.id, members).map(m => m.id);
   const myDrivingToday = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
     // id-based — falls back to name only for an external, non-member
     // assignee with no id at all.
-    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    const isMine = a.id ? gpSideIds.includes(a.id) : a.name === active.name;
     return isMine && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
   });
   // Assigned to me but I haven't replied yet — not Work events
   const myPendingAssignments = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
-    const isMine = a.id ? a.id === active.id : a.name === active.name;
+    const isMine = a.id ? gpSideIds.includes(a.id) : a.name === active.name;
     return isMine && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
   });
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
@@ -713,6 +743,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     return a.name && a.status === 'confirmed';
   });
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+  // Rides THIS grandparent asked for (they are the rider) that nobody has confirmed yet — feeds the "Ask for a Ride" status card.
+  const myPendingRides = upcomingEvents.filter(e => {
+    if (e.date < today || !(e.rideRequired || e.category === 'Ride')) return false;
+    if (!(e.memberId === active.id || e.memberIds?.includes(active.id))) return false;
+    const a = eventAssignee(e);
+    return !(a.name && a.status === 'confirmed');
+  });
 
   // Either side (rider or driver) can confirm a pickup actually happened —
   // mirrors KidView's confirmPickup exactly, scoped to this GP as rider.
@@ -826,13 +863,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const handleSendBonus = () => {
     if (!gpKid) return;
-    logAction('Send Bonus', `awardCoins(${gpKid.id}, ${gpAmount}, gpCoins)`, { targetId: gpKid.id, targetTitle: gpKid.name, at: '719' });
-    awardCoins(gpKid.id, gpAmount, 'gpCoins');
+    // 'all' is a stand-in member meaning every grandchild gets the bonus.
+    const targets = gpKid.id === 'all' ? kids : [gpKid];
+    targets.forEach(k => {
+      logAction('Send Bonus', `awardCoins(${k.id}, ${gpAmount}, gpCoins)`, { targetId: k.id, targetTitle: k.name, at: '719' });
+      awardCoins(k.id, gpAmount, 'gpCoins');
+    });
     setGpSent(true);
     setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
   };
 
-  // Which "Quick actions" area is open below the grid (one at a time). Starts on Lend a hand when something is waiting there.
+  // Which "Quick actions" area is open below the grid (one at a time). Starts on Need a hand when something is waiting there.
   const [openGroup, setOpenGroup] = useState<SeniorGroup | null>(null);
   const toggleGroup = (g: SeniorGroup) => setOpenGroup(prev => (prev === g ? null : g));
   const assignedCount = myDirectPending.length + myOutgoingPending.length + myLockedItems.length;
@@ -850,7 +891,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         cheerCount={kidsCheerable.length}
       />
 
-      <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark} />
+      <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark}
+        sos={mySos} helperName={sosHelper?.name.split(' ')[0]} acceptedAt={mySos?.respondedAt ? fmt12(mySos.respondedAt) : undefined}
+        onCancelSos={(id) => { resolveSos(id, { id: active.id, name: active.name, familyId: (active as any).familyId }); }} />
 
       {/* Scenarios 9.2/9.3 — visible ONLY while a parent-granted caregiver
           window is active; disappears the instant it expires or is
@@ -886,6 +929,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           conflictReason={conflictReasons.get(confirmedRide.id)}
         />
       )}
+
 
       {/* Bug (reported live): a GP saw every family trip, including rides
           they had zero involvement in — HubScreen passes the full
@@ -961,16 +1005,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       )}
 
         {pendingForMe === 0 && dedupMyDrivingToday.length === 0 && dedupMyClaimedRides.length === 0 && (
-          <View style={{ marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14, padding: RHYTHM.card, borderRadius: 20, backgroundColor: colors.card,
-            borderWidth: 1, borderColor: colors.border }}>
-            <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.tealLight }}>
-              <CheckCircle2 size={24} color={colors.teal} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>You're all caught up</Text>
-              <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>Nothing is waiting for you right now.</Text>
-            </View>
-          </View>
+          // Same "ALL QUIET" card the parents see, with a history link (here: everything assigned to the parents, and what is open to claim).
+          <Pressable onPress={() => setShowParentTasks(true)} accessibilityRole="button" accessibilityLabel="View history"
+            style={({ pressed }) => ({ marginHorizontal: 16, padding: 16, borderRadius: 22, backgroundColor: colors.pinkLight, opacity: pressed ? 0.8 : 1 })}>
+            <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>ALL QUIET</Text>
+            <Text style={{ color: colors.textPrimary, fontSize: GP.sub, fontWeight: '600', marginTop: 4, lineHeight: 20 }}>
+              Nothing needs you right now. A good time to check in with the family, or take something that is open to you.
+            </Text>
+            <Text style={{ color: colors.accent, fontSize: GP.sub, fontWeight: '700', marginTop: 8 }}>View history →</Text>
+          </Pressable>
         )}
       </View>
 
@@ -984,45 +1027,51 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       <SeniorActionGrid
         open={openGroup} onToggle={toggleGroup} colors={colors} isDark={isDark}
         helpCount={dispatchBadgeCount} kidsCount={kidsCheerable.length} sponsorCount={myPendingSponsoredQuests.length + pendingGpApproval.length}
+        below={
+<RideStatusCard
+        colors={colors} isDark={isDark}
+        pendingCount={myPendingRides.length}
+        confirmedLabel={confirmedRide ? `Confirmed · ${confirmedRide.title}` : undefined}
+        confirmedRideDate={confirmedRide?.date}
+        confirmedRideTime={confirmedRide?.time}
+        driverName={confirmedRide ? eventAssignee(confirmedRide).name : undefined}
+        onPress={confirmedRide || myPendingRides.length > 0 ? () => setOpenGroup('help') : onHelpRequest}
+      />
+        }
       />
 
-      {openGroup === 'help' && (
-        <>
-      <LendAHandCard
-        cheerleaderMode={cheerleaderMode} setCheerleaderMode={setCheerleaderMode}
-        driveWindowDays={driveWindowDays} setDriveWindowDays={setDriveWindowDays}
-        driveWindowStart={driveWindowStart} setDriveWindowStart={setDriveWindowStart}
-        driveWindowEnd={driveWindowEnd} setDriveWindowEnd={setDriveWindowEnd}
-        weeklyRideCap={weeklyRideCap} setWeeklyRideCap={setWeeklyRideCap}
-        ridesThisWeek={ridesThisWeek} atWeeklyCap={atWeeklyCap}
-        helperDispatchExpanded={helperDispatchExpanded} setHelperDispatchExpanded={setHelperDispatchExpanded}
-        availSettingsOpen={availSettingsOpen} setAvailSettingsOpen={setAvailSettingsOpen}
-        hasDispatchItems={hasDispatchItems} dispatchBadgeCount={dispatchBadgeCount}
-        openRides={dedupOpenRides} gpInvitations={gpInvitations}
-        myActiveErrands={myActiveErrands} onOpenReceiptModal={openReceiptModal}
-        onMarkDoneNoReceipt={(choreId) => { logAction('Mark Done (no receipt)', `submitGPErrandReceipt(${choreId}, {})`, { targetId: choreId, at: '860' }); submitGPErrandReceipt(choreId, {}); }}
-        onBackoutErrand={(choreId) => { logAction('Backout', `backoutGpWelcomeChore(${choreId})`, { targetId: choreId, at: '869' }); useChoreStore.getState().backoutGpWelcomeChore(choreId, active.id); }}
-        myErrandsAwaitingReview={myErrandsAwaitingReview}
-        myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => { logAction('Withdraw Offer', `withdrawGPOffer(${choreId})`, { targetId: choreId, at: '862' }); withdrawGPOffer(choreId, active.id); }}
-        openRequests={dedupOpenRequests} gpWelcomeRequests={gpWelcomeRequests}
-        gpWelcomeChores={gpWelcomeChores} volunteerPool={dedupVolunteerPool}
-        active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} updateChore={updateChore}
-        assignRequest={(id, helperId) => { logAction('Assign Request (accept)', `assignRequest(${id}, ${helperId})`, { targetId: id, at: '866' }); assignRequest(id, helperId); }}
-        claimGPErrand={(choreId, gpMemberId) => { logAction('Claim GP Errand', `claimGPErrand(${choreId}, ${gpMemberId})`, { targetId: choreId, at: '867' }); claimGPErrand(choreId, gpMemberId); }}
-        onClaimRide={handleClaimRide} onPassRide={handlePassRide} onHelpRequest={onHelpRequest}
+      <ParentTasksPage
+        visible={showParentTasks} onClose={() => setShowParentTasks(false)}
+        chores={chores} members={members} active={active} openRides={dedupOpenRides} myClaimedRides={dedupMyClaimedRides}
+        onClaimChore={(choreId) => { logAction('Take parent task', `claimGPErrand(${choreId})`, { targetId: choreId, at: 'parent-tasks' }); claimGPErrand(choreId, active.id); }}
+        onClaimRide={handleClaimRide}
+        colors={colors} isDark={isDark}
       />
 
-        </>
-      )}
+      {/* End of the Hub: the Memories preview, same slot and shape as the dinner card on the other Hubs. */}
+      <View style={{ paddingHorizontal: 16 }}>
+        <MemoriesPreviewCard colors={colors} isDark={isDark} />
+      </View>
 
-      {openGroup === 'kids' && (
-        <>
+      <AppFullPage gemini visible={openGroup === 'help'} onClose={() => setOpenGroup(null)} title="Need a hand" subtitle="Ask your family for help and follow your requests" accent="amber">
+        <MyRequestsPanel familyId={familyId} memberId={active.id} onAsk={onHelpRequest} colors={colors} isDark={isDark} />
+      </AppFullPage>
+
+      <AppFullPage gemini visible={openGroup === 'kids'} onClose={() => setOpenGroup(null)} title="My grandkids" subtitle="Cheer them on or send a bonus" accent="pink">
+      <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.surface, borderRadius: 16, padding: 4 }}>
+        {([['cheer', 'Cheer kids'], ['bonus', 'Send a bonus']] as const).map(([key, label]) => (
+          <Pressable key={key} onPress={() => setKidsTab(key)} accessibilityRole="button" accessibilityLabel={label}
+            style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: kidsTab === key ? colors.card : 'transparent' }}>
+            <Text style={{ fontSize: 14, fontWeight: kidsTab === key ? '800' : '600', color: kidsTab === key ? colors.textPrimary : colors.textSecondary }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {kidsTab === 'cheer' ? (
       <CheerSquadSection
         kidsCheerable={kidsCheerable} kids={kids} allNames={allNames} colors={colors} isDark={isDark}
         cheerChore={cheerChore} active={active}
       />
-
+      ) : (
       <SendBonusCard
         kids={kids} allNames={allNames} colors={colors} isDark={isDark}
         gpKid={gpKid} setGpKid={setGpKid}
@@ -1032,19 +1081,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onSend={handleSendBonus}
         active={active}
       />
-
-        </>
       )}
 
-      {openGroup === 'sponsor' && (
-        <>
-      <MySponsoredQuestsSection
-        quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
-        colors={colors} isDark={isDark}
-        onEdit={openEditSponsoredQuest}
-        active={active}
-      />
+      </AppFullPage>
 
+      <AppFullPage gemini visible={openGroup === 'sponsor'} onClose={() => setOpenGroup(null)} title="Sponsor a chore" subtitle="Set a challenge and a reward, then follow it here" accent="teal">
       <SponsorQuestsSection
         active={active} kids={kids} members={members} allNames={allNames} colors={colors} isDark={isDark}
         chores={chores} grandparentMatches={grandparentMatches} pendingGpApproval={pendingGpApproval}
@@ -1053,12 +1094,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         handleRequestGpRedo={handleRequestGpRedo}
         onOpenMatchModal={() => setShowMatchModal(true)}
         onOpenCreateQuestModal={() => setShowCreateQuestModal(true)}
+        onEditQuest={openEditSponsoredQuest}
       />
 
-        </>
-      )}
+      </AppFullPage>
 
-      {openGroup === 'games' && <FamilyGamesSection colors={colors} isDark={isDark} />}
 
       <SavingsMatchModal
         visible={showMatchModal} onClose={() => setShowMatchModal(false)}

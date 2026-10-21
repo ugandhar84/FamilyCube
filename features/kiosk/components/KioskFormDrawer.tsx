@@ -100,7 +100,7 @@ function ModalShell({ isDialog, visible, onRequestClose, children }: {
 }) {
   if (isDialog) {
     return (
-      <Modal supportedOrientations={['portrait', 'landscape']} visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
+      <Modal supportedOrientations={['landscape']} visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
         {children}
       </Modal>
     );

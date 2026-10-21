@@ -79,7 +79,7 @@ function SelectionRow({ label, sublabel, selected, onPress, cardBg, border, titl
 }
 
 export default function HealthFilterScreen({
-  colors, isDark, members,
+  colors, isDark, members, hidePeople = false,
   healthTab,
   draftMed, setDraftMed, draftVax, setDraftVax,
   resetFilters, applyFilters,
@@ -88,7 +88,7 @@ export default function HealthFilterScreen({
   onClose,
   lockedMemberId,
 }: {
-  colors: any; isDark: boolean; members: any[];
+  colors: any; isDark: boolean; members: any[]; hidePeople?: boolean;
   healthTab: 'meds' | 'vax';
   draftMed: MedFilters; setDraftMed: React.Dispatch<React.SetStateAction<MedFilters>>;
   draftVax: VaxFilters; setDraftVax: React.Dispatch<React.SetStateAction<VaxFilters>>;
@@ -154,7 +154,7 @@ export default function HealthFilterScreen({
 
         {/* Show records for — real multi-select member filter, hidden
             when the screen was opened already scoped to one person. */}
-        {!lockedMemberId && (
+        {!lockedMemberId && !hidePeople && (
           <View style={contentGroupStyle(cardBg, isDark, border)}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: titleC, marginBottom: 2 }}>Show records for</Text>
             {members.map(m => {

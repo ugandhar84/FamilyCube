@@ -1,3 +1,4 @@
+import { openInMaps } from '@/features/calendar/components/EventCard';
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, Pressable, ScrollView, SafeAreaView, TextInput, Modal,
@@ -149,7 +150,10 @@ function HistoryRow({ req, colors, isDark }: { req: HelpRequest; colors: any; is
           {(req.date || req.fromLoc) && (
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
               {req.date ? `📅 ${req.date}` : ''}{req.time ? ` · ${req.time}` : ''}
-              {req.fromLoc ? `\n📍 ${req.fromLoc}` : ''}{req.toLoc ? ` → ${req.toLoc}` : ''}
+              {req.fromLoc ? '\n📍 ' : ''}
+              {req.fromLoc ? <Text onPress={() => openInMaps(req.fromLoc!)} style={{ color: colors.primary, fontWeight: '800' }}>{req.fromLoc}</Text> : null}
+              {req.toLoc ? ' → ' : ''}
+              {req.toLoc ? <Text onPress={() => openInMaps(req.toLoc!)} style={{ color: colors.primary, fontWeight: '800' }}>{req.toLoc}</Text> : null}
             </Text>
           )}
 

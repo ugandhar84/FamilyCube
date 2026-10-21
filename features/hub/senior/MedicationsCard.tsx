@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
-import { Pill, CheckCircle, Plus, Trash2 } from 'lucide-react-native';
+import { CheckCircle, Plus, Trash2 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { SectionCard } from '../hubComponents';
+import { KidSectionHeader } from '../kid/KidSectionHeader';
+import { GEMINI } from '@/constants/geminiRhythm';
+import { RHYTHM } from '@/constants/theme';
 import { GP } from './seniorTheme';
 import AddMedModal from '@/features/vault/tabs/health/AddMedModal';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -81,119 +83,97 @@ export function MedicationsCard({ meds, medsTaken, toggleMed, onAddMed, onRemove
     });
   });
 
+  const title = isDark ? colors.textPrimary : GEMINI.titleColor;
+  const body = isDark ? colors.textSecondary : GEMINI.bodyColor;
+  const shadow = isDark ? GEMINI.cardShadowDark : GEMINI.cardShadow;
+  const left = meds.filter(m => !medsTaken[m.id]).length;
+
   return (
-    <View style={{ paddingHorizontal: 16 }}>
-      <SectionCard
-        large
-        icon={<Pill size={18} color={colors.danger} />}
-        title="Today's Medications"
-        badge={meds.filter(m => !medsTaken[m.id]).length || undefined} badgeColor={colors.danger}
-        collapsible defaultExpanded={meds.some(m => !medsTaken[m.id])}
-        colors={colors} isDark={isDark}>
-        {meds.map((med, i) => {
-          const taken = !!medsTaken[med.id];
-          const scheduleLine = [
-            med.dosage ? `${med.dosage}${med.dosage_unit ? ' ' + med.dosage_unit : ''}` : null,
-            FREQ_LABELS[med.frequency] ?? med.frequency,
-          ].filter(Boolean).join(' · ');
-          // Only shown when someone ELSE added it — self-added meds (the
-          // common case) stay uncluttered. Was invisible either way before;
-          // now that a parent can add a med here for a different member
-          // (see onAddMed above), the receiving member's own Hub should be
-          // able to tell it wasn't something they added themselves.
-          const addedByOther = med.assigned_by && med.assigned_by !== active.id;
-          const addedByName = addedByOther ? allMembers.find(m => m.id === med.assigned_by)?.name?.split(' ')[0] : null;
-          // Medication rows are scoped to `active`, but a parent/senior card
-          // can include meds a parent added FOR a different member — show
-          // that member's own avatar (not always `active`'s) so it's clear
-          // at a glance whose medication this row is.
-          const medMember = allMembers.find(m => m.id === med.member_id) ?? active;
-          // Was tinting the WHOLE card red whenever ANY medication had an
-          // overdue dose, which also highlighted unrelated, already-taken
-          // medications in the same list [live-reported: "why whole
-          // section red it should show only the overdue card red
-          // tinted"]. Scoped down to just this one row.
-          const rowOverdue = !taken && (med.frequency_times?.length ? med.frequency_times : [null]).some(time => {
-            const multiDose = (med.frequency_times?.length ?? 0) > 1;
-            const doseTaken = multiDose ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time)) : taken;
-            return !doseTaken && isDoseOverdue(time);
-          });
-          return (
-            <View key={med.id} style={{
-              flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14,
-              paddingHorizontal: rowOverdue ? 10 : 0,
-              borderRadius: rowOverdue ? 12 : 0,
-              backgroundColor: rowOverdue ? colors.danger + '14' : 'transparent',
-              borderWidth: rowOverdue ? 1 : 0, borderColor: rowOverdue ? colors.danger + '40' : 'transparent',
-              marginBottom: rowOverdue ? 4 : 0,
-              borderBottomWidth: rowOverdue ? 1 : (i < meds.length - 1 ? 1 : 0),
-              borderBottomColor: rowOverdue ? colors.danger + '40' : (isDark ? colors.border : '#F1F5F9'),
-            }}>
+    <View style={{ gap: RHYTHM.item }}>
+      <View style={{ paddingHorizontal: 16 }}>
+        <KidSectionHeader label="MEDICATIONS" accent={colors.pink} colors={colors} />
+        <Text style={{ fontSize: GP.body, fontWeight: '700', color: body }}>
+          {meds.length === 0 ? 'No medications yet' : left === 0 ? 'All taken for today' : `${left} still to take today`}
+        </Text>
+      </View>
+
+      {meds.map(med => {
+        const taken = !!medsTaken[med.id];
+        const scheduleLine = [
+          med.dosage ? `${med.dosage}${med.dosage_unit ? ' ' + med.dosage_unit : ''}` : null,
+          FREQ_LABELS[med.frequency] ?? med.frequency,
+        ].filter(Boolean).join(' · ');
+        const addedByOther = med.assigned_by && med.assigned_by !== active.id;
+        const addedByName = addedByOther ? allMembers.find(m => m.id === med.assigned_by)?.name?.split(' ')[0] : null;
+        const medMember = allMembers.find(m => m.id === med.member_id) ?? active;
+        const times = med.frequency_times?.length ? med.frequency_times : [null];
+        const multiDose = (med.frequency_times?.length ?? 0) > 1;
+        const doseState = (time: string | null) => {
+          const doseTaken = multiDose ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time)) : taken;
+          return { doseTaken, overdue: !doseTaken && isDoseOverdue(time) };
+        };
+        const rowOverdue = times.some(t => doseState(t).overdue);
+        const cardBg = taken ? colors.tealLight : rowOverdue ? colors.dangerLight : colors.pinkLight;
+        return (
+          <View key={med.id} style={{ marginHorizontal: 16, borderRadius: 22, padding: RHYTHM.card, gap: RHYTHM.item, backgroundColor: cardBg,
+            borderWidth: 1, borderColor: taken ? colors.teal + '40' : rowOverdue ? colors.danger + '50' : colors.pink + '40', ...shadow }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <FamilyAvatar name={medMember.name} emoji={medMember.emoji} avatarUrl={medMember.avatarUrl}
-                siblings={allMembers.map(m => m.name)} size={28}
-                ringColor={taken ? colors.textTertiary : BRAND.teal} ringWidth={1.5} />
+                siblings={allMembers.map(m => m.name)} size={44} ringColor={taken ? colors.teal : rowOverdue ? colors.danger : colors.pink} ringWidth={2} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: GP.sub, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>
-                <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>
-                  {med.frequency_times?.length ? med.frequency_times.join(' & ') : 'Anytime'}{scheduleLine ? ` · ${scheduleLine}` : ''}
-                  {addedByName ? ` · Added by ${addedByName}` : ''}
+                <Text style={{ fontSize: GP.title, fontWeight: '800', color: title }} numberOfLines={2}>{med.name}</Text>
+                <Text style={{ fontSize: GP.sub, fontWeight: '600', color: body, marginTop: 2 }}>
+                  {scheduleLine || 'Any time'}{addedByName ? ` · Added by ${addedByName}` : ''}
                 </Text>
               </View>
-              {/* One button per dose time for a multi-dose med (e.g.
-                  twice_daily) instead of one button standing in for the
-                  whole day [live-requested: "add extensive like which time
-                  slot / part of day they missed", confirmed: "Add one
-                  button per dose time"]. */}
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {(med.frequency_times?.length ? med.frequency_times : [null]).map((time, idx) => {
-                  const multiDose = (med.frequency_times?.length ?? 0) > 1;
-                  const doseTaken = multiDose
-                    ? (med.taken_dates ?? []).includes(encodeTakenEntry(todayLocalStr(), time))
-                    : taken;
-                  const overdue = !doseTaken && isDoseOverdue(time);
-                  return (
-                    <Pressable key={time ?? idx} onPress={() => toggleMed(med, multiDose ? time : null)}
-                      style={{
-                        borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
-                        backgroundColor: doseTaken ? MONEY_GREEN + '20' : overdue ? colors.danger : BRAND.teal,
-                        borderWidth: doseTaken ? 1 : 0, borderColor: MONEY_GREEN + '40',
-                      }}>
-                      <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: doseTaken ? MONEY_GREEN : '#fff' }}>
-                        {multiDose ? `${formatDoseTime(time as string)}${doseTaken ? ' ✓' : overdue ? ' ⚠' : ''}` : (doseTaken ? 'Taken' : overdue ? 'Overdue' : 'Mark Taken')}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-              {/* Extra left margin (was flush against "Mark Taken") — a
-                  stray tap near two adjacent controls, one destructive, one
-                  the primary action, is a real risk for a medication list
-                  specifically. The confirm Alert is the real safety net,
-                  but more separation reduces how often it even needs to
-                  catch a mis-tap. */}
               <Pressable onPress={() => Alert.alert('Remove Medication', `Remove "${med.name}"?`, [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Remove', style: 'destructive', onPress: () => onRemoveMed(med.id) },
-              ])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginLeft: 8 }}>
+              ])} accessibilityRole="button" accessibilityLabel={`Remove ${med.name}`} hitSlop={8}
+                style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card }}>
                 <Trash2 size={16} color={colors.textTertiary} />
               </Pressable>
             </View>
-          );
-        })}
 
-        <Pressable onPress={() => setShowAddMed(true)}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 }}>
-          <Plus size={15} color={BRAND.teal} />
-          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: BRAND.teal }}>Add Medication</Text>
-        </Pressable>
-
-        {meds.length > 0 && meds.every(m => medsTaken[m.id]) && (
-          <View style={{ alignItems: 'center', paddingVertical: 13, gap: 4 }}>
-            <CheckCircle size={26} color={MONEY_GREEN} />
-            <Text style={{ fontSize: GP.sub, fontWeight: '700', color: MONEY_GREEN }}>All done for today!</Text>
+            <View style={{ gap: 8 }}>
+              {times.map((time, idx) => {
+                const { doseTaken, overdue } = doseState(time);
+                const when = time ? formatDoseTime(time) : 'Today';
+                return (
+                  <Pressable key={time ?? idx}
+                    onPress={() => {
+                      const toggle = () => toggleMed(med, multiDose ? time : null);
+                      // Undoing a dose that is already marked taken needs a confirmation (a stray tap shouldn't un-take it).
+                      if (doseTaken) Alert.alert('Undo this dose?', `${med.name} · ${when} will be marked as not taken.`, [
+                        { text: 'Keep as taken', style: 'cancel' },
+                        { text: 'Undo', style: 'destructive', onPress: toggle },
+                      ]);
+                      else toggle();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${med.name} ${when} ${doseTaken ? 'taken' : 'mark taken'}`}
+                    style={{ minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16,
+                      backgroundColor: doseTaken ? colors.card : overdue ? colors.danger : colors.primary,
+                      borderWidth: doseTaken ? 1 : 0, borderColor: colors.teal + '50' }}>
+                    {doseTaken ? <CheckCircle size={20} color={colors.teal} /> : null}
+                    <Text style={{ fontSize: GP.body, fontWeight: '800', color: doseTaken ? colors.teal : colors.textInverse }}>
+                      {doseTaken ? `Taken · ${when}` : overdue ? `Overdue · ${when} · tap when taken` : `Mark taken · ${when}`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        )}
-      </SectionCard>
+        );
+      })}
+
+      {/* Same dashed "+ Add" look as "Add to my private task list". */}
+      <Pressable onPress={() => setShowAddMed(true)} accessibilityRole="button" accessibilityLabel="Add medication"
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, paddingVertical: 12,
+          borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, borderColor: colors.border }}>
+        <Plus size={16} color={colors.textSecondary} />
+        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Add medication</Text>
+      </Pressable>
 
       <AddMedModal
         visible={showAddMed}

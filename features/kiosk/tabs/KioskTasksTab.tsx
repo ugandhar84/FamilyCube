@@ -2115,7 +2115,7 @@ function KioskBoardView({ active, members, colors, isDark, onNavigate, initialCo
       {/* Full-screen photo-proof viewer [GAP — audit A13] — same real
           near-black-scrim, tap-anywhere-to-close shape
           SubmitQuestSheet.tsx's own proofPhotoViewerUri Modal uses. */}
-      <Modal supportedOrientations={['portrait', 'landscape']}
+      <Modal supportedOrientations={['landscape']}
         visible={!!proofPhotoViewerUri}
         transparent
         animationType="fade"

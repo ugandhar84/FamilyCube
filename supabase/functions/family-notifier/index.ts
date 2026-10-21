@@ -301,6 +301,7 @@ type NotifType =
   // to know a new medication was added to their own record. Also
   // med-reminders' missed-dose escalation to parents.
   | 'medication_added'
+  | 'sos_safe'
   // A sticky note someone wrote for specific family members (or everyone) — see useStickyNotes.ts.
   | 'sticky_note'
   | 'medication_missed'
@@ -805,8 +806,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         delegation: '📋', checkin: '📞', medication: '💊',
       };
       return {
-        title: `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}Kid Request`,
-        body: decodeRequestDetail(p.detail as string),
+        // A grandparent's SOS / request is not a "Kid Request" — name it for who sent it.
+        title: p.requestType === 'emergency' && p.fromRole === 'senior'
+          ? '🚨 EMERGENCY SOS'
+          : `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}${p.fromRole === 'senior' ? 'Grandparent Request' : p.fromRole === 'teen' ? 'Teen Request' : 'Kid Request'}`,
+        body: `${decodeRequestDetail(p.detail as string)}${p.location ? `\n📍 ${p.location}` : ''}${
+          p.location && p.location !== 'Location not shared' && p.location !== 'Location unavailable'
+            ? `\n🗺️ https://maps.apple.com/?q=${encodeURIComponent(String(p.location))}` : ''}`,
         sound: 'default',
         data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
@@ -1341,6 +1347,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: String(p.body ?? '').slice(0, 100),
         sound: 'default',
         data: { screen: 'Hub' },
+      };
+    case 'sos_safe':
+      return {
+        title: `✅ ${p.name ?? 'Someone'} is OK now`,
+        body: `${p.name ?? 'Someone'} marked their SOS as resolved. No further help is needed.`,
+        sound: 'default',
+        data: { screen: 'Requests', requestId: p.requestId },
       };
     case 'medication_added':
       return {

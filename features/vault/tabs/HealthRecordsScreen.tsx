@@ -36,8 +36,10 @@
  * HealthFigmaList.tsx (pre-existing, sound, flat-Figma shell — kept as-is,
  * just now driven by useHealthRecords.ts's state instead of HealthTab's).
  */
+import { gpSideMembers } from '@/lib/gpSide';
 import { PageHeading } from '@/components/PageHeading';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 import { View, Text, ScrollView, TouchableOpacity, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -114,6 +116,12 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   const kidView = storeActiveMember?.role === 'kid' || storeActiveMember?.role === 'teen' || storeActiveMember?.role === 'senior';
 
   const hr = useHealthRecords({ kidView });
+  // Grandparents are otherwise view-only like kids, but they can add and manage their OWN medications (and scan a prescription).
+  const isGp = storeActiveMember?.role === 'senior';
+  const canManageMeds = !kidView || isGp;
+  // Person filter: parents pick from everyone; a grandparent only from themself + their same-side partner; kids and teens never get one.
+  const filterPeople = isGp ? gpSideMembers(storeActiveMember?.id, storeMembers) : storeMembers;
+  const showPersonFilter = !kidView || (isGp && filterPeople.length > 1);
   const { members, activeMember, familyName } = hr;
 
   // Seed once on mount only — the member pill/Filters screen can still
@@ -172,10 +180,37 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   useEffect(() => {
     if (openHealthRecordsComposerRequested) {
       useUIStore.getState().setOpenHealthRecordsComposerRequested(false);
-      if (kidView) return;
+      if (!canManageMeds || (kidView && tab === 'vax')) return;
       if (tab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
     }
-  }, [openHealthRecordsComposerRequested, tab, kidView]);
+  }, [openHealthRecordsComposerRequested, tab, kidView, canManageMeds]);
+
+  // Scans the AI already read (kept on the server): waiting for this person to review, even if the app was closed meanwhile.
+  type StoredScan = { id: string; scan_mode: 'rx' | 'vaccine'; owner_member_id: string; status: string; result: any; created_at: string };
+  const [storedScans, setStoredScans] = useState<StoredScan[]>([]);
+  const [resumeJob, setResumeJob] = useState<{ id: string; ownerMemberId: string; result: any } | null>(null);
+  const loadStoredScans = useCallback(async () => {
+    const me = storeActiveMember?.id;
+    if (!me) return;
+    const { data } = await supabase.from('scan_jobs').select('id, scan_mode, owner_member_id, status, result, created_at')
+      .eq('created_by', me).in('status', ['ready', 'processing']).order('created_at', { ascending: false }).limit(10);
+    const fresh = (data ?? []).filter((j: any) => j.status === 'ready' || Date.now() - new Date(j.created_at).getTime() < 4 * 60_000);
+    setStoredScans(fresh as StoredScan[]);
+  }, [storeActiveMember?.id]);
+  useEffect(() => {
+    loadStoredScans();
+    const t = setInterval(loadStoredScans, 20_000);
+    return () => clearInterval(t);
+  }, [loadStoredScans]);
+  const dismissStoredScan = async (id: string) => {
+    setStoredScans(prev => prev.filter(j => j.id !== id));
+    await supabase.from('scan_jobs').update({ status: 'dismissed', updated_at: new Date().toISOString() }).eq('id', id);
+  };
+  const openStoredScan = (j: StoredScan) => {
+    setScanMode(j.scan_mode);
+    setResumeJob({ id: j.id, ownerMemberId: j.owner_member_id, result: j.result });
+    setShowScanSheet(true);
+  };
 
   const openHealthScanRequested = useUIStore(s => s.openHealthScanRequested);
   const [showScanSheet, setShowScanSheet] = useState(false);
@@ -184,11 +219,11 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
   useEffect(() => {
     if (openHealthScanRequested) {
       useUIStore.getState().setOpenHealthScanRequested(undefined);
-      if (kidView) return;
+      if (!canManageMeds || (kidView && openHealthScanRequested !== 'rx')) return;
       setScanMode(openHealthScanRequested);
       setShowScanSheet(true);
     }
-  }, [openHealthScanRequested, kidView]);
+  }, [openHealthScanRequested, kidView, canManageMeds]);
 
   const openHealthPdfExportRequested = useUIStore(s => s.openHealthPdfExportRequested);
   useEffect(() => {
@@ -217,11 +252,11 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
 
   const primaryLabel = tab === 'vax' ? 'Add vaccine from document' : 'Add medication';
   const openComposer = () => {
-    if (kidView) return;
+    if (!canManageMeds) return;
     if (tab === 'vax') setShowVaxModal(true); else setShowMedModal(true);
   };
   const openScan = () => {
-    if (kidView) return;
+    if (!canManageMeds) return;
     setScanMode(tab === 'vax' ? 'vaccine' : 'rx');
     setShowScanSheet(true);
   };
@@ -288,9 +323,30 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
             })}
           </View>
         )}
+        {storedScans.map(j => {
+          const ready = j.status === 'ready';
+          const n = ready ? ((j.result?.vaccines?.length ?? 0) + (j.result?.medications?.length ?? 0) || (j.result?.vaccine || j.result?.medication ? 1 : 0)) : 0;
+          const who = members.find(m => m.id === j.owner_member_id)?.name?.split(' ')[0] ?? 'someone';
+          return (
+            <TouchableOpacity key={j.id} disabled={!ready} onPress={() => openStoredScan(j)} activeOpacity={0.8}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.pinkLight, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.pink + '40' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: titleC }}>
+                  {ready ? `Scan ready to review · ${n} item${n === 1 ? '' : 's'}` : 'Reading your scan…'}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: bodyC, marginTop: 2 }}>
+                  {ready ? `${j.scan_mode === 'vaccine' ? 'Vaccine record' : 'Prescription'} for ${who}. Tap to check it and add it to the records.` : 'It keeps going if you close the app. Come back to review it.'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => dismissStoredScan(j.id)} hitSlop={10} accessibilityLabel="Dismiss">
+                <Text style={{ fontSize: 20, color: bodyC }}>✕</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })}
         {(
           <HealthFigmaList
-            colors={colors} isDark={isDark} kidView={kidView}
+            colors={colors} isDark={isDark} kidView={kidView} canManageMeds={canManageMeds} showPersonFilter={showPersonFilter}
             meds={hr.meds} vaxes={hr.vaxes}
             filteredMeds={hr.filteredMeds} filteredVaxes={hr.filteredVaxes}
             healthTab={tab === 'vax' ? 'vax' : 'meds'}
@@ -312,7 +368,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
           />
         )}
 
-        {!kidView && tab !== 'records' && (
+        {canManageMeds && tab !== 'records' && (
           <View style={{ gap: 10, marginTop: 4 }}>
             <TouchableOpacity onPress={openComposer}
               style={{ backgroundColor: BLUE, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
@@ -367,7 +423,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
         members={members}
         colors={colors}
         isDark={isDark}
-        lockedMemberId={initialMemberId}
+        lockedMemberId={isGp ? storeActiveMember?.id : initialMemberId}
         editing={editMed ? {
           medId: editMed.id, memberId: editMed.member_id, refillDate: editMed.refill_date,
           form: {
@@ -419,7 +475,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
               <PageHeading eyebrow="FAMILY CUBE · HEALTH" title="Health documents" subtitle="Labs, discharge papers, imaging and insurance cards."
                 accent="pink" Icon={FolderOpen} onTitlePress={requestAnimatedClose} topInset={insets.top} />
             </View>
-            <RecordsTabComp colors={colors} isDark={isDark} />
+            <RecordsTabComp colors={colors} isDark={isDark} lockedOwnerId={initialMemberId} />
           </View>
         )}
       </FullPageOverlay>
@@ -427,7 +483,7 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
       <FullPageOverlay visible={showFilter} onDismiss={() => setShowFilter(false)} zIndex={50}>
         {(requestAnimatedClose) => (
           <HealthFilterScreen
-            colors={colors} isDark={isDark} members={members}
+            colors={colors} isDark={isDark} members={filterPeople} hidePeople={!showPersonFilter}
             healthTab={tab === 'vax' ? 'vax' : 'meds'}
             draftMed={hr.draftMed} setDraftMed={hr.setDraftMed}
             draftVax={hr.draftVax} setDraftVax={hr.setDraftVax}
@@ -479,13 +535,19 @@ export default function HealthRecordsScreen({ hideHeader = false, skipTabBarEffe
       <ScanReviewSheet
         visible={showScanSheet}
         scanMode={scanMode}
-        activeMemberId={activeMember?.id ?? ''}
-        members={members}
+        // Opened from one person's page: scan for that person, no "Who is this for?" step.
+        activeMemberId={initialMemberId ?? activeMember?.id ?? ''}
+        consentMemberId={activeMember?.id ?? ''}
+        members={initialMemberId ? members.filter(m => m.id === initialMemberId) : members}
         colors={colors}
         isDark={isDark}
-        onClose={() => setShowScanSheet(false)}
+        onClose={() => { setShowScanSheet(false); setResumeJob(null); loadStoredScans(); }}
         onSaveMed={hr.saveScannedMed}
         onSaveVax={hr.saveScannedVax}
+        onSaveMedBulk={hr.saveScannedMedBulk}
+        onSaveVaxBulk={hr.saveScannedVaxBulk}
+        resumeJob={resumeJob}
+        onJobHandled={() => { setResumeJob(null); loadStoredScans(); }}
         onScanningChange={setScanning}
       />
     </View>

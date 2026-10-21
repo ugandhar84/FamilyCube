@@ -32,7 +32,7 @@ import { GEMINI } from '@/constants/geminiRhythm';
 
 // ─── RecordsTab ───────────────────────────────────────────────────────────────
 
-export default function RecordsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: any; isDark: boolean; /** Opened from one person's page: records go to that person, no owner picker. */ lockedOwnerId?: string }) {
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const familyId = (activeMember as any)?.familyId ?? (members[0] as any)?.familyId ?? '';
@@ -56,7 +56,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   // parallel system.
   const [showBringIn,   setShowBringIn]   = useState(false);
   const [draftTag,       setDraftTag]      = useState<RecordTag>('lab');
-  const [draftOwnerId,   setDraftOwnerId]  = useState(activeMemberId ?? members[0]?.id ?? '');
+  const [draftOwnerId,   setDraftOwnerId]  = useState(lockedOwnerId ?? activeMemberId ?? members[0]?.id ?? '');
   // Screen B — redaction. Reuses the real PhotoRedactModal drag-to-draw
   // tool (verified: genuine Gesture.Pan box-drawing + ViewShot flatten,
   // not a mock) rather than re-implementing its gesture/capture logic.
@@ -125,6 +125,12 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         }),
       );
       setRecords(rows as MedRecord[]);
+      // Findings the AI already produced but nobody approved yet (kept server-side): back into the review queue.
+      const drafts: Record<string, AiAnalysis | AppointmentAnalysis> = {};
+      await Promise.all((data ?? []).filter((r: any) => !r.ai_analyzed && r.ai_pending_json && isEncryptedBlob(r.ai_pending_json)).map(async (r: any) => {
+        try { const d = await decryptAnalysis<AiAnalysis>(familyId, r.ai_pending_json); if (d) drafts[r.id] = d; } catch { /* unreadable draft: ignore */ }
+      }));
+      if (Object.keys(drafts).length) setPending(prev => ({ ...drafts, ...prev }));
     }
     setLoading(false);
   }, [familyId]);
@@ -359,6 +365,27 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     ]);
   };
 
+  // Delete everything that is ticked: one confirmation, one storage call per bucket, one database delete.
+  const deleteSelected = () => {
+    const recs = records.filter(r => selectedIds.has(r.id));
+    if (recs.length === 0) return;
+    Alert.alert(`Remove ${recs.length} record${recs.length === 1 ? '' : 's'}?`, 'This permanently deletes the selected files from your vault.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        const audio = recs.filter(r => r.tag === 'visit_recording' && r.file_path).map(r => r.file_path!);
+        const docs = recs.filter(r => r.tag !== 'visit_recording' && r.file_path).map(r => r.file_path!);
+        if (docs.length) await supabase.storage.from('medical-records').remove(docs);
+        if (audio.length) await supabase.storage.from('medical-audio').remove(audio);
+        const { error } = await supabase.from('medical_records').delete().in('id', recs.map(r => r.id));
+        if (error) { showAlert('Could not remove', error.message); return; }
+        const gone = new Set(recs.map(r => r.id));
+        setRecords(prev => prev.filter(r => !gone.has(r.id)));
+        setSelectedIds(new Set());
+        showToast(`${recs.length} record${recs.length === 1 ? '' : 's'} removed`);
+      }},
+    ]);
+  };
+
   // ── AI Analyze ────────────────────────────────────────────────────────────────
   // Tag-aware: a 'visit_recording' row (created by RecordVisitSheet.tsx's
   // stopAndUpload, which now uploads+creates the record immediately on
@@ -411,6 +438,11 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       const analysis: AiAnalysis | AppointmentAnalysis = fnData?.analysis;
       if (!analysis?.summary) throw new Error('Invalid AI response');
       setPending(prev => ({ ...prev, [rec.id]: analysis }));
+      // Keep the findings on the server (encrypted) so they survive leaving the screen or closing the app.
+      try {
+        const draft = await encryptAnalysis(familyId, analysis);
+        await supabase.from('medical_records').update({ ai_pending_json: draft }).eq('id', rec.id);
+      } catch { /* the in-memory copy still works this session */ }
       // Auto-open the review sheet
       setReviewRec(rec);
       // Push notification to the record's assigned member
@@ -463,6 +495,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         ai_tags:          analysis.tags ?? [],
         ai_analysis_json: encryptedBlob,   // stored as AES-GCM ciphertext
         ai_analyzed:      true,
+        ai_pending_json:  null,
         ...(audioGone ? { file_path: null, file_name: null, file_size: null } : {}),
       }).eq('id', reviewRec.id);
 
@@ -484,12 +517,8 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     }
   };
 
-  const dismissReview = () => {
-    if (reviewRec) {
-      setPending(prev => { const c = { ...prev }; delete c[reviewRec.id]; return c; });
-    }
-    setReviewRec(null);
-  };
+  // Closing the review keeps the findings (they stay in "ready to review"); nothing is saved until the person approves.
+  const dismissReview = () => { setReviewRec(null); };
 
   // ── Selection / download ──────────────────────────────────────────────────
   const toggleSelect = (id: string) =>
@@ -586,7 +615,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       />
 
       <View style={{ padding: 16, gap: 14 }}>
-        <TouchableOpacityBringIn onPress={() => { setDraftOwnerId(activeMemberId ?? members[0]?.id ?? ''); setShowBringIn(true); }} colors={colors} isDark={isDark} />
+        <TouchableOpacityBringIn onPress={() => { setDraftOwnerId(lockedOwnerId ?? activeMemberId ?? members[0]?.id ?? ''); setShowBringIn(true); }} colors={colors} isDark={isDark} />
 
         <RecordsFigmaList
           colors={colors} isDark={isDark}
@@ -595,7 +624,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           activeFilters={activeFilters} openFilterScreen={() => setShowFilter(true)}
           memberName={memberName} memberIndex={memberIndex}
           analyzingId={analyzingId} pending={pending} notMedical={notMedical} analyzeErrors={analyzeErrors}
-          onAnalyze={analyzeRecord} onOpenReview={(rec) => setReviewRec(rec)} onDelete={deleteRecord}
+          onAnalyze={analyzeRecord} onOpenReview={(rec) => setReviewRec(rec)} onDelete={deleteRecord} onDeleteSelected={deleteSelected}
           onDownloadSingle={handleDownloadSingle}
           selectedIds={selectedIds} selectable={selectable} onToggleSelect={toggleSelect} clearSelection={clearSelection}
           downloading={downloading} onDownload={handleDownload}
@@ -630,6 +659,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           onManualEntry={() => { setShowBringIn(false); setShowAdd(true); }}
           recordType={draftTag} setRecordType={setDraftTag}
           recordOwnerId={draftOwnerId} setRecordOwnerId={setDraftOwnerId}
+          hideOwnerPicker={!!lockedOwnerId}
         />
       </FullPageOverlay>
 

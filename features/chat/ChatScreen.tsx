@@ -421,7 +421,12 @@ export default function ChatScreen() {
     if (!threadOpen) return;
     if (activeMemberId) markChannelRead(channelId, activeMemberId);
     setOpenChannelId(channelId);
-    return () => setOpenChannelId(null);
+    return () => {
+      setOpenChannelId(null);
+      // Messages that arrived while the thread was open were read on screen, but the read cursor still pointed at the moment it
+      // was opened, so the next unread recount counted them again. Move the cursor forward when leaving.
+      if (activeMemberId) markChannelRead(channelId, activeMemberId);
+    };
   }, [channelId, activeMemberId, threadOpen]);
   // Leaving the Chat tab with a thread open must stop that thread's background refresh (it would otherwise keep
   // polling and re-rendering a frozen screen), and resume when the tab is focused again.

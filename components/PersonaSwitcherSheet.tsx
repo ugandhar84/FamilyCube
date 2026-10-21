@@ -3,6 +3,7 @@
  * Tapping a PIN-protected profile slides to an in-sheet PIN pad.
  * Correct PIN → switch. Wrong → shake + clear.
  */
+import { grantChildSessionForParent } from '@/lib/childGrant';
 import { needsPinToSwitch, markEnteredByParent, clearEnteredByParent } from '@/lib/pinPolicy';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { router } from 'expo-router';
@@ -499,7 +500,7 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
   const seniors  = members.filter(m => m.role === 'senior');
   const allNames = members.map(m => m.name);
 
-  const handleSelect = (m: FamilyMember) => {
+  const handleSelect = async (m: FamilyMember) => {
     // A pending invite (invite_status !== 'active') has no auth_user_id and
     // typically no PIN yet — that member row exists only as a placeholder
     // waiting to be claimed via their own invite code (join-family), not as
@@ -517,6 +518,8 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
       setPinTarget(m);
     } else {
       if (m.pinEnabled && m.id !== activeMemberId) markEnteredByParent(m.id);
+      // A child with their own login needs a device grant; a parent gets it from the server (no PIN).
+      if (me?.role === 'parent' && m.authUserId && m.id !== activeMemberId) await grantChildSessionForParent(m.id);
       setActiveMember(m.id);
       onClose();
       // Land on Hub after switching profiles — whatever tab was open for

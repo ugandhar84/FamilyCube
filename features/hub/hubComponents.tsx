@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, TextInput, StyleSheet, Alert, ScrollView, Platform, Linking, TouchableOpacity, Modal, KeyboardAvoidingView, Animated, Easing, Keyboard } from 'react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import AppFullPage from '@/components/AppFullPage';
 import {
   ChevronDown, ChevronUp, Pencil, Calendar,
   MapPin, AlertOctagon, Car, Navigation, AlertTriangle, X, User,
@@ -1746,8 +1747,10 @@ export function PickupRadarStatus({ colors, isDark, activeTrip }: {
 
 // ─── EnRouteModal ─────────────────────────────────────────────────────────────
 
-export function EnRouteModal({ visible, onClose, pickups, driverName, prefillMemberId, onDispatch }: {
+export function EnRouteModal({ visible, onClose, pickups, driverName, prefillMemberId, onDispatch, fullPage = false }: {
   visible: boolean; onClose: () => void;
+  /** Open as a full page instead of a bottom sheet (the grandparent Hub). */
+  fullPage?: boolean;
   // Every family member En Route could be picking up — kids AND adults
   // (e.g. one parent picking up another, or a grandparent).
   pickups: FamilyMember[]; driverName: string;
@@ -1766,8 +1769,9 @@ export function EnRouteModal({ visible, onClose, pickups, driverName, prefillMem
     if (visible) setSelected(prefillMemberId ?? null);
   }, [visible, prefillMemberId]);
 
+  const Sheet: any = fullPage ? AppFullPage : AppBottomSheet;
   return (
-    <AppBottomSheet
+    <Sheet
       visible={visible}
       onClose={onClose}
       title="Dispatch En Route"
@@ -1814,7 +1818,7 @@ export function EnRouteModal({ visible, onClose, pickups, driverName, prefillMem
             </Pressable>
           ))}
         </View>
-    </AppBottomSheet>
+    </Sheet>
   );
 }
 

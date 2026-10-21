@@ -32,7 +32,9 @@ import JustDescribeItScreen from '@/features/tasks/components/JustDescribeItScre
 import JustDescribeItEventScreen from '@/features/calendar/components/JustDescribeItEventScreen';
 import FullPageOverlay from '@/components/FullPageOverlay';
 import { OverlayPage } from '@/components/OverlayPage';
+import { OverlayHost, OverlayHostScope } from '@/components/OverlayHost';
 import { ReviewInboxScreen, type ReviewCategory } from './parent/ReviewInboxScreen';
+import { GpRequestsQueueScreen } from './parent/GpRequestsQueueScreen';
 import { ChoresReviewQueueScreen } from './parent/ChoresReviewQueueScreen';
 import { RewardsReviewQueueScreen } from './parent/RewardsReviewQueueScreen';
 import { QuestDetailModal } from '@/features/quests/components/QuestDetailModal';
@@ -167,6 +169,7 @@ export default function HubScreen() {
   // directly, per live direction: "review inbox should contain the high
   // level cards ... land then open those chore box, schedule box."
   const [showChoresQueue, setShowChoresQueue] = useState(false);
+  const [showGpQueue, setShowGpQueue] = useState(false);
   const [showRedemptionsQueue, setShowRedemptionsQueue] = useState(false);
   const [showHelpQueue, setShowHelpQueue] = useState(false);
   const [activeKidRequestId, setActiveKidRequestId] = useState<string | null>(null);
@@ -641,6 +644,7 @@ export default function HubScreen() {
     : { style: { flex: 1, backgroundColor: hubCanvas }, edges: ['top'] as const };
 
   return (
+    <OverlayHostScope>
     <RootContainer {...rootProps}>
       {/* Scroll-driven status bar — visible at rest/near the top (same
           app-wide config as every other screen), hides once the user
@@ -664,9 +668,8 @@ export default function HubScreen() {
           lives under the member's own profile per a toggle instead of a
           Hub quick action, so it isn't part of this row's purpose either;
           senior keeps it unchanged. */}
-      {!isParent && active.role !== 'kid' && !isTeen && headerEl}
+      {!isParent && active.role !== 'kid' && !isTeen && active.role !== 'senior' && headerEl}
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
-      {!isParent && active.role !== 'kid' && !isTeen && <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -707,8 +710,8 @@ export default function HubScreen() {
         } : undefined}
         scrollEventThrottle={isParent ? 100 : undefined}
       >
-        {(isParent || active.role === 'kid' || isTeen) && headerEl}
-        {!isParent && !isKid && !isTeen && <HubMyList active={active} colors={colors} isDark={isDark} />}
+        {(isParent || active.role === 'kid' || isTeen || active.role === 'senior') && headerEl}
+        {/* The private task list for a grandparent already lives inside their "Your day" section (HubTimelineSection). */}
         <HubStickyNotes active={active} members={members} colors={colors} isDark={isDark} />
         {isParent && (
           <ParentView
@@ -772,13 +775,16 @@ export default function HubScreen() {
         {isSenior && (
           <SeniorView
             active={active} members={members} colors={colors} isDark={isDark}
-            onHelpRequest={() => setHelpModal(true)}
+            onHelpRequest={() => setShowDescribeEvent(true)}
             onEnRoute={() => setEnRouteVisible(true)}
             activeTrips={tripViews} familyId={familyId}
             composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
           />
         )}
       </ScrollView>
+
+      {/* Full-page forms declared inside a scrolling child view (the grandparent Hub) render here, over the whole screen. */}
+      <OverlayHost />
 
       {/* One instance per active trip — chat broadcast (30s in) and the
           overdue check both need to run independently per trip so two
@@ -805,7 +811,7 @@ export default function HubScreen() {
           one missing connection, not new logic. Kid Hub already made this
           exact switch previously (KidView's own onHelpRequest prop is now
           dead/unused for the same reason). */}
-      <AddEventModal visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
+      <AddEventModal fullPage={active.role === 'senior'} visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />
       <ReviewConflictModal
         visible={!!conflictReview}
@@ -846,7 +852,7 @@ export default function HubScreen() {
         </View>
       )}
       {showDescribeEvent && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 }}>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: active.role === 'senior' ? 90 : 50 }}>
           <JustDescribeItEventScreen
             visible
             backLabel="Hub"
@@ -871,6 +877,7 @@ export default function HubScreen() {
           onClose={() => setShowReviewInbox(false)}
           onSelectCategory={(category: ReviewCategory) => {
             if (category === 'chores') setShowChoresQueue(true);
+            else if (category === 'gp') setShowGpQueue(true);
             else if (category === 'redemptions') setShowRedemptionsQueue(true);
             else if (category === 'disputes') setShowDisputesInbox(true);
             else setShowHelpQueue(true);
@@ -890,6 +897,9 @@ export default function HubScreen() {
           onClose={() => setShowChoresQueue(false)}
           onSelectRow={(id) => setReviewQuestDetailId(id)}
         />
+      </OverlayPage>
+      <OverlayPage visible={showGpQueue} onDismiss={() => setShowGpQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
+        <GpRequestsQueueScreen onClose={() => setShowGpQueue(false)} onOpenRequest={(id) => setActiveKidRequestId(id)} />
       </OverlayPage>
       <OverlayPage visible={showRedemptionsQueue} onDismiss={() => setShowRedemptionsQueue(false)} zIndex={51} backgroundColor={hubCanvas}>
         <RewardsReviewQueueScreen
@@ -1019,6 +1029,7 @@ export default function HubScreen() {
       {/* Senior Hub's own En Route flow still uses the picker modal — it has
           no linked-ride concept like Parent Hub's Pick-up Radar does. */}
       <EnRouteModal
+        fullPage={active.role === 'senior'}
         visible={enRouteVisible}
         onClose={() => setEnRouteVisible(false)}
         pickups={members.filter(m => m.id !== active.id)}
@@ -1035,6 +1046,7 @@ export default function HubScreen() {
         onCancel={() => setPinTarget(null)}
       />
     </RootContainer>
+    </OverlayHostScope>
   );
 }
 

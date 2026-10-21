@@ -5,11 +5,13 @@
  * Built on FullPageOverlay/OverlayPage, so it slides in from the right, swipe-back closes it, the real tab bar is hidden while it is open,
  * and it paints its own backdrop (no white flash). The title is a PageHeading; tapping it, the close button or swiping back all close.
  */
+import { GEMINI } from '@/constants/geminiRhythm';
 import React, { useEffect } from 'react';
 import { View, ScrollView, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OverlayPage, OverlayHeading, useOverlayClose } from '@/components/OverlayPage';
+import { OverlayPortal } from '@/components/OverlayHost';
 import { useTheme } from '@/lib/ThemeContext';
 import { RHYTHM } from '@/constants/theme';
 import { hideTabBar, showTabBar } from '@/lib/tabBarVisibility';
@@ -29,6 +31,8 @@ interface Props {
   /** Extra space under the last item of the scrolling body. */
   bodyPaddingBottom?: number;
   zIndex?: number;
+  /** Gemini rhythm: warm cream canvas in light mode (grandparent pages). */
+  gemini?: boolean;
   // Accepted so a bottom-sheet call site can switch over without edits; a page has no height to size.
   minHeight?: string; maxHeight?: string; accentColor?: string;
 }
@@ -45,9 +49,10 @@ function CloseButton({ onClose }: { onClose: () => void }) {
 }
 
 export default function AppFullPage({
-  visible, onClose, title, subtitle, eyebrow = 'FAMILY CUBE', accent = 'teal', children, footer, bodyPaddingBottom = 24, zIndex = 80,
+  visible, onClose, title, subtitle, eyebrow = 'FAMILY CUBE', accent = 'teal', children, footer, bodyPaddingBottom = 24, zIndex = 80, gemini = false,
 }: Props) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const canvas = gemini && !isDark ? GEMINI.canvas : colors.background;
   const insets = useSafeAreaInsets();
 
   // Cover the tab bar while the page is open, like every other full-page overlay.
@@ -59,19 +64,22 @@ export default function AppFullPage({
   }, [visible]);
 
   return (
-    <OverlayPage visible={visible} onDismiss={onClose} zIndex={zIndex} backgroundColor={colors.background}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
-          <OverlayHeading eyebrow={eyebrow} title={title} subtitle={subtitle} accent={accent} topInset={0} right={<CloseButton onClose={onClose} />} />
-          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: bodyPaddingBottom + (footer ? 0 : insets.bottom) }}>
+    <OverlayPortal visible={visible}>
+    <OverlayPage visible={visible} onDismiss={onClose} zIndex={zIndex} backgroundColor={canvas}>
+      <View style={{ flex: 1, backgroundColor: canvas, paddingTop: insets.top }}>
+        <OverlayHeading eyebrow={eyebrow} title={title} subtitle={subtitle} accent={accent} topInset={0} right={<CloseButton onClose={onClose} />} />
+        {/* The footer buttons live INSIDE the scroll (they scroll with the form), and the scroll view insets itself by the keyboard
+            height (iOS) / the container is lifted (Android), so a focused text box is never left under the keyboard. */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? undefined : 'height'} style={{ flex: 1 }}>
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: RHYTHM.page, paddingTop: 4, gap: RHYTHM.item, paddingBottom: bodyPaddingBottom + insets.bottom }}>
             {children}
+            {footer ? <View style={{ paddingTop: RHYTHM.item }}>{footer}</View> : null}
           </ScrollView>
-          {footer ? (
-            <View style={{ paddingHorizontal: RHYTHM.page, paddingTop: RHYTHM.item, paddingBottom: Math.max(insets.bottom, RHYTHM.page) }}>{footer}</View>
-          ) : null}
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </OverlayPage>
+    </OverlayPortal>
   );
 }

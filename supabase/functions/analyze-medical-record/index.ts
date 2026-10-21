@@ -48,7 +48,7 @@ async function callGemini(
   textPrompt: string,
   imageParts: GeminiImagePart[],
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
   const parts: (GeminiImagePart | GeminiTextPart)[] = [...imageParts, { text: textPrompt }];
   const res = await fetch(url, {
     method: 'POST',
@@ -73,7 +73,7 @@ async function callGemini(
 
 // ── Gemini text fallback (DeepSeek-style, no vision needed) ───────────────────
 async function callGeminiText(prompt: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -176,7 +176,13 @@ serve(async (req) => {
 
   // User-scoped client — RLS applies
   const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
-    global: { headers: { Authorization: authHeader } },
+    // Forward who is acting on this shared phone (active member + their grant + device), so the database applies the same per-person access
+    // rules it does for the app itself. Without these the lookup below was judged as the phone's signed-in account, not the person using it.
+    global: { headers: {
+      Authorization: authHeader,
+      ...Object.fromEntries(['x-active-member-id', 'x-active-member-grant', 'x-device-id', 'x-active-family-id']
+        .map(h => [h, req.headers.get(h)]).filter(([, v]) => !!v) as [string, string][]),
+    } },
     auth:   { persistSession: false },
   });
 
@@ -245,7 +251,13 @@ serve(async (req) => {
       rawText = await callGemini(contextPrompt, imageParts);
     } catch (visionErr: any) {
       console.error('[analyze-medical-record] vision failed:', visionErr);
-      return json({ error: `Could not read the file: ${visionErr.message ?? 'unknown error'}` }, 500);
+      // The provider's own message (and its help links) stays in the logs; the person sees a plain, actionable one.
+      const m = String(visionErr?.message ?? '');
+      const friendly = /unable to process input image|invalid.*image|mime/i.test(m)
+        ? 'The file could not be read. It may be blank or damaged. Delete it and add the document again.'
+        : /402|403|billing|quota|429/i.test(m) ? 'The AI review service is busy or unavailable right now. Please try again later.'
+        : 'The file could not be analyzed. Please try again.';
+      return json({ error: friendly }, 500);
     }
 
     // ── Parse and return ──────────────────────────────────────────────────

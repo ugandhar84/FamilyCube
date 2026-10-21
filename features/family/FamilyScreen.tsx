@@ -273,11 +273,13 @@ export default function FamilyScreen() {
   // grid [live-requested, with a mockup: "can we make the family this
   // way?"]. Each row keeps its own pastel accent per the brand's existing
   // *Light token set rather than one flat color for every row.
-  const careRows = ['health', 'homecare', 'school'].map(byKey);
+  // A grandparent's Family tab keeps just Health and Memories: School, Home care, Rewards and Find my family are left out for them.
+  const isSeniorViewer = activeMember?.role === 'senior';
+  const careRows = (isSeniorViewer ? ['health'] : ['health', 'homecare', 'school']).map(byKey);
   // Games hidden app-wide [live-requested: "hide games from the all
   // roles"] — TOOLS still defines the 'games' entry so byKey() stays
   // consistent for anything else referencing it, just not rendered here.
-  const everydayRows = ['rewards', 'memories'].map(byKey);
+  const everydayRows = (isSeniorViewer ? ['memories'] : ['rewards', 'memories']).map(byKey);
 
   function ToolRow({ tool, index, accentBg, accentFg }: { tool: Tool; index: number; accentBg: string; accentFg: string }) {
     const Icon = tool.icon;
@@ -449,6 +451,7 @@ export default function FamilyScreen() {
 
           {/* ── Find my family — highlighted teal banner, same rhythm as
               School's "Scan a schedule flyer" banner. ── */}
+          {!isSeniorViewer && (
           <AnimatedCard index={8}>
             <AnimatedPressable onPress={() => setShowLocations(true)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -468,6 +471,7 @@ export default function FamilyScreen() {
               </View>
             </AnimatedPressable>
           </AnimatedCard>
+          )}
 
           {/* ── Everyday life stays simple — amber-tinted card ── */}
           <SectionCard title="Everyday life stays simple" bg={colors.amberLight}>

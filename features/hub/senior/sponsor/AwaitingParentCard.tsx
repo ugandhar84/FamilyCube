@@ -1,5 +1,5 @@
 import { View, Text, Pressable, Alert } from 'react-native';
-import { Leaf, Laptop, X } from 'lucide-react-native';
+import { Leaf, Laptop, X, Pencil } from 'lucide-react-native';
 import { useChoreStore } from '@/store/choreStore';
 import { GP } from '../seniorTheme';
 import type { ChoreTask } from '@/store/choreStore';
@@ -10,8 +10,8 @@ const AWAITING_AMBER = '#F59E0B';
 
 // My quests pending the parent safety gate — still cancellable since nobody
 // has acted on them yet.
-export function AwaitingParentCard({ quests, colors, isDark, active }: {
-  quests: ChoreTask[]; colors: any; isDark: boolean;
+export function AwaitingParentCard({ quests, colors, isDark, active, onEdit }: {
+  quests: ChoreTask[]; colors: any; isDark: boolean; onEdit?: (c: ChoreTask) => void;
   active?: { name: string };
 }) {
   if (!quests.length) return null;
@@ -34,6 +34,11 @@ export function AwaitingParentCard({ quests, colors, isDark, active }: {
           <View style={{ backgroundColor: AWAITING_AMBER + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
             <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#92400E' }}>Pending</Text>
           </View>
+          {onEdit && (
+            <Pressable onPress={() => onEdit(c)} accessibilityRole="button" accessibilityLabel={`Edit ${c.title}`} hitSlop={8}>
+              <Pencil size={16} color={colors.primary} />
+            </Pressable>
+          )}
           {/* Still their own quest, nobody's acted on it yet — safe to pull back. */}
           <Pressable onPress={() => { Alert.alert(
             'Cancel this chore?',

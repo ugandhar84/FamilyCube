@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useColorScheme, Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { lightColors, darkColors, ThemeColors } from '@/constants/colors';
+import { lightColors, darkColors, ThemeColors, boostPastels } from '@/constants/colors';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -75,7 +75,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return mode === 'dark';
   }, [mode, systemScheme]);
 
-  const colors = isDark ? darkColors : lightColors;
+  // Soft tint tokens (the *Light colors) are a touch stronger app-wide; see boostPastels in constants/colors.ts.
+  const colors = useMemo(() => boostPastels(isDark ? darkColors : lightColors, isDark), [isDark]);
 
   // Render immediately with system default — don't block on AsyncStorage.
   // storedMode being null means AsyncStorage hasn't resolved yet; in that window
@@ -89,3 +90,4 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useTheme = () => useContext(ThemeContext);
+

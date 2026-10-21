@@ -1,3 +1,4 @@
+import { startLocationHeartbeat } from '@/lib/locationHeartbeat';
 import { useEffect, useRef, useState } from 'react';
 import { Tabs, router } from 'expo-router';
 import {
@@ -398,6 +399,11 @@ export default function TabLayout() {
     return () => clearTimeout(t);
   }, [returnToAskCube]);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  // Fresh position about once a minute while the app is open (only with consent + the person's own sharing switch on).
+  useEffect(() => {
+    if (!activeMemberId) return;
+    return startLocationHeartbeat(activeMemberId, ((members.find(m => m.id === activeMemberId) as any)?.familyId as string | undefined) ?? null);
+  }, [activeMemberId]); // eslint-disable-line react-hooks/exhaustive-deps
   const insets = useSafeAreaInsets();
 
   // Defensive reset: fullBleedScreenActive is only ever legitimately set

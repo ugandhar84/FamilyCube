@@ -200,3 +200,34 @@ export const darkColors: typeof lightColors = {
 };
 
 export type ThemeColors = typeof lightColors;
+
+// ── Stronger pastels ─────────────────────────────────────────────────────────
+// A slightly more saturated copy of the soft "*Light" tint tokens (cards, tiles, chips). Light mode mixes each tint a little toward its own
+// brand color; dark mode raises the tint's alpha. Used per screen (the parent Hub first) via boostPastels(), so nothing else changes.
+const TINT_PAIRS: [light: keyof ThemeColors, base: keyof ThemeColors][] = [
+  ['primaryLight', 'primary'], ['tealLight', 'teal'], ['amberLight', 'amber'], ['pinkLight', 'pink'], ['dangerLight', 'danger'],
+  ['skyLight', 'sky'], ['successLight', 'success'], ['accentLight', 'accent'], ['parentLight', 'parent'], ['kidLight', 'kid'],
+  ['infoLight', 'info'], ['warningLight', 'warning'], ['purpleLight', 'purple'],
+];
+function hexToRgb(h: string): [number, number, number] | null {
+  const m = /^#([0-9a-f]{6})$/i.exec(h);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mixHex(light: string, base: string, amount: number): string {
+  const a = hexToRgb(light), b = hexToRgb(base);
+  if (!a || !b) return light;
+  const c = a.map((v, i) => Math.round(v + (b[i] - v) * amount));
+  return `#${c.map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+export function boostPastels(colors: ThemeColors, isDark: boolean, amount = 0.2): ThemeColors {
+  const out: any = { ...colors };
+  for (const [light, base] of TINT_PAIRS) {
+    const v = (colors as any)[light] as string | undefined;
+    if (!v) continue;
+    if (isDark) out[light] = v.replace(/rgba\(([^)]*),\s*0?\.\d+\)/, (_m, rgb) => `rgba(${rgb}, 0.40)`);
+    else out[light] = mixHex(v, (colors as any)[base] as string, amount);
+  }
+  return out as ThemeColors;
+}

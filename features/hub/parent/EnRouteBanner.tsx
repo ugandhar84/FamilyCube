@@ -1,3 +1,4 @@
+import { openInMaps } from '@/features/calendar/components/EventCard';
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, Alert, TouchableOpacity, ScrollView } from 'react-native';
 import Slider from '@react-native-community/slider';
@@ -223,7 +224,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
                 {nextRide.location && (
                   <>
                     <MapPin size={11} color={colors.textTertiary} />
-                    <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }} numberOfLines={1}>{nextRide.location}</Text>
+                    <Text onPress={() => openInMaps(nextRide.location!)} accessibilityRole="link" style={{ fontSize: TYPO.label, color: colors.primary, fontWeight: '800' }} numberOfLines={1}>{nextRide.location}</Text>
                   </>
                 )}
               </View>

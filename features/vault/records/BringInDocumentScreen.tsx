@@ -65,7 +65,7 @@ export default function BringInDocumentScreen({
   onPickCamera, onPickLibrary, onPickFiles,
   onManualEntry,
   recordType, setRecordType,
-  recordOwnerId, setRecordOwnerId,
+  recordOwnerId, setRecordOwnerId, hideOwnerPicker = false,
 }: {
   colors: any; isDark: boolean; members: any[]; activeMemberId: string | null;
   familySurname?: string;
@@ -79,6 +79,7 @@ export default function BringInDocumentScreen({
   setRecordType: (t: RecordTag) => void;
   recordOwnerId: string;
   setRecordOwnerId: (id: string) => void;
+  hideOwnerPicker?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
@@ -198,8 +199,8 @@ export default function BringInDocumentScreen({
           )}
         </View>
 
-        {/* Record owner */}
-        <View style={contentGroupStyle(cardBg, isDark, border)}>
+        {/* Record owner (hidden when opened from one person's page) */}
+        {!hideOwnerPicker && <View style={contentGroupStyle(cardBg, isDark, border)}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Record owner</Text>
           <TouchableOpacity onPress={() => setShowOwnerPicker(v => !v)}
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -223,7 +224,7 @@ export default function BringInDocumentScreen({
               })}
             </View>
           )}
-        </View>
+        </View>}
 
         {/* Privacy card — scoped to what's actually true (see module header) */}
         <View style={{ backgroundColor: colors.tealLight, borderRadius: 16, padding: 16, gap: 4 }}>

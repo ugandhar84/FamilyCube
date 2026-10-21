@@ -40,7 +40,7 @@ import { GEMINI } from '@/constants/geminiRhythm';
 // like categories inside right?"]. Required whenever extraCount is set.
 export type NeedsYouItem =
   | { kind: 'conflict'; title: string; reason: string; dueDate?: string; dueTime?: string }
-  | { kind: 'approval'; title: string; reason: string; dueDate?: string; dueTime?: string; extraCount?: number; urgentCount?: number; categoryLabel?: string }
+  | { kind: 'approval'; title: string; reason: string; dueDate?: string; dueTime?: string; extraCount?: number; urgentCount?: number; categoryLabel?: string; statusLabel?: string }
   | { kind: 'backlog'; title: string; reason: string; dueDate?: string; dueTime?: string };
 
 // Was a full-width "Review options" / "Review & approve" / "See task" CTA
@@ -97,7 +97,9 @@ export function NeedsYouCard({
   variant?: 'card' | 'row';
 }) {
   const { colors, isDark } = useTheme();
-  const status = statusFor(item.kind);
+  const baseStatus = statusFor(item.kind);
+  // A card can carry its own status text (an accepted SOS reads "In progress", not "Waiting on you").
+  const status = item.kind === 'approval' && item.statusLabel ? { ...baseStatus, label: item.statusLabel } : baseStatus;
   const statusColor = status.color(colors);
   const dueLabel = item.dueDate
     ? `${fmtHumanDateShort(item.dueDate)}${item.dueTime ? ` · ${fmtTime(item.dueTime)}` : ''}`

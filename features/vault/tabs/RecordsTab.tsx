@@ -359,6 +359,27 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
     ]);
   };
 
+  // Delete everything that is ticked: one confirmation, one storage call per bucket, one database delete.
+  const deleteSelected = () => {
+    const recs = records.filter(r => selectedIds.has(r.id));
+    if (recs.length === 0) return;
+    Alert.alert(`Remove ${recs.length} record${recs.length === 1 ? '' : 's'}?`, 'This permanently deletes the selected files from your vault.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        const audio = recs.filter(r => r.tag === 'visit_recording' && r.file_path).map(r => r.file_path!);
+        const docs = recs.filter(r => r.tag !== 'visit_recording' && r.file_path).map(r => r.file_path!);
+        if (docs.length) await supabase.storage.from('medical-records').remove(docs);
+        if (audio.length) await supabase.storage.from('medical-audio').remove(audio);
+        const { error } = await supabase.from('medical_records').delete().in('id', recs.map(r => r.id));
+        if (error) { showAlert('Could not remove', error.message); return; }
+        const gone = new Set(recs.map(r => r.id));
+        setRecords(prev => prev.filter(r => !gone.has(r.id)));
+        setSelectedIds(new Set());
+        showToast(`${recs.length} record${recs.length === 1 ? '' : 's'} removed`);
+      }},
+    ]);
+  };
+
   // ── AI Analyze ────────────────────────────────────────────────────────────────
   // Tag-aware: a 'visit_recording' row (created by RecordVisitSheet.tsx's
   // stopAndUpload, which now uploads+creates the record immediately on
@@ -595,7 +616,7 @@ export default function RecordsTab({ colors, isDark, lockedOwnerId }: { colors: 
           activeFilters={activeFilters} openFilterScreen={() => setShowFilter(true)}
           memberName={memberName} memberIndex={memberIndex}
           analyzingId={analyzingId} pending={pending} notMedical={notMedical} analyzeErrors={analyzeErrors}
-          onAnalyze={analyzeRecord} onOpenReview={(rec) => setReviewRec(rec)} onDelete={deleteRecord}
+          onAnalyze={analyzeRecord} onOpenReview={(rec) => setReviewRec(rec)} onDelete={deleteRecord} onDeleteSelected={deleteSelected}
           onDownloadSingle={handleDownloadSingle}
           selectedIds={selectedIds} selectable={selectable} onToggleSelect={toggleSelect} clearSelection={clearSelection}
           downloading={downloading} onDownload={handleDownload}

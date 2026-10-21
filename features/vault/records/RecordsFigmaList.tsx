@@ -42,7 +42,7 @@ export default function RecordsFigmaList({
   analyzingId, pending, notMedical, analyzeErrors,
   onAnalyze, onOpenReview, onDelete, onDownloadSingle,
   selectedIds, selectable, onToggleSelect, clearSelection,
-  downloading, onDownload,
+  downloading, onDownload, onDeleteSelected,
 }: {
   colors: any; isDark: boolean;
   records: MedRecord[]; filtered: MedRecord[];
@@ -58,6 +58,7 @@ export default function RecordsFigmaList({
   selectedIds: Set<string>; selectable: boolean;
   onToggleSelect: (id: string) => void; clearSelection: () => void;
   downloading: boolean; onDownload: () => void;
+  onDeleteSelected?: () => void;
 }) {
   const titleC = isDark ? colors.textPrimary : TITLE_CLR;
   const bodyC  = isDark ? colors.textSecondary : BODY_CLR;
@@ -312,6 +313,13 @@ export default function RecordsFigmaList({
             <TouchableOpacity onPress={clearSelection} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.teal }}>Clear</Text>
             </TouchableOpacity>
+            {onDeleteSelected && (
+              <TouchableOpacity onPress={onDeleteSelected} accessibilityRole="button" accessibilityLabel="Delete selected"
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.danger, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 }}>
+                <Trash2 size={13} color="#fff" />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Delete</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={onDownload} disabled={downloading}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.teal,
                 borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, opacity: downloading ? 0.6 : 1 }}>

@@ -5,6 +5,7 @@ import { localDateStr } from '@/lib/dates';
 import { isEventSensitive, eventAssignee, useEventStore } from '@/store/eventStore';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
 import { NextUpTimeline } from './parent/NextUpCard';
+import { SchoolDayCard } from './kid/SchoolDayCard';
 import { HubMyList } from './HubMyList';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -90,6 +91,7 @@ export function HubTimelineSection({ active, members, events, colors, isDark }: 
         events={upcoming}
         conflictReasons={conflictReasons}
       />
+      {(active.role === 'kid' || active.role === 'teen') && <SchoolDayCard memberId={active.id} colors={colors} isDark={isDark} />}
       <HubMyList active={active} colors={colors} isDark={isDark} />
     </>
   );

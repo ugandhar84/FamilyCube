@@ -141,8 +141,8 @@ export function NeedsYouCard({
           {item.title}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: dueLabel ? 4 : 0 }}>
-          <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: statusColor + '20' }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: statusColor }}>{status.label}</Text>
+          <View style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, backgroundColor: statusColor }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? colors.background : colors.card }}>{status.label}</Text>
           </View>
           <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 12, flex: 1 }} numberOfLines={1}>
             {item.reason}

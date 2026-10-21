@@ -308,6 +308,17 @@ export default function ScanReviewSheet({
         swatches rather than guessing a wrong mapping. */
     <FullPageOverlay visible={visible} onDismiss={closeScanSheet} zIndex={65}>
       <AiConsentSheet {...aiConsent} colors={colors} isDark={isDark} />
+      {/* While the document is being read, show it: otherwise the screen falls back to the first step and looks like nothing is happening. */}
+      {scanning && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 900, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32,
+          backgroundColor: isDark ? colors.background : PAGE_BG }}>
+          <ActivityIndicator size="large" color={scanMode === 'vaccine' ? colors.teal : colors.accent} />
+          <Text style={{ fontSize: 18, fontWeight: '800', color: isDark ? colors.textPrimary : TITLE_CLR, textAlign: 'center' }}>
+            {scanMode === 'vaccine' ? 'Reading the vaccine record…' : 'Reading the prescription…'}
+          </Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: isDark ? colors.textSecondary : BODY_CLR, textAlign: 'center' }}>This usually takes 10 to 30 seconds.</Text>
+        </View>
+      )}
       {/* ── REDACT MODE: full-screen layout ── */}
       {pendingImages.length > 0 && !scanning && (() => {
         // The selected page index can point past the end (e.g. after a page was removed or a failed scan reset the list); fall back to page 1.

@@ -124,7 +124,8 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
     // can legitimately need to list a dozen+ items), so this needs real
     // headroom, not just a bump — matches parse-flyer's own 16384 budget
     // for the same class of "list everything visible" extraction.
-    generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+    // Reading a document needs no long reasoning: turning it off makes the newer models answer in seconds instead of timing out.
+    generationConfig: { temperature: 0.1, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } },
   };
 
   // Was 15s — too tight now that this call also carries a full retry (both
@@ -140,7 +141,7 @@ async function callGeminiVision(key: string, primary: ImageInput, extras: ImageI
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }, 35_000);
+  }, 55_000);
 
   if (!res.ok) {
     const err = await res.text().catch(() => '');

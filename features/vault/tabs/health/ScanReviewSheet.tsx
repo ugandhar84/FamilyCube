@@ -41,12 +41,14 @@ const CARD_BG   = GEMINI.cardBg;
 const CARD_SHADOW = GEMINI.cardShadow;
 
 export default function ScanReviewSheet({
-  visible, scanMode, activeMemberId, members, colors, isDark,
+  visible, scanMode, activeMemberId, consentMemberId, members, colors, isDark,
   onClose, onSaveMed, onSaveVax, onScanningChange,
 }: {
   visible: boolean;
   scanMode: 'rx' | 'vaccine';
   activeMemberId: string;
+  /** The person actually using the phone (AI consent is theirs). Defaults to activeMemberId, which may be the record owner. */
+  consentMemberId?: string;
   members: any[];
   colors: any;
   isDark: boolean;
@@ -66,7 +68,7 @@ export default function ScanReviewSheet({
     pickImage, scan, pickAndScan,
     removeImage, clearPending, clearScan, setScanResult,
     aiConsent,
-  } = usePrescriptionScanner(activeMemberId, members.find(m => m.id === activeMemberId)?.familyId, maxPages);
+  } = usePrescriptionScanner(consentMemberId ?? activeMemberId, members.find(m => m.id === activeMemberId)?.familyId, maxPages);
 
   // Report scanning state up so the parent's AI banner can show its spinner
   useEffect(() => { onScanningChange?.(scanning); }, [scanning]);

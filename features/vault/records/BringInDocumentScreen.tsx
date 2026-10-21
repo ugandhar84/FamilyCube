@@ -108,6 +108,38 @@ export default function BringInDocumentScreen({
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 24, gap: 12 }}>
 
+        {/* Record type */}
+        <View style={contentGroupStyle(cardBg, isDark, border)}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Record type</Text>
+          <TouchableOpacity onPress={() => setShowTypePicker(v => !v)}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              borderRadius: 14, borderWidth: 1, borderColor: border, backgroundColor: isDark ? colors.surface : '#F8FAFC',
+              paddingHorizontal: 14, paddingVertical: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <typeMeta.Icon size={15} color={typeMeta.color} />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: titleC }}>{typeMeta.label}</Text>
+            </View>
+            <ChevronDown size={15} color={bodyC} />
+          </TouchableOpacity>
+          {showTypePicker && (
+            <View style={{ gap: 6, marginTop: 2 }}>
+              {TAGS.filter(t => t.id !== 'visit_recording').map(t => {
+                const sel = t.id === recordType;
+                return (
+                  <TouchableOpacity key={t.id} onPress={() => { setRecordType(t.id); setShowTypePicker(false); }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10,
+                      paddingHorizontal: 10, paddingVertical: 9,
+                      backgroundColor: sel ? t.color + '15' : 'transparent' }}>
+                    <t.Icon size={14} color={t.color} />
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: titleC, flex: 1 }}>{t.label}</Text>
+                    {sel && <Check size={14} color={t.color} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ backgroundColor: BLUE + '15', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 }}>
             <Text style={{ fontSize: 11, fontWeight: '700', color: BLUE }}>Visit record · health document</Text>
@@ -165,38 +197,6 @@ export default function BringInDocumentScreen({
             A photo you take or pick from Photos goes through a black-out step first. A PDF or file chosen here is
             saved and analyzed as-is, with no redaction step yet.
           </Text>
-        </View>
-
-        {/* Record type */}
-        <View style={contentGroupStyle(cardBg, isDark, border)}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: titleC }}>Record type</Text>
-          <TouchableOpacity onPress={() => setShowTypePicker(v => !v)}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              borderRadius: 14, borderWidth: 1, borderColor: border, backgroundColor: isDark ? colors.surface : '#F8FAFC',
-              paddingHorizontal: 14, paddingVertical: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <typeMeta.Icon size={15} color={typeMeta.color} />
-              <Text style={{ fontSize: 14, fontWeight: '600', color: titleC }}>{typeMeta.label}</Text>
-            </View>
-            <ChevronDown size={15} color={bodyC} />
-          </TouchableOpacity>
-          {showTypePicker && (
-            <View style={{ gap: 6, marginTop: 2 }}>
-              {TAGS.filter(t => t.id !== 'visit_recording').map(t => {
-                const sel = t.id === recordType;
-                return (
-                  <TouchableOpacity key={t.id} onPress={() => { setRecordType(t.id); setShowTypePicker(false); }}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10,
-                      paddingHorizontal: 10, paddingVertical: 9,
-                      backgroundColor: sel ? t.color + '15' : 'transparent' }}>
-                    <t.Icon size={14} color={t.color} />
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: titleC, flex: 1 }}>{t.label}</Text>
-                    {sel && <Check size={14} color={t.color} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
         </View>
 
         {/* Record owner (hidden when opened from one person's page) */}

@@ -109,8 +109,12 @@ export default function PhotoRedactModal({
 
   const handleConfirm = useCallback(async () => {
     try {
-      const capturedUri = await viewShotRef.current?.capture?.();
-      const capturedB64 = capturedUri ? await toBase64(capturedUri) : null;
+      // Nothing blacked out on this page: keep the original photo untouched. Re-capturing the screen can come back as a near-empty
+      // image (a 1 KB file was saved this way), so only capture when there is something to flatten, and ignore an implausibly small result.
+      const hasBoxes = ((redactBoxesByImage ?? [])[activeIdx]?.length ?? 0) > 0;
+      const capturedUri = hasBoxes ? await viewShotRef.current?.capture?.() : null;
+      let capturedB64 = capturedUri ? await toBase64(capturedUri) : null;
+      if (capturedB64 && capturedB64.length < 20_000) capturedB64 = null;
       const finalImages = images.map((im, idx) =>
         (idx === activeIdx && capturedB64) ? { base64: capturedB64, mimeType: 'image/jpeg' } : im
       );

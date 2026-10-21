@@ -176,7 +176,13 @@ serve(async (req) => {
 
   // User-scoped client — RLS applies
   const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
-    global: { headers: { Authorization: authHeader } },
+    // Forward who is acting on this shared phone (active member + their grant + device), so the database applies the same per-person access
+    // rules it does for the app itself. Without these the lookup below was judged as the phone's signed-in account, not the person using it.
+    global: { headers: {
+      Authorization: authHeader,
+      ...Object.fromEntries(['x-active-member-id', 'x-active-member-grant', 'x-device-id', 'x-active-family-id']
+        .map(h => [h, req.headers.get(h)]).filter(([, v]) => !!v) as [string, string][]),
+    } },
     auth:   { persistSession: false },
   });
 

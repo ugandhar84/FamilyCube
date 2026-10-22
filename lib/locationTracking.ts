@@ -977,7 +977,7 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     // doesn't fix a real RLS mismatch by itself, but makes the next
     // occurrence actually diagnosable instead of a silent no-op.
     const speedMph = rawSpeed;
-    const { error: upsertErr } = await withSuppressedNetworkBanner(() => supabase.from('member_locations').upsert({
+    const locationRow: Record<string, unknown> = {
       member_id: activeMemberId,
       family_id: lastFamilyId,
       lat, lng, address: encAddress,
@@ -1000,7 +1000,13 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       // it is on reinstall reset to false in UI" — same root cause, a race
       // rather than only the reinstall path this column was first added for).
       share_location_enabled: true,
-    }, { onConflict: 'member_id' }));
+    };
+    let { error: upsertErr } = await withSuppressedNetworkBanner(() => supabase.from('member_locations').upsert(locationRow, { onConflict: 'member_id' }));
+    // A database without the `movement` column rejects the whole row; the location itself must still save.
+    if (upsertErr && /movement/i.test(upsertErr.message)) {
+      const { movement: _drop, ...withoutMovement } = locationRow;
+      ({ error: upsertErr } = await withSuppressedNetworkBanner(() => supabase.from('member_locations').upsert(withoutMovement, { onConflict: 'member_id' })));
+    }
     if (upsertErr) {
       console.error('[locationTracking] member_locations upsert failed:', upsertErr.message);
       await recordLocationSyncError(activeMemberId, 'upsert', upsertErr.message);

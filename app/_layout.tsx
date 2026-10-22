@@ -800,6 +800,15 @@ function RootNavigator() {
   };
 
   const activeMemberIdForNotifs = useFamilyStore(s => s.activeMemberId);
+  // Restart background location sharing at launch (not only when Find Family is opened).
+  const familyIdForLocation = useFamilyStore(s => s.members.find(m => m.id === s.activeMemberId)?.familyId ?? null);
+  useEffect(() => {
+    if (!activeMemberIdForNotifs) return;
+    const resume = () => { import('@/lib/locationResume').then(m => m.resumeLocationSharingIfEnabled(activeMemberIdForNotifs, familyIdForLocation)).catch(() => {}); };
+    resume();
+    const sub = AppState.addEventListener('change', s => { if (s === 'active') resume(); });
+    return () => sub.remove();
+  }, [activeMemberIdForNotifs, familyIdForLocation]);
   useEffect(() => {
     if (!activeMemberIdForNotifs) return;
     const ch = supabase

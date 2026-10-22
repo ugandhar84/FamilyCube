@@ -232,6 +232,7 @@ export default function SignupScreen() {
       options: {
         redirectTo: redirectUri,
         skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' }, // always show Google's account picker
       },
     });
     if (error) {

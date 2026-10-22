@@ -23,8 +23,8 @@ export interface PowerConfig {
 }
 
 export const POWER_CONFIG: Record<PowerMode, PowerConfig> = {
-  stationary: { accuracy: 'balanced', timeInterval: 10 * 60_000, distanceInterval: 100, activity: 'other',      pauses: true  },
-  saver:      { accuracy: 'balanced', timeInterval: 15 * 60_000, distanceInterval: 200, activity: 'other',      pauses: true  },
+  stationary: { accuracy: 'balanced', timeInterval: 10 * 60_000, distanceInterval: 100, activity: 'other',      pauses: false },
+  saver:      { accuracy: 'balanced', timeInterval: 15 * 60_000, distanceInterval: 200, activity: 'other',      pauses: false },
   walking:    { accuracy: 'high',     timeInterval: 45_000,      distanceInterval: 20,  activity: 'fitness',    pauses: false },
   driving:    { accuracy: 'high',     timeInterval: 15_000,      distanceInterval: 40,  activity: 'automotive', pauses: false },
   live:       { accuracy: 'high',     timeInterval: 5_000,       distanceInterval: 8,   activity: 'other',      pauses: false },

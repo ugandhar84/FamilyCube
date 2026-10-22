@@ -261,6 +261,7 @@ export default function LoginScreen() {
         options: {
           redirectTo: redirectUri,
           skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' }, // always show Google's account picker
         },
       });
 

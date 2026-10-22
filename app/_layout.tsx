@@ -1,4 +1,5 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import '@/lib/locationPushTask';
 import { showAlert } from '@/components/AppAlert';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';

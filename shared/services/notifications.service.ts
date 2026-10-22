@@ -2,6 +2,7 @@
 // Gracefully degrades when native modules aren't available (Expo Go).
 
 import { Platform, AppState } from 'react-native';
+import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { usePreferenceStore } from '@/store/preferenceStore';
 
@@ -412,6 +413,8 @@ export async function saveTokenToMember(memberId: string): Promise<void> {
           family_id: familyId,
           expo_push_token: token,
           platform,
+          app_version: Constants.expoConfig?.version ?? null,
+          build_number: Constants.expoConfig?.ios?.buildNumber ?? String(Constants.expoConfig?.android?.versionCode ?? '') ?? null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'member_id,device_id' }

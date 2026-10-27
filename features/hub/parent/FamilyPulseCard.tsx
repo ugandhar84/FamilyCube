@@ -127,7 +127,7 @@ export function FamilyPulseCard({
           <View style={{ height: 2, borderRadius: 1, backgroundColor: colors.teal, marginBottom: 6, opacity: 0.6 }} />
           <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>FAMILY PULSE</Text>
         </View>
-        <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 21, fontWeight: '700', letterSpacing: -0.5, marginTop: 6, marginBottom: 6 }}>
+        <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 18, fontWeight: '700', letterSpacing: -0.4, marginTop: 6, marginBottom: 6 }}>
           {familyName ? `Welcome to ${familyName}` : "You’re on top of today"}
         </Text>
         <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 13, lineHeight: 19 }}>

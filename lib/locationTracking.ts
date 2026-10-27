@@ -779,7 +779,7 @@ function nativeOptionsFor(mode: PowerMode): Location.LocationTaskOptions {
       : c.activity === 'fitness' ? Location.ActivityType.Fitness : Location.ActivityType.Other,
     // iOS may stop delivering fixes while the phone is clearly stationary and resume on real movement: the largest battery saving.
     pausesUpdatesAutomatically: c.pauses,
-    showsBackgroundLocationIndicator: true, // iOS blue status-bar pill while active — visible, not sneaky
+    showsBackgroundLocationIndicator: false, // no iOS blue status-bar pill; iOS still shows its own location arrow
     foregroundService: {
       notificationTitle: 'Family Cube',
       notificationBody: 'Sharing your location with your family',

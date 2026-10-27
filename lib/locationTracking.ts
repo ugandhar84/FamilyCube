@@ -451,6 +451,7 @@ export async function reportLiveLocationNow(memberId: string, familyId: string):
       member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
       neighborhood: encNeighborhood,
       speed_mph: speedMph,
+      movement: movementLabel(speedMph),
       ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
       ...(isCharging !== null ? { is_charging: isCharging } : {}),
       last_updated: new Date().toISOString(),
@@ -641,8 +642,17 @@ let latestMotionKind: { kind: MotionKind; at: number } | null = null;
 // CoreMotion only reports when the activity CHANGES, so "walking" must stay valid while the walk continues (not expire after a few
 // minutes of no new report). It is replaced by the next report, or ignored after this long.
 const MOTION_FRESH_MS = 20 * 60_000;
+const MOTION_TRUST_MS = 2 * 60_000; // a walking/running/cycling reading is believed on its own this long, then only with real movement
+let lastStopReportAt = 0;
 export function setMotionKind(kind: MotionKind | null) {
+  const wasMoving = latestMotionKind?.kind === 'walking' || latestMotionKind?.kind === 'running' || latestMotionKind?.kind === 'cycling';
   latestMotionKind = kind ? { kind, at: Date.now() } : null;
+  // The person just stopped: iOS stops delivering fixes once the phone is still, so nothing would say "stationary" until the next
+  // heartbeat. Report right now (at most every 30 s) so the family sees the stop within seconds.
+  if (wasMoving && kind === 'stationary' && activeMemberId && lastFamilyId && Date.now() - lastStopReportAt > 30_000) {
+    lastStopReportAt = Date.now();
+    reportLiveLocationNow(activeMemberId, lastFamilyId).catch(() => {});
+  }
   // The person just started walking or running: leave the battery-saving mode at once instead of waiting for a GPS fix.
   if (kind === 'walking' || kind === 'running' || kind === 'cycling') evaluatePower(3).catch(() => {});
 }
@@ -653,9 +663,13 @@ function freshMotionKind(): MotionKind | null {
 export function movementLabel(speedMph: number): 'driving' | 'walking' | 'running' | 'cycling' | 'stationary' {
   const k = freshMotionKind();
   if (k === 'automotive' || speedMph >= 8) return 'driving';
-  if (k === 'running') return 'running';
-  if (k === 'cycling') return 'cycling';
-  if (k === 'walking' || speedMph >= 1.5) return 'walking';
+  // CoreMotion only speaks when the activity changes, so a stale "walking" must not outlive the walk: past a couple of minutes it
+  // counts only while the phone is really moving (a late or missing "stopped" report no longer leaves someone walking forever).
+  const motionAge = latestMotionKind ? Date.now() - latestMotionKind.at : Infinity;
+  const onFoot = (k === 'walking' || k === 'running' || k === 'cycling') && (motionAge < MOTION_TRUST_MS || speedMph >= 1);
+  if (onFoot && k === 'running') return 'running';
+  if (onFoot && k === 'cycling') return 'cycling';
+  if (onFoot || speedMph >= 1.5) return 'walking';
   return 'stationary';
 }
 

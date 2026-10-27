@@ -128,7 +128,7 @@ export function FamilyPulseCard({
           <Text style={{ color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.9 }}>FAMILY PULSE</Text>
         </View>
         <Text style={{ color: (isDark ? colors.textPrimary : GEMINI.titleColor), fontSize: 18, fontWeight: '700', letterSpacing: -0.4, marginTop: 6, marginBottom: 6 }}>
-          {familyName ? `Welcome to ${familyName}` : "You’re on top of today"}
+          {familyName ? familyName : "You’re on top of today"}
         </Text>
         <Text style={{ color: (isDark ? colors.textSecondary : GEMINI.bodyColor), fontSize: 13, lineHeight: 19 }}>
           {summary || 'Turn on location sharing to see where everyone is.'}

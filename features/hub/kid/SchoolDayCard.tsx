@@ -11,6 +11,7 @@ import { RHYTHM } from '@/constants/theme';
 import { GEMINI } from '@/constants/geminiRhythm';
 
 const GAP = 6;
+const DAY_OFF_RE = /\b(holiday|break|no school|in-?service|staff (professional|development)|teacher work ?day|school closed)\b/i;
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 type HolidayDay = { date: string; reason: string };
@@ -49,9 +50,12 @@ export function useSchoolDay(memberId: string) {
     if (!familyId) return;
     const from = new Date(); from.setDate(from.getDate() - 21);
     const to = new Date(); to.setDate(to.getDate() + 45);
-    supabase.from('calendar_events').select('date,title').eq('family_id', familyId).eq('category', 'Holiday').is('deleted_at', null)
-      .gte('date', ymd(from)).lte('date', ymd(to)).then(({ data }) => setCalHolidays((data ?? []).map((r: any) => ({ date: r.date, reason: r.title }))));
-  }, [familyId]);
+    // The family's Holiday calendar, plus school-calendar days off ("No school", "Teacher work day"...) for this child or everyone.
+    supabase.from('calendar_events').select('date,title,category,member_id,member_ids').eq('family_id', familyId).in('category', ['Holiday', 'School', 'Study']).is('deleted_at', null)
+      .gte('date', ymd(from)).lte('date', ymd(to)).then(({ data }) => setCalHolidays((data ?? [])
+        .filter((r: any) => r.category === 'Holiday' || (DAY_OFF_RE.test(r.title ?? '') && (!r.member_id || r.member_id === memberId || (r.member_ids ?? []).includes(memberId))))
+        .map((r: any) => ({ date: r.date, reason: r.title }))));
+  }, [familyId, memberId]);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const dayKey = now.toDateString();
   // Every break/holiday we know: the schedule's own ranges plus the linked school calendar's days grouped into breaks.
